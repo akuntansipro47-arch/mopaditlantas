@@ -78,22 +78,46 @@ export default function AgencyProfilePage() {
 
       if (profile) {
         // Update
-        const { error } = await supabase
+        const { error, data } = await supabase
           .from('agency_profile')
           .update(payload)
-          .eq('id', profile.id);
+          .eq('id', profile.id)
+          .select()
+          .single();
+          
         if (error) throw error;
+        
+        if (data) {
+            setProfile(data); // Update local state immediately
+            setFormData({
+                name: data.name || '',
+                address: data.address || '',
+                phone: data.phone || '',
+                email: data.email || '',
+                website: data.website || '',
+                logo_url: data.logo_url || ''
+            });
+        }
+        
         toast.success('Profil Instansi diperbarui');
       } else {
         // Insert
-        const { error } = await supabase
+        const { error, data } = await supabase
           .from('agency_profile')
-          .insert([payload]);
+          .insert([payload])
+          .select()
+          .single();
+
         if (error) throw error;
+        
+        if (data) {
+            setProfile(data);
+        }
+        
         toast.success('Profil Instansi dibuat');
       }
       
-      fetchProfile();
+      // fetchProfile(); // Remove fetch to avoid race condition or stale data
       setIsEditing(false);
     } catch (error: any) {
       toast.error('Gagal menyimpan: ' + error.message);
