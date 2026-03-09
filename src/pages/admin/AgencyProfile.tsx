@@ -82,20 +82,20 @@ export default function AgencyProfilePage() {
           .from('agency_profile')
           .update(payload)
           .eq('id', profile.id)
-          .select()
-          .single();
+          .select(); // Returns array
           
         if (error) throw error;
         
-        if (data) {
-            setProfile(data); // Update local state immediately
+        if (data && data.length > 0) {
+            const updatedProfile = data[0];
+            setProfile(updatedProfile); // Update local state immediately
             setFormData({
-                name: data.name || '',
-                address: data.address || '',
-                phone: data.phone || '',
-                email: data.email || '',
-                website: data.website || '',
-                logo_url: data.logo_url || ''
+                name: updatedProfile.name || '',
+                address: updatedProfile.address || '',
+                phone: updatedProfile.phone || '',
+                email: updatedProfile.email || '',
+                website: updatedProfile.website || '',
+                logo_url: updatedProfile.logo_url || ''
             });
         }
         
@@ -105,13 +105,12 @@ export default function AgencyProfilePage() {
         const { error, data } = await supabase
           .from('agency_profile')
           .insert([payload])
-          .select()
-          .single();
+          .select(); // Returns array
 
         if (error) throw error;
         
-        if (data) {
-            setProfile(data);
+        if (data && data.length > 0) {
+            setProfile(data[0]);
         }
         
         toast.success('Profil Instansi dibuat');
