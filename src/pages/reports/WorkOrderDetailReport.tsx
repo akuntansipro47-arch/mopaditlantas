@@ -30,11 +30,23 @@ export default function WorkOrderDetailReport() {
     end: formatDateForInput(today)
   });
   const [statusFilter, setStatusFilter] = useState('ALL');
+  const [searchQuery, setSearchQuery] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
 
   useEffect(() => {
     fetchData();
   }, [dateRange, statusFilter]);
+
+  const filteredData = data.filter(wo => {
+    if (!searchQuery) return true;
+    const q = searchQuery.toLowerCase();
+    return (
+      wo.wo_number.toLowerCase().includes(q) ||
+      wo.vehicle_entries?.vehicles?.license_plate.toLowerCase().includes(q) ||
+      wo.vehicle_entries?.vehicles?.brand_type.toLowerCase().includes(q) ||
+      (wo.mechanics?.name || '').toLowerCase().includes(q)
+    );
+  });
 
   async function fetchData() {
     setLoading(true);
@@ -185,9 +197,9 @@ export default function WorkOrderDetailReport() {
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row justify-between gap-4">
         <div>
-          <h2 className="text-3xl font-bold tracking-tight">Laporan Detail Work Order (Revisi)</h2>
+          <h2 className="text-3xl font-bold tracking-tight">Laporan Detail Work Order</h2>
           <p className="text-muted-foreground">Laporan rinci transaksi WO per item pekerjaan/barang.</p>
-          <p className="text-xs text-blue-600 font-medium mt-1">Total Data: {data.length} WO ditemukan</p>
+          <p className="text-xs text-blue-600 font-medium mt-1">Total Data: {filteredData.length} WO ditemukan</p>
           {errorMsg && (
             <div className="mt-2 p-3 bg-red-100 border border-red-200 text-red-700 rounded-md">
                 Error: {errorMsg}
@@ -236,9 +248,20 @@ export default function WorkOrderDetailReport() {
                     </Select>
                 </div>
 
-                <Button variant="ghost" size="sm" onClick={fetchData} disabled={loading} className="ml-auto">
-                    <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
-                </Button>
+                <div className="flex items-center gap-2 ml-auto">
+                   <div className="relative w-64">
+                      <Filter className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground pointer-events-none" />
+                      <Input 
+                        placeholder="Cari WO / Nopol / Kendaraan / Mekanik..." 
+                        className="pl-8 bg-white" 
+                        value={searchQuery} 
+                        onChange={e => setSearchQuery(e.target.value)} 
+                      />
+                   </div>
+                   <Button variant="ghost" size="sm" onClick={fetchData} disabled={loading}>
+                      <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+                   </Button>
+                </div>
             </div>
         </CardHeader>
         <CardContent>
@@ -247,6 +270,7 @@ export default function WorkOrderDetailReport() {
                 <Table className="whitespace-nowrap">
                     <TableHeader className="bg-slate-100 sticky top-0 z-10 shadow-sm">
                         <TableRow>
+                            <TableHead className="w-12 text-center">No</TableHead>
                             <TableHead>No. WO</TableHead>
                             <TableHead>Tanggal</TableHead>
                             <TableHead>Status</TableHead>
@@ -261,10 +285,10 @@ export default function WorkOrderDetailReport() {
                     <TableBody>
                         {loading ? (
                             <TableRow><TableCell colSpan={9} className="text-center h-32">Memuat data...</TableCell></TableRow>
-                        ) : data.length === 0 ? (
-                            <TableRow><TableCell colSpan={9} className="text-center h-32 text-muted-foreground">Tidak ada data ditemukan.</TableCell></TableRow>
+                        ) : filteredData.length === 0 ? (
+                            <TableRow><TableCell colSpan={10} className="text-center h-32 text-muted-foreground">Tidak ada data ditemukan.</TableCell></TableRow>
                         ) : (
-                            data.map((wo) => {
+                            filteredData.map((wo, index) => {
                                 const billings = wo.work_order_billings || [];
                                 const rowSpan = billings.length > 0 ? billings.length : 1;
                                 
@@ -276,6 +300,9 @@ export default function WorkOrderDetailReport() {
                                                 {/* Parent Columns - Render only on first row */}
                                                 {idx === 0 && (
                                                     <>
+                                                        <TableCell rowSpan={rowSpan} className="text-center align-top border-r bg-white text-gray-500 text-xs">
+                                                            {index + 1}
+                                                        </TableCell>
                                                         <TableCell rowSpan={rowSpan} className="font-medium align-top border-r bg-white">
                                                             {wo.wo_number}
                                                             <div className="text-xs text-gray-400 mt-1">{wo.mechanics?.name || 'No Mechanic'}</div>
@@ -308,6 +335,7 @@ export default function WorkOrderDetailReport() {
                                         ))
                                     ) : (
                                         <TableRow key={wo.id}>
+                                            <TableCell className="text-center align-top border-r text-gray-500 text-xs">{index + 1}</TableCell>
                                             <TableCell className="font-medium border-r">{wo.wo_number}</TableCell>
                                             <TableCell className="border-r">{formatDate(wo.work_date)}</TableCell>
                                             <TableCell className="border-r">{getStatusBadge(wo.status)}</TableCell>
