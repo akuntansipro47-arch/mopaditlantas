@@ -1,0 +1,1 @@
+ALTER TABLE goods_receipts ADD COLUMN IF NOT EXISTS received_by VARCHAR(100);

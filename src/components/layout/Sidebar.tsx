@@ -1,0 +1,234 @@
+import { useState } from 'react';
+import { NavLink, useLocation } from 'react-router-dom';
+import { useAuth } from '@/context/AuthContext';
+import { 
+  LayoutDashboard, 
+  Database, 
+  ClipboardList, 
+  BarChart3, 
+  ChevronDown, 
+  ChevronRight,
+  Car,
+  Package,
+  Wallet,
+  Wrench,
+  Users,
+  UserCog,
+  FileInput,
+  ShoppingCart,
+  PackageCheck,
+  ClipboardCheck,
+  PackageMinus,
+  Settings,
+  LogOut,
+  CreditCard
+} from 'lucide-react';
+import { cn } from '@/lib/utils';
+
+const navigation = [
+  { name: 'Dashboard', href: '/', icon: LayoutDashboard, key: 'dashboard' },
+  { 
+    name: 'Master Data', 
+    icon: Database,
+    key: 'master',
+    children: [
+      { name: 'Kendaraan', href: '/master/vehicles', icon: Car, key: 'master_vehicles' },
+      { name: 'Barang/Jasa', href: '/master/goods', icon: Package, key: 'master_goods' },
+      { name: 'Anggaran', href: '/master/budget', icon: Wallet, key: 'master_budget' },
+      { name: 'Pekerjaan', href: '/master/jobs', icon: Wrench, key: 'master_jobs' },
+      { name: 'Supplier', href: '/master/suppliers', icon: Users, key: 'master_suppliers' },
+      { name: 'Mekanik', href: '/master/mechanics', icon: UserCog, key: 'master_mechanics' },
+      { name: 'Akun Perkiraan (COA)', href: '/master/coa', icon: Database, key: 'master_coa' },
+    ]
+  },
+  { 
+    name: 'Transaksi', 
+    icon: ClipboardList,
+    key: 'transactions',
+    children: [
+      { name: 'Entry Kendaraan', href: '/transactions/entry', icon: FileInput, key: 'trans_entry' },
+      { name: 'Purchase Order', href: '/transactions/po', icon: ShoppingCart, key: 'trans_po' },
+      { name: 'Retur Pembelian', href: '/transactions/po-return', icon: PackageMinus, key: 'trans_po_return' }, // New Return Menu
+      { name: 'Penerimaan Barang', href: '/transactions/receive', icon: PackageCheck, key: 'trans_receive' },
+      { name: 'Work Order', href: '/transactions/wo', icon: ClipboardCheck, key: 'trans_wo' },
+      { name: 'Barang Keluar', href: '/transactions/issue', icon: PackageMinus, key: 'trans_issue' },
+    ]
+  },
+  { 
+    name: 'Keuangan', 
+    icon: CreditCard,
+    key: 'finance',
+    children: [
+      { name: 'Pembayaran Hutang', href: '/finance/payments', icon: Wallet, key: 'finance_payments' },
+      { name: 'Kas & Bank', href: '/finance/cash-bank', icon: Wallet, key: 'finance_cash' },
+    ]
+  },
+  { name: 'Laporan', href: '/reports', icon: BarChart3, key: 'reports' },
+];
+
+export function Sidebar() {
+  const location = useLocation();
+  const { user, logout } = useAuth();
+  const [openMenus, setOpenMenus] = useState<string[]>(['Master Data', 'Transaksi', 'Keuangan']);
+
+  const toggleMenu = (name: string) => {
+    setOpenMenus(prev => 
+      prev.includes(name) 
+        ? prev.filter(item => item !== name)
+        : [...prev, name]
+    );
+  };
+
+  // Helper to check access
+  const hasAccess = (key: string) => {
+    if (!user) return false;
+    if (user.role === 'SUPER_ADMIN') return true;
+    if (user.allowed_menus.includes('*')) return true;
+    return user.allowed_menus.includes(key);
+  };
+
+  return (
+    <div className="flex h-full w-72 flex-col bg-[#0f172a] text-slate-300 shadow-2xl transition-all duration-300 ease-in-out">
+      {/* Header Logo */}
+      <div className="flex h-20 items-center px-6 border-b border-slate-800/60 bg-slate-950/30">
+        <div className="flex items-center gap-3">
+          <div className="h-9 w-9 rounded-lg bg-gradient-to-br from-blue-600 to-indigo-700 flex items-center justify-center shadow-lg shadow-blue-500/20">
+            <Car className="h-5 w-5 text-white" />
+          </div>
+          <div>
+            <h1 className="text-lg font-bold tracking-tight text-white leading-none">MOPADITLANTAS</h1>
+            <p className="text-[10px] text-slate-500 font-medium tracking-wide mt-1">OPERATIONAL SYSTEM</p>
+          </div>
+        </div>
+      </div>
+      
+      {/* Navigation */}
+      <nav className="flex-1 overflow-y-auto px-4 py-6 space-y-2 scrollbar-thin scrollbar-thumb-slate-800 scrollbar-track-transparent">
+        {navigation.map((item) => {
+          const parentAccess = hasAccess(item.key);
+          const visibleChildren = item.children?.filter(child => hasAccess(child.key)) || [];
+          
+          if (!parentAccess && visibleChildren.length === 0) return null;
+
+          return (
+          <div key={item.name} className="group">
+            {item.children ? (
+              <div className="space-y-1">
+                <button
+                  onClick={() => toggleMenu(item.name)}
+                  className={cn(
+                    "flex w-full items-center justify-between rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-200",
+                    "hover:bg-slate-800/50 hover:text-white",
+                    openMenus.includes(item.name) ? "text-white bg-slate-800/30" : "text-slate-400"
+                  )}
+                >
+                  <div className="flex items-center">
+                    <item.icon className={cn(
+                      "mr-3 h-5 w-5 transition-colors",
+                      openMenus.includes(item.name) ? "text-indigo-400" : "text-slate-500 group-hover:text-slate-300"
+                    )} />
+                    {item.name}
+                  </div>
+                  {openMenus.includes(item.name) ? (
+                    <ChevronDown className="h-4 w-4 text-slate-500" />
+                  ) : (
+                    <ChevronRight className="h-4 w-4 text-slate-600" />
+                  )}
+                </button>
+                
+                {openMenus.includes(item.name) && (
+                  <div className="ml-4 space-y-1 pl-2 border-l-2 border-slate-800 animate-in slide-in-from-left-2 duration-200">
+                    {visibleChildren.map((child) => (
+                      <NavLink
+                        key={child.name}
+                        to={child.href}
+                        className={({ isActive }) =>
+                          cn(
+                            "flex items-center rounded-md px-3 py-2 text-sm transition-all duration-200",
+                            isActive 
+                              ? "bg-indigo-600/10 text-indigo-300 font-medium" 
+                              : "text-slate-500 hover:text-slate-200 hover:bg-slate-800/30"
+                          )
+                        }
+                      >
+                        <span className={cn(
+                          "mr-3 h-1.5 w-1.5 rounded-full transition-all",
+                          location.pathname === child.href ? "bg-indigo-400 scale-125" : "bg-slate-600"
+                        )} />
+                        {child.name}
+                      </NavLink>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ) : (
+              <NavLink
+                to={item.href}
+                className={({ isActive }) =>
+                  cn(
+                    "flex items-center rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-200",
+                    isActive 
+                      ? "bg-indigo-600 text-white shadow-lg shadow-indigo-900/20" 
+                      : "text-slate-400 hover:bg-slate-800/50 hover:text-white"
+                  )
+                }
+              >
+                <item.icon className={cn(
+                  "mr-3 h-5 w-5 transition-colors",
+                  location.pathname === item.href ? "text-white" : "text-slate-500 group-hover:text-slate-300"
+                )} />
+                {item.name}
+              </NavLink>
+            )}
+          </div>
+        )})}
+
+        {/* User Management Menu for Super Admin */}
+        {user?.role === 'SUPER_ADMIN' && (
+          <div className="pt-4 mt-4 border-t border-slate-800/50">
+            <p className="px-3 text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Administrator</p>
+            <NavLink
+              to="/admin/users"
+              className={({ isActive }) =>
+                cn(
+                  "flex items-center rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-200",
+                  isActive 
+                    ? "bg-indigo-600 text-white shadow-lg shadow-indigo-900/20" 
+                    : "text-slate-400 hover:bg-slate-800/50 hover:text-white"
+                )
+              }
+            >
+              <Settings className="mr-3 h-5 w-5 text-slate-500 group-hover:text-slate-300" />
+              Manajemen User
+            </NavLink>
+          </div>
+        )}
+      </nav>
+      
+      {/* User Profile Footer */}
+      <div className="p-4 bg-slate-950/30 border-t border-slate-800/60">
+        <div className="flex items-center justify-between group">
+          <div className="flex items-center gap-3">
+            <div className="relative">
+              <div className="h-10 w-10 rounded-full bg-gradient-to-tr from-slate-700 to-slate-600 flex items-center justify-center border-2 border-slate-800 shadow-md">
+                <span className="text-sm font-bold text-white">{user?.full_name?.charAt(0) || 'U'}</span>
+              </div>
+              <span className="absolute bottom-0 right-0 h-2.5 w-2.5 rounded-full bg-emerald-500 border-2 border-slate-900"></span>
+            </div>
+            <div className="overflow-hidden">
+              <p className="text-sm font-semibold text-white truncate max-w-[120px]">{user?.full_name || 'User'}</p>
+              <p className="text-xs text-slate-500 truncate">{user?.role || 'Guest'}</p>
+            </div>
+          </div>
+          <button 
+            onClick={logout} 
+            className="p-2 rounded-md text-slate-500 hover:text-red-400 hover:bg-red-950/30 transition-colors"
+            title="Logout"
+          >
+            <LogOut className="h-5 w-5" />
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}

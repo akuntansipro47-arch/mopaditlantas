@@ -1,0 +1,285 @@
+import { useState, useEffect } from 'react';
+import { supabase } from '@/lib/supabase';
+import { Database } from '@/types/supabase';
+import { 
+  Table, TableBody, TableCell, TableHead, TableHeader, TableRow 
+} from '@/components/ui/table';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { toast } from 'sonner';
+import { formatDate } from '@/lib/utils';
+import { Printer, Search, Download, Calendar } from 'lucide-react';
+import { 
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue 
+} from "@/components/ui/select";
+import * as XLSX from 'xlsx';
+
+export default function VehicleEntryReport() {
+  const [entries, setEntries] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState('');
+  
+  // Date Filter
+  const [dateFilter, setDateFilter] = useState({
+    startDate: new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0],
+    endDate: new Date().toISOString().split('T')[0]
+  });
+
+  // Status Filter
+  const [statusFilter, setStatusFilter] = useState('ALL');
+
+  useEffect(() => {
+    fetchEntries();
+  }, [dateFilter, statusFilter]);
+
+  async function fetchEntries() {
+    setLoading(true);
+    try {
+      let query = supabase
+        .from('vehicle_entries')
+        .select(`
+          *,
+          vehicles (license_plate, brand_type),
+          vehicle_entry_jobs (
+            job_types (job_name, job_group),
+            notes
+          ),
+          work_orders (wo_number, status)
+        `)
+        .gte('entry_date', dateFilter.startDate)
+        .lte('entry_date', dateFilter.endDate)
+        .order('entry_date', { ascending: false });
+
+      // Custom Filter Logic
+      // Because "Status Entry" is not enough (Entry stays OPEN/PROCESSED even if WO is Closed)
+      // We need to filter based on JOINED Work Order status
+      
+      const { data, error } = await query;
+      if (error) throw error;
+
+      // 1. Deduplicate entries based on ID (Safety net for potential join duplicates)
+      const uniqueEntries = Array.from(new Map((data as any[] || []).map(item => [item.id, item])).values());
+
+      let finalData = uniqueEntries;
+
+      // Filter Logic:
+      // 1. OPEN (Belum WO): Entry status is OPEN AND no WO exists.
+      // 2. WO_PROCESS: WO exists AND (status is OPEN or IN_PROGRESS)
+      // 3. WO_COMPLETED: WO exists AND (status is COMPLETED or CLOSED)
+
+      if (statusFilter === 'OPEN') {
+          finalData = finalData.filter((e: any) => {
+              const hasWO = e.work_orders && e.work_orders.length > 0;
+              // Strict check: Must be OPEN and absolutely NO WO linked
+              return e.status === 'OPEN' && !hasWO;
+          });
+      } else if (statusFilter === 'WO_PROCESS') {
+          finalData = finalData.filter((e: any) => {
+              const wo = e.work_orders?.[0];
+              // If WO exists, check its status. 
+              // ALSO, include cases where Entry is PROCESSED but WO might be missing/deleted (data anomaly safeguard)
+              // OR Entry is OPEN but WO exists (which means it IS in process, despite entry status lag)
+              
+              if (wo) {
+                  return (wo.status === 'OPEN' || wo.status === 'IN_PROGRESS');
+              }
+              // Fallback: If entry is PROCESSED but no WO found, treat as Process to avoid it disappearing
+              return e.status === 'PROCESSED';
+          });
+      } else if (statusFilter === 'WO_COMPLETED') {
+          finalData = finalData.filter((e: any) => {
+              const wo = e.work_orders?.[0];
+              return wo && (wo.status === 'COMPLETED' || wo.status === 'CLOSED');
+          });
+      }
+
+      setEntries(finalData);
+    } catch (error: any) {
+      toast.error('Gagal mengambil data laporan: ' + error.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  const handleExportExcel = () => {
+    const dataToExport = filteredEntries.map((item, index) => ({
+      No: index + 1,
+      'No. Entry': item.entry_number,
+      'Tanggal': formatDate(item.entry_date),
+      'Nopol': item.vehicles?.license_plate || '-',
+      'Tipe Kendaraan': item.vehicles?.brand_type || '-',
+      'Nota Dinas': item.nota_dinas_number || '-',
+      'Daftar Pekerjaan': item.vehicle_entry_jobs?.map((j: any) => j.job_types?.job_name).join(', ') || '-',
+      'Status Entry': item.status,
+      'No. WO': item.work_orders?.[0]?.wo_number || '-',
+      'Status WO': item.work_orders?.[0]?.status || '-',
+      'Catatan': item.notes || '-'
+    }));
+
+    const ws = XLSX.utils.json_to_sheet(dataToExport);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Laporan Kendaraan Masuk");
+    XLSX.writeFile(wb, `Laporan_Kendaraan_Masuk_${dateFilter.startDate}_sd_${dateFilter.endDate}.xlsx`);
+  };
+
+  const handlePrint = () => {
+    window.print();
+  };
+
+  const filteredEntries = entries.filter(e => 
+    e.entry_number.toLowerCase().includes(search.toLowerCase()) ||
+    e.vehicles?.license_plate.toLowerCase().includes(search.toLowerCase()) ||
+    e.nota_dinas_number?.toLowerCase().includes(search.toLowerCase())
+  );
+
+  return (
+    <Card className="w-full">
+      <CardHeader>
+        <div className="flex justify-between items-center print:hidden">
+          <div>
+            <CardTitle>Laporan Penerimaan Unit Kendaraan</CardTitle>
+            <p className="text-sm text-muted-foreground mt-1">
+                Periode: {formatDate(dateFilter.startDate)} s/d {formatDate(dateFilter.endDate)}
+            </p>
+          </div>
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={handleExportExcel}>
+              <Download className="mr-2 h-4 w-4" /> Export Excel
+            </Button>
+            <Button variant="secondary" onClick={handlePrint}>
+              <Printer className="mr-2 h-4 w-4" /> Cetak
+            </Button>
+          </div>
+        </div>
+        
+        {/* Filters */}
+        <div className="flex flex-col md:flex-row gap-4 mt-4 print:hidden bg-slate-50 p-4 rounded-lg items-center">
+          <div className="flex items-center gap-2">
+            <span className="text-sm font-medium">Periode:</span>
+            <div className="flex items-center gap-2 bg-white border border-gray-300 p-1.5 rounded-md shadow-sm">
+              <Calendar className="h-4 w-4 text-gray-500 ml-2" />
+               <Input 
+                 type="date" 
+                 className="w-36 border-0 p-0 h-9 focus-visible:ring-0 cursor-pointer"
+                 value={dateFilter.startDate} 
+                 onChange={(e) => setDateFilter({...dateFilter, startDate: e.target.value})} 
+               />
+               <span className="text-slate-400 font-medium">-</span>
+               <Input 
+                 type="date" 
+                 className="w-36 border-0 p-0 h-9 focus-visible:ring-0 cursor-pointer"
+                 value={dateFilter.endDate} 
+                 onChange={(e) => setDateFilter({...dateFilter, endDate: e.target.value})} 
+               />
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+             <span className="text-sm font-medium">Status:</span>
+             <Select value={statusFilter} onValueChange={setStatusFilter}>
+                <SelectTrigger className="w-[150px] bg-white h-8">
+                    <SelectValue placeholder="Semua Status" />
+                </SelectTrigger>
+                <SelectContent>
+                    <SelectItem value="ALL">Semua Status</SelectItem>
+                    <SelectItem value="OPEN">Open (Belum WO)</SelectItem>
+                    <SelectItem value="WO_PROCESS">Sedang Proses WO</SelectItem>
+                    <SelectItem value="WO_COMPLETED">Selesai (WO Closed)</SelectItem>
+                </SelectContent>
+             </Select>
+          </div>
+
+          <div className="relative w-64">
+              <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground pointer-events-none" />
+              <Input 
+                placeholder="Cari No. Entry, Nopol, Nota Dinas..." 
+                className="pl-8" 
+                value={search} 
+                onChange={e => setSearch(e.target.value)} 
+              />
+            </div>
+        </div>
+      </CardHeader>
+      <CardContent>
+        <div className="rounded-md border overflow-x-auto">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead className="w-[50px]">No</TableHead>
+                <TableHead>No. Entry</TableHead>
+                <TableHead>Tanggal</TableHead>
+                <TableHead>Kendaraan</TableHead>
+                <TableHead>Nota Dinas</TableHead>
+                <TableHead className="w-[30%]">Pekerjaan / Keluhan</TableHead>
+                <TableHead>Status</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {filteredEntries.length === 0 ? (
+                <TableRow><TableCell colSpan={7} className="text-center h-24">Tidak ada data.</TableCell></TableRow>
+              ) : (
+                filteredEntries.map((item, index) => (
+                  <TableRow key={item.id} className="align-top">
+                    <TableCell>{index + 1}</TableCell>
+                    <TableCell className="font-medium">
+                        {item.entry_number}
+                        {item.work_orders?.[0] && (
+                            <div className="text-[10px] text-blue-600 mt-1">WO: {item.work_orders[0].wo_number}</div>
+                        )}
+                    </TableCell>
+                    <TableCell>{formatDate(item.entry_date)}</TableCell>
+                    <TableCell>
+                      <div className="flex flex-col">
+                        <span className="font-bold">{item.vehicles?.license_plate}</span>
+                        <span className="text-xs text-muted-foreground">{item.vehicles?.brand_type}</span>
+                      </div>
+                    </TableCell>
+                    <TableCell>{item.nota_dinas_number || '-'}</TableCell>
+                    <TableCell>
+                        <div className="text-xs space-y-1">
+                            {item.vehicle_entry_jobs?.map((j: any, idx: number) => (
+                                <div key={idx} className="flex gap-1">
+                                    <span className="font-semibold">•</span>
+                                    <span>{j.job_types?.job_name}</span>
+                                </div>
+                            ))}
+                            {item.notes && (
+                                <div className="italic text-slate-500 mt-1">Note: {item.notes}</div>
+                            )}
+                        </div>
+                    </TableCell>
+                    <TableCell>
+                        <div className="flex flex-col gap-1">
+                            {/* Entry Status */}
+                            <span className={`px-2 py-1 rounded-full text-[10px] font-bold border w-fit ${
+                                item.status === 'OPEN' ? 'bg-orange-50 text-orange-700 border-orange-200' :
+                                'bg-blue-50 text-blue-700 border-blue-200'
+                            }`}>
+                                Entry: {item.status}
+                            </span>
+                            
+                            {/* WO Status */}
+                            {item.work_orders?.[0] ? (
+                                <span className={`px-2 py-1 rounded-full text-[10px] font-bold border w-fit ${
+                                    item.work_orders[0].status === 'COMPLETED' || item.work_orders[0].status === 'CLOSED'
+                                    ? 'bg-green-50 text-green-700 border-green-200'
+                                    : 'bg-purple-50 text-purple-700 border-purple-200'
+                                }`}>
+                                    WO: {item.work_orders[0].status}
+                                </span>
+                            ) : (
+                                <span className="text-[10px] text-gray-400 italic">Belum ada WO</span>
+                            )}
+                        </div>
+                    </TableCell>
+                  </TableRow>
+                ))
+              )}
+            </TableBody>
+          </Table>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}

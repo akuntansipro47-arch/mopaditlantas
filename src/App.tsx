@@ -1,0 +1,84 @@
+import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
+import { DashboardLayout } from "@/components/layout/DashboardLayout";
+import { AuthProvider } from "@/context/AuthContext";
+import ProtectedRoute from "@/components/layout/ProtectedRoute";
+import Login from "@/pages/auth/Login";
+import Dashboard from "@/pages/Dashboard";
+import Vehicles from "@/pages/master/Vehicles";
+import Goods from "@/pages/master/Goods";
+import Budget from "@/pages/master/Budget";
+import Jobs from "@/pages/master/Jobs";
+import Suppliers from "@/pages/master/Suppliers";
+import Mechanics from "@/pages/master/Mechanics";
+import ChartOfAccounts from "@/pages/master/ChartOfAccounts";
+import VehicleEntry from "@/pages/transactions/VehicleEntry";
+import PurchaseOrder from "@/pages/transactions/PurchaseOrderV2";
+import PurchaseOrderReturn from "@/pages/transactions/PurchaseOrderReturn"; // New Import
+import GoodsReceipt from "@/pages/transactions/GoodsReceipt";
+import WorkOrder from "@/pages/transactions/WorkOrderV2";
+import GoodsIssue from "@/pages/transactions/GoodsIssue";
+import Reports from "@/pages/Reports";
+import PrintPO from "@/pages/print/PrintPO";
+import PrintSuratJalan from "@/pages/print/PrintSuratJalan";
+import PrintVehicleEntry from "@/pages/print/PrintVehicleEntry";
+import PrintGoodsIssue from "@/pages/print/PrintGoodsIssue";
+import PrintInvoice from "@/pages/print/PrintInvoice";
+import UserManagement from "@/pages/admin/UserManagement";
+import PurchasePayment from "@/pages/finance/PurchasePayment";
+import CashBank from "@/pages/finance/CashBank";
+import ReloadPrompt from "@/components/ReloadPrompt";
+import DebugDashboard from "@/pages/DebugDashboard";
+
+export default function App() {
+  return (
+    <AuthProvider>
+      <Router>
+        <ReloadPrompt />
+        <Routes>
+          <Route path="/login" element={<Login />} />
+          
+          <Route element={<ProtectedRoute />}>
+            {/* Dedicated Print Routes (No Layout) */}
+            <Route path="/print/po/:id" element={<PrintPO />} />
+            <Route path="/print/surat-jalan/:id" element={<PrintSuratJalan />} />
+            <Route path="/print/entry/:id" element={<PrintVehicleEntry />} />
+            <Route path="/print/issue/:id" element={<PrintGoodsIssue />} />
+            <Route path="/print/invoice/:id" element={<PrintInvoice />} />
+
+            <Route element={<DashboardLayout />}>
+              <Route path="/" element={<Dashboard />} />
+              
+              {/* Master Data */}
+              <Route path="/master/vehicles" element={<Vehicles />} />
+              <Route path="/master/goods" element={<Goods />} />
+              <Route path="/master/budget" element={<Budget />} />
+              <Route path="/master/jobs" element={<Jobs />} />
+              <Route path="/master/suppliers" element={<Suppliers />} />
+              <Route path="/master/mechanics" element={<Mechanics />} />
+              <Route path="/master/coa" element={<ChartOfAccounts />} />
+              
+              {/* Transactions */}
+              <Route path="/transactions/entry" element={<VehicleEntry />} />
+              <Route path="/transactions/po" element={<PurchaseOrder />} />
+              <Route path="/transactions/po-return" element={<PurchaseOrderReturn />} /> {/* New Route */}
+              <Route path="/transactions/receive" element={<GoodsReceipt />} />
+              <Route path="/transactions/wo" element={<WorkOrder />} />
+              <Route path="/transactions/issue" element={<GoodsIssue />} />
+              
+              {/* Finance */}
+              <Route path="/finance/payments" element={<PurchasePayment />} />
+              <Route path="/finance/cash-bank" element={<CashBank />} />
+
+              {/* Reports */}
+              <Route path="/reports" element={<Reports />} />
+              
+              {/* Admin */}
+              <Route path="/admin/users" element={<UserManagement />} />
+              <Route path="/debug" element={<DebugDashboard />} />
+            </Route>
+          </Route>
+        </Routes>
+      </Router>
+    </AuthProvider>
+  );
+}
