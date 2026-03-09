@@ -184,24 +184,28 @@ export function Sidebar() {
           </div>
         )})}
 
-        {/* User Management Menu for Super Admin */}
-        {user?.role === 'SUPER_ADMIN' && (
+        {/* User Management Menu for Super Admin & Admin */}
+        {(user?.role === 'SUPER_ADMIN' || user?.role === 'ADMIN') && (
           <div className="pt-4 mt-4 border-t border-slate-800/50">
             <p className="px-3 text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Administrator</p>
-            <NavLink
-              to="/admin/users"
-              className={({ isActive }) =>
-                cn(
-                  "flex items-center rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-200",
-                  isActive 
-                    ? "bg-indigo-600 text-white shadow-lg shadow-indigo-900/20" 
-                    : "text-slate-400 hover:bg-slate-800/50 hover:text-white"
-                )
-              }
-            >
-              <Settings className="mr-3 h-5 w-5 text-slate-500 group-hover:text-slate-300" />
-              Manajemen User
-            </NavLink>
+            
+            {user?.role === 'SUPER_ADMIN' && (
+              <NavLink
+                to="/admin/users"
+                className={({ isActive }) =>
+                  cn(
+                    "flex items-center rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-200",
+                    isActive 
+                      ? "bg-indigo-600 text-white shadow-lg shadow-indigo-900/20" 
+                      : "text-slate-400 hover:bg-slate-800/50 hover:text-white"
+                  )
+                }
+              >
+                <Settings className="mr-3 h-5 w-5 text-slate-500 group-hover:text-slate-300" />
+                Manajemen User
+              </NavLink>
+            )}
+
             <NavLink
               to="/admin/agency"
               className={({ isActive }) =>
