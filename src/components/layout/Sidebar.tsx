@@ -217,7 +217,10 @@ export function Sidebar() {
             </div>
             <div className="overflow-hidden">
               <p className="text-sm font-semibold text-white truncate max-w-[120px]">{user?.full_name || 'User'}</p>
-              <p className="text-xs text-slate-500 truncate">{user?.role || 'Guest'}</p>
+              <div className="flex items-center gap-1 text-xs text-slate-500 truncate">
+                <span>{user?.role || 'Guest'}</span>
+                <span className="text-[10px] bg-slate-800 px-1 rounded">v3.0.5</span>
+              </div>
             </div>
           </div>
           <button 
