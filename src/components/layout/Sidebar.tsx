@@ -69,7 +69,7 @@ const navigation = [
 export function Sidebar() {
   const location = useLocation();
   const { user, logout } = useAuth();
-  const [openMenus, setOpenMenus] = useState<string[]>(['Master Data', 'Transaksi', 'Keuangan']);
+  const [openMenus, setOpenMenus] = useState<string[]>(['Data Base', 'Transaksi', 'Keuangan']);
 
   const toggleMenu = (name: string) => {
     setOpenMenus(prev => 

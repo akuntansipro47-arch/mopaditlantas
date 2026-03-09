@@ -89,6 +89,7 @@ export interface Database {
           current_stock: number
           created_at: string
           selling_price: number
+          group_sparepart: 'R4' | 'R2' | 'R2_KECIL' | null
         }
         Insert: {
           id?: string
@@ -99,6 +100,7 @@ export interface Database {
           current_stock?: number
           created_at?: string
           selling_price?: number
+          group_sparepart?: 'R4' | 'R2' | 'R2_KECIL' | null
         }
         Update: {
           id?: string
@@ -109,6 +111,7 @@ export interface Database {
           current_stock?: number
           created_at?: string
           selling_price?: number
+          group_sparepart?: 'R4' | 'R2' | 'R2_KECIL' | null
         }
       }
       suppliers: {
@@ -144,6 +147,9 @@ export interface Database {
           specialization: 'R4' | 'R2' | 'R2_KECIL' | 'R4_R2' | 'ALL'
           phone_number: string | null
           created_at: string
+          nik: string | null
+          address: string | null
+          category: 'R4' | 'R2' | 'R2_KECIL' | 'R4_R2' | 'ALL' | null
         }
         Insert: {
           id?: string
@@ -151,6 +157,9 @@ export interface Database {
           specialization: 'R4' | 'R2' | 'R2_KECIL' | 'R4_R2' | 'ALL'
           phone_number?: string | null
           created_at?: string
+          nik?: string | null
+          address?: string | null
+          category?: 'R4' | 'R2' | 'R2_KECIL' | 'R4_R2' | 'ALL' | null
         }
         Update: {
           id?: string
@@ -158,6 +167,9 @@ export interface Database {
           specialization?: 'R4' | 'R2' | 'R2_KECIL' | 'R4_R2' | 'ALL'
           phone_number?: string | null
           created_at?: string
+          nik?: string | null
+          address?: string | null
+          category?: 'R4' | 'R2' | 'R2_KECIL' | 'R4_R2' | 'ALL' | null
         }
       }
       job_types: {
@@ -168,6 +180,8 @@ export interface Database {
           created_at: string
           selling_price: number
           hpp: number
+          job_code: string | null
+          vehicle_type: 'R4' | 'R2' | 'R2_KECIL' | null
         }
         Insert: {
           id?: string
@@ -176,6 +190,8 @@ export interface Database {
           created_at?: string
           selling_price?: number
           hpp?: number
+          job_code?: string | null
+          vehicle_type?: 'R4' | 'R2' | 'R2_KECIL' | null
         }
         Update: {
           id?: string
@@ -184,6 +200,8 @@ export interface Database {
           created_at?: string
           selling_price?: number
           hpp?: number
+          job_code?: string | null
+          vehicle_type?: 'R4' | 'R2' | 'R2_KECIL' | null
         }
       }
       budget_periods: {
@@ -265,6 +283,7 @@ export interface Database {
           job_type_id: string | null
           notes: string | null
           created_at: string
+          estimated_price: number | null
         }
         Insert: {
           id?: string
@@ -272,6 +291,7 @@ export interface Database {
           job_type_id?: string | null
           notes?: string | null
           created_at?: string
+          estimated_price?: number | null
         }
         Update: {
           id?: string
@@ -279,6 +299,7 @@ export interface Database {
           job_type_id?: string | null
           notes?: string | null
           created_at?: string
+          estimated_price?: number | null
         }
       }
       vehicle_entry_spareparts: {
@@ -320,6 +341,7 @@ export interface Database {
           total_amount: number
           created_at: string
           po_date: string | null
+          po_type: 'PROJECT' | 'GENERAL' | null
         }
         Insert: {
           id?: string
@@ -330,6 +352,7 @@ export interface Database {
           total_amount?: number
           created_at?: string
           po_date?: string | null
+          po_type?: 'PROJECT' | 'GENERAL' | null
         }
         Update: {
           id?: string
@@ -340,6 +363,7 @@ export interface Database {
           total_amount?: number
           created_at?: string
           po_date?: string | null
+          po_type?: 'PROJECT' | 'GENERAL' | null
         }
       }
       purchase_order_items: {
@@ -540,6 +564,44 @@ export interface Database {
           total_price?: number
           job_group?: string | null
           created_at?: string
+        }
+      }
+      company_profile: {
+        Row: {
+          id: string
+          name: string
+          address: string | null
+          npwp: string | null
+          is_pkp: boolean | null
+          phone: string | null
+          email: string | null
+          social_media: Json | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          name: string
+          address?: string | null
+          npwp?: string | null
+          is_pkp?: boolean | null
+          phone?: string | null
+          email?: string | null
+          social_media?: Json | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          name?: string
+          address?: string | null
+          npwp?: string | null
+          is_pkp?: boolean | null
+          phone?: string | null
+          email?: string | null
+          social_media?: Json | null
+          created_at?: string
+          updated_at?: string
         }
       }
     }

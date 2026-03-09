@@ -101,7 +101,7 @@ export default function Suppliers() {
       }
       setIsDialogOpen(false);
       resetForm();
-      fetchSuppliers();
+      await fetchSuppliers();
     } catch (error: any) {
       toast.error('Gagal menyimpan: ' + error.message);
     } finally {

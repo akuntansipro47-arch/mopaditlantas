@@ -44,7 +44,7 @@ export default function Vehicles() {
 
   // Form State
   const [formData, setFormData] = useState({
-    vehicle_type: 'R4',
+    vehicle_type: '',
     license_plate: '',
     brand_type: '',
     chassis_number: '',
