@@ -21,7 +21,8 @@ import {
   PackageMinus,
   Settings,
   LogOut,
-  CreditCard
+  CreditCard,
+  Building2
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -200,6 +201,20 @@ export function Sidebar() {
             >
               <Settings className="mr-3 h-5 w-5 text-slate-500 group-hover:text-slate-300" />
               Manajemen User
+            </NavLink>
+            <NavLink
+              to="/admin/agency"
+              className={({ isActive }) =>
+                cn(
+                  "flex items-center rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-200",
+                  isActive 
+                    ? "bg-indigo-600 text-white shadow-lg shadow-indigo-900/20" 
+                    : "text-slate-400 hover:bg-slate-800/50 hover:text-white"
+                )
+              }
+            >
+              <Building2 className="mr-3 h-5 w-5 text-slate-500 group-hover:text-slate-300" />
+              Profil Instansi
             </NavLink>
           </div>
         )}

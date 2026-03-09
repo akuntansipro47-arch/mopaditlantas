@@ -24,6 +24,7 @@ import PrintVehicleEntry from "@/pages/print/PrintVehicleEntry";
 import PrintGoodsIssue from "@/pages/print/PrintGoodsIssue";
 import PrintInvoice from "@/pages/print/PrintInvoice";
 import UserManagement from "@/pages/admin/UserManagement";
+import AgencyProfile from "@/pages/admin/AgencyProfile";
 import PurchasePayment from "@/pages/finance/PurchasePayment";
 import CashBank from "@/pages/finance/CashBank";
 import ReloadPrompt from "@/components/ReloadPrompt";
@@ -74,6 +75,7 @@ export default function App() {
               
               {/* Admin */}
               <Route path="/admin/users" element={<UserManagement />} />
+              <Route path="/admin/agency" element={<AgencyProfile />} />
               <Route path="/debug" element={<DebugDashboard />} />
             </Route>
           </Route>

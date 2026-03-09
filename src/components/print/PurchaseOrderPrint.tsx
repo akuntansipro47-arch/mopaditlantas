@@ -11,6 +11,7 @@ export default function PurchaseOrderPrint({ id }: POPrintProps) {
   const [po, setPo] = useState<any>(null);
   const [items, setItems] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [agency, setAgency] = useState<any>(null);
 
   useEffect(() => {
     fetchData();
@@ -18,6 +19,10 @@ export default function PurchaseOrderPrint({ id }: POPrintProps) {
 
   async function fetchData() {
     try {
+      // Fetch Agency Profile
+      const { data: agencyData } = await supabase.from('agency_profile').select('*').single();
+      setAgency(agencyData);
+
       const { data: poData, error: poError } = await supabase
         .from('purchase_orders')
         .select(`
@@ -71,13 +76,18 @@ export default function PurchaseOrderPrint({ id }: POPrintProps) {
       {/* Header */}
       <div className="border-b-2 border-black pb-1 mb-2">
         <div className="flex justify-between items-start">
-          <div>
-            <h1 className="text-lg font-bold uppercase tracking-wider">PURCHASE ORDER</h1>
-            <h2 className="text-sm font-bold mt-0.5">PT. RUMAH KARYA AUTOMOTIF</h2>
-            <p className="text-gray-600 w-64 text-[9px] mt-0.5 leading-tight">
-              Jl. Kolonel Masturi No. 161-163, Kota Cimahi<br />
-              Telp: 081222854088 | Email: rumahkaryaautomotif@gmail.com
-            </p>
+          <div className="flex items-center gap-3">
+            {agency?.logo_url && (
+              <img src={agency.logo_url} alt="Logo" className="h-12 w-auto object-contain" />
+            )}
+            <div>
+              <h1 className="text-lg font-bold uppercase tracking-wider">{agency?.name || 'INSTANSI BELUM DISETTING'}</h1>
+              <p className="text-sm font-bold mt-0.5">PURCHASE ORDER</p>
+              <p className="text-gray-600 w-64 text-[9px] mt-0.5 leading-tight">
+                {agency?.address}<br />
+                {agency?.phone && `Telp: ${agency.phone}`} {agency?.email && `| Email: ${agency.email}`}
+              </p>
+            </div>
           </div>
           <div className="text-right">
             <div className="mb-0.5">

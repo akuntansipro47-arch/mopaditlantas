@@ -10,6 +10,7 @@ interface VehicleEntryPrintProps {
 export default function VehicleEntryPrint({ id }: VehicleEntryPrintProps) {
   const [entry, setEntry] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [agency, setAgency] = useState<any>(null);
 
   useEffect(() => {
     fetchData();
@@ -17,6 +18,10 @@ export default function VehicleEntryPrint({ id }: VehicleEntryPrintProps) {
 
   async function fetchData() {
     try {
+      // Fetch Agency Profile
+      const { data: agencyData } = await supabase.from('agency_profile').select('*').single();
+      setAgency(agencyData);
+
       const { data, error } = await supabase
         .from('vehicle_entries')
         .select(`
@@ -68,13 +73,15 @@ export default function VehicleEntryPrint({ id }: VehicleEntryPrintProps) {
       <div className="border-b border-gray-800 pb-4 mb-6">
         <div className="flex justify-between items-start">
           <div className="flex items-center gap-4">
-            {/* Logo Placeholder if needed */}
+            {agency?.logo_url && (
+              <img src={agency.logo_url} alt="Logo" className="h-16 w-auto object-contain" />
+            )}
             <div>
-              <h1 className="text-xl font-bold uppercase tracking-widest text-slate-800">ESTIMASI AWAL</h1>
-              <h2 className="text-sm font-bold text-slate-600 mt-1">PT. RUMAH KARYA AUTOMOTIF</h2>
+              <h1 className="text-xl font-bold uppercase tracking-widest text-slate-800">{agency?.name || 'INSTANSI BELUM DISETTING'}</h1>
+              <h2 className="text-sm font-bold text-slate-600 mt-1">ESTIMASI AWAL KENDARAAN MASUK</h2>
               <p className="text-slate-500 text-[9px] mt-1 leading-tight">
-                Jl. Kolonel Masturi No. 161-163, Kota Cimahi<br />
-                Telp: 081222854088 | Email: rumahkaryaautomotif@gmail.com
+                {agency?.address}<br />
+                {agency?.phone && `Telp: ${agency.phone}`} {agency?.email && `| Email: ${agency.email}`}
               </p>
             </div>
           </div>

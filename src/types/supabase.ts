@@ -566,6 +566,38 @@ export interface Database {
           created_at?: string
         }
       }
+      agency_profile: {
+        Row: {
+          id: string
+          name: string
+          address: string | null
+          phone: string | null
+          email: string | null
+          logo_url: string | null
+          website: string | null
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          name: string
+          address?: string | null
+          phone?: string | null
+          email?: string | null
+          logo_url?: string | null
+          website?: string | null
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          name?: string
+          address?: string | null
+          phone?: string | null
+          email?: string | null
+          logo_url?: string | null
+          website?: string | null
+          updated_at?: string
+        }
+      }
       company_profile: {
         Row: {
           id: string
