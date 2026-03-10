@@ -82,11 +82,11 @@ export default function AgencyProfilePage() {
       // We'll try the lowercase version first.
       const { data, error } = await supabase.rpc('update_agency_profile_secure', {
         p_name: formData.name,
-        p_address: formData.address,
-        p_phone: formData.phone,
-        p_email: formData.email,
-        p_website: formData.website,
-        p_logo_url: formData.logo_url
+        p_address: formData.address || null,
+        p_phone: formData.phone || null,
+        p_email: formData.email || null,
+        p_website: formData.website || null,
+        p_logo_url: formData.logo_url || null
       });
 
       if (error) throw error;
