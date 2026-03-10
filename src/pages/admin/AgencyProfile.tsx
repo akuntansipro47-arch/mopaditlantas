@@ -78,6 +78,8 @@ export default function AgencyProfilePage() {
       };
 
       // Use RPC function to bypass RLS and ensure single row update
+      // Note: In Supabase, function names are case-sensitive if created with quotes, or lowercase by default.
+      // We'll try the lowercase version first.
       const { data, error } = await supabase.rpc('update_agency_profile_secure', {
         p_name: formData.name,
         p_address: formData.address,
