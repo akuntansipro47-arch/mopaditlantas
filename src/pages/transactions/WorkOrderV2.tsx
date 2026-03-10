@@ -6,7 +6,8 @@ import {
 } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Plus, Search, Eye, Trash2, ClipboardCheck, Play, CheckCircle, Printer, XCircle, RefreshCw, Check, X, Camera, Upload, Image as ImageIcon, Pencil, Wrench } from 'lucide-react';
+import { Plus, Search, Eye, Trash2, ClipboardCheck, Play, CheckCircle, Printer, XCircle, RefreshCw, Check, X, Camera, Upload, Image as ImageIcon, Pencil, Wrench, Info } from 'lucide-react';
+import { Checkbox } from "@/components/ui/checkbox";
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { toast } from 'sonner';
 import {
@@ -35,17 +36,18 @@ type WOWithDetails = WO & {
 };
 
 type WOBillingItem = {
-  id?: string;
-  item_type: 'JOB' | 'PART';
-  job_type_id: string | null;
-  goods_id: string | null;
-  item_name: string;
-  qty: number;
-  unit_price: number;
-  total_price: number;
-  job_group: 'PERBAIKAN' | 'SERVICE_RINGAN' | string;
-  source?: 'GOODS_ISSUE' | 'WO_INTERFACE'; // Add source tracking
-};
+    id?: string;
+    item_type: 'JOB' | 'PART';
+    job_type_id: string | null;
+    goods_id: string | null;
+    item_name: string;
+    qty: number;
+    unit_price: number;
+    total_price: number;
+    job_group: 'PERBAIKAN' | 'SERVICE_RINGAN' | string;
+    source?: 'GOODS_ISSUE' | 'WO_INTERFACE';
+    is_info_only?: boolean; // New flag for info-only stock
+  };
 
 export default function WorkOrderV2() {
   const { user } = useAuth();
@@ -455,7 +457,8 @@ export default function WorkOrderV2() {
           unit_price: b.unit_price,
           total_price: b.total_price,
           job_group: b.job_group,
-          source: 'WO_INTERFACE' // Default
+          source: 'WO_INTERFACE', // Default
+          is_info_only: b.is_info_only || false
         }));
 
         // Remove old Perbaikan parts (source: GOODS_ISSUE) from saved billing to avoid stale data
@@ -486,7 +489,8 @@ export default function WorkOrderV2() {
                 qty: 1,
                 unit_price: j.job_types.selling_price || 0,
                 total_price: j.job_types.selling_price || 0,
-                source: 'WO_INTERFACE'
+                source: 'WO_INTERFACE',
+                is_info_only: false
                 });
             }
             });
@@ -519,7 +523,8 @@ export default function WorkOrderV2() {
                         qty: item.quantity,
                         unit_price: item.goods.selling_price || 0,
                         total_price: (item.goods.selling_price || 0) * item.quantity,
-                        source: 'GOODS_ISSUE' // Flag as from Goods Issue
+                        source: 'GOODS_ISSUE', // Flag as from Goods Issue
+                        is_info_only: item.is_info_only || false
                     });
                 }
               }
@@ -589,7 +594,8 @@ export default function WorkOrderV2() {
                 qty: item.qty,
                 unit_price: item.unit_price,
                 total_price: item.total_price,
-                job_group: item.job_group
+                job_group: item.job_group,
+                is_info_only: item.is_info_only
             })));
 
         if (billingError) throw billingError;
@@ -1301,8 +1307,9 @@ export default function WorkOrderV2() {
                     <TableHeader>
                         <TableRow>
                             <TableHead className="w-[10%]">Group</TableHead>
-                            <TableHead className="w-[25%]">Daftar Pengerjaan</TableHead>
-                            <TableHead className="w-[25%]">Sparepart</TableHead>
+                            <TableHead className="w-[20%]">Daftar Pengerjaan</TableHead>
+                            <TableHead className="w-[20%]">Sparepart</TableHead>
+                            <TableHead className="w-[8%] text-center">Info Only</TableHead>
                             <TableHead className="w-[15%]">Harga Pagu</TableHead>
                             <TableHead className="w-[8%]">Qty</TableHead>
                             <TableHead className="w-[17%] text-right">Nominal</TableHead>
@@ -1310,7 +1317,7 @@ export default function WorkOrderV2() {
                     </TableHeader>
                     <TableBody>
                         {billingItems.map((item, index) => (
-                            <TableRow key={index}>
+                            <TableRow key={index} className={item.is_info_only ? 'bg-yellow-50 hover:bg-yellow-100' : ''}>
                                 <TableCell>
                                     <Badge variant="outline" className={isServiceRingan(item.job_group) ? 'bg-blue-50' : 'bg-orange-50'}>
                                         {item.job_group || (isServiceRingan(item.job_group) ? 'Service Ringan' : 'Perbaikan')}
@@ -1350,6 +1357,17 @@ export default function WorkOrderV2() {
                                         <span className="text-xs text-gray-500 italic">
                                             {item.item_type === 'PART' ? item.item_name.replace('Penggantian ', '') : '(Tidak ada part)'}
                                         </span>
+                                    )}
+                                </TableCell>
+                                <TableCell className="text-center">
+                                    {(item.item_type === 'PART' || item.goods_id) && (
+                                        <div className="flex justify-center items-center h-full">
+                                            <Checkbox 
+                                                checked={item.is_info_only} 
+                                                onCheckedChange={(checked) => handleBillingItemChange(index, 'is_info_only', checked)}
+                                                title="Info Only (Tidak Potong Stok)"
+                                            />
+                                        </div>
                                     )}
                                 </TableCell>
                                 <TableCell>

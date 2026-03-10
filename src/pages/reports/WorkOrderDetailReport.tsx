@@ -68,7 +68,8 @@ export default function WorkOrderDetailReport() {
             qty,
             unit_price,
             total_price,
-            job_group
+            job_group,
+            is_info_only
           )
         `)
         .order('work_date', { ascending: false });
@@ -168,6 +169,7 @@ export default function WorkOrderDetailReport() {
                     'Mekanik': wo.mechanics?.name || '-',
                     'Item': bill.item_name,
                     'Tipe Item': bill.item_type,
+                    'Info Only': bill.is_info_only ? 'YA' : 'TIDAK',
                     'Qty': bill.qty,
                     'Harga Satuan': bill.unit_price,
                     'Total Harga': bill.total_price
@@ -296,7 +298,7 @@ export default function WorkOrderDetailReport() {
                                     <>
                                     {billings.length > 0 ? (
                                         billings.map((bill: any, idx: number) => (
-                                            <TableRow key={`${wo.id}-${idx}`} className="hover:bg-slate-50">
+                                            <TableRow key={`${wo.id}-${idx}`} className={`hover:bg-slate-50 ${bill.is_info_only ? 'bg-yellow-50' : ''}`}>
                                                 {/* Parent Columns - Render only on first row */}
                                                 {idx === 0 && (
                                                     <>
@@ -326,6 +328,9 @@ export default function WorkOrderDetailReport() {
                                                             {bill.item_type}
                                                         </span>
                                                         <span>{bill.item_name}</span>
+                                                        {bill.is_info_only && (
+                                                            <span className="ml-2 text-[10px] bg-yellow-200 text-yellow-800 px-1 rounded font-semibold">INFO ONLY</span>
+                                                        )}
                                                     </div>
                                                 </TableCell>
                                                 <TableCell className="text-center py-2">{bill.qty}</TableCell>
