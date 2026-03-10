@@ -77,47 +77,34 @@ export default function AgencyProfilePage() {
         updated_at: new Date().toISOString()
       };
 
-      if (profile) {
-        // Update
-        const { error, data } = await supabase
-          .from('agency_profile')
-          .update(payload)
-          .eq('id', profile.id)
-          .select(); // Returns array
-          
-        if (error) throw error;
-        
-        if (data && data.length > 0) {
-            const updatedProfile = data[0];
-            setProfile(updatedProfile); // Update local state immediately
-            setFormData({
-                name: updatedProfile.name || '',
-                address: updatedProfile.address || '',
-                phone: updatedProfile.phone || '',
-                email: updatedProfile.email || '',
-                website: updatedProfile.website || '',
-                logo_url: updatedProfile.logo_url || ''
-            });
-        }
-        
-        toast.success('Profil Instansi diperbarui');
-      } else {
-        // Insert
-        const { error, data } = await supabase
-          .from('agency_profile')
-          .insert([payload])
-          .select(); // Returns array
+      // Use RPC function to bypass RLS and ensure single row update
+      const { data, error } = await supabase.rpc('update_agency_profile_secure', {
+        p_name: formData.name,
+        p_address: formData.address,
+        p_phone: formData.phone,
+        p_email: formData.email,
+        p_website: formData.website,
+        p_logo_url: formData.logo_url
+      });
 
-        if (error) throw error;
-        
-        if (data && data.length > 0) {
-            setProfile(data[0]);
-        }
-        
-        toast.success('Profil Instansi dibuat');
+      if (error) throw error;
+      
+      // Data returned from RPC is already the single object
+      if (data) {
+        // RPC returns JSONB, cast it to AgencyProfile-like object
+        const updatedProfile = data as unknown as AgencyProfile;
+        setProfile(updatedProfile);
+        setFormData({
+            name: updatedProfile.name || '',
+            address: updatedProfile.address || '',
+            phone: updatedProfile.phone || '',
+            email: updatedProfile.email || '',
+            website: updatedProfile.website || '',
+            logo_url: updatedProfile.logo_url || ''
+        });
       }
       
-      // fetchProfile(); // Remove fetch to avoid race condition or stale data
+      toast.success('Profil Instansi diperbarui');
       setIsEditing(false);
     } catch (error: any) {
       toast.error('Gagal menyimpan: ' + error.message);
