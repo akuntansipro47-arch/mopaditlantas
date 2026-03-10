@@ -48,11 +48,11 @@ const navigation = [
     key: 'transactions',
     children: [
       { name: 'Entry Kendaraan', href: '/transactions/entry', icon: FileInput, key: 'trans_entry' },
-      { name: 'Purchase Order', href: '/transactions/po', icon: ShoppingCart, key: 'trans_po' },
-      { name: 'Retur Pembelian', href: '/transactions/po-return', icon: PackageMinus, key: 'trans_po_return' }, // New Return Menu
-      { name: 'Penerimaan Barang', href: '/transactions/receive', icon: PackageCheck, key: 'trans_receive' },
       { name: 'Work Order', href: '/transactions/wo', icon: ClipboardCheck, key: 'trans_wo' },
+      { name: 'Purchase Order', href: '/transactions/po', icon: ShoppingCart, key: 'trans_po' },
+      { name: 'Penerimaan Barang', href: '/transactions/receive', icon: PackageCheck, key: 'trans_receive' },
       { name: 'Barang Keluar', href: '/transactions/issue', icon: PackageMinus, key: 'trans_issue' },
+      { name: 'Retur Pembelian', href: '/transactions/po-return', icon: PackageMinus, key: 'trans_po_return' }, // New Return Menu
     ]
   },
   { 
