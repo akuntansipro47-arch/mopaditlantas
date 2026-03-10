@@ -33,20 +33,21 @@ export default function AgencyProfilePage() {
       const { data, error } = await supabase
         .from('agency_profile')
         .select('*')
-        .limit(1)
-        .single();
+        .order('updated_at', { ascending: false }) // Always get the latest updated one
+        .limit(1);
 
-      if (error && error.code !== 'PGRST116') throw error; // PGRST116 is no rows found
+      if (error) throw error;
 
-      if (data) {
-        setProfile(data);
+      if (data && data.length > 0) {
+        const latestProfile = data[0];
+        setProfile(latestProfile);
         setFormData({
-          name: data.name || '',
-          address: data.address || '',
-          phone: data.phone || '',
-          email: data.email || '',
-          website: data.website || '',
-          logo_url: data.logo_url || ''
+          name: latestProfile.name || '',
+          address: latestProfile.address || '',
+          phone: latestProfile.phone || '',
+          email: latestProfile.email || '',
+          website: latestProfile.website || '',
+          logo_url: latestProfile.logo_url || ''
         });
       }
     } catch (error: any) {
