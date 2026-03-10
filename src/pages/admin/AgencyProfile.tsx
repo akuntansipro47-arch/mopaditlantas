@@ -149,7 +149,7 @@ export default function AgencyProfilePage() {
         <div>
           <h2 className="text-3xl font-bold tracking-tight">Profil Instansi (Kop Surat)</h2>
           <p className="text-muted-foreground">
-            Atur data instansi yang akan ditampilkan pada Kop Surat di semua laporan cetak.
+            Atur data instansi yang akan ditampilkan pada Kop Surat di semua laporan cetak. <span className="text-xs text-gray-300 ml-2">(v3.0.6)</span>
           </p>
         </div>
         {!isEditing && (
