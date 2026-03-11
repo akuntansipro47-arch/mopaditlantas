@@ -102,7 +102,7 @@ export default function ItemHistoryReport() {
             const { data: incoming, error: inError } = await supabase
                 .from('goods_receipt_items')
                 .select(`
-                    quantity,
+                    quantity: quantity_received,
                     created_at,
                     goods_receipts (
                         receipt_date,
@@ -199,7 +199,7 @@ export default function ItemHistoryReport() {
              const { data: allIncoming } = await supabase
                 .from('goods_receipt_items')
                 .select(`
-                    quantity,
+                    quantity: quantity_received,
                     goods_receipts (receipt_date)
                 `)
                 .eq('goods_id', selectedGood.id);
