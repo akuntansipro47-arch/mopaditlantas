@@ -18,6 +18,7 @@ import GoodsReceipt from "@/pages/transactions/GoodsReceipt";
 import WorkOrder from "@/pages/transactions/WorkOrderV2";
 import GoodsIssue from "@/pages/transactions/GoodsIssue";
 import Reports from "@/pages/Reports";
+import ItemHistoryReport from "@/pages/reports/ItemHistoryReport"; // New Import
 import PrintPO from "@/pages/print/PrintPO";
 import PrintSuratJalan from "@/pages/print/PrintSuratJalan";
 import PrintVehicleEntry from "@/pages/print/PrintVehicleEntry";
@@ -72,6 +73,7 @@ export default function App() {
 
               {/* Reports */}
               <Route path="/reports" element={<Reports />} />
+              <Route path="/reports/item-history" element={<ItemHistoryReport />} />
               
               {/* Admin */}
               <Route path="/admin/users" element={<UserManagement />} />

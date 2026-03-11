@@ -19,6 +19,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Card } from '@/components/ui/card';
 import { BarChart3, PieChart, FileText, Activity } from 'lucide-react';
 
+import ItemHistoryReport from './reports/ItemHistoryReport';
+
 export default function Reports() {
   const [searchParams, setSearchParams] = useSearchParams();
   const { user } = useAuth(); // Get user
@@ -106,6 +108,11 @@ export default function Reports() {
               Nilai Persediaan
             </TabsTrigger>
           )}
+          {canAccess('report_stock') && (
+            <TabsTrigger value="item_history" className="data-[state=active]:bg-indigo-600 data-[state=active]:text-white data-[state=active]:shadow-md border border-slate-200 bg-white px-4 py-2.5 rounded-lg transition-all hover:border-indigo-300">
+              Kartu Stok / History Item
+            </TabsTrigger>
+          )}
           {canAccess('report_issue') && (
             <TabsTrigger value="issue" className="data-[state=active]:bg-indigo-600 data-[state=active]:text-white data-[state=active]:shadow-md border border-slate-200 bg-white px-4 py-2.5 rounded-lg transition-all hover:border-indigo-300">
               Rekap Keluar
@@ -154,6 +161,7 @@ export default function Reports() {
           {canAccess('report_receipt') && <TabsContent value="receipt"><GoodsReceiptReport /></TabsContent>}
           {canAccess('report_stock') && <TabsContent value="stock"><StockReport /></TabsContent>}
           {canAccess('report_stock') && <TabsContent value="inventory_value"><InventoryValueReport /></TabsContent>}
+          {canAccess('report_stock') && <TabsContent value="item_history"><ItemHistoryReport /></TabsContent>}
           {canAccess('report_issue') && <TabsContent value="issue"><GoodsIssueReport /></TabsContent>}
           {canAccess('report_issuedetail') && <TabsContent value="issuedetail"><GoodsIssueDetailReport /></TabsContent>}
           {canAccess('report_wo') && <TabsContent value="wo"><WorkOrderReport /></TabsContent>}
