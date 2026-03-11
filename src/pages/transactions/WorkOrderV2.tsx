@@ -691,18 +691,20 @@ export default function WorkOrderV2() {
                     const diff = billedQty - alreadyIssuedQty;
 
                     if (diff > 0) { // Only handle POSITIVE diff (Deduction). Do not handle returns here to be safe.
-                        // 1. Adjust Stock
-                        const { data: currentGood } = await supabase
-                            .from('goods')
-                            .select('current_stock')
-                            .eq('id', item.goods_id)
-                            .single();
-
-                        if (currentGood) {
-                             await supabase
+                        // 1. Adjust Stock (ONLY IF NOT INFO ONLY)
+                        if (!item.is_info_only) {
+                            const { data: currentGood } = await supabase
                                 .from('goods')
-                                .update({ current_stock: (currentGood.current_stock || 0) - diff })
-                                .eq('id', item.goods_id);
+                                .select('current_stock')
+                                .eq('id', item.goods_id)
+                                .single();
+
+                            if (currentGood) {
+                                await supabase
+                                    .from('goods')
+                                    .update({ current_stock: (currentGood.current_stock || 0) - diff })
+                                    .eq('id', item.goods_id);
+                            }
                         }
 
                         // 2. Add/Update Goods Issue Item
@@ -721,7 +723,10 @@ export default function WorkOrderV2() {
                             // Update existing auto-item
                             await supabase
                                 .from('goods_issue_items')
-                                .update({ quantity: existingTargetItem.quantity + diff })
+                                .update({ 
+                                    quantity: existingTargetItem.quantity + diff,
+                                    is_info_only: item.is_info_only // Update flag if needed
+                                })
                                 .eq('id', existingTargetItem.id);
                         } else {
                             // Insert new item
@@ -730,7 +735,8 @@ export default function WorkOrderV2() {
                                  .insert({
                                      issue_id: targetIssueId,
                                      goods_id: item.goods_id,
-                                     quantity: diff
+                                     quantity: diff,
+                                     is_info_only: item.is_info_only // Pass the flag
                                  });
                         }
                     }
@@ -941,18 +947,20 @@ export default function WorkOrderV2() {
                     const diff = billedQty - alreadyIssuedQty;
 
                     if (diff > 0) { // Only handle positive diff
-                        // Adjust Stock
-                        const { data: currentGood } = await supabase
-                            .from('goods')
-                            .select('current_stock, name')
-                            .eq('id', item.goods_id)
-                            .single();
-
-                        if (currentGood) {
-                             await supabase
+                        // Adjust Stock (ONLY IF NOT INFO ONLY)
+                        if (!item.is_info_only) {
+                            const { data: currentGood } = await supabase
                                 .from('goods')
-                                .update({ current_stock: (currentGood.current_stock || 0) - diff })
-                                .eq('id', item.goods_id);
+                                .select('current_stock, name')
+                                .eq('id', item.goods_id)
+                                .single();
+
+                            if (currentGood) {
+                                await supabase
+                                    .from('goods')
+                                    .update({ current_stock: (currentGood.current_stock || 0) - diff })
+                                    .eq('id', item.goods_id);
+                            }
                         }
 
                         // Update/Insert Issue Item
@@ -966,7 +974,10 @@ export default function WorkOrderV2() {
                         if (existingTargetItem) {
                             await supabase
                                 .from('goods_issue_items')
-                                .update({ quantity: existingTargetItem.quantity + diff })
+                                .update({ 
+                                    quantity: existingTargetItem.quantity + diff,
+                                    is_info_only: item.is_info_only // Update flag if needed (though usually insert)
+                                })
                                 .eq('id', existingTargetItem.id);
                         } else {
                             if (diff > 0) {
@@ -975,7 +986,8 @@ export default function WorkOrderV2() {
                                     .insert({
                                         issue_id: targetIssueId,
                                         goods_id: item.goods_id,
-                                        quantity: diff
+                                        quantity: diff,
+                                        is_info_only: item.is_info_only // Pass the flag
                                     });
                             }
                         }
