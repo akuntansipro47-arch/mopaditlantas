@@ -186,7 +186,7 @@ export default function PurchaseOrderPrint({ id }: POPrintProps) {
         <div>
           <p className="mb-8 font-medium text-[9px] uppercase text-gray-500">Diketahui Oleh,</p>
           <div className="border-t border-black w-3/4 mx-auto pt-0.5">
-            <p className="font-bold">Manajer Operasional</p>
+            <p className="font-bold">Kepala Bengkel</p>
           </div>
         </div>
       </div>
