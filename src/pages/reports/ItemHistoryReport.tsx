@@ -44,6 +44,9 @@ export default function ItemHistoryReport() {
     });
     const [showAllHistory, setShowAllHistory] = useState(false); // New toggle
 
+    // Add Debug State
+    const [debugInfo, setDebugInfo] = useState<{incoming: number, outgoing: number, error?: string} | null>(null);
+
     useEffect(() => {
         fetchGoodsList();
     }, []);
@@ -67,6 +70,7 @@ export default function ItemHistoryReport() {
     async function fetchHistory() {
         if (!selectedGood) return;
         setLoading(true);
+        setDebugInfo(null);
         try {
             // 1. Fetch Incoming (Goods Receipt)
             console.log("Fetching history for:", selectedGood.id, dateRange);
@@ -93,6 +97,7 @@ export default function ItemHistoryReport() {
 
             if (inError) {
                 console.error("Error fetching incoming:", inError);
+                setDebugInfo({ incoming: 0, outgoing: 0, error: inError.message });
                 throw inError;
             }
             console.log("Incoming Data (Raw):", incoming);
@@ -122,9 +127,12 @@ export default function ItemHistoryReport() {
 
             if (outError) {
                 console.error("Error fetching outgoing:", outError);
+                setDebugInfo({ incoming: incoming?.length || 0, outgoing: 0, error: outError.message });
                 throw outError;
             }
             console.log("Outgoing Data (Raw):", outgoing);
+
+            setDebugInfo({ incoming: incoming?.length || 0, outgoing: outgoing?.length || 0 });
 
             // 3. Calculate Initial Balance (Saldo Awal)
             // Fetch SUM(IN) - SUM(OUT) before start date
@@ -351,8 +359,13 @@ export default function ItemHistoryReport() {
 
             {/* Transaction Table */}
             <Card>
-                <CardHeader className="pb-3 border-b bg-gray-50/50">
+                <CardHeader className="pb-3 border-b bg-gray-50/50 flex flex-row justify-between items-center">
                     <CardTitle className="text-base font-medium">Rincian Transaksi</CardTitle>
+                    {debugInfo && (
+                        <span className="text-xs text-gray-400 font-mono">
+                            Debug: In={debugInfo.incoming}, Out={debugInfo.outgoing} {debugInfo.error && `| Error: ${debugInfo.error}`}
+                        </span>
+                    )}
                 </CardHeader>
                 <CardContent className="p-0">
                     <div className="overflow-x-auto">
