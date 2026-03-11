@@ -45,8 +45,8 @@ export default function ItemHistoryReport() {
     const [showAllHistory, setShowAllHistory] = useState(false); // New toggle
 
     // Add Debug State
-    const [debugInfo, setDebugInfo] = useState<{incoming: number, outgoing: number, error?: string} | null>(null);
-    const [diagnostic, setDiagnostic] = useState<any>(null); // New diagnostic state
+    // const [debugInfo, setDebugInfo] = useState<{incoming: number, outgoing: number, error?: string} | null>(null);
+    // const [diagnostic, setDiagnostic] = useState<any>(null); // New diagnostic state
 
     useEffect(() => {
         fetchGoodsList();
@@ -71,29 +71,11 @@ export default function ItemHistoryReport() {
     async function fetchHistory() {
         if (!selectedGood) return;
         setLoading(true);
-        setDebugInfo(null);
-        setDiagnostic({ loading: true, good_id: selectedGood.id, good_code: selectedGood.item_code });
+        // setDebugInfo(null);
+        // setDiagnostic({ loading: true, good_id: selectedGood.id, good_code: selectedGood.item_code });
         
         try {
-            // DIAGNOSTIC STEP: Check Raw Counts (No Joins)
-            const { count: rawInCount, error: rawInError } = await supabase
-                .from('goods_receipt_items')
-                .select('*', { count: 'exact', head: true })
-                .eq('goods_id', selectedGood.id);
-
-            const { count: rawOutCount, error: rawOutError } = await supabase
-                .from('goods_issue_items')
-                .select('*', { count: 'exact', head: true })
-                .eq('goods_id', selectedGood.id);
-
-            setDiagnostic((prev: any) => ({
-                ...prev,
-                raw_in_count: rawInCount,
-                raw_in_error: rawInError?.message,
-                raw_out_count: rawOutCount,
-                raw_out_error: rawOutError?.message,
-                loading: false
-            }));
+            // DIAGNOSTIC STEP REMOVED
 
             // 1. Fetch Incoming (Goods Receipt)
             console.log("Fetching history for:", selectedGood.id, dateRange);
@@ -120,10 +102,8 @@ export default function ItemHistoryReport() {
 
             if (inError) {
                 console.error("Error fetching incoming:", inError);
-                setDebugInfo({ incoming: 0, outgoing: 0, error: inError.message });
                 throw inError;
             }
-            console.log("Incoming Data (Raw):", incoming);
 
             // 2. Fetch Outgoing (Goods Issue)
             const { data: outgoing, error: outError } = await supabase
@@ -150,12 +130,10 @@ export default function ItemHistoryReport() {
 
             if (outError) {
                 console.error("Error fetching outgoing:", outError);
-                setDebugInfo({ incoming: incoming?.length || 0, outgoing: 0, error: outError.message });
                 throw outError;
             }
-            console.log("Outgoing Data (Raw):", outgoing);
 
-            setDebugInfo({ incoming: incoming?.length || 0, outgoing: outgoing?.length || 0 });
+            // setDebugInfo({ incoming: incoming?.length || 0, outgoing: outgoing?.length || 0 });
 
             // 3. Calculate Initial Balance (Saldo Awal)
             // Fetch SUM(IN) - SUM(OUT) before start date
@@ -382,22 +360,8 @@ export default function ItemHistoryReport() {
 
             {/* Transaction Table */}
             <Card>
-                <CardHeader className="pb-3 border-b bg-gray-50/50 flex flex-row justify-between items-center">
+                <CardHeader className="pb-3 border-b bg-gray-50/50">
                     <CardTitle className="text-base font-medium">Rincian Transaksi</CardTitle>
-                    {debugInfo && (
-                        <span className="text-xs text-gray-400 font-mono">
-                            Debug: In={debugInfo.incoming}, Out={debugInfo.outgoing} {debugInfo.error && `| Error: ${debugInfo.error}`}
-                        </span>
-                    )}
-                    {diagnostic && (
-                        <div className="bg-slate-100 p-2 text-xs font-mono text-slate-600 rounded mt-1 border border-slate-300">
-                            <strong>Diagnostic:</strong> <br/>
-                            ID: {diagnostic.good_id} <br/>
-                            Code: {diagnostic.good_code} <br/>
-                            Raw Receipt Items (No Join): {diagnostic.raw_in_count} {diagnostic.raw_in_error ? `(Error: ${diagnostic.raw_in_error})` : ''} <br/>
-                            Raw Issue Items (No Join): {diagnostic.raw_out_count} {diagnostic.raw_out_error ? `(Error: ${diagnostic.raw_out_error})` : ''}
-                        </div>
-                    )}
                 </CardHeader>
                 <CardContent className="p-0">
                     <div className="overflow-x-auto">
