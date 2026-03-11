@@ -365,58 +365,60 @@ export default function CashBankV2() {
               </div>
 
               {/* Detail Table */}
-              <div className="border rounded-md overflow-hidden">
-                <Table>
-                    <TableHeader className="bg-slate-100">
-                        <TableRow>
-                            <TableHead className="w-[40%]">Account No. (Sumber Dana)</TableHead>
-                            <TableHead className="w-[30%]">Amount</TableHead>
-                            <TableHead className="w-[25%]">Memo (Opsional)</TableHead>
-                            <TableHead className="w-[5%]"></TableHead>
-                        </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                        {depositItems.map((item, index) => (
-                            <TableRow key={item.id}>
-                                <TableCell>
-                                    <Select value={item.account_id} onValueChange={v => updateDepositItem(item.id, 'account_id', v)}>
-                                        <SelectTrigger className="h-9">
-                                            <SelectValue placeholder="Pilih Akun..." />
-                                        </SelectTrigger>
-                                        <SelectContent>
-                                            {allAccounts.map(acc => (
-                                                <SelectItem key={acc.id} value={acc.id}>{acc.account_code} - {acc.account_name}</SelectItem>
-                                            ))}
-                                        </SelectContent>
-                                    </Select>
-                                </TableCell>
-                                <TableCell>
-                                    <Input 
-                                        type="number" 
-                                        value={item.amount || ''} 
-                                        onChange={e => updateDepositItem(item.id, 'amount', parseFloat(e.target.value))}
-                                        className="h-9 text-right"
-                                        placeholder="0"
-                                    />
-                                </TableCell>
-                                <TableCell>
-                                    <Input 
-                                        value={item.memo} 
-                                        onChange={e => updateDepositItem(item.id, 'memo', e.target.value)}
-                                        className="h-9"
-                                        placeholder="Keterangan..."
-                                    />
-                                </TableCell>
-                                <TableCell>
-                                    <Button variant="ghost" size="icon" onClick={() => removeDepositItem(item.id)} className="text-red-500 hover:text-red-700 h-8 w-8">
-                                        <Trash2 className="h-4 w-4" />
-                                    </Button>
-                                </TableCell>
+              <div className="border rounded-md flex flex-col h-[400px]">
+                <div className="flex-1 overflow-auto">
+                    <Table>
+                        <TableHeader className="bg-slate-100 sticky top-0 z-10 shadow-sm">
+                            <TableRow>
+                                <TableHead className="w-[40%]">Account No. (Sumber Dana)</TableHead>
+                                <TableHead className="w-[30%]">Amount</TableHead>
+                                <TableHead className="w-[25%]">Memo (Opsional)</TableHead>
+                                <TableHead className="w-[5%]"></TableHead>
                             </TableRow>
-                        ))}
-                    </TableBody>
-                </Table>
-                <div className="p-2 bg-slate-50 border-t">
+                        </TableHeader>
+                        <TableBody>
+                            {depositItems.map((item, index) => (
+                                <TableRow key={item.id}>
+                                    <TableCell>
+                                        <Select value={item.account_id} onValueChange={v => updateDepositItem(item.id, 'account_id', v)}>
+                                            <SelectTrigger className="h-9">
+                                                <SelectValue placeholder="Pilih Akun..." />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                {allAccounts.map(acc => (
+                                                    <SelectItem key={acc.id} value={acc.id}>{acc.account_code} - {acc.account_name}</SelectItem>
+                                                ))}
+                                            </SelectContent>
+                                        </Select>
+                                    </TableCell>
+                                    <TableCell>
+                                        <Input 
+                                            type="number" 
+                                            value={item.amount || ''} 
+                                            onChange={e => updateDepositItem(item.id, 'amount', parseFloat(e.target.value))}
+                                            className="h-9 text-right"
+                                            placeholder="0"
+                                        />
+                                    </TableCell>
+                                    <TableCell>
+                                        <Input 
+                                            value={item.memo} 
+                                            onChange={e => updateDepositItem(item.id, 'memo', e.target.value)}
+                                            className="h-9"
+                                            placeholder="Keterangan..."
+                                        />
+                                    </TableCell>
+                                    <TableCell>
+                                        <Button variant="ghost" size="icon" onClick={() => removeDepositItem(item.id)} className="text-red-500 hover:text-red-700 h-8 w-8">
+                                            <Trash2 className="h-4 w-4" />
+                                        </Button>
+                                    </TableCell>
+                                </TableRow>
+                            ))}
+                        </TableBody>
+                    </Table>
+                </div>
+                <div className="p-2 bg-slate-50 border-t shrink-0">
                     <Button variant="outline" size="sm" onClick={addDepositItem} className="text-green-600 border-green-200 hover:bg-green-50">
                         <Plus className="mr-2 h-3 w-3" /> Tambah Baris
                     </Button>
@@ -497,58 +499,60 @@ export default function CashBankV2() {
               </div>
 
               {/* Detail Table */}
-              <div className="border rounded-md overflow-hidden">
-                <Table>
-                    <TableHeader className="bg-slate-100">
-                        <TableRow>
-                            <TableHead className="w-[40%]">Account No. (Untuk Biaya/Bayar Apa)</TableHead>
-                            <TableHead className="w-[30%]">Amount</TableHead>
-                            <TableHead className="w-[25%]">Memo (Opsional)</TableHead>
-                            <TableHead className="w-[5%]"></TableHead>
-                        </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                        {paymentItems.map((item, index) => (
-                            <TableRow key={item.id}>
-                                <TableCell>
-                                    <Select value={item.account_id} onValueChange={v => updatePaymentItem(item.id, 'account_id', v)}>
-                                        <SelectTrigger className="h-9">
-                                            <SelectValue placeholder="Pilih Akun..." />
-                                        </SelectTrigger>
-                                        <SelectContent>
-                                            {allAccounts.map(acc => (
-                                                <SelectItem key={acc.id} value={acc.id}>{acc.account_code} - {acc.account_name}</SelectItem>
-                                            ))}
-                                        </SelectContent>
-                                    </Select>
-                                </TableCell>
-                                <TableCell>
-                                    <Input 
-                                        type="number" 
-                                        value={item.amount || ''} 
-                                        onChange={e => updatePaymentItem(item.id, 'amount', parseFloat(e.target.value))}
-                                        className="h-9 text-right"
-                                        placeholder="0"
-                                    />
-                                </TableCell>
-                                <TableCell>
-                                    <Input 
-                                        value={item.memo} 
-                                        onChange={e => updatePaymentItem(item.id, 'memo', e.target.value)}
-                                        className="h-9"
-                                        placeholder="Keterangan..."
-                                    />
-                                </TableCell>
-                                <TableCell>
-                                    <Button variant="ghost" size="icon" onClick={() => removePaymentItem(item.id)} className="text-red-500 hover:text-red-700 h-8 w-8">
-                                        <Trash2 className="h-4 w-4" />
-                                    </Button>
-                                </TableCell>
+              <div className="border rounded-md flex flex-col h-[400px]">
+                <div className="flex-1 overflow-auto">
+                    <Table>
+                        <TableHeader className="bg-slate-100 sticky top-0 z-10 shadow-sm">
+                            <TableRow>
+                                <TableHead className="w-[40%]">Account No. (Untuk Biaya/Bayar Apa)</TableHead>
+                                <TableHead className="w-[30%]">Amount</TableHead>
+                                <TableHead className="w-[25%]">Memo (Opsional)</TableHead>
+                                <TableHead className="w-[5%]"></TableHead>
                             </TableRow>
-                        ))}
-                    </TableBody>
-                </Table>
-                <div className="p-2 bg-slate-50 border-t">
+                        </TableHeader>
+                        <TableBody>
+                            {paymentItems.map((item, index) => (
+                                <TableRow key={item.id}>
+                                    <TableCell>
+                                        <Select value={item.account_id} onValueChange={v => updatePaymentItem(item.id, 'account_id', v)}>
+                                            <SelectTrigger className="h-9">
+                                                <SelectValue placeholder="Pilih Akun..." />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                {allAccounts.map(acc => (
+                                                    <SelectItem key={acc.id} value={acc.id}>{acc.account_code} - {acc.account_name}</SelectItem>
+                                                ))}
+                                            </SelectContent>
+                                        </Select>
+                                    </TableCell>
+                                    <TableCell>
+                                        <Input 
+                                            type="number" 
+                                            value={item.amount || ''} 
+                                            onChange={e => updatePaymentItem(item.id, 'amount', parseFloat(e.target.value))}
+                                            className="h-9 text-right"
+                                            placeholder="0"
+                                        />
+                                    </TableCell>
+                                    <TableCell>
+                                        <Input 
+                                            value={item.memo} 
+                                            onChange={e => updatePaymentItem(item.id, 'memo', e.target.value)}
+                                            className="h-9"
+                                            placeholder="Keterangan..."
+                                        />
+                                    </TableCell>
+                                    <TableCell>
+                                        <Button variant="ghost" size="icon" onClick={() => removePaymentItem(item.id)} className="text-red-500 hover:text-red-700 h-8 w-8">
+                                            <Trash2 className="h-4 w-4" />
+                                        </Button>
+                                    </TableCell>
+                                </TableRow>
+                            ))}
+                        </TableBody>
+                    </Table>
+                </div>
+                <div className="p-2 bg-slate-50 border-t shrink-0">
                     <Button variant="outline" size="sm" onClick={addPaymentItem} className="text-red-600 border-red-200 hover:bg-red-50">
                         <Plus className="mr-2 h-3 w-3" /> Tambah Baris
                     </Button>
