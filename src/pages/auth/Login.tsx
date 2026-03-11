@@ -27,20 +27,18 @@ export default function Login() {
   return (
     <div className="flex h-screen w-full items-center justify-center bg-slate-900 px-4">
       <Card className="w-full max-w-sm border-slate-800 bg-slate-950/50 text-slate-200">
-        <CardHeader className="space-y-4">
-          <div className="flex justify-center">
-            <div className="flex items-center gap-2">
-              <Gauge className="h-10 w-10 text-white" strokeWidth={1.5} />
-              <h1 className="text-3xl font-bold tracking-tight leading-none">
-                <span className="text-white">Oto</span>
-                <span className="text-lime-500">Smart</span>
+        <CardHeader className="space-y-4 pt-8">
+          <div className="flex flex-col items-center gap-1.5">
+            <Gauge className="h-16 w-16 text-white" strokeWidth={2.5} />
+            <div className="flex flex-col items-center -mt-1">
+              <h1 className="text-5xl font-black tracking-tighter leading-none flex items-baseline">
+                <span className="text-white italic">Oto</span>
+                <span className="text-lime-500 italic">Smart</span>
               </h1>
+              <p className="text-[10px] text-slate-400 font-medium tracking-[0.2em] uppercase mt-1">Complete control</p>
             </div>
           </div>
-          <CardTitle className="text-center text-slate-200">Sign In</CardTitle>
-          <CardDescription className="text-center text-slate-400">
-            Complete control, Smarter workshop
-          </CardDescription>
+          <CardTitle className="text-center text-slate-200 mt-6">Sign In</CardTitle>
         </CardHeader>
         <form onSubmit={handleSubmit}>
           <CardContent className="space-y-4">

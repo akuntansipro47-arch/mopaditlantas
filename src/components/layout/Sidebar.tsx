@@ -92,17 +92,18 @@ export function Sidebar() {
   return (
     <div className="flex h-full w-72 flex-col bg-[#0f172a] text-slate-300 shadow-2xl transition-all duration-300 ease-in-out">
       {/* Header Logo */}
-      <div className="flex h-20 items-center px-4 border-b border-slate-800/60 bg-slate-950/30">
-        <div className="flex items-center gap-2">
-          <div className="h-9 w-9 flex items-center justify-center">
-            <Gauge className="h-8 w-8 text-white" strokeWidth={1.5} />
+      <div className="flex h-24 items-center px-4 border-b border-slate-800/60 bg-slate-950/30">
+        <div className="flex items-center gap-1.5 w-full">
+          <div className="relative h-12 w-12 flex-shrink-0 flex items-center justify-center">
+             <Gauge className="h-12 w-12 text-white" strokeWidth={2.5} />
           </div>
-          <div>
-            <h1 className="text-xl font-bold tracking-tight leading-none">
-              <span className="text-white">Oto</span>
-              <span className="text-lime-500">Smart</span>
+          
+          <div className="flex flex-col justify-center -mt-1">
+            <h1 className="text-3xl font-black tracking-tighter leading-none flex items-baseline">
+              <span className="text-white italic">Oto</span>
+              <span className="text-lime-500 italic">Smart</span>
             </h1>
-            <p className="text-[9px] text-slate-500 font-medium tracking-wide mt-1">Complete control, Smarter workshop</p>
+            <p className="text-[9px] text-slate-400 font-medium tracking-widest uppercase mt-0.5 ml-0.5">Complete control</p>
           </div>
         </div>
       </div>
