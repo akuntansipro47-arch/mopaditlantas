@@ -38,10 +38,11 @@ export default function ItemHistoryReport() {
     const [searchQuery, setSearchQuery] = useState('');
 
     const [dateRange, setDateRange] = useState({
-        // Default to start of current year to capture more history
-        start: new Date(new Date().getFullYear(), 0, 1).toISOString().split('T')[0],
+        // Default: A VERY wide range to ensure data visibility during testing
+        start: '2024-01-01',
         end: new Date().toISOString().split('T')[0]
     });
+    const [showAllHistory, setShowAllHistory] = useState(false); // New toggle
 
     useEffect(() => {
         fetchGoodsList();
@@ -53,7 +54,7 @@ export default function ItemHistoryReport() {
         } else {
             setTransactions([]);
         }
-    }, [selectedGood, dateRange]);
+    }, [selectedGood, dateRange, showAllHistory]); // Added showAllHistory
 
     async function fetchGoodsList() {
         const { data } = await supabase
@@ -200,14 +201,15 @@ export default function ItemHistoryReport() {
                 }
             });
 
-            // 4. Map & Combine Current Period Transactions
+            // 4. Map & Combine Transactions
             let combined: Transaction[] = [];
 
             // Map Incoming
             incoming?.forEach((item: any) => {
-                 // Safety check for date range (Supabase filter should handle it but just in case)
                  const d = new Date(item.goods_receipts?.receipt_date);
-                 if (d >= new Date(dateRange.start) && d <= new Date(dateRange.end)) {
+                 const inRange = d >= new Date(dateRange.start) && d <= new Date(dateRange.end);
+                 
+                 if (showAllHistory || inRange) {
                     combined.push({
                         date: item.goods_receipts?.receipt_date,
                         type: 'IN',
@@ -216,7 +218,7 @@ export default function ItemHistoryReport() {
                         tertiary_ref: '-',
                         qty_in: item.quantity,
                         qty_out: 0,
-                        balance: 0, // calc later
+                        balance: 0, 
                         description: 'Pembelian / Masuk'
                     });
                  }
@@ -225,7 +227,9 @@ export default function ItemHistoryReport() {
             // Map Outgoing
             outgoing?.forEach((item: any) => {
                  const d = new Date(item.goods_issues?.issue_date);
-                 if (d >= new Date(dateRange.start) && d <= new Date(dateRange.end)) {
+                 const inRange = d >= new Date(dateRange.start) && d <= new Date(dateRange.end);
+                 
+                 if (showAllHistory || inRange) {
                     combined.push({
                         date: item.goods_issues?.issue_date,
                         type: 'OUT',
@@ -233,7 +237,7 @@ export default function ItemHistoryReport() {
                         secondary_ref: '-',
                         tertiary_ref: item.goods_issues?.work_orders?.vehicle_entries?.vehicles?.license_plate || '-',
                         qty_in: 0,
-                        qty_out: item.is_info_only ? 0 : item.quantity, // If info only, qty out is effectively 0 for balance
+                        qty_out: item.is_info_only ? 0 : item.quantity,
                         balance: 0,
                         description: item.is_info_only ? 'Info Only (Pemakaian)' : 'Pemakaian / Keluar',
                         is_info_only: item.is_info_only
@@ -301,7 +305,18 @@ export default function ItemHistoryReport() {
                     <p className="text-gray-500">Lacak pergerakan masuk dan keluar barang per item.</p>
                 </div>
                 <div className="flex flex-wrap gap-2">
-                     <div className="flex items-center gap-2 bg-white border border-gray-300 p-1.5 rounded-md shadow-sm">
+                     <div className="flex items-center space-x-2 bg-white px-2 rounded-md border border-gray-300">
+                        <input 
+                            type="checkbox" 
+                            id="showAll" 
+                            checked={showAllHistory} 
+                            onChange={e => setShowAllHistory(e.target.checked)} 
+                            className="rounded text-indigo-600 focus:ring-indigo-500"
+                        />
+                        <label htmlFor="showAll" className="text-sm font-medium text-gray-700 cursor-pointer select-none">Semua Riwayat</label>
+                     </div>
+
+                     <div className={`flex items-center gap-2 bg-white border border-gray-300 p-1.5 rounded-md shadow-sm ${showAllHistory ? 'opacity-50 pointer-events-none' : ''}`}>
                         <Calendar className="h-4 w-4 text-gray-500 ml-2" />
                         <Input type="date" className="border-0 h-9 w-36 focus-visible:ring-0 cursor-pointer" value={dateRange.start} onChange={e => setDateRange({...dateRange, start: e.target.value})} />
                         <span className="text-gray-400 font-medium">-</span>
