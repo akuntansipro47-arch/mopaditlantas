@@ -21,9 +21,9 @@ export default defineConfig({
       registerType: 'autoUpdate',
       includeAssets: ['favicon.svg', 'apple-touch-icon.png', 'masked-icon.svg'],
       manifest: {
-        name: 'Monitoring Pagu Anggaran',
-        short_name: 'Monitoring Pagu',
-        description: 'Aplikasi Monitoring Pagu Anggaran Kendaraan',
+        name: 'OtoSmart - Workshop System',
+        short_name: 'OtoSmart',
+        description: 'Complete control, Smarter workshop',
         theme_color: '#ffffff',
         icons: [
           {
