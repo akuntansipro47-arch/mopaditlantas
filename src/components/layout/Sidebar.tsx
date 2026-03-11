@@ -22,7 +22,8 @@ import {
   Settings,
   LogOut,
   CreditCard,
-  Building2
+  Building2,
+  Gauge, // Added Gauge for the new logo icon
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -91,14 +92,17 @@ export function Sidebar() {
   return (
     <div className="flex h-full w-72 flex-col bg-[#0f172a] text-slate-300 shadow-2xl transition-all duration-300 ease-in-out">
       {/* Header Logo */}
-      <div className="flex h-20 items-center px-6 border-b border-slate-800/60 bg-slate-950/30">
-        <div className="flex items-center gap-3">
-          <div className="h-9 w-9 rounded-lg bg-gradient-to-br from-blue-600 to-indigo-700 flex items-center justify-center shadow-lg shadow-blue-500/20">
-            <Car className="h-5 w-5 text-white" />
+      <div className="flex h-20 items-center px-4 border-b border-slate-800/60 bg-slate-950/30">
+        <div className="flex items-center gap-2">
+          <div className="h-9 w-9 flex items-center justify-center">
+            <Gauge className="h-8 w-8 text-white" strokeWidth={1.5} />
           </div>
           <div>
-            <h1 className="text-lg font-bold tracking-tight text-white leading-none">OtoSmart</h1>
-            <p className="text-[10px] text-slate-500 font-medium tracking-wide mt-1">Complete control, Smarter workshop</p>
+            <h1 className="text-xl font-bold tracking-tight leading-none">
+              <span className="text-white">Oto</span>
+              <span className="text-lime-500">Smart</span>
+            </h1>
+            <p className="text-[9px] text-slate-500 font-medium tracking-wide mt-1">Complete control, Smarter workshop</p>
           </div>
         </div>
       </div>
