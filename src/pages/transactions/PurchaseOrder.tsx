@@ -322,7 +322,7 @@ export default function PurchaseOrder() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h2 className="text-3xl font-bold tracking-tight">Purchase Order (PO)</h2>
+        <h2 className="text-3xl font-bold tracking-tight text-lime-600">Purchase Order (PO) - SYSTEM UPDATED</h2>
         <div className="flex gap-2">
           <Button onClick={() => { resetForm(); setIsDialogOpen(true); }} className="bg-lime-600 hover:bg-lime-700">
             <Plus className="mr-2 h-4 w-4" /> Buat PO Baru
