@@ -38,7 +38,8 @@ export default function ItemHistoryReport() {
     const [searchQuery, setSearchQuery] = useState('');
 
     const [dateRange, setDateRange] = useState({
-        start: new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0],
+        // Default to start of current year to capture more history
+        start: new Date(new Date().getFullYear(), 0, 1).toISOString().split('T')[0],
         end: new Date().toISOString().split('T')[0]
     });
 
@@ -67,13 +68,14 @@ export default function ItemHistoryReport() {
         setLoading(true);
         try {
             // 1. Fetch Incoming (Goods Receipt)
-            // Relasi: goods_receipt_items -> goods_receipts -> purchase_orders -> suppliers
+            console.log("Fetching history for:", selectedGood.id, dateRange);
+            
             const { data: incoming, error: inError } = await supabase
                 .from('goods_receipt_items')
                 .select(`
                     quantity,
                     created_at,
-                    goods_receipts (
+                    goods_receipts!inner (
                         receipt_date,
                         receipt_number,
                         purchase_orders (
@@ -86,17 +88,20 @@ export default function ItemHistoryReport() {
                 .gte('goods_receipts.receipt_date', dateRange.start)
                 .lte('goods_receipts.receipt_date', dateRange.end);
 
-            if (inError) throw inError;
+            if (inError) {
+                console.error("Error fetching incoming:", inError);
+                throw inError;
+            }
+            console.log("Incoming Data:", incoming);
 
             // 2. Fetch Outgoing (Goods Issue)
-            // Relasi: goods_issue_items -> goods_issues -> work_orders -> vehicle_entries -> vehicles
             const { data: outgoing, error: outError } = await supabase
                 .from('goods_issue_items')
                 .select(`
                     quantity,
                     created_at,
                     is_info_only,
-                    goods_issues (
+                    goods_issues!inner (
                         issue_date,
                         issue_number,
                         work_orders (
@@ -111,7 +116,11 @@ export default function ItemHistoryReport() {
                 .gte('goods_issues.issue_date', dateRange.start)
                 .lte('goods_issues.issue_date', dateRange.end);
 
-            if (outError) throw outError;
+            if (outError) {
+                console.error("Error fetching outgoing:", outError);
+                throw outError;
+            }
+            console.log("Outgoing Data:", outgoing);
 
             // 3. Calculate Initial Balance (Saldo Awal)
             // Fetch SUM(IN) - SUM(OUT) before start date
@@ -156,7 +165,7 @@ export default function ItemHistoryReport() {
                 .from('goods_receipt_items')
                 .select(`
                     quantity,
-                    goods_receipts (receipt_date)
+                    goods_receipts!inner (receipt_date)
                 `)
                 .eq('goods_id', selectedGood.id);
                 
@@ -165,7 +174,7 @@ export default function ItemHistoryReport() {
                 .select(`
                     quantity,
                     is_info_only,
-                    goods_issues (issue_date)
+                    goods_issues!inner (issue_date)
                 `)
                 .eq('goods_id', selectedGood.id);
 
