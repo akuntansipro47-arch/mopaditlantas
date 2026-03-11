@@ -58,7 +58,13 @@ export default function Goods() {
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
-    setFormData(prev => ({ ...prev, [name]: name === 'name' || name === 'unit' ? value.toUpperCase() : value }));
+    if (name === 'selling_price') {
+      // Allow only numbers
+      const numericValue = value.replace(/[^0-9]/g, '');
+      setFormData(prev => ({ ...prev, [name]: numericValue ? parseInt(numericValue) : 0 }));
+    } else {
+      setFormData(prev => ({ ...prev, [name]: name === 'name' || name === 'unit' ? value.toUpperCase() : value }));
+    }
   };
 
   const handleSelectChange = (value: string) => {
@@ -163,7 +169,15 @@ export default function Goods() {
                 </div>
                 <div className="grid grid-cols-4 items-center gap-4">
                   <Label className="text-right">Harga Jual (Rp)</Label>
-                  <Input type="number" name="selling_price" value={formData.selling_price} onChange={handleInputChange} className="col-span-3" min="0" placeholder="0" />
+                  <Input 
+                    type="text" 
+                    name="selling_price" 
+                    value={formData.selling_price || ''} 
+                    onChange={handleInputChange} 
+                    className="col-span-3" 
+                    placeholder="0" 
+                    inputMode="numeric"
+                  />
                 </div>
               </div>
               <DialogFooter>
