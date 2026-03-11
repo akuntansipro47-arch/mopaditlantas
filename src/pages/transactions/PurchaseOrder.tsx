@@ -94,8 +94,10 @@ export default function PurchaseOrder() {
           *,
           suppliers (*),
           work_orders (
+            id,
             wo_number,
             vehicle_entries (
+              id,
               license_plate,
               vehicles (
                 brand_type,
@@ -107,6 +109,7 @@ export default function PurchaseOrder() {
         .order('created_at', { ascending: false });
 
       if (error) throw error;
+      console.log('Fetched POs:', data);
       setPos(data as any || []);
     } catch (error: any) {
       toast.error('Gagal mengambil data PO: ' + error.message);
@@ -553,7 +556,7 @@ export default function PurchaseOrder() {
                   <TableHead>No. PO</TableHead>
                   <TableHead>Tanggal PO</TableHead>
                   <TableHead>Supplier</TableHead>
-                  <TableHead>Tipe Pengadaan (Project/Stok)</TableHead>
+                  <TableHead>Tipe / Detail Project</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Total Amount</TableHead>
                   <TableHead className="text-right">Aksi</TableHead>
@@ -575,6 +578,10 @@ export default function PurchaseOrder() {
                           }`}>
                             {item.work_order_id ? 'Project (WO)' : 'Stok Gudang'}
                           </span>
+                          
+                          {item.work_order_id && !item.work_orders && (
+                            <span className="text-[10px] text-red-500 italic mt-1">(Data WO tidak ditemukan)</span>
+                          )}
                           
                           {item.work_order_id && item.work_orders && (
                             <div className="mt-1 text-xs text-gray-600 flex flex-col">
