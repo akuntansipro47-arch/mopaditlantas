@@ -43,6 +43,15 @@ export default function PurchaseOrder() {
   const [goodsList, setGoodsList] = useState<Goods[]>([]);
   const [workOrders, setWorkOrders] = useState<WO[]>([]); // To link PO to WO if needed
 
+  const [supplierSearchOpen, setSupplierSearchOpen] = useState(false);
+  const [supplierSearchQuery, setSupplierSearchQuery] = useState('');
+
+  // Filtered Suppliers for Search
+  const filteredSuppliers = suppliers.filter(s => 
+    s.name.toLowerCase().includes(supplierSearchQuery.toLowerCase()) ||
+    (s.contact_person && s.contact_person.toLowerCase().includes(supplierSearchQuery.toLowerCase()))
+  );
+
   const [poType, setPoType] = useState<'WO' | 'STOCK'>('WO');
 
   // Form State
@@ -83,7 +92,17 @@ export default function PurchaseOrder() {
         .from('purchase_orders')
         .select(`
           *,
-          suppliers (*)
+          suppliers (*),
+          work_orders (
+            wo_number,
+            vehicle_entries (
+              license_plate,
+              vehicles (
+                brand_type,
+                vehicle_type
+              )
+            )
+          )
         `)
         .order('created_at', { ascending: false });
 
@@ -133,15 +152,19 @@ export default function PurchaseOrder() {
     setIsReadOnly(false);
   };
 
+  const handleSupplierSelect = (supplier: Supplier) => {
+    setFormData({ ...formData, supplier_id: supplier.id });
+    setSupplierSearchOpen(false);
+  };
+
   const handleDateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const selectedDateStr = e.target.value;
     const selectedDate = new Date(selectedDateStr);
     const today = new Date();
     const minDate = new Date();
-    minDate.setMonth(today.getMonth() - 1);
     
+    minDate.setMonth(today.getMonth() - 1);
     // Normalize time to midnight for comparison
-    today.setHours(23, 59, 59, 999); // End of today
     minDate.setHours(0, 0, 0, 0);
 
     if (selectedDate < minDate) {
@@ -353,14 +376,58 @@ export default function PurchaseOrder() {
 
                   <div className="space-y-2">
                     <Label>Supplier</Label>
-                    <Select value={formData.supplier_id} onValueChange={(v) => setFormData({...formData, supplier_id: v})} disabled={isReadOnly}>
-                      <SelectTrigger><SelectValue placeholder="Pilih Supplier" /></SelectTrigger>
-                      <SelectContent>
-                        {suppliers.map(s => (
-                          <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                    <div className="relative">
+                      <Button 
+                        type="button" 
+                        variant="outline" 
+                        className="w-full justify-between text-left font-normal"
+                        onClick={() => !isReadOnly && setSupplierSearchOpen(true)}
+                        disabled={isReadOnly}
+                      >
+                        {formData.supplier_id 
+                          ? suppliers.find(s => s.id === formData.supplier_id)?.name || 'Pilih Supplier'
+                          : 'Pilih Supplier'}
+                        <Search className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                      </Button>
+                    </div>
+
+                    {/* Supplier Search Dialog */}
+                    <Dialog open={supplierSearchOpen} onOpenChange={setSupplierSearchOpen}>
+                      <DialogContent className="sm:max-w-[500px]">
+                        <DialogHeader>
+                          <DialogTitle>Cari Supplier</DialogTitle>
+                        </DialogHeader>
+                        <div className="space-y-4">
+                          <Input 
+                            placeholder="Cari nama supplier..." 
+                            value={supplierSearchQuery} 
+                            onChange={(e) => setSupplierSearchQuery(e.target.value)}
+                            autoFocus
+                          />
+                          <div className="max-h-[300px] overflow-y-auto border rounded-md">
+                            {filteredSuppliers.length === 0 ? (
+                              <div className="p-4 text-center text-sm text-gray-500">Supplier tidak ditemukan.</div>
+                            ) : (
+                              <Table>
+                                <TableBody>
+                                  {filteredSuppliers.map((s) => (
+                                    <TableRow 
+                                      key={s.id} 
+                                      className="cursor-pointer hover:bg-slate-50"
+                                      onClick={() => handleSupplierSelect(s)}
+                                    >
+                                      <TableCell className="font-medium">{s.name}</TableCell>
+                                      <TableCell>{s.contact_person}</TableCell>
+                                      <TableCell className="text-right text-xs text-gray-500">{s.city}</TableCell>
+                                    </TableRow>
+                                  ))}
+                                </TableBody>
+                              </Table>
+                            )}
+                          </div>
+                        </div>
+                      </DialogContent>
+                    </Dialog>
                   </div>
                   
                   {poType === 'WO' && (
@@ -502,11 +569,24 @@ export default function PurchaseOrder() {
                       <TableCell>{formatDate(item.po_date || item.created_at)}</TableCell>
                       <TableCell>{item.suppliers?.name || '-'}</TableCell>
                       <TableCell>
-                        <span className={`px-2 py-1 rounded-full text-xs font-semibold ${
-                          item.work_order_id ? 'bg-indigo-100 text-indigo-800' : 'bg-gray-100 text-gray-800'
-                        }`}>
-                          {item.work_order_id ? 'Project (WO)' : 'Stok Gudang'}
-                        </span>
+                        <div className="flex flex-col">
+                          <span className={`px-2 py-1 rounded-full text-xs font-semibold w-fit ${
+                            item.work_order_id ? 'bg-indigo-100 text-indigo-800' : 'bg-gray-100 text-gray-800'
+                          }`}>
+                            {item.work_order_id ? 'Project (WO)' : 'Stok Gudang'}
+                          </span>
+                          
+                          {item.work_order_id && item.work_orders && (
+                            <div className="mt-1 text-xs text-gray-600 flex flex-col">
+                              <span className="font-semibold text-indigo-600">{(item.work_orders as any).wo_number}</span>
+                              {(item.work_orders as any).vehicle_entries?.vehicles && (
+                                <span>
+                                  {(item.work_orders as any).vehicle_entries.license_plate} - {(item.work_orders as any).vehicle_entries.vehicles.brand_type}
+                                </span>
+                              )}
+                            </div>
+                          )}
+                        </div>
                       </TableCell>
                       <TableCell>
                         <span className={`px-2 py-1 rounded-full text-xs font-semibold ${
