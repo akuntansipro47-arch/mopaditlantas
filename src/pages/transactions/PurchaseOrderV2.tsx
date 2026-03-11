@@ -47,6 +47,20 @@ export default function PurchaseOrderV2() {
   const [goodsList, setGoodsList] = useState<Goods[]>([]);
   const [workOrders, setWorkOrders] = useState<any[]>([]); // To link PO to WO if needed
 
+  const [supplierSearchOpen, setSupplierSearchOpen] = useState(false);
+  const [supplierSearchQuery, setSupplierSearchQuery] = useState('');
+
+  // Filtered Suppliers for Search
+  const filteredSuppliers = suppliers.filter(s => 
+    s.name.toLowerCase().includes(supplierSearchQuery.toLowerCase()) ||
+    (s.contact_person && s.contact_person.toLowerCase().includes(supplierSearchQuery.toLowerCase()))
+  );
+
+  const handleSupplierSelect = (supplier: Supplier) => {
+    setFormData({ ...formData, supplier_id: supplier.id });
+    setSupplierSearchOpen(false);
+  };
+
   const [poType, setPoType] = useState<'WO' | 'STOCK'>('WO');
 
   // Form State
@@ -110,7 +124,19 @@ export default function PurchaseOrderV2() {
         .from('purchase_orders')
         .select(`
           *,
-          suppliers (*)
+          suppliers (*),
+          work_orders (
+            id,
+            wo_number,
+            vehicle_entries (
+              id,
+              license_plate,
+              vehicles (
+                brand_type,
+                vehicle_type
+              )
+            )
+          )
         `)
         .order('created_at', { ascending: false });
 
@@ -397,9 +423,9 @@ export default function PurchaseOrderV2() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h2 className="text-3xl font-bold tracking-tight text-blue-700">Purchase Order (PO)</h2>
+        <h2 className="text-3xl font-bold tracking-tight text-lime-600">Purchase Order (PO) - SYSTEM UPDATED</h2>
         <div className="flex gap-2">
-          <Button onClick={() => { resetForm(); setIsDialogOpen(true); }}>
+          <Button onClick={() => { resetForm(); setIsDialogOpen(true); }} className="bg-lime-600 hover:bg-lime-700">
             <Plus className="mr-2 h-4 w-4" /> Buat PO Baru
           </Button>
         </div>
@@ -454,14 +480,58 @@ export default function PurchaseOrderV2() {
 
                   <div className="space-y-2">
                     <Label>Supplier</Label>
-                    <Select value={formData.supplier_id} onValueChange={(v) => setFormData({...formData, supplier_id: v})} disabled={isReadOnly}>
-                      <SelectTrigger><SelectValue placeholder="Pilih Supplier" /></SelectTrigger>
-                      <SelectContent>
-                        {suppliers.map(s => (
-                          <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                    <div className="relative">
+                      <Button 
+                        type="button" 
+                        variant="outline" 
+                        className="w-full justify-between text-left font-normal border-lime-200 hover:border-lime-500"
+                        onClick={() => !isReadOnly && setSupplierSearchOpen(true)}
+                        disabled={isReadOnly}
+                      >
+                        {formData.supplier_id 
+                          ? suppliers.find(s => s.id === formData.supplier_id)?.name || 'Pilih Supplier'
+                          : 'Pilih Supplier'}
+                        <Search className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                      </Button>
+                    </div>
+
+                    {/* Supplier Search Dialog */}
+                    <Dialog open={supplierSearchOpen} onOpenChange={setSupplierSearchOpen}>
+                      <DialogContent className="sm:max-w-[500px]">
+                        <DialogHeader>
+                          <DialogTitle>Cari Supplier</DialogTitle>
+                        </DialogHeader>
+                        <div className="space-y-4">
+                          <Input 
+                            placeholder="Cari nama supplier..." 
+                            value={supplierSearchQuery} 
+                            onChange={(e) => setSupplierSearchQuery(e.target.value)}
+                            autoFocus
+                          />
+                          <div className="max-h-[300px] overflow-y-auto border rounded-md">
+                            {filteredSuppliers.length === 0 ? (
+                              <div className="p-4 text-center text-sm text-gray-500">Supplier tidak ditemukan.</div>
+                            ) : (
+                              <Table>
+                                <TableBody>
+                                  {filteredSuppliers.map((s) => (
+                                    <TableRow 
+                                      key={s.id} 
+                                      className="cursor-pointer hover:bg-slate-50"
+                                      onClick={() => handleSupplierSelect(s)}
+                                    >
+                                      <TableCell className="font-medium">{s.name}</TableCell>
+                                      <TableCell>{s.contact_person}</TableCell>
+                                      <TableCell className="text-right text-xs text-gray-500">{s.city}</TableCell>
+                                    </TableRow>
+                                  ))}
+                                </TableBody>
+                              </Table>
+                            )}
+                          </div>
+                        </div>
+                      </DialogContent>
+                    </Dialog>
                   </div>
                   
                 {/* WO Selection Popup */}
@@ -584,7 +654,19 @@ export default function PurchaseOrderV2() {
                               </span>
                               <Search className="ml-2 h-4 w-4 opacity-50" />
                             </Button>
-                          </TableCell>
+                            {item.work_order_id && item.work_orders ? (
+                          <div className="flex flex-col text-xs mt-1 space-y-1">
+                            <span className="font-semibold text-indigo-700">
+                              WO: {item.work_orders.wo_number}
+                            </span>
+                            {(item.work_orders as any).vehicle_entries?.vehicles && (
+                              <span className="text-gray-600">
+                                {(item.work_orders as any).vehicle_entries.license_plate} - {(item.work_orders as any).vehicle_entries.vehicles.brand_type}
+                              </span>
+                            )}
+                          </div>
+                        ) : null}
+                      </TableCell>
                           <TableCell>
                             <Input 
                               className="h-9" placeholder="Merk/Tipe..."
@@ -699,7 +781,7 @@ export default function PurchaseOrderV2() {
                   <TableHead>No. PO</TableHead>
                   <TableHead>Tanggal PO</TableHead>
                   <TableHead>Supplier</TableHead>
-                  <TableHead>Tipe Pengadaan (Project/Stok)</TableHead>
+                  <TableHead>Tipe / Detail Project</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Total Amount</TableHead>
                   <TableHead className="text-right">Aksi</TableHead>
@@ -715,11 +797,22 @@ export default function PurchaseOrderV2() {
                       <TableCell>{formatDate(item.po_date || item.created_at)}</TableCell>
                       <TableCell>{item.suppliers?.name || '-'}</TableCell>
                       <TableCell>
-                        <span className={`px-2 py-1 rounded-full text-xs font-semibold ${
+                        <span className={`px-2 py-1 rounded-full text-xs font-semibold w-fit ${
                           item.work_order_id ? 'bg-indigo-100 text-indigo-800' : 'bg-gray-100 text-gray-800'
                         }`}>
                           {item.work_order_id ? 'Project (WO)' : 'Stok Gudang'}
                         </span>
+                        
+                        {item.work_order_id && item.work_orders && (
+                            <div className="mt-1 text-xs text-gray-600 flex flex-col">
+                              <span className="font-semibold text-indigo-600">{(item.work_orders as any).wo_number}</span>
+                              {(item.work_orders as any).vehicle_entries?.vehicles && (
+                                <span>
+                                  {(item.work_orders as any).vehicle_entries.license_plate} - {(item.work_orders as any).vehicle_entries.vehicles.brand_type}
+                                </span>
+                              )}
+                            </div>
+                          )}
                       </TableCell>
                       <TableCell>
                         <span className={`px-2 py-1 rounded-full text-xs font-semibold ${
