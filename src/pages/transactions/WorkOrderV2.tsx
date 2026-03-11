@@ -1364,15 +1364,13 @@ export default function WorkOrderV2() {
                                     )}
                                 </TableCell>
                                 <TableCell className="text-center">
-                                    {(item.item_type === 'PART' || item.goods_id) && (
-                                        <div className="flex justify-center items-center h-full">
-                                            <Checkbox 
-                                                checked={item.is_info_only} 
-                                                onCheckedChange={(checked) => handleBillingItemChange(index, 'is_info_only', checked)}
-                                                title="Info Only (Tidak Potong Stok)"
-                                            />
-                                        </div>
-                                    )}
+                                    <div className="flex justify-center items-center h-full">
+                                        <Checkbox 
+                                            checked={item.is_info_only} 
+                                            onCheckedChange={(checked) => handleBillingItemChange(index, 'is_info_only', checked)}
+                                            title="Info Only (Tidak Potong Stok)"
+                                        />
+                                    </div>
                                 </TableCell>
                                 <TableCell>
                                     <Input 
