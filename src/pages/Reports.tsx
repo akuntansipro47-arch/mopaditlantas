@@ -110,7 +110,7 @@ export default function Reports() {
           )}
           {canAccess('report_stock') && (
             <TabsTrigger value="item_history" className="data-[state=active]:bg-indigo-600 data-[state=active]:text-white data-[state=active]:shadow-md border border-slate-200 bg-white px-4 py-2.5 rounded-lg transition-all hover:border-indigo-300">
-              Kartu Stok / History Item
+              History Barang
             </TabsTrigger>
           )}
           {canAccess('report_issue') && (
