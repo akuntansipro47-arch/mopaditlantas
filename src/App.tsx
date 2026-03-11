@@ -27,14 +27,14 @@ import UserManagement from "@/pages/admin/UserManagement";
 import AgencyProfile from "@/pages/admin/AgencyProfile";
 import PurchasePayment from "@/pages/finance/PurchasePayment";
 import CashBank from "@/pages/finance/CashBank";
-import ReloadPrompt from "@/components/ReloadPrompt";
+// import ReloadPrompt from "@/components/ReloadPrompt";
 import DebugDashboard from "@/pages/DebugDashboard";
 
 export default function App() {
   return (
     <AuthProvider>
       <Router>
-        <ReloadPrompt />
+        {/* <ReloadPrompt /> */}
         <Routes>
           <Route path="/login" element={<Login />} />
           
