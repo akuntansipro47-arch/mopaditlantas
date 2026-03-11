@@ -120,29 +120,47 @@ export default function PurchaseOrderV2() {
   async function fetchPOs() {
     setLoading(true);
     try {
-      const { data, error } = await supabase
+      // 1. Fetch Basic PO Data
+      const { data: poData, error } = await supabase
         .from('purchase_orders')
         .select(`
           *,
-          suppliers (*),
-          work_orders (
-            id,
-            wo_number,
-            vehicle_entries (
-              id,
-              license_plate,
-              vehicles (
-                brand_type,
-                vehicle_type
-              )
-            )
-          )
+          suppliers (*)
         `)
         .order('created_at', { ascending: false });
 
       if (error) throw error;
       
-      const allPOs = data as any || [];
+      let allPOs = poData as any || [];
+
+      // 2. Collect WO IDs to fetch details separately (avoid deep join error)
+      const woIds = allPOs
+        .filter((p: any) => p.work_order_id)
+        .map((p: any) => p.work_order_id);
+
+      if (woIds.length > 0) {
+        const { data: woData } = await supabase
+          .from('work_orders')
+          .select(`
+            id,
+            wo_number,
+            vehicle_entries (
+              id,
+              license_plate,
+              vehicles (brand_type, vehicle_type)
+            )
+          `)
+          .in('id', woIds);
+
+        // Map WO details back to POs
+        const woMap = new Map(woData?.map((w: any) => [w.id, w]));
+        
+        allPOs = allPOs.map((p: any) => ({
+          ...p,
+          work_orders: p.work_order_id ? woMap.get(p.work_order_id) : null
+        }));
+      }
+
       
       // Filter Logic: (Date in Range) OR (Status != RECEIVED_FULL)
       // Assuming RECEIVED_FULL is the "Closed" state.
