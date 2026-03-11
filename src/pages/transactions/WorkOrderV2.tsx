@@ -1376,10 +1376,11 @@ export default function WorkOrderV2() {
                                 </TableCell>
                                 <TableCell>
                                     <Input 
-                                        type="number" 
+                                        type="text" 
+                                        inputMode="numeric"
                                         className="h-8 text-right bg-gray-50"
-                                        value={item.unit_price} 
-                                        readOnly={true} // Always Read-only (Price from Master)
+                                        value={item.unit_price}
+                                        readOnly={true} 
                                     />
                                 </TableCell>
                                 <TableCell>

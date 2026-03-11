@@ -224,7 +224,15 @@ export default function CashBank() {
                 </div>
                 <div className="space-y-2">
                     <Label>Jumlah (Rp)</Label>
-                    <Input type="number" value={formData.amount} onChange={e => setFormData({...formData, amount: Number(e.target.value)})} />
+                    <Input 
+                        type="text" 
+                        inputMode="numeric"
+                        value={formData.amount} 
+                        onChange={e => {
+                            const val = e.target.value.replace(/[^0-9]/g, '');
+                            setFormData({...formData, amount: Number(val)});
+                        }} 
+                    />
                 </div>
                 <div className="space-y-2">
                     <Label>Keterangan</Label>

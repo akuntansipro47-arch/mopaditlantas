@@ -632,16 +632,20 @@ export default function VehicleEntryPage() {
                                 <div className="w-16 space-y-1">
                                     <Label className="text-xs">Qty</Label>
                                     <Input 
-                                        type="number" 
+                                        type="text" 
+                                        inputMode="numeric"
                                         value={part.qty} 
-                                        onChange={(e) => handleTempSparepartChange(idx, 'qty', parseInt(e.target.value) || 0)} 
+                                        onChange={(e) => {
+                                            const val = e.target.value.replace(/[^0-9]/g, '');
+                                            handleTempSparepartChange(idx, 'qty', val ? parseInt(val) : 0);
+                                        }} 
                                         className="h-8 text-center"
                                     />
                                 </div>
                                 <div className="w-28 space-y-1">
                                     <Label className="text-xs">Harga Pagu</Label>
                                     <Input 
-                                        type="number" 
+                                        type="text" 
                                         value={part.price} 
                                         readOnly
                                         className="h-8 text-right bg-gray-100 text-gray-500"

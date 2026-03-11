@@ -418,17 +418,27 @@ export default function PurchaseOrder() {
                           </TableCell>
                           <TableCell>
                             <Input 
-                              type="number" className="h-9" min="1"
+                              type="text" 
+                              inputMode="numeric"
+                              className="h-9 text-center"
                               value={item.quantity} 
-                              onChange={(e) => handleItemChange(index, 'quantity', parseInt(e.target.value))} 
+                              onChange={(e) => {
+                                const val = e.target.value.replace(/[^0-9]/g, '');
+                                handleItemChange(index, 'quantity', val ? parseInt(val) : 0);
+                              }} 
                               disabled={isReadOnly}
                             />
                           </TableCell>
                           <TableCell>
                             <Input 
-                              type="number" className="h-9" min="0"
+                              type="text" 
+                              inputMode="numeric"
+                              className="h-9 text-right"
                               value={item.unit_price} 
-                              onChange={(e) => handleItemChange(index, 'unit_price', parseFloat(e.target.value))} 
+                              onChange={(e) => {
+                                const val = e.target.value.replace(/[^0-9]/g, '');
+                                handleItemChange(index, 'unit_price', val ? parseFloat(val) : 0);
+                              }} 
                               disabled={isReadOnly}
                             />
                           </TableCell>
