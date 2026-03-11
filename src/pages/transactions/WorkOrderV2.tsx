@@ -271,7 +271,11 @@ export default function WorkOrderV2() {
   }
 
   async function fetchGoods() {
-    const { data } = await supabase.from('goods').select('*').order('name');
+    const { data } = await supabase
+      .from('goods')
+      .select('*')
+      .eq('is_active', true) // Only active goods
+      .order('name');
     setGoodsList(data || []);
   }
 

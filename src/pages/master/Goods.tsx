@@ -6,7 +6,8 @@ import {
 } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Plus, Search, Pencil, Trash2, Package } from 'lucide-react';
+import { Plus, Search, Pencil, Trash2, Package, CheckCircle, XCircle } from 'lucide-react';
+import { Checkbox } from "@/components/ui/checkbox";
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { toast } from 'sonner';
 import {
@@ -34,6 +35,7 @@ export default function Goods() {
     unit: '',
     item_type: 'PERSEDIAAN',
     selling_price: 0,
+    is_active: true,
   });
 
   useEffect(() => {
@@ -72,7 +74,7 @@ export default function Goods() {
   };
 
   const resetForm = () => {
-    setFormData({ name: '', unit: '', item_type: 'PERSEDIAAN', selling_price: 0 });
+    setFormData({ name: '', unit: '', item_type: 'PERSEDIAAN', selling_price: 0, is_active: true });
     setIsEditing(false);
     setCurrentId(null);
   };
@@ -83,6 +85,7 @@ export default function Goods() {
       unit: item.unit,
       item_type: item.item_type,
       selling_price: item.selling_price || 0,
+      is_active: item.is_active !== false, // Default to true if null
     });
     setIsEditing(true);
     setCurrentId(item.id);
@@ -179,6 +182,22 @@ export default function Goods() {
                     inputMode="numeric"
                   />
                 </div>
+                <div className="grid grid-cols-4 items-center gap-4">
+                  <Label className="text-right">Status</Label>
+                  <div className="col-span-3 flex items-center space-x-2">
+                    <Checkbox 
+                      id="is_active" 
+                      checked={!formData.is_active} 
+                      onCheckedChange={(checked) => setFormData(prev => ({ ...prev, is_active: !checked }))}
+                    />
+                    <label
+                      htmlFor="is_active"
+                      className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 text-red-600"
+                    >
+                      Non-Aktifkan Barang Ini
+                    </label>
+                  </div>
+                </div>
               </div>
               <DialogFooter>
                 <Button type="submit" disabled={loading}>{loading ? 'Menyimpan...' : 'Simpan'}</Button>
@@ -209,17 +228,21 @@ export default function Goods() {
                   <TableHead>Tipe</TableHead>
                   <TableHead>Harga Jual</TableHead>
                   <TableHead>Stok</TableHead>
+                  <TableHead className="text-center">Status</TableHead>
                   <TableHead className="text-right">Aksi</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {filteredGoods.length === 0 ? (
-                  <TableRow><TableCell colSpan={7} className="text-center h-24">Tidak ada data.</TableCell></TableRow>
+                  <TableRow><TableCell colSpan={8} className="text-center h-24">Tidak ada data.</TableCell></TableRow>
                 ) : (
                   filteredGoods.map((item) => (
-                    <TableRow key={item.id}>
+                    <TableRow key={item.id} className={!item.is_active ? 'bg-gray-50 opacity-60' : ''}>
                       <TableCell>{item.item_code || 'Auto'}</TableCell>
-                      <TableCell className="font-medium">{item.name}</TableCell>
+                      <TableCell className="font-medium">
+                        {item.name}
+                        {!item.is_active && <span className="ml-2 text-xs text-red-500 font-bold">(Non-Aktif)</span>}
+                      </TableCell>
                       <TableCell>{item.unit}</TableCell>
                       <TableCell>
                         <span className={`px-2 py-1 rounded-full text-xs ${item.item_type === 'PERSEDIAAN' ? 'bg-blue-100 text-blue-800' : 'bg-gray-100 text-gray-800'}`}>
@@ -228,6 +251,13 @@ export default function Goods() {
                       </TableCell>
                       <TableCell>{formatCurrency(item.selling_price || 0)}</TableCell>
                       <TableCell>{item.current_stock}</TableCell>
+                      <TableCell className="text-center">
+                        {item.is_active !== false ? (
+                          <CheckCircle className="h-4 w-4 text-green-500 mx-auto" />
+                        ) : (
+                          <XCircle className="h-4 w-4 text-red-500 mx-auto" />
+                        )}
+                      </TableCell>
                       <TableCell className="text-right">
                         <div className="flex justify-end gap-2">
                           <Button variant="ghost" size="icon" onClick={() => handleEdit(item)}><Pencil className="h-4 w-4" /></Button>

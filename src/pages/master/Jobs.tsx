@@ -68,7 +68,13 @@ export default function Jobs() {
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
-    setFormData(prev => ({ ...prev, [name]: value }));
+    if (name === 'selling_price' || name === 'hpp') {
+      // Allow only numbers
+      const numericValue = value.replace(/[^0-9]/g, '');
+      setFormData(prev => ({ ...prev, [name]: numericValue ? parseInt(numericValue) : 0 }));
+    } else {
+      setFormData(prev => ({ ...prev, [name]: value }));
+    }
   };
 
   const handleSelectChange = (value: string) => {
@@ -191,18 +197,26 @@ export default function Jobs() {
                 </div>
                 <div className="grid grid-cols-4 items-center gap-4">
                   <Label className="text-right">Harga Jual (Revenue)</Label>
-                  <Input type="number" name="selling_price" value={formData.selling_price} onChange={handleInputChange} className="col-span-3" min="0" placeholder="0" />
+                  <Input 
+                    type="text" 
+                    name="selling_price" 
+                    value={formData.selling_price || ''} 
+                    onChange={handleInputChange} 
+                    className="col-span-3" 
+                    placeholder="0" 
+                    inputMode="numeric"
+                  />
                 </div>
                 <div className="grid grid-cols-4 items-center gap-4">
                   <Label className="text-right">HPP (Modal)</Label>
                   <div className="col-span-3">
                       <Input 
-                        type="number" 
+                        type="text" 
                         name="hpp" 
-                        value={formData.hpp} 
+                        value={formData.hpp || ''} 
                         onChange={handleInputChange} 
-                        min="0" 
                         placeholder="0" 
+                        inputMode="numeric"
                         disabled={missingColumn}
                       />
                       {missingColumn && <p className="text-[10px] text-red-500 mt-1">Kolom HPP belum tersedia di database.</p>}

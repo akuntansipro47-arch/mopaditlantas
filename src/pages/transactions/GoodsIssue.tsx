@@ -91,7 +91,11 @@ export default function GoodsIssuePage() {
       .limit(100); // Limit to recent 100 to avoid performance issues
     setWos(w as any || []);
 
-    const { data: g } = await supabase.from('goods').select('*').order('name');
+    const { data: g } = await supabase
+      .from('goods')
+      .select('*')
+      .eq('is_active', true) // Only active goods
+      .order('name');
     setGoodsList(g || []);
   }
 
