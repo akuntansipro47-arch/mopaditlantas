@@ -29,6 +29,7 @@ export default function GoodsIssueDetailReport() {
         .from('goods_issue_items')
         .select(`
           quantity,
+          is_info_only,
           goods (item_code, name, unit),
           goods_issues (
             issue_number,
@@ -72,9 +73,11 @@ export default function GoodsIssueDetailReport() {
                 merk_tipe: vehicle?.brand_type || '-',
                 item_name: good?.name || '-',
                 kode_barang: good?.item_code || '-',
-                qty: item.quantity,
+                qty: item.is_info_only ? 0 : item.quantity,
+                real_qty: item.quantity, // Keep track of real qty for info
+                is_info_only: item.is_info_only,
                 satuan: good?.unit || '-',
-                keterangan: issue?.notes || '-' // Added notes to see source
+                keterangan: issue?.notes || '-' 
             };
         })
         .filter(item => {
@@ -107,9 +110,9 @@ export default function GoodsIssueDetailReport() {
       'Merk/Tipe': item.merk_tipe,
       'Kode Barang': item.kode_barang,
       'Nama Item': item.item_name,
-      'Qty': item.qty,
+      'Qty': item.is_info_only ? 0 : item.qty,
       'Satuan': item.satuan,
-      'Keterangan': item.keterangan
+      'Keterangan': item.is_info_only ? 'Info Only (+-)' : item.keterangan
     })));
 
     const wb = XLSX.utils.book_new();
@@ -173,9 +176,21 @@ export default function GoodsIssueDetailReport() {
                             <span className="text-[10px] text-gray-400">{item.kode_barang}</span>
                         </div>
                       </TableCell>
-                      <TableCell className="text-center font-bold">{item.qty}</TableCell>
+                      <TableCell className="text-center font-bold">
+                        {item.is_info_only ? (
+                          <span className="text-gray-400">0</span>
+                        ) : (
+                          item.qty
+                        )}
+                      </TableCell>
                       <TableCell className="text-center text-xs text-gray-500">{item.satuan}</TableCell>
-                      <TableCell className="text-xs text-gray-500 truncate max-w-[150px]">{item.keterangan}</TableCell>
+                      <TableCell className="text-xs text-gray-500 truncate max-w-[150px]">
+                         {item.is_info_only ? (
+                           <span className="text-blue-600 font-semibold italic">Info Only (+-)</span>
+                         ) : (
+                           item.keterangan
+                         )}
+                      </TableCell>
                     </TableRow>
                   ))
                 )}
