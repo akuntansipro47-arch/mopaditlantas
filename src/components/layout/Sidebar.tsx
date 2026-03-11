@@ -97,8 +97,8 @@ export function Sidebar() {
             <Car className="h-5 w-5 text-white" />
           </div>
           <div>
-            <h1 className="text-lg font-bold tracking-tight text-white leading-none">MOPADITLANTAS</h1>
-            <p className="text-[10px] text-slate-500 font-medium tracking-wide mt-1">OPERATIONAL SYSTEM</p>
+            <h1 className="text-lg font-bold tracking-tight text-white leading-none">OtoSmart</h1>
+            <p className="text-[10px] text-slate-500 font-medium tracking-wide mt-1">Complete control, Smarter workshop</p>
           </div>
         </div>
       </div>

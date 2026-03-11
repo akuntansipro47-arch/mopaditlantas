@@ -238,7 +238,7 @@ export default function VehicleEntryPrint({ id }: VehicleEntryPrintProps) {
       
       <div className="mt-12 flex justify-between items-end border-t border-gray-200 pt-4 text-[9px] text-slate-400">
         <div>
-            Dicetak oleh sistem MOPADITLANTAS
+            Dicetak oleh sistem OtoSmart
         </div>
         <div>
             {new Date().toLocaleString('id-ID')}

@@ -165,7 +165,7 @@ export default function SuratJalanPrint({ id }: SuratJalanPrintProps) {
       </div>
       
       <div className="mt-8 text-center text-[9px] text-gray-400 border-t pt-2">
-        Dokumen ini dicetak otomatis oleh sistem MOPADITLANTAS pada {new Date().toLocaleString('id-ID')}
+        Dokumen ini dicetak otomatis oleh sistem OtoSmart pada {new Date().toLocaleString('id-ID')}
       </div>
       
       {/* Print specific styles */}
