@@ -324,7 +324,7 @@ export default function PurchaseOrder() {
       <div className="flex items-center justify-between">
         <h2 className="text-3xl font-bold tracking-tight">Purchase Order (PO)</h2>
         <div className="flex gap-2">
-          <Button onClick={() => { resetForm(); setIsDialogOpen(true); }}>
+          <Button onClick={() => { resetForm(); setIsDialogOpen(true); }} className="bg-lime-600 hover:bg-lime-700">
             <Plus className="mr-2 h-4 w-4" /> Buat PO Baru
           </Button>
         </div>
@@ -383,7 +383,7 @@ export default function PurchaseOrder() {
                       <Button 
                         type="button" 
                         variant="outline" 
-                        className="w-full justify-between text-left font-normal"
+                        className="w-full justify-between text-left font-normal border-lime-200 hover:border-lime-500"
                         onClick={() => !isReadOnly && setSupplierSearchOpen(true)}
                         disabled={isReadOnly}
                       >
