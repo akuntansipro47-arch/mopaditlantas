@@ -1,9 +1,11 @@
-import { useRegisterSW } from 'virtual:pwa-register/react'
+/* eslint-disable */
+// import { useRegisterSW } from 'virtual:pwa-register/react'
 import { useEffect } from 'react'
-import { toast } from 'sonner'
-import { Button } from '@/components/ui/button'
+// import { toast } from 'sonner'
+// import { Button } from '@/components/ui/button'
 
 export default function ReloadPrompt() {
+  /*
   const {
     offlineReady: [offlineReady, setOfflineReady],
     needRefresh: [needRefresh, setNeedRefresh],
@@ -29,6 +31,6 @@ export default function ReloadPrompt() {
       })
     }
   }, [needRefresh, updateServiceWorker])
-
+  */
   return null
 }
