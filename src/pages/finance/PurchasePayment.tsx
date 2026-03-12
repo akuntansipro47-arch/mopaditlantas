@@ -65,22 +65,28 @@ export default function PurchasePayment() {
 
   async function fetchApAccount() {
     try {
-        // Try to find account with sub_category 'HUTANG' or code usually starting with 2
+        // Find ACCOUNT (Detail) that is Accounts Payable
+        // Strategy: 
+        // 1. Check account_type='DETAIL' AND (name contains 'Hutang Usaha' or 'Hutang Dagang')
+        // 2. Or sub_category='HUTANG' AND account_type='DETAIL'
+        
         const { data } = await supabase
             .from('chart_of_accounts')
             .select('id, account_code, account_name')
-            .eq('sub_category', 'HUTANG')
+            .eq('account_type', 'DETAIL')
+            .or('account_name.ilike.%hutang usaha%,account_name.ilike.%hutang dagang%')
             .limit(1)
             .maybeSingle();
         
         if (data) {
             setApAccount(data);
         } else {
-            // Fallback search by name
+            // Fallback: any detail account in HUTANG subcategory
             const { data: data2 } = await supabase
                 .from('chart_of_accounts')
                 .select('id, account_code, account_name')
-                .ilike('account_name', '%hutang usaha%')
+                .eq('sub_category', 'HUTANG')
+                .eq('account_type', 'DETAIL')
                 .limit(1)
                 .maybeSingle();
             if (data2) setApAccount(data2);
