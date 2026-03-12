@@ -201,9 +201,9 @@ export default function ManualJournalEntry() {
             </div>
 
             {/* Lines Table */}
-            <div className="border rounded-md">
+            <div className="border rounded-md max-h-[500px] overflow-auto relative">
                 <Table>
-                    <TableHeader className="bg-slate-50">
+                    <TableHeader className="bg-slate-50 sticky top-0 z-10 shadow-sm">
                         <TableRow>
                             <TableHead className="w-[300px]">Akun Perkiraan</TableHead>
                             <TableHead>Keterangan Baris</TableHead>
