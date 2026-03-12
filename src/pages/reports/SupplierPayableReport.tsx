@@ -8,7 +8,8 @@ import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { toast } from 'sonner';
 import { formatCurrency, formatDate } from '@/lib/utils';
-import { Printer, RefreshCw } from 'lucide-react';
+import { Printer, RefreshCw, Download } from 'lucide-react';
+import * as XLSX from 'xlsx';
 
 export default function SupplierPayableReport() {
   const [loading, setLoading] = useState(false);
@@ -57,12 +58,6 @@ export default function SupplierPayableReport() {
             
             const remaining = (inv.total_amount || 0) - paid;
 
-            // Only show if there is remaining debt OR if user wants to see history? 
-            // Usually "Sisa Hutang" report only shows outstanding.
-            // But if we want a full statement, we might show 0 balance too.
-            // Let's show only if remaining > 100 (small tolerance) to avoid float issues
-            // OR if user wants to see unpaid invoices.
-            
             if (remaining > 100) {
                 const supplierId = inv.supplier?.id || 'unknown';
                 const supplierName = inv.supplier?.name || 'Unknown Supplier';
@@ -99,11 +94,42 @@ export default function SupplierPayableReport() {
     }
   }
 
+  const exportToExcel = () => {
+    // Flatten data for Excel
+    const flattenData: any[] = [];
+    
+    reportData.forEach(supplier => {
+        // Supplier Header Row (Optional, or just include supplier name in every row)
+        // Let's include supplier name in every row for easier filtering in Excel
+        supplier.invoices.forEach((inv: any) => {
+            flattenData.push({
+                'Supplier': supplier.name,
+                'No. Invoice': inv.invoice_number,
+                'Tanggal Invoice': formatDate(inv.invoice_date),
+                'Jatuh Tempo': formatDate(inv.due_date),
+                'Total Tagihan': inv.total_amount,
+                'Dibayar (s/d Tgl)': inv.paid_as_of_date,
+                'Sisa Hutang': inv.remaining_balance
+            });
+        });
+        // Add Subtotal Row? Maybe cleaner without for data processing, 
+        // but user might want it. Let's stick to clean data for Pivot Tables.
+    });
+
+    const ws = XLSX.utils.json_to_sheet(flattenData);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Sisa Hutang Supplier");
+    XLSX.writeFile(wb, `Laporan_Hutang_Supplier_Per_${reportDate}.xlsx`);
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h2 className="text-3xl font-bold tracking-tight">Ringkasan Hutang Supplier</h2>
         <div className="flex gap-2">
+            <Button variant="outline" onClick={exportToExcel} className="print:hidden">
+                <Download className="mr-2 h-4 w-4" /> Export Excel
+            </Button>
             <Button variant="outline" onClick={() => window.print()} className="print:hidden">
                 <Printer className="mr-2 h-4 w-4" /> Cetak
             </Button>
