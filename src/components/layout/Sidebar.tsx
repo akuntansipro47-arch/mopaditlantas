@@ -62,6 +62,7 @@ const navigation = [
     key: 'finance',
     children: [
       { name: 'Pembayaran Hutang', href: '/finance/payments', icon: Wallet, key: 'finance_payments' },
+      { name: 'Pembayaran Piutang', href: '/finance/sales', icon: Wallet, key: 'finance_sales' }, // New Menu
       { name: 'Kas & Bank', href: '/finance/cash-bank', icon: Wallet, key: 'finance_cash' },
       { name: 'Buku Besar', href: '/finance/general-ledger', icon: ClipboardList, key: 'finance_gl' },
     ]

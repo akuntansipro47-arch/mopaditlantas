@@ -19,6 +19,7 @@ import WorkOrder from "@/pages/transactions/WorkOrderV2";
 import GoodsIssue from "@/pages/transactions/GoodsIssue";
 import Reports from "@/pages/Reports";
 import ItemHistoryReport from "@/pages/reports/ItemHistoryReport"; // New Import
+import ProfitLossReport from "@/pages/reports/ProfitLossReport"; // Import P&L Report
 import PrintPO from "@/pages/print/PrintPO";
 import PrintSuratJalan from "@/pages/print/PrintSuratJalan";
 import PrintVehicleEntry from "@/pages/print/PrintVehicleEntry";
@@ -27,6 +28,7 @@ import PrintInvoice from "@/pages/print/PrintInvoice";
 import UserManagement from "@/pages/admin/UserManagement";
 import AgencyProfile from "@/pages/admin/AgencyProfile";
 import PurchasePayment from "@/pages/finance/PurchasePayment";
+import SalesInvoice from "@/pages/finance/SalesInvoice"; // Import Sales Invoice
 import CashBank from "@/pages/finance/CashBankV2";
 import GeneralLedger from "@/pages/finance/GeneralLedger"; // Import GL
 
@@ -72,12 +74,14 @@ export default function App() {
               
               {/* Finance */}
               <Route path="/finance/payments" element={<PurchasePayment />} />
-          <Route path="/finance/cash-bank" element={<CashBank />} />
-          <Route path="/finance/general-ledger" element={<GeneralLedger />} />
+              <Route path="/finance/sales" element={<SalesInvoice />} /> {/* Sales Route */}
+              <Route path="/finance/cash-bank" element={<CashBank />} />
+              <Route path="/finance/general-ledger" element={<GeneralLedger />} />
 
           {/* Report Routes */}
               <Route path="/reports" element={<Reports />} />
               <Route path="/reports/item-history" element={<ItemHistoryReport />} />
+              <Route path="/reports/profit-loss" element={<ProfitLossReport />} />
               
               {/* Admin */}
               <Route path="/admin/users" element={<UserManagement />} />

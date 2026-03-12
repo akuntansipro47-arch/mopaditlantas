@@ -39,6 +39,7 @@ const MENU_OPTIONS = [
   { id: 'trans_issue', label: 'Barang Keluar' },
   { id: 'finance', label: 'Keuangan (Parent)' },
   { id: 'finance_payments', label: 'Pembayaran Hutang' },
+  { id: 'finance_sales', label: 'Pembayaran Piutang' }, // New
   { id: 'finance_cash', label: 'Kas & Bank' },
   { id: 'finance_gl', label: 'Buku Besar' },
   { id: 'reports', label: 'Laporan' },

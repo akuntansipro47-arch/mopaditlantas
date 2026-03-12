@@ -12,6 +12,7 @@ import GoodsIssueDetailReport from './reports/GoodsIssueDetailReport';
 import StockReport from './reports/StockReport';
 import InventoryValueReport from './reports/InventoryValueReport';
 import GrossProfitReport from './reports/GrossProfitReport';
+import ProfitLossReport from './reports/ProfitLossReport'; // Import P&L
 import VehicleEntryReport from './reports/VehicleEntryReport';
 import EstimationVsRealizationReport from './reports/EstimationVsRealizationReport';
 import BudgetMonitoringReport from './reports/BudgetMonitoringReport';
@@ -143,6 +144,11 @@ export default function Reports() {
               Laba Kotor
             </TabsTrigger>
           )}
+          {canAccess('report_profit') && ( // Use same permission for P&L
+            <TabsTrigger value="profit_loss" className="data-[state=active]:bg-emerald-600 data-[state=active]:text-white data-[state=active]:shadow-md border border-slate-200 bg-white px-4 py-2.5 rounded-lg transition-all hover:border-emerald-300 font-medium">
+              Laba Rugi (Net)
+            </TabsTrigger>
+          )}
           {canAccess('report_estimation') && (
             <TabsTrigger value="estimation" className="data-[state=active]:bg-orange-600 data-[state=active]:text-white data-[state=active]:shadow-md border border-slate-200 bg-white px-4 py-2.5 rounded-lg transition-all hover:border-orange-300 font-medium">
               Estimasi vs Realisasi
@@ -168,6 +174,7 @@ export default function Reports() {
           {canAccess('report_wo') && <TabsContent value="wodetail"><WorkOrderDetailReport /></TabsContent>}
           {canAccess('report_vehicle_entry') && <TabsContent value="vehicle_entry"><VehicleEntryReport /></TabsContent>}
           {canAccess('report_profit') && <TabsContent value="profit"><GrossProfitReport /></TabsContent>}
+          {canAccess('report_profit') && <TabsContent value="profit_loss"><ProfitLossReport /></TabsContent>}
           {canAccess('report_estimation') && <TabsContent value="estimation"><EstimationVsRealizationReport /></TabsContent>}
           {canAccess('report_budget') && <TabsContent value="budget"><BudgetMonitoringReport /></TabsContent>}
         </div>
