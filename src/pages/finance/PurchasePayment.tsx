@@ -30,14 +30,31 @@ export default function PurchasePayment() {
     amount: 0,
     payment_date: new Date().toISOString().split('T')[0],
     payment_method: 'TRANSFER',
+    payment_account_id: '', // New Field
     notes: ''
   });
 
-  const [isSyncing, setIsSyncing] = useState(false);
+  const [cashBankAccounts, setCashBankAccounts] = useState<any[]>([]);
 
   useEffect(() => {
     fetchInvoices();
+    fetchCashBankAccounts();
   }, []);
+
+  async function fetchCashBankAccounts() {
+    try {
+        const { data } = await supabase
+            .from('chart_of_accounts')
+            .select('id, account_code, account_name')
+            .eq('category', 'AKTIVA')
+            .eq('sub_category', 'AKTIVA_LANCAR')
+            .or('account_name.ilike.%kas%,account_name.ilike.%bank%'); // Filter Kas/Bank loosely
+        
+        setCashBankAccounts(data || []);
+    } catch (error) {
+        console.error("Error fetching accounts:", error);
+    }
+  }
 
   async function handleSyncInvoices() {
     setIsSyncing(true);
@@ -152,6 +169,7 @@ export default function PurchasePayment() {
             payment_date: paymentData.payment_date,
             amount: amount,
             payment_method: paymentData.payment_method,
+            payment_account_id: paymentData.payment_account_id || null, // Save account ID
             notes: paymentData.notes
         }]);
       
@@ -298,13 +316,13 @@ export default function PurchasePayment() {
                     <Input type="date" value={paymentData.payment_date} onChange={e => setPaymentData({...paymentData, payment_date: e.target.value})} />
                 </div>
                 <div className="space-y-2">
-                    <Label>Metode Pembayaran</Label>
-                    <Select value={paymentData.payment_method} onValueChange={v => setPaymentData({...paymentData, payment_method: v})}>
-                        <SelectTrigger><SelectValue /></SelectTrigger>
+                    <Label>Kas/Bank Pembayar</Label>
+                    <Select value={paymentData.payment_account_id} onValueChange={v => setPaymentData({...paymentData, payment_account_id: v})}>
+                        <SelectTrigger><SelectValue placeholder="Pilih Akun Kas/Bank" /></SelectTrigger>
                         <SelectContent>
-                            <SelectItem value="CASH">Tunai (Cash)</SelectItem>
-                            <SelectItem value="TRANSFER">Transfer Bank</SelectItem>
-                            <SelectItem value="GIRO">Giro / Cek</SelectItem>
+                            {cashBankAccounts.map(acc => (
+                                <SelectItem key={acc.id} value={acc.id}>{acc.account_code} - {acc.account_name}</SelectItem>
+                            ))}
                         </SelectContent>
                     </Select>
                 </div>
