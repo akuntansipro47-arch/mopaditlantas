@@ -60,30 +60,51 @@ export default function ProfitLossReport() {
             const cat = item.account.category;
             const sub = item.account.sub_category;
             const accId = item.account.id;
-            const accName = `${item.account.account_code} - ${item.account.account_name}`;
+            const accCode = item.account.account_code || '';
+            const accName = `${accCode} - ${item.account.account_name}`;
             
-            let groupKey = 'expenses'; // Default
+            let groupKey = '';
             let amount = 0;
 
-            if (cat === 'PENDAPATAN') {
-                if (sub === 'PENDAPATAN_LAINNYA') groupKey = 'other_revenue';
-                else groupKey = 'revenue';
-                amount = (item.credit || 0) - (item.debit || 0); // Income is Credit normal
-            } else if (cat === 'HPP') {
+            // Logic Filter based on Category OR Account Code Prefix
+            // 4: Revenue, 5: COGS, 6: Expenses, 7: Other Income/Expense (or 8,9 depending on convention)
+            
+            if (cat === 'PENDAPATAN' || accCode.startsWith('4')) {
+                if (sub === 'PENDAPATAN_LAINNYA' || accCode.startsWith('42') || accCode.startsWith('71')) { 
+                     // Convention: 71 often Other Income, or just sub category check
+                     groupKey = 'other_revenue';
+                } else {
+                     groupKey = 'revenue';
+                }
+                amount = (item.credit || 0) - (item.debit || 0);
+            } else if (cat === 'HPP' || accCode.startsWith('5')) {
                 groupKey = 'cogs';
-                amount = (item.debit || 0) - (item.credit || 0); // Expense is Debit normal
-            } else if (cat === 'BEBAN') {
+                amount = (item.debit || 0) - (item.credit || 0);
+            } else if (cat === 'BEBAN' || accCode.startsWith('6')) {
                 if (sub === 'BEBAN_LAINNYA') groupKey = 'other_expenses';
                 else groupKey = 'expenses';
                 amount = (item.debit || 0) - (item.credit || 0);
+            } else if (accCode.startsWith('7') || accCode.startsWith('8') || accCode.startsWith('9')) {
+                // Catch-all for Other Income/Expenses if not categorized properly
+                // Let's assume 7 is Other Income/Expense. Need to check Debit/Credit balance?
+                // Usually 7 is Other Income, 8 Other Expense, 9 Tax.
+                // Let's rely on Debit vs Credit dominance if category is unknown.
+                const net = (item.credit || 0) - (item.debit || 0);
+                if (net > 0) {
+                    groupKey = 'other_revenue';
+                    amount = net;
+                } else {
+                    groupKey = 'other_expenses';
+                    amount = -net;
+                }
             } else {
-                return; // Skip Assets/Liabilities
+                return; // Skip Assets (1), Liabilities (2), Equity (3)
             }
 
-            if (!grouped[groupKey][accId]) {
+            if (groupKey && !grouped[groupKey][accId]) {
                 grouped[groupKey][accId] = { name: accName, amount: 0 };
             }
-            grouped[groupKey][accId].amount += amount;
+            if (groupKey) grouped[groupKey][accId].amount += amount;
         });
 
         // Convert to arrays
