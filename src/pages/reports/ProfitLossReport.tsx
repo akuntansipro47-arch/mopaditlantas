@@ -87,9 +87,6 @@ export default function ProfitLossReport() {
                 amount = (item.debit || 0) - (item.credit || 0);
             } else if (accCode.startsWith('7') || accCode.startsWith('8') || accCode.startsWith('9')) {
                 // Catch-all for Other Income/Expenses if not categorized properly
-                // Let's assume 7 is Other Income/Expense. Need to check Debit/Credit balance?
-                // Usually 7 is Other Income, 8 Other Expense, 9 Tax.
-                // Let's rely on Debit vs Credit dominance if category is unknown.
                 const net = (item.credit || 0) - (item.debit || 0);
                 if (net > 0) {
                     groupKey = 'other_revenue';
@@ -98,6 +95,10 @@ export default function ProfitLossReport() {
                     groupKey = 'other_expenses';
                     amount = -net;
                 }
+            } else if ((item.account.account_name || '').toUpperCase().includes('PENDAPATAN') || (item.account.account_name || '').toUpperCase().includes('PENJUALAN')) {
+                // Fallback: Smart detection by name if category/code is missing
+                groupKey = 'revenue';
+                amount = (item.credit || 0) - (item.debit || 0);
             } else {
                 return; // Skip Assets (1), Liabilities (2), Equity (3)
             }
