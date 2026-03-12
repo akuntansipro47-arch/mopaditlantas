@@ -31,7 +31,7 @@ type WOWithDetails = WO & {
 };
 
 export default function WorkOrder() {
-  const { isDemo } = useDemo();
+  const { isDemo, addJournal } = useDemo();
   const [wos, setWos] = useState<WOWithDetails[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -160,8 +160,27 @@ export default function WorkOrder() {
   };
 
   const createAutoJournal = async (woId: string) => {
-    // DEMO MODE: Simulate Success
+    // DEMO MODE: Real Logic for Demo
     if (isDemo) {
+        // Fetch WO from state since it's demo
+        const wo = wos.find(w => w.id === woId);
+        if (!wo) return;
+
+        const totalServices = wo.total_services || 0;
+        const totalParts = wo.total_parts || 0;
+        const grandTotal = wo.grand_total || 0;
+
+        addJournal({
+            date: new Date().toISOString(),
+            desc: `Jurnal Otomatis WO ${wo.wo_number}`,
+            total: grandTotal,
+            items: [
+                { account_id: 'acc-piutang', account_name: 'Piutang Usaha', account_code: '1-1100', debit: grandTotal, credit: 0, category: 'AKTIVA' },
+                { account_id: 'acc-pendapatan-jasa', account_name: 'Pendapatan Jasa', account_code: '4-1000', debit: 0, credit: totalServices, category: 'PENDAPATAN' },
+                { account_id: 'acc-pendapatan-part', account_name: 'Pendapatan Sparepart', account_code: '4-2000', debit: 0, credit: totalParts, category: 'PENDAPATAN' }
+            ].filter(i => i.debit > 0 || i.credit > 0)
+        });
+
         toast.success("Jurnal Otomatis Berhasil Dibuat (Demo Mode)");
         return;
     }

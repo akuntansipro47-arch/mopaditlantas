@@ -11,7 +11,10 @@ import { formatCurrency, formatDate } from '@/lib/utils';
 import { Printer, RefreshCw, Download } from 'lucide-react';
 import * as XLSX from 'xlsx';
 
+import { useDemo } from '@/context/DemoDataContext';
+
 export default function BalanceSheetReport() {
+  const { isDemo, journals: demoJournals } = useDemo();
   const [loading, setLoading] = useState(false);
   const [reportData, setReportData] = useState<any>({
       assets: [],
@@ -24,76 +27,109 @@ export default function BalanceSheetReport() {
 
   useEffect(() => {
     fetchReport();
-  }, []);
+  }, [isDemo, demoJournals, reportDate]);
 
   async function fetchReport() {
     setLoading(true);
     try {
-        // 1. Fetch Chart of Accounts (Assets, Liabilities, Equity)
-        // Filter by Category OR Account Code prefix (1, 2, 3)
-        const { data: accounts, error: accError } = await supabase
-            .from('chart_of_accounts')
-            .select('id, account_code, account_name, category, sub_category, balance_type, account_type')
-            .order('account_code');
+        // 1. Fetch Accounts
+        let accounts: any[] = [];
         
-        if (accError) throw accError;
+        if (isDemo) {
+            // Mock Accounts
+            accounts = [
+                { id: 'acc-kas', account_code: '1-1001', account_name: 'Kas Besar', category: 'AKTIVA', account_type: 'DETAIL' },
+                { id: 'acc-piutang', account_code: '1-1100', account_name: 'Piutang Usaha', category: 'AKTIVA', account_type: 'DETAIL' },
+                { id: 'acc-persediaan', account_code: '1-1200', account_name: 'Persediaan Barang', category: 'AKTIVA', account_type: 'DETAIL' },
+                { id: 'acc-modal', account_code: '3-1000', account_name: 'Modal Pemilik', category: 'MODAL', account_type: 'DETAIL' },
+                { id: 'acc-hutang', account_code: '2-1000', account_name: 'Hutang Usaha', category: 'KEWAJIBAN', account_type: 'DETAIL' },
+            ];
+        } else {
+            const { data: sbAccounts, error: accError } = await supabase
+                .from('chart_of_accounts')
+                .select('id, account_code, account_name, category, sub_category, balance_type, account_type')
+                .order('account_code');
+            if (accError) throw accError;
+            accounts = sbAccounts || [];
+        }
 
         // Filter relevant accounts (Aktiva/Passiva/Modal OR Code 1/2/3)
         const relevantAccounts = accounts.filter((acc: any) => {
             const code = acc.account_code || '';
             return (
-                ['AKTIVA', 'KEWAJIBAN', 'EKUITAS', 'MODAL', 'PASSIVA'].includes(acc.category) ||
+                ['AKTIVA', 'KEWAJIBAN', 'EKUITAS', 'MODAL', 'PASSIVA', 'ASSETS', 'LIABILITIES', 'EQUITY'].includes(acc.category) ||
                 code.startsWith('1') || 
                 code.startsWith('2') || 
                 code.startsWith('3')
             );
         });
 
-        // 2. Fetch Journal Entries up to Report Date
-        // To calculate balance: Sum(Debit) - Sum(Credit) based on normal balance
-        const { data: journals, error: jError } = await supabase
-            .from('journal_entry_items')
-            .select(`
-                debit, credit, account_id,
-                journal_entries!inner (entry_date)
-            `)
-            .lte('journal_entries.entry_date', reportDate);
-            
-        if (jError) throw jError;
-
-        // 3. Calculate Account Balances
-        const balances: Record<string, number> = {};
+        // 2. Fetch Journals
+        let journals: any[] = [];
         
+        if (isDemo) {
+            // Filter Demo Journals
+            const filteredJournals = demoJournals.filter(j => j.date <= reportDate);
+            journals = filteredJournals.flatMap(j => 
+                j.items.map(i => ({
+                    debit: i.debit,
+                    credit: i.credit,
+                    account_id: i.account_id,
+                    journal_entries: { entry_date: j.date }
+                }))
+            );
+        } else {
+            const { data: sbJournals, error: jError } = await supabase
+                .from('journal_entry_items')
+                .select(`
+                    debit, credit, account_id,
+                    journal_entries!inner (entry_date)
+                `)
+                .lte('journal_entries.entry_date', reportDate);
+            if (jError) throw jError;
+            journals = sbJournals || [];
+        }
+
+        // 3. Calculate Balances
+        const balances: Record<string, number> = {};
         journals?.forEach((j: any) => {
             if (!balances[j.account_id]) balances[j.account_id] = 0;
             balances[j.account_id] += (j.debit || 0) - (j.credit || 0);
         });
 
-        // 4. Calculate Current Earnings (Laba Tahun Berjalan)
-        // Revenue - Expenses (All time up to date, assuming no closing entries yet)
-        // If there are closing entries, they would have moved to Retained Earnings.
-        // For simplicity, let's calculate dynamic earnings from Income Statement accounts.
-        
-        const { data: incomeJournals } = await supabase
-            .from('journal_entry_items')
-            .select(`
-                debit, credit, 
-                account:chart_of_accounts!inner (category)
-            `)
-            .in('account.category', ['PENDAPATAN', 'HPP', 'BEBAN']) // P&L Accounts
-            // .gte('journal_entries.entry_date', startOfYear) // Usually Current Year Earnings
-            // But for total Retained Earnings (if never closed), we might need all time?
-            // Let's assume we want "Current Year Earnings" + "Retained Earnings" (Equity).
-            // If user hasn't done "Close Year", then Retained Earnings account is 0, and we show all as Current Earnings.
-            .lte('journal_entries.entry_date', reportDate) as any;
-            
+        // 4. Calculate Current Earnings
         let currentEarnings = 0;
+        
+        // Fetch Income Journals (Demo or Live)
+        let incomeJournals: any[] = [];
+        
+        if (isDemo) {
+             const filteredJournals = demoJournals.filter(j => j.date <= reportDate);
+             incomeJournals = filteredJournals.flatMap(j => 
+                j.items.filter(i => ['PENDAPATAN', 'HPP', 'BEBAN', 'PENJUALAN'].includes(i.category || '')).map(i => ({
+                    debit: i.debit, 
+                    credit: i.credit,
+                    account: { category: i.category }
+                }))
+            );
+        } else {
+            const { data: sbIncome } = await supabase
+                .from('journal_entry_items')
+                .select(`
+                    debit, credit, 
+                    account:chart_of_accounts!inner (category)
+                `)
+                .in('account.category', ['PENDAPATAN', 'HPP', 'BEBAN', 'PENJUALAN'])
+                .lte('journal_entries.entry_date', reportDate) as any;
+            incomeJournals = sbIncome || [];
+        }
+
         incomeJournals?.forEach((j: any) => {
             const cat = j.account.category;
-            if (cat === 'PENDAPATAN') {
-                currentEarnings += (j.credit - j.debit); // Revenue is Credit
+            if (cat === 'PENDAPATAN' || cat === 'PENJUALAN') {
+                currentEarnings += (j.credit - j.debit);
             } else {
-                currentEarnings -= (j.debit - j.credit); // Expense is Debit
+                currentEarnings -= (j.debit - j.credit);
             }
         });
 
@@ -102,17 +138,10 @@ export default function BalanceSheetReport() {
         const liabilities: any[] = [];
         const equity: any[] = [];
 
-        // Sort by code length descending to handle rollup (children before parents)
-        // Actually, we can just iterate top-down and sum children?
-        // Let's do a simple recursive sum for Headers.
-        
         const getBalance = (accId: string, accCode: string): number => {
-            if (!accCode) return 0; // Guard against empty code
-            
-            // If Detail, return calculated balance from journals
+            if (!accCode) return 0;
             if (balances[accId] !== undefined) return balances[accId];
             
-            // Sum all DETAIL accounts that start with this prefix
             const descendants = relevantAccounts.filter((a: any) => 
                 a.account_type === 'DETAIL' &&
                 (a.account_code || '').startsWith(accCode)
@@ -126,21 +155,14 @@ export default function BalanceSheetReport() {
         };
 
         relevantAccounts.forEach((acc: any) => {
-            // Calculate Balance
             let bal = 0;
             const code = acc.account_code || '';
             
             if (acc.account_type === 'DETAIL') {
                 bal = balances[acc.id] || 0;
             } else {
-                // Header: Sum descendants
                 bal = getBalance(acc.id, code);
             }
-            
-            // Adjust based on Category/Code for display
-            // Assets (1): Normal Debit (Positive)
-            // Liabilities (2): Normal Credit (Negative) -> Flip to Positive
-            // Equity (3): Normal Credit -> Flip
             
             const isAsset = ['AKTIVA', 'ASSETS'].includes(acc.category) || code.startsWith('1');
             
@@ -148,9 +170,8 @@ export default function BalanceSheetReport() {
                 bal = -bal; 
             }
 
-            if (Math.abs(bal) > 0.01) { // Only show non-zero
+            if (Math.abs(bal) > 0.01) {
                 const item = { ...acc, balance: bal };
-                
                 if (isAsset) assets.push(item);
                 else if (['KEWAJIBAN', 'PASSIVA', 'LIABILITIES'].includes(acc.category) || code.startsWith('2')) liabilities.push(item);
                 else if (['EKUITAS', 'MODAL', 'EQUITY'].includes(acc.category) || code.startsWith('3')) equity.push(item);

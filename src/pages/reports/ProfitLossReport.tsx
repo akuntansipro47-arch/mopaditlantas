@@ -11,7 +11,10 @@ import { formatCurrency, formatDate } from '@/lib/utils';
 import { Printer, Calendar as CalendarIcon, RefreshCw, Download } from 'lucide-react';
 import * as XLSX from 'xlsx';
 
+import { useDemo } from '@/context/DemoDataContext';
+
 export default function ProfitLossReport() {
+  const { isDemo, journals: demoJournals } = useDemo();
   const [loading, setLoading] = useState(false);
   const [reportData, setReportData] = useState<any>({
       revenue: [],
@@ -28,25 +31,51 @@ export default function ProfitLossReport() {
 
   useEffect(() => {
     fetchReport();
-  }, []);
+  }, [isDemo, demoJournals, dateFilter]); // Add dependencies
 
   async function fetchReport() {
     setLoading(true);
     try {
-        // Fetch all journal items within period linked to Income/Expense accounts
-        const { data, error } = await supabase
-            .from('journal_entry_items')
-            .select(`
-                debit, credit,
-                account:chart_of_accounts (
-                    id, account_code, account_name, category, sub_category
-                ),
-                journal_entries!inner (entry_date)
-            `)
-            .gte('journal_entries.entry_date', dateFilter.startDate)
-            .lte('journal_entries.entry_date', dateFilter.endDate);
+        let data: any[] = [];
 
-        if (error) throw error;
+        if (isDemo) {
+            // Filter Demo Journals by Date
+            const filteredJournals = demoJournals.filter(j => 
+                j.date >= dateFilter.startDate && j.date <= dateFilter.endDate
+            );
+            
+            // Flatten to items format similar to Supabase response
+            data = filteredJournals.flatMap(j => 
+                j.items.map(i => ({
+                    debit: i.debit,
+                    credit: i.credit,
+                    account: {
+                        id: i.account_id,
+                        account_code: i.account_code,
+                        account_name: i.account_name,
+                        category: i.category || 'UMUM',
+                        sub_category: 'NONE'
+                    },
+                    journal_entries: { entry_date: j.date }
+                }))
+            );
+        } else {
+            // Supabase Fetch
+            const { data: sbData, error } = await supabase
+                .from('journal_entry_items')
+                .select(`
+                    debit, credit,
+                    account:chart_of_accounts (
+                        id, account_code, account_name, category, sub_category
+                    ),
+                    journal_entries!inner (entry_date)
+                `)
+                .gte('journal_entries.entry_date', dateFilter.startDate)
+                .lte('journal_entries.entry_date', dateFilter.endDate);
+
+            if (error) throw error;
+            data = sbData || [];
+        }
 
         // Grouping
         const grouped: any = {

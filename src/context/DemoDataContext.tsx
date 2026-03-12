@@ -6,16 +6,20 @@ export interface DemoSupplier { id: string; name: string; contact: string; }
 export interface DemoGood { id: string; code: string; name: string; type: string; unit: string; cost: number; price: number; stock: number; }
 export interface DemoPO { id: string; number: string; supplier_id: string; date: string; status: string; total: number; items: DemoPOItem[]; }
 export interface DemoPOItem { goods_id: string; qty: number; price: number; total: number; }
+export interface DemoJournal { id: string; date: string; desc: string; total: number; items: DemoJournalItem[]; }
+export interface DemoJournalItem { account_id: string; account_name: string; account_code: string; debit: number; credit: number; category?: string; }
 
 interface DemoContextType {
   isDemo: boolean;
   suppliers: DemoSupplier[];
   goods: DemoGood[];
   purchaseOrders: DemoPO[];
+  journals: DemoJournal[];
   // Actions
   addSupplier: (s: Omit<DemoSupplier, 'id'>) => void;
   addGood: (g: Omit<DemoGood, 'id'>) => void;
   addPO: (po: Omit<DemoPO, 'id'>) => void;
+  addJournal: (j: Omit<DemoJournal, 'id'>) => void;
 }
 
 const DemoContext = createContext<DemoContextType | undefined>(undefined);
@@ -27,6 +31,7 @@ export function DemoProvider({ children }: { children: React.ReactNode }) {
   const [suppliers, setSuppliers] = useState<DemoSupplier[]>([]);
   const [goods, setGoods] = useState<DemoGood[]>([]);
   const [purchaseOrders, setPurchaseOrders] = useState<DemoPO[]>([]);
+  const [journals, setJournals] = useState<DemoJournal[]>([]);
 
   // Init Data when Demo User logs in
   useEffect(() => {
@@ -67,6 +72,21 @@ export function DemoProvider({ children }: { children: React.ReactNode }) {
         ]
       }));
       setPurchaseOrders(newPOs);
+
+      // Init Journals (Saldo Awal / Dummy Transaction)
+      // Example: Modal Awal
+      setJournals([
+          {
+              id: 'j-0',
+              date: new Date().toISOString(),
+              desc: 'Modal Awal Demo',
+              total: 1000000000,
+              items: [
+                  { account_id: 'acc-kas', account_name: 'Kas Besar', account_code: '1-1001', debit: 1000000000, credit: 0, category: 'AKTIVA' },
+                  { account_id: 'acc-modal', account_name: 'Modal Pemilik', account_code: '3-1000', debit: 0, credit: 1000000000, category: 'MODAL' }
+              ]
+          }
+      ]);
     }
   }, [isDemo]);
 
@@ -82,15 +102,21 @@ export function DemoProvider({ children }: { children: React.ReactNode }) {
     setPurchaseOrders(prev => [{ ...po, id: `po-${Date.now()}` }, ...prev]);
   };
 
+  const addJournal = (j: Omit<DemoJournal, 'id'>) => {
+    setJournals(prev => [...prev, { ...j, id: `j-${Date.now()}` }]);
+  };
+
   return (
     <DemoContext.Provider value={{ 
         isDemo, 
         suppliers, 
         goods, 
         purchaseOrders,
+        journals,
         addSupplier, 
         addGood, 
-        addPO 
+        addPO,
+        addJournal
     }}>
       {children}
     </DemoContext.Provider>
