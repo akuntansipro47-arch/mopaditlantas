@@ -72,7 +72,7 @@ export default function Reports() {
 
   return (
     <div className="space-y-8 animate-in fade-in duration-500 pb-10">
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-200 pb-6">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-200 pb-6 print:hidden">
         <div>
           <h1 className="text-3xl font-bold tracking-tight text-slate-900">Pusat Laporan</h1>
           <p className="text-slate-500 mt-1">Analisis dan ringkasan data operasional secara real-time.</p>
@@ -84,7 +84,7 @@ export default function Reports() {
       </div>
       
       <Tabs defaultValue={defaultTab} className="w-full">
-        <TabsList className="w-full h-auto flex flex-wrap gap-2 bg-transparent p-0 mb-8 justify-start">
+        <TabsList className="w-full h-auto flex flex-wrap gap-2 bg-transparent p-0 mb-8 justify-start print:hidden">
           {canAccess('report_po') && (
             <TabsTrigger value="po" className="data-[state=active]:bg-indigo-600 data-[state=active]:text-white data-[state=active]:shadow-md border border-slate-200 bg-white px-4 py-2.5 rounded-lg transition-all hover:border-indigo-300">
               Pembelian (PO)
