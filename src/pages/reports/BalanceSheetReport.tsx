@@ -226,12 +226,18 @@ export default function BalanceSheetReport() {
                                 <TableRow><TableCell className="italic text-gray-500">Tidak ada data</TableCell></TableRow>
                             ) : (
                                 reportData.assets.map((item: any, idx: number) => (
-                                    <TableRow key={idx}>
+                                    <TableRow key={idx} className={item.account_type === 'HEADER' ? 'bg-slate-50 font-semibold' : ''}>
                                         <TableCell>
-                                            <div className="font-medium">{item.account_name}</div>
-                                            <div className="text-xs text-gray-500">{item.account_code}</div>
+                                            <div className="font-medium" style={{ paddingLeft: item.account_type === 'DETAIL' ? '1.5rem' : '0' }}>
+                                                {item.account_name}
+                                            </div>
+                                            <div className="text-xs text-gray-500" style={{ paddingLeft: item.account_type === 'DETAIL' ? '1.5rem' : '0' }}>
+                                                {item.account_code}
+                                            </div>
                                         </TableCell>
-                                        <TableCell className="text-right">{formatCurrency(item.balance)}</TableCell>
+                                        <TableCell className="text-right">
+                                            {item.account_type === 'HEADER' ? '' : formatCurrency(item.balance)}
+                                        </TableCell>
                                     </TableRow>
                                 ))
                             )}
@@ -257,13 +263,19 @@ export default function BalanceSheetReport() {
                                     <TableRow><TableCell className="italic text-gray-500">Tidak ada data</TableCell></TableRow>
                                 ) : (
                                     reportData.liabilities.map((item: any, idx: number) => (
-                                        <TableRow key={idx}>
-                                            <TableCell>
-                                                <div className="font-medium">{item.account_name}</div>
-                                                <div className="text-xs text-gray-500">{item.account_code}</div>
-                                            </TableCell>
-                                            <TableCell className="text-right">{formatCurrency(item.balance)}</TableCell>
-                                        </TableRow>
+                                        <TableRow key={idx} className={item.account_type === 'HEADER' ? 'bg-slate-50 font-semibold' : ''}>
+                                        <TableCell>
+                                            <div className="font-medium" style={{ paddingLeft: item.account_type === 'DETAIL' ? '1.5rem' : '0' }}>
+                                                {item.account_name}
+                                            </div>
+                                            <div className="text-xs text-gray-500" style={{ paddingLeft: item.account_type === 'DETAIL' ? '1.5rem' : '0' }}>
+                                                {item.account_code}
+                                            </div>
+                                        </TableCell>
+                                        <TableCell className="text-right">
+                                            {item.account_type === 'HEADER' ? '' : formatCurrency(item.balance)}
+                                        </TableCell>
+                                    </TableRow>
                                     ))
                                 )}
                                 <TableRow className="font-bold bg-slate-50">
@@ -282,12 +294,18 @@ export default function BalanceSheetReport() {
                         <Table>
                             <TableBody>
                                 {reportData.equity.map((item: any, idx: number) => (
-                                    <TableRow key={idx}>
+                                    <TableRow key={idx} className={item.account_type === 'HEADER' ? 'bg-slate-50 font-semibold' : ''}>
                                         <TableCell>
-                                            <div className="font-medium">{item.account_name}</div>
-                                            <div className="text-xs text-gray-500">{item.account_code}</div>
+                                            <div className="font-medium" style={{ paddingLeft: item.account_type === 'DETAIL' ? '1.5rem' : '0' }}>
+                                                {item.account_name}
+                                            </div>
+                                            <div className="text-xs text-gray-500" style={{ paddingLeft: item.account_type === 'DETAIL' ? '1.5rem' : '0' }}>
+                                                {item.account_code}
+                                            </div>
                                         </TableCell>
-                                        <TableCell className="text-right">{formatCurrency(item.balance)}</TableCell>
+                                        <TableCell className="text-right">
+                                            {item.account_type === 'HEADER' ? '' : formatCurrency(item.balance)}
+                                        </TableCell>
                                     </TableRow>
                                 ))}
                                 {/* Current Earnings */}
