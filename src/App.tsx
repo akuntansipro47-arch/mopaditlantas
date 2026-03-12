@@ -27,7 +27,10 @@ import PrintInvoice from "@/pages/print/PrintInvoice";
 import UserManagement from "@/pages/admin/UserManagement";
 import AgencyProfile from "@/pages/admin/AgencyProfile";
 import PurchasePayment from "@/pages/finance/PurchasePayment";
-import CashBank from "@/pages/finance/CashBankV2"; // Updated to V2
+import CashBank from "@/pages/finance/CashBankV2";
+import GeneralLedger from "@/pages/finance/GeneralLedger"; // Import GL
+
+// ReportsUpdated to V2
 // import ReloadPrompt from "@/components/ReloadPrompt";
 import DebugDashboard from "@/pages/DebugDashboard";
 
@@ -69,9 +72,10 @@ export default function App() {
               
               {/* Finance */}
               <Route path="/finance/payments" element={<PurchasePayment />} />
-              <Route path="/finance/cash-bank" element={<CashBank />} />
+          <Route path="/finance/cash-bank" element={<CashBank />} />
+          <Route path="/finance/general-ledger" element={<GeneralLedger />} />
 
-              {/* Reports */}
+          {/* Report Routes */}
               <Route path="/reports" element={<Reports />} />
               <Route path="/reports/item-history" element={<ItemHistoryReport />} />
               

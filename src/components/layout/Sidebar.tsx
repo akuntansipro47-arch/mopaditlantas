@@ -63,6 +63,7 @@ const navigation = [
     children: [
       { name: 'Pembayaran Hutang', href: '/finance/payments', icon: Wallet, key: 'finance_payments' },
       { name: 'Kas & Bank', href: '/finance/cash-bank', icon: Wallet, key: 'finance_cash' },
+      { name: 'Buku Besar', href: '/finance/general-ledger', icon: ClipboardList, key: 'finance_gl' },
     ]
   },
   { name: 'Laporan', href: '/reports', icon: BarChart3, key: 'reports' },
