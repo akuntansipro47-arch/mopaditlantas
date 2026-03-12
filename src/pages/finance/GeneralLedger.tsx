@@ -239,7 +239,9 @@ export default function GeneralLedger() {
                                 <TableRow key={t.id}>
                                     <TableCell>{formatDate(t.date)}</TableCell>
                                     <TableCell className="font-mono text-xs">{t.voucher_no}</TableCell>
-                                    <TableCell className="max-w-[300px] truncate print:whitespace-normal">{t.description}</TableCell>
+                                    <TableCell>
+                                        <div className="whitespace-pre-wrap text-sm">{t.description}</div>
+                                    </TableCell>
                                     <TableCell className="text-right">
                                         {t.debit > 0 ? formatCurrency(t.debit) : '-'}
                                     </TableCell>
