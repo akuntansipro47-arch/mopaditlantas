@@ -68,13 +68,22 @@ const navigation = [
       { name: 'Buku Besar', href: '/finance/general-ledger', icon: Wallet, key: 'finance_gl' },
     ]
   },
+  { 
+    name: 'Kepegawaian', 
+    icon: Users,
+    key: 'hr',
+    children: [
+      { name: 'Data Karyawan', href: '/hr/employees', icon: Users, key: 'hr_employees' },
+      // { name: 'Penggajian', href: '/hr/payroll', icon: Wallet, key: 'hr_payroll' }, // Future
+    ]
+  },
   { name: 'Laporan', href: '/reports', icon: BarChart3, key: 'reports' },
 ];
 
 export function Sidebar() {
   const location = useLocation();
   const { user, logout } = useAuth();
-  const [openMenus, setOpenMenus] = useState<string[]>(['Data Base', 'Transaksi', 'Keuangan']);
+  const [openMenus, setOpenMenus] = useState<string[]>(['Data Base', 'Transaksi', 'Keuangan', 'Kepegawaian']);
 
   const toggleMenu = (name: string) => {
     setOpenMenus(prev => 

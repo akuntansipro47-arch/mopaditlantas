@@ -31,6 +31,9 @@ import PurchasePayment from "@/pages/finance/PurchasePayment";
 import SalesInvoice from "@/pages/finance/SalesInvoice"; // Import Sales Invoice
 import CashBank from "@/pages/finance/CashBankV2";
 import GeneralLedger from "@/pages/finance/GeneralLedger"; // Import GL
+import ManualJournalEntry from "@/pages/finance/ManualJournalEntry"; // Import Manual Journal
+import EmployeeData from "@/pages/hr/EmployeeData"; // Import HR
+
 
 // ReportsUpdated to V2
 // import ReloadPrompt from "@/components/ReloadPrompt";
@@ -76,7 +79,11 @@ export default function App() {
               <Route path="/finance/payments" element={<PurchasePayment />} />
               <Route path="/finance/sales" element={<SalesInvoice />} /> {/* Sales Route */}
               <Route path="/finance/cash-bank" element={<CashBank />} />
+              <Route path="/finance/journal-entry" element={<ManualJournalEntry />} /> {/* Manual Journal Route */}
               <Route path="/finance/general-ledger" element={<GeneralLedger />} />
+              
+              {/* HR */}
+              <Route path="/hr/employees" element={<EmployeeData />} />
 
           {/* Report Routes */}
               <Route path="/reports" element={<Reports />} />

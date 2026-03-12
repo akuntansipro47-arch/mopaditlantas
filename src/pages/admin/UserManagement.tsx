@@ -41,7 +41,10 @@ const MENU_OPTIONS = [
   { id: 'finance_payments', label: 'Pembayaran Hutang' },
   { id: 'finance_sales', label: 'Pembayaran Piutang' }, // New
   { id: 'finance_cash', label: 'Kas & Bank' },
+  { id: 'finance_journal', label: 'Jurnal Umum (Manual)' }, // New
   { id: 'finance_gl', label: 'Buku Besar' },
+  { id: 'hr', label: 'Kepegawaian (Parent)' },
+  { id: 'hr_employees', label: 'Data Karyawan' },
   { id: 'reports', label: 'Laporan' },
 ];
 
