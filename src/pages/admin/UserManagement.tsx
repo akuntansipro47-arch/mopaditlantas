@@ -37,6 +37,9 @@ const MENU_OPTIONS = [
   { id: 'trans_wo', label: 'Work Order' },
   { id: 'trans_wo_reopen', label: 'WO Admin (Re-open/Hapus)' },
   { id: 'trans_issue', label: 'Barang Keluar' },
+  { id: 'finance', label: 'Keuangan (Parent)' }, // New
+  { id: 'finance_payments', label: 'Pembayaran Hutang' }, // New
+  { id: 'finance_cash', label: 'Kas & Bank' }, // New
   { id: 'reports', label: 'Laporan' },
 ];
 
