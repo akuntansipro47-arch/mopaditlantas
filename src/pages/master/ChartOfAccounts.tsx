@@ -33,7 +33,7 @@ export default function ChartOfAccounts() {
     account_name: '',
     account_type: 'DETAIL' as 'HEADER' | 'DETAIL',
     parent_id: 'NONE',
-    category: 'AKTIVA' as 'AKTIVA' | 'PASSIVA',
+    category: 'AKTIVA' as 'AKTIVA' | 'PASSIVA' | 'MODAL' | 'HPP' | 'BEBAN' | 'PENDAPATAN',
     sub_category: 'NONE' as string,
     balance_type: 'DEBIT' as 'DEBIT' | 'CREDIT'
   });
@@ -319,7 +319,11 @@ export default function ChartOfAccounts() {
                       <SelectTrigger><SelectValue /></SelectTrigger>
                       <SelectContent>
                         <SelectItem value="AKTIVA">AKTIVA</SelectItem>
-                        <SelectItem value="PASSIVA">PASSIVA</SelectItem>
+                        <SelectItem value="PASSIVA">PASSIVA (KEWAJIBAN)</SelectItem>
+                        <SelectItem value="MODAL">MODAL (EKUITAS)</SelectItem>
+                        <SelectItem value="HPP">HPP (HARGA POKOK)</SelectItem>
+                        <SelectItem value="BEBAN">BEBAN</SelectItem>
+                        <SelectItem value="PENDAPATAN">PENDAPATAN</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
@@ -333,6 +337,11 @@ export default function ChartOfAccounts() {
                         <SelectItem value="AKTIVA_TETAP">AKTIVA TETAP</SelectItem>
                         <SelectItem value="HUTANG">HUTANG</SelectItem>
                         <SelectItem value="MODAL">MODAL</SelectItem>
+                        <SelectItem value="PENJUALAN">PENJUALAN</SelectItem>
+                        <SelectItem value="HPP">HPP</SelectItem>
+                        <SelectItem value="BEBAN_ADMIN_UMUM">BEBAN ADMIN & UMUM</SelectItem>
+                        <SelectItem value="PENDAPATAN_LAINNYA">PENDAPATAN LAINNYA</SelectItem>
+                        <SelectItem value="BEBAN_LAINNYA">BEBAN LAINNYA</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
