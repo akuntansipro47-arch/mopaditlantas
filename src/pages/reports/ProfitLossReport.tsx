@@ -8,7 +8,8 @@ import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { toast } from 'sonner';
 import { formatCurrency, formatDate } from '@/lib/utils';
-import { Printer, Calendar as CalendarIcon, RefreshCw } from 'lucide-react';
+import { Printer, Calendar as CalendarIcon, RefreshCw, Download } from 'lucide-react';
+import * as XLSX from 'xlsx';
 
 export default function ProfitLossReport() {
   const [loading, setLoading] = useState(false);
@@ -136,11 +137,49 @@ export default function ProfitLossReport() {
   const totalOtherExpenses = sumTotal(reportData.other_expenses);
   const netProfit = operatingProfit + totalOtherRevenue - totalOtherExpenses;
 
+  const exportToExcel = () => {
+    const rows = [
+      ['LAPORAN LABA RUGI'],
+      [`Periode: ${formatDate(dateFilter.startDate)} s/d ${formatDate(dateFilter.endDate)}`],
+      [''],
+      ['Keterangan', 'Jumlah (Rp)'],
+      ['PENDAPATAN USAHA', ''],
+      ...reportData.revenue.map((i: any) => [i.name, i.amount]),
+      ['Total Pendapatan', totalRevenue],
+      [''],
+      ['HARGA POKOK PENJUALAN (HPP)', ''],
+      ...reportData.cogs.map((i: any) => [i.name, i.amount]),
+      ['Total HPP', totalCOGS],
+      [''],
+      ['LABA KOTOR', grossProfit],
+      [''],
+      ['BEBAN OPERASIONAL', ''],
+      ...reportData.expenses.map((i: any) => [i.name, i.amount]),
+      ['Total Beban', totalExpenses],
+      [''],
+      ['LABA OPERASIONAL', operatingProfit],
+      [''],
+      ['PENDAPATAN & BEBAN LAINNYA', ''],
+      ...reportData.other_revenue.map((i: any) => [i.name, i.amount]),
+      ...reportData.other_expenses.map((i: any) => [i.name, -i.amount]), // Expenses as negative for clarity
+      [''],
+      ['LABA BERSIH (NET PROFIT)', netProfit]
+    ];
+
+    const ws = XLSX.utils.aoa_to_sheet(rows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Laba Rugi");
+    XLSX.writeFile(wb, `Laporan_Laba_Rugi_${dateFilter.startDate}_${dateFilter.endDate}.xlsx`);
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h2 className="text-3xl font-bold tracking-tight">Laporan Laba Rugi</h2>
         <div className="flex gap-2">
+            <Button variant="outline" onClick={exportToExcel} className="print:hidden">
+                <Download className="mr-2 h-4 w-4" /> Export Excel
+            </Button>
             <Button variant="outline" onClick={() => window.print()} className="print:hidden">
                 <Printer className="mr-2 h-4 w-4" /> Cetak
             </Button>

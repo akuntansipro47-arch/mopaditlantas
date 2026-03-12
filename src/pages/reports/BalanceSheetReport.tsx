@@ -8,7 +8,8 @@ import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { toast } from 'sonner';
 import { formatCurrency, formatDate } from '@/lib/utils';
-import { Printer, RefreshCw } from 'lucide-react';
+import { Printer, RefreshCw, Download } from 'lucide-react';
+import * as XLSX from 'xlsx';
 
 export default function BalanceSheetReport() {
   const [loading, setLoading] = useState(false);
@@ -176,11 +177,51 @@ export default function BalanceSheetReport() {
   const totalLiabilities = sumTotal(reportData.liabilities);
   const totalEquity = sumTotal(reportData.equity) + reportData.currentEarnings;
 
+  const exportToExcel = () => {
+    // We'll create two columns: Left (Assets), Right (Liabilities + Equity)
+    // Or just a simple list for Excel. Simple list is better for data.
+    // Let's do a structured list: Assets, then Liabilities, then Equity.
+    
+    const rows: any[] = [];
+    rows.push(['LAPORAN NERACA (BALANCE SHEET)']);
+    rows.push([`Per Tanggal: ${formatDate(reportDate)}`]);
+    rows.push(['']);
+    
+    rows.push(['AKTIVA (ASSETS)', '']);
+    rows.push(['Kode Akun', 'Nama Akun', 'Saldo (Rp)']);
+    reportData.assets.forEach((a: any) => rows.push([a.account_code, a.account_name, a.balance]));
+    rows.push(['TOTAL AKTIVA', '', totalAssets]);
+    rows.push(['']);
+
+    rows.push(['KEWAJIBAN (LIABILITIES)', '']);
+    rows.push(['Kode Akun', 'Nama Akun', 'Saldo (Rp)']);
+    reportData.liabilities.forEach((l: any) => rows.push([l.account_code, l.account_name, l.balance]));
+    rows.push(['TOTAL KEWAJIBAN', '', totalLiabilities]);
+    rows.push(['']);
+
+    rows.push(['MODAL (EQUITY)', '']);
+    rows.push(['Kode Akun', 'Nama Akun', 'Saldo (Rp)']);
+    reportData.equity.forEach((e: any) => rows.push([e.account_code, e.account_name, e.balance]));
+    rows.push(['', 'Laba Tahun Berjalan', reportData.currentEarnings]);
+    rows.push(['TOTAL MODAL', '', totalEquity]);
+    rows.push(['']);
+
+    rows.push(['TOTAL PASSIVA (KEWAJIBAN + MODAL)', '', totalLiabilities + totalEquity]);
+
+    const ws = XLSX.utils.aoa_to_sheet(rows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Neraca");
+    XLSX.writeFile(wb, `Laporan_Neraca_Per_${reportDate}.xlsx`);
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h2 className="text-3xl font-bold tracking-tight">Laporan Neraca (Balance Sheet)</h2>
         <div className="flex gap-2">
+            <Button variant="outline" onClick={exportToExcel} className="print:hidden">
+                <Download className="mr-2 h-4 w-4" /> Export Excel
+            </Button>
             <Button variant="outline" onClick={() => window.print()} className="print:hidden">
                 <Printer className="mr-2 h-4 w-4" /> Cetak
             </Button>
