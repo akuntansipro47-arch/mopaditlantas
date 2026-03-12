@@ -626,9 +626,13 @@ export default function CashBankV2() {
                                     </TableCell>
                                     <TableCell>
                                         <Input 
-                                            type="number" 
+                                            type="text" 
+                                            inputMode="numeric"
                                             value={item.amount || ''} 
-                                            onChange={e => updateDepositItem(item.id, 'amount', parseFloat(e.target.value))}
+                                            onChange={e => {
+                                                const val = e.target.value.replace(/[^0-9]/g, '');
+                                                updateDepositItem(item.id, 'amount', val ? parseFloat(val) : 0);
+                                            }}
                                             className="h-9 text-right"
                                             placeholder="0"
                                         />
@@ -762,9 +766,13 @@ export default function CashBankV2() {
                                     </TableCell>
                                     <TableCell>
                                         <Input 
-                                            type="number" 
+                                            type="text" 
+                                            inputMode="numeric"
                                             value={item.amount || ''} 
-                                            onChange={e => updatePaymentItem(item.id, 'amount', parseFloat(e.target.value))}
+                                            onChange={e => {
+                                                const val = e.target.value.replace(/[^0-9]/g, '');
+                                                updatePaymentItem(item.id, 'amount', val ? parseFloat(val) : 0);
+                                            }}
                                             className="h-9 text-right"
                                             placeholder="0"
                                         />
