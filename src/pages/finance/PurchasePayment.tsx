@@ -46,12 +46,19 @@ export default function PurchasePayment() {
     try {
         const { data } = await supabase
             .from('chart_of_accounts')
-            .select('id, account_code, account_name')
+            .select('id, account_code, account_name, sub_category, category')
+            .eq('account_type', 'DETAIL')
             .eq('category', 'AKTIVA')
-            .eq('sub_category', 'AKTIVA_LANCAR')
-            .or('account_name.ilike.%kas%,account_name.ilike.%bank%'); // Filter Kas/Bank loosely
+            .order('account_code');
         
-        setCashBankAccounts(data || []);
+        // Filter in JS to be safe: Must be AKTIVA LANCAR or name contains kas/bank
+        const filtered = data?.filter(a => 
+            a.sub_category === 'AKTIVA_LANCAR' || 
+            a.account_name.toLowerCase().includes('kas') || 
+            a.account_name.toLowerCase().includes('bank')
+        ) || [];
+
+        setCashBankAccounts(filtered);
     } catch (error) {
         console.error("Error fetching accounts:", error);
     }
@@ -229,28 +236,35 @@ export default function PurchasePayment() {
           <DialogContent className="max-w-3xl">
               <DialogHeader>
                   <DialogTitle>Pilih Akun Kas/Bank Pembayar</DialogTitle>
+                  <DialogDescription>
+                    Pilih akun dari daftar Aktiva Lancar / Kas & Bank di bawah ini.
+                  </DialogDescription>
               </DialogHeader>
-              <div className="max-h-[400px] overflow-auto">
+              <div className="max-h-[400px] overflow-auto border rounded-md">
                 <Table>
-                    <TableHeader>
+                    <TableHeader className="bg-slate-100 sticky top-0">
                         <TableRow>
-                            <TableHead>Kode Akun</TableHead>
-                            <TableHead>Nama Akun</TableHead>
-                            <TableHead>Kategori</TableHead>
-                            <TableHead></TableHead>
+                            <TableHead className="w-[120px] font-bold text-black">Kode Akun</TableHead>
+                            <TableHead className="font-bold text-black">Nama Akun</TableHead>
+                            <TableHead className="w-[150px] font-bold text-black">Kategori</TableHead>
+                            <TableHead className="w-[80px]"></TableHead>
                         </TableRow>
                     </TableHeader>
                     <TableBody>
                         {cashBankAccounts.length === 0 ? (
-                            <TableRow><TableCell colSpan={4} className="text-center">Tidak ada akun Kas/Bank (AKTIVA_LANCAR) ditemukan.</TableCell></TableRow>
+                            <TableRow><TableCell colSpan={4} className="text-center py-8">Tidak ada akun Kas/Bank ditemukan.</TableCell></TableRow>
                         ) : (
                             cashBankAccounts.map(acc => (
-                                <TableRow key={acc.id} className="cursor-pointer hover:bg-gray-50" onClick={() => handleSelectAccount(acc)}>
-                                    <TableCell className="font-mono font-bold">{acc.account_code}</TableCell>
-                                    <TableCell>{acc.account_name}</TableCell>
-                                    <TableCell className="text-xs text-gray-500">{acc.sub_category}</TableCell>
+                                <TableRow key={acc.id} className="cursor-pointer hover:bg-blue-50 transition-colors" onClick={() => handleSelectAccount(acc)}>
+                                    <TableCell className="font-mono font-bold text-blue-700">{acc.account_code}</TableCell>
+                                    <TableCell className="font-medium">{acc.account_name}</TableCell>
+                                    <TableCell className="text-xs text-gray-500">
+                                        <span className="bg-slate-100 px-2 py-1 rounded border">
+                                            {acc.sub_category?.replace('_', ' ')}
+                                        </span>
+                                    </TableCell>
                                     <TableCell>
-                                        <Button size="sm" variant="ghost">Pilih</Button>
+                                        <Button size="sm" variant="ghost" className="text-blue-600 hover:text-blue-800">Pilih</Button>
                                     </TableCell>
                                 </TableRow>
                             ))
