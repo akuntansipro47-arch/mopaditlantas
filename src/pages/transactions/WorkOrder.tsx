@@ -18,6 +18,7 @@ import {
 } from "@/components/ui/select";
 import { formatDate } from '@/lib/utils';
 import { Badge } from "@/components/ui/badge";
+import { useDemo } from '@/context/DemoDataContext';
 
 type WO = Database['public']['Tables']['work_orders']['Row'];
 type VehicleEntry = Database['public']['Tables']['vehicle_entries']['Row'];
@@ -30,6 +31,7 @@ type WOWithDetails = WO & {
 };
 
 export default function WorkOrder() {
+  const { isDemo } = useDemo();
   const [wos, setWos] = useState<WOWithDetails[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -158,6 +160,12 @@ export default function WorkOrder() {
   };
 
   const createAutoJournal = async (woId: string) => {
+    // DEMO MODE: Simulate Success
+    if (isDemo) {
+        toast.success("Jurnal Otomatis Berhasil Dibuat (Demo Mode)");
+        return;
+    }
+
     try {
         // 1. Fetch WO details with total amounts
         const { data: wo, error: woErr } = await supabase

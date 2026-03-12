@@ -274,6 +274,52 @@ export default function DemoGenerator() {
     }
   }
 
+  async function generateDefaultCOA() {
+    setLoading(true);
+    addLog('Generating Default Chart of Accounts...');
+    
+    try {
+        const accounts = [
+            // ASSETS
+            { account_code: '1-1100', account_name: 'Piutang Usaha', category: 'AKTIVA', sub_category: 'LANCAR', balance_type: 'DEBIT', account_type: 'DETAIL' },
+            { account_code: '1-1200', account_name: 'Persediaan Barang', category: 'AKTIVA', sub_category: 'LANCAR', balance_type: 'DEBIT', account_type: 'DETAIL' },
+            { account_code: '1-1000', account_name: 'Kas & Bank', category: 'AKTIVA', sub_category: 'LANCAR', balance_type: 'DEBIT', account_type: 'HEADER' },
+            { account_code: '1-1001', account_name: 'Kas Besar', category: 'AKTIVA', sub_category: 'LANCAR', balance_type: 'DEBIT', account_type: 'DETAIL' },
+
+            // REVENUE
+            { account_code: '4-1000', account_name: 'Pendapatan Jasa', category: 'PENDAPATAN', sub_category: 'USAHA', balance_type: 'CREDIT', account_type: 'DETAIL' },
+            { account_code: '4-2000', account_name: 'Pendapatan Sparepart', category: 'PENDAPATAN', sub_category: 'USAHA', balance_type: 'CREDIT', account_type: 'DETAIL' },
+            
+            // EXPENSES
+            { account_code: '6-1000', account_name: 'Beban Gaji', category: 'BEBAN', sub_category: 'OPERASIONAL', balance_type: 'DEBIT', account_type: 'DETAIL' },
+            { account_code: '6-2000', account_name: 'Beban Listrik & Air', category: 'BEBAN', sub_category: 'OPERASIONAL', balance_type: 'DEBIT', account_type: 'DETAIL' },
+        ];
+
+        for (const acc of accounts) {
+            // Check if exists
+            const { data: exist } = await supabase.from('chart_of_accounts').select('id').eq('account_code', acc.account_code).single();
+            if (!exist) {
+                const { error } = await supabase.from('chart_of_accounts').insert([acc]);
+                if (error) {
+                    addLog(`Error creating ${acc.account_name}: ${error.message}`);
+                } else {
+                    addLog(`Created: ${acc.account_name}`);
+                }
+            } else {
+                addLog(`Skipped: ${acc.account_name} (Exists)`);
+            }
+        }
+        
+        toast.success("Default Accounts Generated");
+        addLog("Done.");
+
+    } catch (error: any) {
+        addLog(`Error: ${error.message}`);
+    } finally {
+        setLoading(false);
+    }
+  }
+
   return (
     <div className="space-y-6">
       <h2 className="text-3xl font-bold tracking-tight">Demo Generator & Settings</h2>
@@ -294,6 +340,13 @@ export default function DemoGenerator() {
                       {loading ? 'Generating...' : 'Generate 10 Transactions Now'}
                   </Button>
                   
+                  <div className="pt-4 border-t">
+                      <p className="text-sm text-gray-600 mb-2">Setup Akun Standar (Piutang, Pendapatan, dll)</p>
+                      <Button variant="outline" onClick={generateDefaultCOA} disabled={loading} className="w-full">
+                          Setup Default COA
+                      </Button>
+                  </div>
+
                   <div className="bg-slate-900 text-green-400 p-4 rounded-md h-64 overflow-y-auto text-xs font-mono">
                       {log.length === 0 ? '> Ready...' : log.map((l, i) => <div key={i}>{l}</div>)}
                   </div>
