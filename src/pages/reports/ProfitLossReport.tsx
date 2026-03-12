@@ -70,7 +70,7 @@ export default function ProfitLossReport() {
             // Logic Filter based on Category OR Account Code Prefix
             // 4: Revenue, 5: COGS, 6: Expenses, 7: Other Income/Expense (or 8,9 depending on convention)
             
-            if (cat === 'PENDAPATAN' || accCode.startsWith('4')) {
+            if (cat === 'PENDAPATAN' || cat === 'PENJUALAN' || accCode.startsWith('4')) {
                 if (sub === 'PENDAPATAN_LAINNYA' || accCode.startsWith('42') || accCode.startsWith('71')) { 
                      // Convention: 71 often Other Income, or just sub category check
                      groupKey = 'other_revenue';

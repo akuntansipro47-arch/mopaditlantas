@@ -33,7 +33,7 @@ export default function ChartOfAccounts() {
     account_name: '',
     account_type: 'DETAIL' as 'HEADER' | 'DETAIL',
     parent_id: 'NONE',
-    category: 'AKTIVA' as 'AKTIVA' | 'PASSIVA' | 'MODAL' | 'HPP' | 'BEBAN' | 'PENDAPATAN',
+    category: 'AKTIVA' as 'AKTIVA' | 'PASSIVA' | 'MODAL' | 'HPP' | 'BEBAN' | 'PENDAPATAN' | 'PENJUALAN',
     sub_category: 'NONE' as string,
     balance_type: 'DEBIT' as 'DEBIT' | 'CREDIT'
   });
@@ -324,6 +324,7 @@ export default function ChartOfAccounts() {
                         <SelectItem value="HPP">HPP (HARGA POKOK)</SelectItem>
                         <SelectItem value="BEBAN">BEBAN</SelectItem>
                         <SelectItem value="PENDAPATAN">PENDAPATAN</SelectItem>
+                        <SelectItem value="PENJUALAN">PENJUALAN</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
