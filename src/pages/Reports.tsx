@@ -146,17 +146,17 @@ export default function Reports() {
               Laba Kotor
             </TabsTrigger>
           )}
-          {canAccess('report_profit') && ( // Use same permission for P&L
+          {canAccess('report_profit_loss') && (
             <TabsTrigger value="profit_loss" className="data-[state=active]:bg-emerald-600 data-[state=active]:text-white data-[state=active]:shadow-md border border-slate-200 bg-white px-4 py-2.5 rounded-lg transition-all hover:border-emerald-300 font-medium">
               Laba Rugi (Net)
             </TabsTrigger>
           )}
-          {canAccess('report_profit') && ( // Use same permission for Balance Sheet
+          {canAccess('report_balance_sheet') && (
             <TabsTrigger value="balance_sheet" className="data-[state=active]:bg-blue-600 data-[state=active]:text-white data-[state=active]:shadow-md border border-slate-200 bg-white px-4 py-2.5 rounded-lg transition-all hover:border-blue-300 font-medium">
               Neraca (Balance Sheet)
             </TabsTrigger>
           )}
-          {canAccess('report_po') && ( // Use existing permission or add new one
+          {canAccess('report_supplier_payable') && (
             <TabsTrigger value="supplier_payable" className="data-[state=active]:bg-red-600 data-[state=active]:text-white data-[state=active]:shadow-md border border-slate-200 bg-white px-4 py-2.5 rounded-lg transition-all hover:border-red-300 font-medium">
               Sisa Hutang Supplier
             </TabsTrigger>
@@ -186,9 +186,9 @@ export default function Reports() {
           {canAccess('report_wo') && <TabsContent value="wodetail"><WorkOrderDetailReport /></TabsContent>}
           {canAccess('report_vehicle_entry') && <TabsContent value="vehicle_entry"><VehicleEntryReport /></TabsContent>}
           {canAccess('report_profit') && <TabsContent value="profit"><GrossProfitReport /></TabsContent>}
-          {canAccess('report_profit') && <TabsContent value="profit_loss"><ProfitLossReport /></TabsContent>}
-          {canAccess('report_profit') && <TabsContent value="balance_sheet"><BalanceSheetReport /></TabsContent>}
-          {canAccess('report_po') && <TabsContent value="supplier_payable"><SupplierPayableReport /></TabsContent>}
+          {canAccess('report_profit_loss') && <TabsContent value="profit_loss"><ProfitLossReport /></TabsContent>}
+          {canAccess('report_balance_sheet') && <TabsContent value="balance_sheet"><BalanceSheetReport /></TabsContent>}
+          {canAccess('report_supplier_payable') && <TabsContent value="supplier_payable"><SupplierPayableReport /></TabsContent>}
           {canAccess('report_estimation') && <TabsContent value="estimation"><EstimationVsRealizationReport /></TabsContent>}
           {canAccess('report_budget') && <TabsContent value="budget"><BudgetMonitoringReport /></TabsContent>}
         </div>

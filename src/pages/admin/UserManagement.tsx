@@ -58,6 +58,9 @@ const REPORT_OPTIONS = [
   { id: 'report_wo', label: 'Laporan Work Order' },
   { id: 'report_vehicle_entry', label: 'Laporan Unit Masuk' },
   { id: 'report_profit', label: 'Laporan Laba Kotor' },
+  { id: 'report_profit_loss', label: 'Laporan Laba Rugi (Net)' }, // New
+  { id: 'report_balance_sheet', label: 'Laporan Neraca' }, // New
+  { id: 'report_supplier_payable', label: 'Laporan Sisa Hutang Supplier' }, // New
   { id: 'report_estimation', label: 'Laporan Estimasi vs Realisasi' },
   { id: 'report_budget', label: 'Laporan Monitoring Pagu' },
   { id: 'inventory_value', label: 'Laporan Nilai Persediaan' },
