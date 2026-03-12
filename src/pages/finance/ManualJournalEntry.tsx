@@ -179,13 +179,13 @@ export default function ManualJournalEntry() {
         </Button>
       </div>
 
-      <Card>
-        <CardHeader>
+      <Card className="flex flex-col h-[calc(100vh-120px)]">
+        <CardHeader className="flex-none">
             <CardTitle>Entri Jurnal Manual</CardTitle>
         </CardHeader>
-        <CardContent className="space-y-6">
-            {/* Header Inputs */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <CardContent className="flex flex-col flex-1 gap-4 overflow-hidden">
+            {/* Header Inputs - Fixed */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 flex-none">
                 <div className="space-y-2">
                     <Label>Tanggal</Label>
                     <Input type="date" value={entryDate} onChange={e => setEntryDate(e.target.value)} />
@@ -200,8 +200,8 @@ export default function ManualJournalEntry() {
                 </div>
             </div>
 
-            {/* Lines Table */}
-            <div className="border rounded-md max-h-[500px] overflow-auto relative">
+            {/* Lines Table - Flexible & Scrollable */}
+            <div className="flex-1 border rounded-md overflow-auto relative">
                 <Table>
                     <TableHeader className="bg-slate-50 sticky top-0 z-10 shadow-sm">
                         <TableRow>
@@ -276,33 +276,36 @@ export default function ManualJournalEntry() {
                 </Table>
             </div>
             
-            <div className="flex justify-between items-center">
-                <Button variant="outline" onClick={addLine}>
-                    <Plus className="mr-2 h-4 w-4" /> Tambah Baris
-                </Button>
-                
-                <div className="flex gap-8 items-center bg-slate-100 p-4 rounded-lg">
-                    <div className="text-right">
-                        <p className="text-xs text-gray-500">Total Debit</p>
-                        <p className="font-bold text-lg">{formatCurrency(totalDebit)}</p>
-                    </div>
-                    <div className="text-right">
-                        <p className="text-xs text-gray-500">Total Kredit</p>
-                        <p className="font-bold text-lg">{formatCurrency(totalCredit)}</p>
-                    </div>
-                    <div className="text-right border-l pl-8 border-gray-300">
-                        <p className="text-xs text-gray-500">Balance (Selisih)</p>
-                        <p className={`font-bold text-lg ${balance === 0 ? 'text-green-600' : 'text-red-600'}`}>
-                            {formatCurrency(balance)}
-                        </p>
+            {/* Footer Actions - Fixed */}
+            <div className="flex-none flex flex-col gap-4 mt-auto pt-4 border-t bg-white">
+                <div className="flex justify-between items-center">
+                    <Button variant="outline" onClick={addLine}>
+                        <Plus className="mr-2 h-4 w-4" /> Tambah Baris
+                    </Button>
+                    
+                    <div className="flex gap-8 items-center bg-slate-100 p-4 rounded-lg">
+                        <div className="text-right">
+                            <p className="text-xs text-gray-500">Total Debit</p>
+                            <p className="font-bold text-lg">{formatCurrency(totalDebit)}</p>
+                        </div>
+                        <div className="text-right">
+                            <p className="text-xs text-gray-500">Total Kredit</p>
+                            <p className="font-bold text-lg">{formatCurrency(totalCredit)}</p>
+                        </div>
+                        <div className="text-right border-l pl-8 border-gray-300">
+                            <p className="text-xs text-gray-500">Balance (Selisih)</p>
+                            <p className={`font-bold text-lg ${balance === 0 ? 'text-green-600' : 'text-red-600'}`}>
+                                {formatCurrency(balance)}
+                            </p>
+                        </div>
                     </div>
                 </div>
-            </div>
 
-            <div className="flex justify-end pt-4 border-t">
-                <Button size="lg" onClick={handleSave} disabled={loading || balance !== 0}>
-                    <Save className="mr-2 h-4 w-4" /> Simpan Jurnal
-                </Button>
+                <div className="flex justify-end">
+                    <Button size="lg" onClick={handleSave} disabled={loading || balance !== 0} className="w-full md:w-auto">
+                        <Save className="mr-2 h-4 w-4" /> Simpan Jurnal
+                    </Button>
+                </div>
             </div>
         </CardContent>
       </Card>
