@@ -29,13 +29,24 @@ export default function BalanceSheetReport() {
     setLoading(true);
     try {
         // 1. Fetch Chart of Accounts (Assets, Liabilities, Equity)
-        // We need all accounts to sum their balances
+        // Filter by Category OR Account Code prefix (1, 2, 3)
         const { data: accounts, error: accError } = await supabase
             .from('chart_of_accounts')
-            .select('id, account_code, account_name, category, sub_category, balance_type')
-            .in('category', ['AKTIVA', 'KEWAJIBAN', 'EKUITAS']);
+            .select('id, account_code, account_name, category, sub_category, balance_type, account_type')
+            .order('account_code');
         
         if (accError) throw accError;
+
+        // Filter relevant accounts (Aktiva/Passiva/Modal OR Code 1/2/3)
+        const relevantAccounts = accounts.filter((acc: any) => {
+            const code = acc.account_code || '';
+            return (
+                ['AKTIVA', 'KEWAJIBAN', 'EKUITAS', 'MODAL', 'PASSIVA'].includes(acc.category) ||
+                code.startsWith('1') || 
+                code.startsWith('2') || 
+                code.startsWith('3')
+            );
+        });
 
         // 2. Fetch Journal Entries up to Report Date
         // To calculate balance: Sum(Debit) - Sum(Credit) based on normal balance
@@ -90,23 +101,58 @@ export default function BalanceSheetReport() {
         const liabilities: any[] = [];
         const equity: any[] = [];
 
-        accounts?.forEach((acc: any) => {
-            // Net Debit Balance
-            let bal = balances[acc.id] || 0;
+        // Sort by code length descending to handle rollup (children before parents)
+        // Actually, we can just iterate top-down and sum children?
+        // Let's do a simple recursive sum for Headers.
+        
+        const getBalance = (accId: string, accCode: string): number => {
+            if (!accCode) return 0; // Guard against empty code
             
-            // Adjust based on Account Type for display (positive is normal)
-            if (acc.category === 'AKTIVA') {
-                // Asset Normal Debit
+            // If Detail, return calculated balance from journals
+            if (balances[accId] !== undefined) return balances[accId];
+            
+            // Sum all DETAIL accounts that start with this prefix
+            const descendants = relevantAccounts.filter((a: any) => 
+                a.account_type === 'DETAIL' &&
+                (a.account_code || '').startsWith(accCode)
+            );
+            
+            let total = 0;
+            descendants.forEach((d: any) => {
+                total += (balances[d.id] || 0);
+            });
+            return total;
+        };
+
+        relevantAccounts.forEach((acc: any) => {
+            // Calculate Balance
+            let bal = 0;
+            const code = acc.account_code || '';
+            
+            if (acc.account_type === 'DETAIL') {
+                bal = balances[acc.id] || 0;
             } else {
-                // Liability/Equity Normal Credit
+                // Header: Sum descendants
+                bal = getBalance(acc.id, code);
+            }
+            
+            // Adjust based on Category/Code for display
+            // Assets (1): Normal Debit (Positive)
+            // Liabilities (2): Normal Credit (Negative) -> Flip to Positive
+            // Equity (3): Normal Credit -> Flip
+            
+            const isAsset = ['AKTIVA', 'ASSETS'].includes(acc.category) || code.startsWith('1');
+            
+            if (!isAsset) {
                 bal = -bal; 
             }
 
-            if (bal !== 0) { // Only show non-zero
+            if (Math.abs(bal) > 0.01) { // Only show non-zero
                 const item = { ...acc, balance: bal };
-                if (acc.category === 'AKTIVA') assets.push(item);
-                else if (acc.category === 'KEWAJIBAN') liabilities.push(item);
-                else if (acc.category === 'EKUITAS') equity.push(item);
+                
+                if (isAsset) assets.push(item);
+                else if (['KEWAJIBAN', 'PASSIVA', 'LIABILITIES'].includes(acc.category) || code.startsWith('2')) liabilities.push(item);
+                else if (['EKUITAS', 'MODAL', 'EQUITY'].includes(acc.category) || code.startsWith('3')) equity.push(item);
             }
         });
 
