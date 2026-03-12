@@ -64,7 +64,8 @@ const navigation = [
       { name: 'Pembayaran Hutang', href: '/finance/payments', icon: Wallet, key: 'finance_payments' },
       { name: 'Pembayaran Piutang', href: '/finance/sales', icon: Wallet, key: 'finance_sales' }, // New Menu
       { name: 'Kas & Bank', href: '/finance/cash-bank', icon: Wallet, key: 'finance_cash' },
-      { name: 'Buku Besar', href: '/finance/general-ledger', icon: ClipboardList, key: 'finance_gl' },
+      { name: 'Jurnal Umum', href: '/finance/journal-entry', icon: ClipboardList, key: 'finance_journal' },
+      { name: 'Buku Besar', href: '/finance/general-ledger', icon: Wallet, key: 'finance_gl' },
     ]
   },
   { name: 'Laporan', href: '/reports', icon: BarChart3, key: 'reports' },
