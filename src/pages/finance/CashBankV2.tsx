@@ -121,7 +121,8 @@ export default function CashBankV2() {
         `)
         .gte('entry_date', historyFilter.startDate)
         .lte('entry_date', historyFilter.endDate)
-        .order('entry_date', { ascending: false });
+        .order('entry_date', { ascending: false })
+        .order('voucher_no', { ascending: false });
 
       if (error) throw error;
       setHistory(data || []);
