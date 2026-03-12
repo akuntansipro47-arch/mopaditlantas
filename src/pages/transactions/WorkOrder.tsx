@@ -144,11 +144,112 @@ export default function WorkOrder() {
         .eq('id', id);
       
       if (error) throw error;
+
+      // --- AUTO JOURNAL LOGIC (IF COMPLETED) ---
+      if (newStatus === 'COMPLETED') {
+        await createAutoJournal(id);
+      }
       
       toast.success(`Status WO diubah menjadi ${newStatus}`);
       fetchWOs();
     } catch (error: any) {
       toast.error('Gagal update status: ' + error.message);
+    }
+  };
+
+  const createAutoJournal = async (woId: string) => {
+    try {
+        // 1. Fetch WO details with total amounts
+        const { data: wo, error: woErr } = await supabase
+            .from('work_orders')
+            .select('*')
+            .eq('id', woId)
+            .single();
+        
+        if (woErr) throw woErr;
+        
+        const totalServices = wo.total_services || 0;
+        const totalParts = wo.total_parts || 0;
+        const grandTotal = wo.grand_total || (totalServices + totalParts);
+
+        if (grandTotal <= 0) return; // No journal if zero
+
+        // 2. Find Accounts (Receivable & Revenue)
+        const { data: accounts } = await supabase
+            .from('chart_of_accounts')
+            .select('id, account_name, account_code');
+        
+        // Helper to find account
+        const findAccount = (keyword: string) => accounts?.find(a => a.account_name.toLowerCase().includes(keyword.toLowerCase()));
+        
+        // Try to find specific accounts, fallback to generic
+        const accReceivable = findAccount('Piutang Usaha') || findAccount('Piutang') || findAccount('Receivable');
+        const accServiceRev = findAccount('Pendapatan Jasa') || findAccount('Jasa') || findAccount('Service');
+        const accPartsRev = findAccount('Pendapatan Sparepart') || findAccount('Sparepart') || accServiceRev;
+
+        if (!accReceivable || !accServiceRev) {
+            console.warn("Auto Journal Skipped: Accounts not found");
+            toast.warning("Jurnal otomatis GAGAL: Akun 'Piutang Usaha' atau 'Pendapatan Jasa' belum dibuat di Master Akun.");
+            return;
+        }
+
+        // 3. Create Journal Entry Header
+        const { data: journal, error: jErr } = await supabase
+            .from('journal_entries')
+            .insert([{
+                entry_date: new Date().toISOString(),
+                description: `Jurnal Otomatis WO ${wo.wo_number}`,
+                reference_number: wo.wo_number,
+                total_amount: grandTotal,
+                status: 'POSTED'
+            }])
+            .select()
+            .single();
+        
+        if (jErr) throw jErr;
+
+        // 4. Create Journal Items
+        const items = [];
+
+        // DEBIT: Piutang Usaha (Grand Total)
+        items.push({
+            journal_entry_id: journal.id,
+            account_id: accReceivable.id,
+            debit: grandTotal,
+            credit: 0,
+            description: `Piutang WO ${wo.wo_number}`
+        });
+
+        // CREDIT: Pendapatan Jasa
+        if (totalServices > 0) {
+            items.push({
+                journal_entry_id: journal.id,
+                account_id: accServiceRev.id,
+                debit: 0,
+                credit: totalServices,
+                description: `Pendapatan Jasa WO ${wo.wo_number}`
+            });
+        }
+
+        // CREDIT: Pendapatan Sparepart
+        if (totalParts > 0) {
+             items.push({
+                journal_entry_id: journal.id,
+                account_id: accPartsRev?.id || accServiceRev.id, // Fallback to service if parts acc not found
+                debit: 0,
+                credit: totalParts,
+                description: `Pendapatan Sparepart WO ${wo.wo_number}`
+            });
+        }
+
+        const { error: iErr } = await supabase.from('journal_entry_items').insert(items);
+        if (iErr) throw iErr;
+
+        toast.success("Jurnal Otomatis Berhasil Dibuat (Piutang vs Pendapatan)");
+
+    } catch (error: any) {
+        console.error("Auto Journal Error:", error);
+        toast.error("Gagal membuat jurnal otomatis: " + error.message);
     }
   };
 
