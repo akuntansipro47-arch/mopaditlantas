@@ -1,6 +1,8 @@
 import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { AuthProvider } from "@/context/AuthContext";
+import { DemoProvider } from "@/context/DemoDataContext"; // Import DemoProvider
+import { Toaster } from "sonner";
 import ProtectedRoute from "@/components/layout/ProtectedRoute";
 import Login from "@/pages/auth/Login";
 import Dashboard from "@/pages/Dashboard";
@@ -43,7 +45,8 @@ import DebugDashboard from "@/pages/DebugDashboard";
 export default function App() {
   return (
     <AuthProvider>
-      <Router>
+      <DemoProvider>
+        <Router>
         {/* <ReloadPrompt /> */}
         <Routes>
           <Route path="/login" element={<Login />} />
@@ -100,6 +103,8 @@ export default function App() {
           </Route>
         </Routes>
       </Router>
+      <Toaster />
+      </DemoProvider>
     </AuthProvider>
   );
 }

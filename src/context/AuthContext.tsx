@@ -10,14 +10,14 @@ export interface User {
   allowed_menus: string[];
 }
 
-interface AuthContextType {
+export interface AuthContextType {
   user: User | null;
   login: (username: string, password: string) => Promise<boolean>;
   logout: () => void;
   loading: boolean;
 }
 
-const AuthContext = createContext<AuthContextType | undefined>(undefined);
+export const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
@@ -28,7 +28,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const storedUser = localStorage.getItem('app_user');
     if (storedUser) {
       try {
-        setUser(JSON.parse(storedUser));
+        const parsed = JSON.parse(storedUser);
+        setUser(parsed);
       } catch (e) {
         localStorage.removeItem('app_user');
       }
@@ -38,6 +39,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const login = async (username: string, password: string): Promise<boolean> => {
     try {
+      // 1. DEMO LOGIN (Hardcoded)
+      if (username === 'demo' && password === 'demo') {
+        const demoUser: User = {
+          id: 'demo-user-id',
+          username: 'demo',
+          full_name: 'Demo User (Read-Only)',
+          role: 'SUPER_ADMIN', // Give full access to see everything
+          allowed_menus: ['*'] // Full menu access
+        };
+        setUser(demoUser);
+        localStorage.setItem('app_user', JSON.stringify(demoUser));
+        toast.success('Welcome to Demo Mode! Data is temporary.');
+        return true;
+      }
+
+      // 2. SUPABASE LOGIN
+      // Call RPC login_user
       const { data, error } = await supabase.rpc('login_user', { 
         p_username: username, 
         p_password: password 
@@ -50,27 +68,37 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
 
       // data is returned as an array of rows
-      if (data && data.length > 0 && data[0].success) {
-         const userData = data[0];
-         const loggedInUser: User = {
-           id: userData.id,
-           username: userData.username,
-           full_name: userData.full_name,
-           role: userData.role,
-           allowed_menus: userData.allowed_menus || []
-         };
+      if (data && data.length > 0) {
+         // Check success flag from RPC response if applicable, or just assume data presence is success
+         // The RPC returns table(success boolean, message text, ...)
+         // Let's check the first row
+         const result = data[0];
          
-         setUser(loggedInUser);
-         localStorage.setItem('app_user', JSON.stringify(loggedInUser));
-         toast.success(`Welcome back, ${loggedInUser.full_name}!`);
-         return true;
+         if (result.success) {
+             const loggedInUser: User = {
+               id: result.id,
+               username: result.username,
+               full_name: result.full_name,
+               role: result.role,
+               allowed_menus: result.allowed_menus || []
+             };
+             
+             setUser(loggedInUser);
+             localStorage.setItem('app_user', JSON.stringify(loggedInUser));
+             toast.success(`Welcome back, ${loggedInUser.full_name}!`);
+             return true;
+         } else {
+             toast.error(result.message || 'Login failed');
+             return false;
+         }
       } else {
          toast.error('Username atau Password salah');
          return false;
       }
 
     } catch (error: any) {
-      toast.error(error.message);
+      console.error(error);
+      toast.error('Login error: ' + error.message);
       return false;
     }
   };

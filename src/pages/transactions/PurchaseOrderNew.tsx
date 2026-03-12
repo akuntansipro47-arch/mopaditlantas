@@ -18,6 +18,7 @@ import {
 } from "@/components/ui/select";
 import { formatCurrency, formatDate } from '@/lib/utils';
 import { Checkbox } from "@/components/ui/checkbox";
+import { useDemo } from '@/context/DemoDataContext';
 
 type PO = Database['public']['Tables']['purchase_orders']['Row'];
 type POItem = Database['public']['Tables']['purchase_order_items']['Row'];
@@ -31,6 +32,7 @@ type POWithDetails = PO & {
 };
 
 export default function PurchaseOrderNew() {
+  const { isDemo, purchaseOrders: demoPOs, addPO } = useDemo();
   const [pos, setPos] = useState<POWithDetails[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -62,9 +64,28 @@ export default function PurchaseOrderNew() {
 
   useEffect(() => {
     console.log('PurchaseOrderNew Mounted - Final Fix');
-    fetchPOs();
-    fetchMasterData();
-  }, []);
+    if (isDemo) {
+      const mapped: any[] = demoPOs.map(d => ({
+        id: d.id,
+        po_number: d.number,
+        status: d.status,
+        total_amount: d.total,
+        created_at: d.date,
+        po_date: d.date,
+        supplier_id: d.supplier_id,
+        suppliers: { name: 'Demo Supplier' },
+        work_order_id: null,
+        work_orders: null
+      }));
+      setPos(mapped);
+      setLoading(false);
+      setSuppliers([{ id: 'demo-sup-1', name: 'Demo Supplier', address: '', phone: '' } as any]);
+      setGoodsList([{ id: 'demo-good-1', name: 'Oli Mesin', unit: 'L', cost_price: 50000, stock: 100 } as any]);
+    } else {
+      fetchPOs();
+      fetchMasterData();
+    }
+  }, [isDemo, demoPOs]);
 
   async function fetchMasterData() {
     const { data: s } = await supabase.from('suppliers').select('*');
@@ -208,6 +229,31 @@ export default function PurchaseOrderNew() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
+
+    if (isDemo) {
+      if (editingId) {
+        toast.info("Edit tidak tersedia di mode demo");
+      } else {
+        addPO({
+          number: `PO-DEMO-${Date.now()}`,
+          supplier_id: formData.supplier_id,
+          date: formData.po_date,
+          status: 'ISSUED',
+          total: calculateTotal(),
+          items: poItems.map(i => ({
+              goods_id: i.goods_id || '',
+              qty: i.quantity,
+              price: i.unit_price,
+              total: i.quantity * i.unit_price
+          }))
+        });
+        toast.success("PO Dibuat (Demo Mode)");
+      }
+      setIsDialogOpen(false);
+      resetForm();
+      setLoading(false);
+      return;
+    }
 
     try {
       let targetPoId = editingId;

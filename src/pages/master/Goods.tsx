@@ -19,10 +19,12 @@ import {
 } from "@/components/ui/select";
 
 import { formatCurrency } from '@/lib/utils';
+import { useDemo } from '@/context/DemoDataContext';
 
 type Goods = Database['public']['Tables']['goods']['Row'];
 
 export default function Goods() {
+  const { isDemo, goods: demoGoods, addGood } = useDemo();
   const [goods, setGoods] = useState<Goods[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -39,8 +41,24 @@ export default function Goods() {
   });
 
   useEffect(() => {
-    fetchGoods();
-  }, []);
+    if (isDemo) {
+      setGoods(demoGoods.map(d => ({
+        id: d.id,
+        item_code: d.code,
+        name: d.name,
+        unit: d.unit,
+        item_type: d.type as any,
+        selling_price: d.price,
+        current_stock: d.stock,
+        cost_price: d.cost,
+        is_active: true,
+        created_at: new Date().toISOString()
+      })) as any);
+      setLoading(false);
+    } else {
+      fetchGoods();
+    }
+  }, [isDemo, demoGoods]);
 
   async function fetchGoods() {
     setLoading(true);
@@ -106,6 +124,23 @@ export default function Goods() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    if (isDemo) {
+      addGood({
+        code: `DEMO-${Math.floor(Math.random() * 10000)}`,
+        name: formData.name,
+        type: formData.item_type,
+        unit: formData.unit,
+        cost: 0,
+        price: formData.selling_price,
+        stock: 0
+      });
+      toast.success('Data ditambahkan (Demo Mode)');
+      setIsDialogOpen(false);
+      resetForm();
+      return;
+    }
+
     setLoading(true);
     try {
       if (isEditing && currentId) {
