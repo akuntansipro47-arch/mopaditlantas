@@ -14,6 +14,7 @@ import InventoryValueReport from './reports/InventoryValueReport';
 import GrossProfitReport from './reports/GrossProfitReport';
 import ProfitLossReport from './reports/ProfitLossReport'; // Import P&L
 import BalanceSheetReport from './reports/BalanceSheetReport'; // Import Balance Sheet
+import SupplierPayableReport from './reports/SupplierPayableReport'; // Import Supplier Payable
 import VehicleEntryReport from './reports/VehicleEntryReport';
 import EstimationVsRealizationReport from './reports/EstimationVsRealizationReport';
 import BudgetMonitoringReport from './reports/BudgetMonitoringReport';
@@ -155,6 +156,11 @@ export default function Reports() {
               Neraca (Balance Sheet)
             </TabsTrigger>
           )}
+          {canAccess('report_po') && ( // Use existing permission or add new one
+            <TabsTrigger value="supplier_payable" className="data-[state=active]:bg-red-600 data-[state=active]:text-white data-[state=active]:shadow-md border border-slate-200 bg-white px-4 py-2.5 rounded-lg transition-all hover:border-red-300 font-medium">
+              Sisa Hutang Supplier
+            </TabsTrigger>
+          )}
           {canAccess('report_estimation') && (
             <TabsTrigger value="estimation" className="data-[state=active]:bg-orange-600 data-[state=active]:text-white data-[state=active]:shadow-md border border-slate-200 bg-white px-4 py-2.5 rounded-lg transition-all hover:border-orange-300 font-medium">
               Estimasi vs Realisasi
@@ -182,6 +188,7 @@ export default function Reports() {
           {canAccess('report_profit') && <TabsContent value="profit"><GrossProfitReport /></TabsContent>}
           {canAccess('report_profit') && <TabsContent value="profit_loss"><ProfitLossReport /></TabsContent>}
           {canAccess('report_profit') && <TabsContent value="balance_sheet"><BalanceSheetReport /></TabsContent>}
+          {canAccess('report_po') && <TabsContent value="supplier_payable"><SupplierPayableReport /></TabsContent>}
           {canAccess('report_estimation') && <TabsContent value="estimation"><EstimationVsRealizationReport /></TabsContent>}
           {canAccess('report_budget') && <TabsContent value="budget"><BudgetMonitoringReport /></TabsContent>}
         </div>
