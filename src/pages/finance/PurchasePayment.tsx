@@ -22,6 +22,7 @@ export default function PurchasePayment() {
   const [invoices, setInvoices] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
+  const [isSyncing, setIsSyncing] = useState(false); // Fix: Add missing state
   
   // Payment Dialog
   const [isPayOpen, setIsPayOpen] = useState(false);
@@ -215,8 +216,55 @@ export default function PurchasePayment() {
     inv.suppliers?.name.toLowerCase().includes(search.toLowerCase())
   );
 
+  const [isAccountSelectOpen, setIsAccountSelectOpen] = useState(false); // For custom dialog
+
+  const handleSelectAccount = (acc: any) => {
+    setPaymentData({...paymentData, payment_account_id: acc.id});
+    setIsAccountSelectOpen(false);
+  };
+  
+  // Custom Table Selector for Account
+  const AccountSelector = () => (
+      <Dialog open={isAccountSelectOpen} onOpenChange={setIsAccountSelectOpen}>
+          <DialogContent className="max-w-3xl">
+              <DialogHeader>
+                  <DialogTitle>Pilih Akun Kas/Bank Pembayar</DialogTitle>
+              </DialogHeader>
+              <div className="max-h-[400px] overflow-auto">
+                <Table>
+                    <TableHeader>
+                        <TableRow>
+                            <TableHead>Kode Akun</TableHead>
+                            <TableHead>Nama Akun</TableHead>
+                            <TableHead>Kategori</TableHead>
+                            <TableHead></TableHead>
+                        </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                        {cashBankAccounts.length === 0 ? (
+                            <TableRow><TableCell colSpan={4} className="text-center">Tidak ada akun Kas/Bank (AKTIVA_LANCAR) ditemukan.</TableCell></TableRow>
+                        ) : (
+                            cashBankAccounts.map(acc => (
+                                <TableRow key={acc.id} className="cursor-pointer hover:bg-gray-50" onClick={() => handleSelectAccount(acc)}>
+                                    <TableCell className="font-mono font-bold">{acc.account_code}</TableCell>
+                                    <TableCell>{acc.account_name}</TableCell>
+                                    <TableCell className="text-xs text-gray-500">{acc.sub_category}</TableCell>
+                                    <TableCell>
+                                        <Button size="sm" variant="ghost">Pilih</Button>
+                                    </TableCell>
+                                </TableRow>
+                            ))
+                        )}
+                    </TableBody>
+                </Table>
+              </div>
+          </DialogContent>
+      </Dialog>
+  );
+
   return (
     <div className="space-y-6">
+        {AccountSelector()}
       <div className="flex items-center justify-between">
         <h2 className="text-3xl font-bold tracking-tight">Pembayaran Pembelian (Hutang)</h2>
         <Button variant="outline" onClick={handleSyncInvoices} disabled={isSyncing}>
@@ -317,14 +365,22 @@ export default function PurchasePayment() {
                 </div>
                 <div className="space-y-2">
                     <Label>Kas/Bank Pembayar</Label>
-                    <Select value={paymentData.payment_account_id} onValueChange={v => setPaymentData({...paymentData, payment_account_id: v})}>
-                        <SelectTrigger><SelectValue placeholder="Pilih Akun Kas/Bank" /></SelectTrigger>
-                        <SelectContent>
-                            {cashBankAccounts.map(acc => (
-                                <SelectItem key={acc.id} value={acc.id}>{acc.account_code} - {acc.account_name}</SelectItem>
-                            ))}
-                        </SelectContent>
-                    </Select>
+                    <div className="flex gap-2">
+                        <Input 
+                            readOnly 
+                            value={cashBankAccounts.find(a => a.id === paymentData.payment_account_id)?.account_code || ''} 
+                            placeholder="Kode Akun"
+                            className="w-[120px] bg-gray-50 font-mono font-bold"
+                        />
+                        <Input 
+                            readOnly 
+                            value={cashBankAccounts.find(a => a.id === paymentData.payment_account_id)?.account_name || ''} 
+                            placeholder="Nama Akun (Klik Pilih)"
+                            className="flex-1 bg-gray-50 cursor-pointer"
+                            onClick={() => setIsAccountSelectOpen(true)}
+                        />
+                        <Button variant="outline" onClick={() => setIsAccountSelectOpen(true)}>Pilih</Button>
+                    </div>
                 </div>
                 <div className="space-y-2">
                     <Label>Catatan</Label>
