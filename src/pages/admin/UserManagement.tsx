@@ -37,11 +37,11 @@ const MENU_OPTIONS = [
   { id: 'trans_wo', label: 'Work Order' },
   { id: 'trans_wo_reopen', label: 'WO Admin (Re-open/Hapus)' },
   { id: 'trans_issue', label: 'Barang Keluar' },
-  { id: 'finance', label: 'Keuangan (Parent)' }, // New
-  { id: { id: 'finance_payments', label: 'Pembayaran Hutang' },
+  { id: 'finance', label: 'Keuangan (Parent)' },
+  { id: 'finance_payments', label: 'Pembayaran Hutang' },
   { id: 'finance_cash', label: 'Kas & Bank' },
   { id: 'finance_gl', label: 'Buku Besar' },
-  { id: 'reports', label: 'Laporan' },},
+  { id: 'reports', label: 'Laporan' },
 ];
 
 const REPORT_OPTIONS = [
