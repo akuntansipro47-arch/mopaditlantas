@@ -63,11 +63,22 @@ export default function CashBankV2() {
   // --- History State ---
   const [history, setHistory] = useState<any[]>([]);
   const [historySearch, setHistorySearch] = useState('');
+  const [historyFilter, setHistoryFilter] = useState({
+    startDate: new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0],
+    endDate: new Date().toISOString().split('T')[0]
+  });
+
+  // --- Edit State ---
+  const [editingId, setEditingId] = useState<string | null>(null);
 
   useEffect(() => {
     fetchAccounts();
     fetchHistory();
-  }, []);
+  }, []); // Initial load
+
+  useEffect(() => {
+    fetchHistory();
+  }, [historyFilter]); // Reload on filter change
 
   async function fetchAccounts() {
     try {
@@ -92,10 +103,15 @@ export default function CashBankV2() {
         .select(`
           *,
           items:journal_entry_items (
+             id,
              debit, credit, 
-             account:chart_of_accounts (account_name, account_code)
+             account_id,
+             description,
+             account:chart_of_accounts (id, account_name, account_code)
           )
         `)
+        .gte('entry_date', historyFilter.startDate)
+        .lte('entry_date', historyFilter.endDate)
         .order('entry_date', { ascending: false });
 
       if (error) throw error;
@@ -142,27 +158,56 @@ export default function CashBankV2() {
 
     setLoading(true);
     try {
-      // 1. Create Header
-      const { data: entry, error: entryError } = await supabase
-        .from('journal_entries')
-        .insert([{
-          entry_date: depositHeader.date,
-          voucher_no: depositHeader.voucher_no || `DEP-${Date.now().toString().slice(-6)}`,
-          description: depositHeader.memo,
-          entry_type: 'DEPOSIT',
-          total_amount: depositTotal
-        }])
-        .select()
-        .single();
+      let entryId = editingId;
 
-      if (entryError) throw entryError;
+      if (editingId) {
+        // UPDATE Existing Entry
+        const { error: updateError } = await supabase
+          .from('journal_entries')
+          .update({
+            entry_date: depositHeader.date,
+            voucher_no: depositHeader.voucher_no,
+            description: depositHeader.memo,
+            entry_type: 'DEPOSIT',
+            total_amount: depositTotal,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', editingId);
+        
+        if (updateError) throw updateError;
 
-      // 2. Create Items
+        // Delete old items
+        const { error: deleteError } = await supabase
+          .from('journal_entry_items')
+          .delete()
+          .eq('journal_entry_id', editingId);
+        
+        if (deleteError) throw deleteError;
+
+      } else {
+        // INSERT New Entry
+        const { data: entry, error: entryError } = await supabase
+          .from('journal_entries')
+          .insert([{
+            entry_date: depositHeader.date,
+            voucher_no: depositHeader.voucher_no || `DEP-${Date.now().toString().slice(-6)}`,
+            description: depositHeader.memo,
+            entry_type: 'DEPOSIT',
+            total_amount: depositTotal
+          }])
+          .select()
+          .single();
+
+        if (entryError) throw entryError;
+        entryId = entry.id;
+      }
+
+      // 2. Create Items (For both new and update)
       const itemsPayload = [];
       
       // A. DEBIT (Deposit To Account) - Total Amount
       itemsPayload.push({
-        journal_entry_id: entry.id,
+        journal_entry_id: entryId,
         account_id: depositHeader.deposit_to,
         debit: depositTotal,
         credit: 0,
@@ -172,7 +217,7 @@ export default function CashBankV2() {
       // B. CREDIT (Detail Accounts)
       depositItems.forEach(item => {
         itemsPayload.push({
-          journal_entry_id: entry.id,
+          journal_entry_id: entryId,
           account_id: item.account_id,
           debit: 0,
           credit: item.amount,
@@ -186,10 +231,11 @@ export default function CashBankV2() {
 
       if (itemsError) throw itemsError;
 
-      toast.success('Penerimaan berhasil disimpan');
+      toast.success(editingId ? 'Transaksi berhasil diperbarui' : 'Penerimaan berhasil disimpan');
       // Reset
       setDepositHeader({ ...depositHeader, voucher_no: '', memo: '' });
       setDepositItems([{ id: '1', account_id: '', amount: 0, memo: '' }]);
+      setEditingId(null);
       fetchHistory();
       setActiveTab('history');
 
@@ -224,27 +270,56 @@ export default function CashBankV2() {
 
     setLoading(true);
     try {
-      // 1. Create Header
-      const { data: entry, error: entryError } = await supabase
-        .from('journal_entries')
-        .insert([{
-          entry_date: paymentHeader.date,
-          voucher_no: paymentHeader.voucher_no || `PAY-${Date.now().toString().slice(-6)}`,
-          description: paymentHeader.memo,
-          entry_type: 'PAYMENT',
-          total_amount: paymentTotal
-        }])
-        .select()
-        .single();
+      let entryId = editingId;
 
-      if (entryError) throw entryError;
+      if (editingId) {
+        // UPDATE Existing Entry
+        const { error: updateError } = await supabase
+          .from('journal_entries')
+          .update({
+            entry_date: paymentHeader.date,
+            voucher_no: paymentHeader.voucher_no,
+            description: paymentHeader.memo,
+            entry_type: 'PAYMENT',
+            total_amount: paymentTotal,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', editingId);
+        
+        if (updateError) throw updateError;
 
-      // 2. Create Items
+        // Delete old items
+        const { error: deleteError } = await supabase
+          .from('journal_entry_items')
+          .delete()
+          .eq('journal_entry_id', editingId);
+        
+        if (deleteError) throw deleteError;
+
+      } else {
+        // INSERT New Entry
+        const { data: entry, error: entryError } = await supabase
+          .from('journal_entries')
+          .insert([{
+            entry_date: paymentHeader.date,
+            voucher_no: paymentHeader.voucher_no || `PAY-${Date.now().toString().slice(-6)}`,
+            description: paymentHeader.memo,
+            entry_type: 'PAYMENT',
+            total_amount: paymentTotal
+          }])
+          .select()
+          .single();
+
+        if (entryError) throw entryError;
+        entryId = entry.id;
+      }
+
+      // 2. Create Items (For both new and update)
       const itemsPayload = [];
       
       // A. CREDIT (Payment From Account) - Total Amount
       itemsPayload.push({
-        journal_entry_id: entry.id,
+        journal_entry_id: entryId,
         account_id: paymentHeader.payment_from,
         debit: 0,
         credit: paymentTotal,
@@ -254,7 +329,7 @@ export default function CashBankV2() {
       // B. DEBIT (Detail Accounts - Expenses etc)
       paymentItems.forEach(item => {
         itemsPayload.push({
-          journal_entry_id: entry.id,
+          journal_entry_id: entryId,
           account_id: item.account_id,
           debit: item.amount,
           credit: 0,
@@ -268,10 +343,11 @@ export default function CashBankV2() {
 
       if (itemsError) throw itemsError;
 
-      toast.success('Pengeluaran berhasil disimpan');
+      toast.success(editingId ? 'Transaksi berhasil diperbarui' : 'Pengeluaran berhasil disimpan');
       // Reset
       setPaymentHeader({ ...paymentHeader, voucher_no: '', memo: '' });
       setPaymentItems([{ id: '1', account_id: '', amount: 0, memo: '' }]);
+      setEditingId(null);
       fetchHistory();
       setActiveTab('history');
 
@@ -282,10 +358,73 @@ export default function CashBankV2() {
     }
   };
 
+  const handleEdit = (entry: any) => {
+    setEditingId(entry.id);
+    
+    // Identify Main Account and Split Items
+    // For DEPOSIT: Main Account is DEBIT, Others are CREDIT
+    // For PAYMENT: Main Account is CREDIT, Others are DEBIT
+    
+    if (entry.entry_type === 'DEPOSIT') {
+        const mainItem = entry.items.find((i: any) => i.debit > 0); // Deposit To
+        const otherItems = entry.items.filter((i: any) => i.credit > 0); // Source Accounts
+
+        setDepositHeader({
+            deposit_to: mainItem?.account_id || '',
+            voucher_no: entry.voucher_no,
+            date: entry.entry_date,
+            memo: entry.description
+        });
+
+        setDepositItems(otherItems.map((i: any) => ({
+            id: i.id || Math.random().toString(),
+            account_id: i.account_id,
+            amount: i.credit,
+            memo: i.description
+        })));
+
+        setActiveTab('deposit');
+    } else {
+        const mainItem = entry.items.find((i: any) => i.credit > 0); // Payment From
+        const otherItems = entry.items.filter((i: any) => i.debit > 0); // Expenses
+
+        setPaymentHeader({
+            payment_from: mainItem?.account_id || '',
+            voucher_no: entry.voucher_no,
+            date: entry.entry_date,
+            memo: entry.description
+        });
+
+        setPaymentItems(otherItems.map((i: any) => ({
+            id: i.id || Math.random().toString(),
+            account_id: i.account_id,
+            amount: i.debit,
+            memo: i.description
+        })));
+
+        setActiveTab('payment');
+    }
+  };
+
+  const handleCancelEdit = () => {
+    setEditingId(null);
+    setDepositHeader({ ...depositHeader, voucher_no: '', memo: '' });
+    setDepositItems([{ id: '1', account_id: '', amount: 0, memo: '' }]);
+    setPaymentHeader({ ...paymentHeader, voucher_no: '', memo: '' });
+    setPaymentItems([{ id: '1', account_id: '', amount: 0, memo: '' }]);
+    setActiveTab('history');
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h2 className="text-3xl font-bold tracking-tight">Kas & Bank (Jurnal)</h2>
+        {editingId && (
+            <div className="bg-yellow-100 border border-yellow-400 text-yellow-700 px-4 py-2 rounded flex items-center gap-4">
+                <span>Sedang Mengedit Transaksi...</span>
+                <Button size="sm" variant="destructive" onClick={handleCancelEdit}>Batal Edit</Button>
+            </div>
+        )}
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
@@ -573,9 +712,27 @@ export default function CashBankV2() {
         <TabsContent value="history" className="space-y-4">
              <Card>
                 <CardHeader className="pb-3">
-                    <div className="flex justify-between items-center">
-                        <CardTitle>Riwayat Jurnal Kas/Bank</CardTitle>
-                        <Button variant="outline" size="sm" onClick={fetchHistory}><RefreshCw className="h-4 w-4 mr-2" /> Refresh</Button>
+                    <div className="flex flex-col gap-4">
+                        <div className="flex justify-between items-center">
+                            <CardTitle>Riwayat Jurnal Kas/Bank</CardTitle>
+                            <Button variant="outline" size="sm" onClick={fetchHistory}><RefreshCw className="h-4 w-4 mr-2" /> Refresh</Button>
+                        </div>
+                        <div className="flex items-center gap-2 bg-slate-50 p-2 rounded border">
+                            <CalendarIcon className="h-4 w-4 text-gray-500" />
+                            <Input 
+                                type="date" 
+                                className="w-auto h-8 bg-white" 
+                                value={historyFilter.startDate}
+                                onChange={e => setHistoryFilter({...historyFilter, startDate: e.target.value})}
+                            />
+                            <span className="text-gray-400">-</span>
+                            <Input 
+                                type="date" 
+                                className="w-auto h-8 bg-white" 
+                                value={historyFilter.endDate}
+                                onChange={e => setHistoryFilter({...historyFilter, endDate: e.target.value})}
+                            />
+                        </div>
                     </div>
                 </CardHeader>
                 <CardContent>
@@ -588,11 +745,12 @@ export default function CashBankV2() {
                                 <TableHead>Keterangan</TableHead>
                                 <TableHead className="text-right">Total</TableHead>
                                 <TableHead>Detail Akun</TableHead>
+                                <TableHead className="w-[80px]">Aksi</TableHead>
                             </TableRow>
                         </TableHeader>
                         <TableBody>
                             {history.length === 0 ? (
-                                <TableRow><TableCell colSpan={6} className="text-center py-8">Belum ada transaksi.</TableCell></TableRow>
+                                <TableRow><TableCell colSpan={7} className="text-center py-8">Belum ada transaksi pada periode ini.</TableCell></TableRow>
                             ) : (
                                 history.map(t => (
                                     <TableRow key={t.id}>
@@ -610,6 +768,9 @@ export default function CashBankV2() {
                                                 <div key={idx}>{i.account?.account_code} - {i.account?.account_name} ({formatCurrency(i.debit || i.credit)})</div>
                                             ))}
                                             {t.items?.length > 2 && <div>...</div>}
+                                        </TableCell>
+                                        <TableCell>
+                                            <Button variant="outline" size="sm" onClick={() => handleEdit(t)}>Edit</Button>
                                         </TableCell>
                                     </TableRow>
                                 ))
