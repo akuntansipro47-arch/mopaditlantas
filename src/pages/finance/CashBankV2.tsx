@@ -856,7 +856,9 @@ export default function CashBankV2() {
                                                 {t.entry_type}
                                             </span>
                                         </TableCell>
-                                        <TableCell className="max-w-[200px] truncate">{t.description}</TableCell>
+                                        <TableCell>
+                                            <div className="whitespace-pre-wrap text-sm">{t.description}</div>
+                                        </TableCell>
                                         <TableCell className="text-right font-bold">{formatCurrency(t.total_amount)}</TableCell>
                                         <TableCell className="text-xs text-gray-500">
                                             {t.items?.slice(0, 2).map((i: any, idx: number) => (
