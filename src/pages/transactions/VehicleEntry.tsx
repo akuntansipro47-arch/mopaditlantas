@@ -303,7 +303,7 @@ export default function VehicleEntryPage() {
     try {
       const entryPayload = {
         entry_date: formData.entry_date,
-        vehicle_id: formData.vehicle_id,
+        vehicle_id: formData.vehicle_id || null, // Fix UUID error
         nota_dinas_number: formData.nota_dinas_number,
         service_group: formData.service_group,
         notes: formData.notes,
