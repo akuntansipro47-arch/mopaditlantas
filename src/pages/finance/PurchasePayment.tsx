@@ -8,7 +8,7 @@ import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { toast } from 'sonner';
 import { formatCurrency, formatDate } from '@/lib/utils';
-import { Search, Wallet, CheckCircle, RefreshCw } from 'lucide-react';
+import { Search, Wallet, RefreshCw, Edit } from 'lucide-react';
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
@@ -16,31 +16,79 @@ import { Label } from "@/components/ui/label";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 export default function PurchasePayment() {
   // Trigger deployment update
+  const [activeTab, setActiveTab] = useState('invoices');
   const [invoices, setInvoices] = useState<any[]>([]);
+  const [paymentHistory, setPaymentHistory] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
-  const [isSyncing, setIsSyncing] = useState(false); // Fix: Add missing state
+  const [isSyncing, setIsSyncing] = useState(false);
   
+  // Filters
+  const [dateFilter, setDateFilter] = useState({
+    startDate: new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0],
+    endDate: new Date().toISOString().split('T')[0]
+  });
+  const [statusFilter, setStatusFilter] = useState('ALL'); // ALL, UNPAID, PARTIAL, PAID
+
   // Payment Dialog
   const [isPayOpen, setIsPayOpen] = useState(false);
   const [selectedInvoice, setSelectedInvoice] = useState<any>(null);
+  const [editingPaymentId, setEditingPaymentId] = useState<string | null>(null);
+  const [originalPaymentAmount, setOriginalPaymentAmount] = useState(0);
+
   const [paymentData, setPaymentData] = useState({
     amount: 0,
     payment_date: new Date().toISOString().split('T')[0],
     payment_method: 'TRANSFER',
-    payment_account_id: '', // New Field
+    payment_account_id: '', 
     notes: ''
   });
 
   const [cashBankAccounts, setCashBankAccounts] = useState<any[]>([]);
+  const [apAccount, setApAccount] = useState<any>(null); // Accounts Payable (Hutang Usaha)
 
   useEffect(() => {
     fetchInvoices();
     fetchCashBankAccounts();
+    fetchApAccount();
   }, []);
+
+  useEffect(() => {
+    if (activeTab === 'history') {
+        fetchPaymentHistory();
+    }
+  }, [activeTab, dateFilter]);
+
+  async function fetchApAccount() {
+    try {
+        // Try to find account with sub_category 'HUTANG' or code usually starting with 2
+        const { data } = await supabase
+            .from('chart_of_accounts')
+            .select('id, account_code, account_name')
+            .eq('sub_category', 'HUTANG')
+            .limit(1)
+            .maybeSingle();
+        
+        if (data) {
+            setApAccount(data);
+        } else {
+            // Fallback search by name
+            const { data: data2 } = await supabase
+                .from('chart_of_accounts')
+                .select('id, account_code, account_name')
+                .ilike('account_name', '%hutang usaha%')
+                .limit(1)
+                .maybeSingle();
+            if (data2) setApAccount(data2);
+        }
+    } catch (e) {
+        console.error("Error fetching AP account", e);
+    }
+  }
 
   async function fetchCashBankAccounts() {
     try {
@@ -130,7 +178,6 @@ export default function PurchasePayment() {
             status
           )
         `)
-        .eq('purchase_orders.status', 'RECEIVED_FULL') // Only fully received POs
         .order('created_at', { ascending: false });
 
       if (error) throw error;
@@ -142,16 +189,59 @@ export default function PurchasePayment() {
     }
   }
 
+  async function fetchPaymentHistory() {
+      setLoading(true);
+      try {
+          const { data, error } = await supabase
+            .from('purchase_payments')
+            .select(`
+                *,
+                purchase_invoices (
+                    invoice_number,
+                    suppliers (name)
+                ),
+                payment_account:chart_of_accounts (account_name)
+            `)
+            .gte('payment_date', dateFilter.startDate)
+            .lte('payment_date', dateFilter.endDate)
+            .order('payment_date', { ascending: false });
+          
+          if (error) throw error;
+          setPaymentHistory(data || []);
+      } catch (e: any) {
+          toast.error("Gagal mengambil riwayat pembayaran: " + e.message);
+      } finally {
+          setLoading(false);
+      }
+  }
+
   const handlePayClick = (invoice: any) => {
     setSelectedInvoice(invoice);
+    setEditingPaymentId(null);
+    setOriginalPaymentAmount(0);
     setPaymentData({
       amount: invoice.total_amount - (invoice.paid_amount || 0), // Default full pay
       payment_date: new Date().toISOString().split('T')[0],
       payment_method: 'TRANSFER',
+      payment_account_id: '',
       notes: ''
     });
     setIsPayOpen(true);
   };
+
+  const handleEditClick = (payment: any) => {
+      setEditingPaymentId(payment.id);
+      setSelectedInvoice(payment.purchase_invoices);
+      setOriginalPaymentAmount(payment.amount);
+      setPaymentData({
+          amount: payment.amount,
+          payment_date: payment.payment_date,
+          payment_method: payment.payment_method,
+          payment_account_id: payment.payment_account_id || '',
+          notes: payment.notes || ''
+      });
+      setIsPayOpen(true);
+  }
 
   const handleProcessPayment = async () => {
     if (!selectedInvoice) return;
@@ -163,53 +253,121 @@ export default function PurchasePayment() {
         return;
       }
       
-      const remaining = selectedInvoice.total_amount - (selectedInvoice.paid_amount || 0);
-      if (amount > remaining) {
+      // Validation for Overpayment
+      // If editing: Available space = (Total - Paid) + OriginalPayment
+      const currentPaid = selectedInvoice.paid_amount || 0;
+      const availableSpace = editingPaymentId 
+        ? (selectedInvoice.total_amount - currentPaid + originalPaymentAmount)
+        : (selectedInvoice.total_amount - currentPaid);
+
+      if (amount > availableSpace + 100) { // +100 tolerance for rounding
         toast.error("Pembayaran melebihi sisa tagihan!");
         return;
       }
 
-      // 1. Create Payment Record
-      const { error: payError } = await supabase
-        .from('purchase_payments')
-        .insert([{
-            invoice_id: selectedInvoice.id,
-            payment_date: paymentData.payment_date,
-            amount: amount,
-            payment_method: paymentData.payment_method,
-            payment_account_id: paymentData.payment_account_id || null, // Save account ID
-            notes: paymentData.notes
-        }]);
-      
-      if (payError) throw payError;
+      if (!paymentData.payment_account_id) {
+          toast.error("Mohon pilih Akun Kas/Bank Pembayar");
+          return;
+      }
 
-      // 2. Update Invoice Paid Amount & Status
-      const newPaidAmount = (selectedInvoice.paid_amount || 0) + amount;
-      const newStatus = newPaidAmount >= selectedInvoice.total_amount ? 'PAID' : 'PARTIAL';
+      let paymentId = editingPaymentId;
 
-      await supabase
-        .from('purchase_invoices')
-        .update({
-            paid_amount: newPaidAmount,
-            status: newStatus
-        })
-        .eq('id', selectedInvoice.id);
+      if (editingPaymentId) {
+          // --- UPDATE EXISTING PAYMENT ---
+          const { error: updateError } = await supabase
+            .from('purchase_payments')
+            .update({
+                amount: amount,
+                payment_date: paymentData.payment_date,
+                payment_method: paymentData.payment_method,
+                payment_account_id: paymentData.payment_account_id,
+                notes: paymentData.notes
+            })
+            .eq('id', editingPaymentId);
+          
+          if (updateError) throw updateError;
 
-      // 3. Create Cash/Bank Transaction (Expense)
-      await supabase
-        .from('cash_bank_transactions')
-        .insert([{
-            transaction_date: paymentData.payment_date,
-            type: 'OUT',
-            category: 'PEMBAYARAN_HUTANG',
-            amount: amount,
-            description: `Pembayaran Hutang Invoice ${selectedInvoice.invoice_number} (${selectedInvoice.suppliers?.name})`,
-            ref_id: selectedInvoice.id // Or payment id if we had it returned
-        }]);
+          // Revert old payment from Invoice Paid Amount
+          const adjustedPaidAmount = currentPaid - originalPaymentAmount + amount;
+          const newStatus = adjustedPaidAmount >= selectedInvoice.total_amount ? 'PAID' : 'PARTIAL';
 
-      toast.success("Pembayaran berhasil diproses");
+          await supabase
+            .from('purchase_invoices')
+            .update({ paid_amount: adjustedPaidAmount, status: newStatus })
+            .eq('id', selectedInvoice.id);
+            
+          // Update Journal Entry (Delete old by reference and create new, or update)
+          // Easiest is delete by reference and recreate
+          await supabase.from('journal_entries').delete().eq('reference', editingPaymentId);
+          
+      } else {
+          // --- CREATE NEW PAYMENT ---
+          const { data: newPay, error: payError } = await supabase
+            .from('purchase_payments')
+            .insert([{
+                invoice_id: selectedInvoice.id,
+                payment_date: paymentData.payment_date,
+                amount: amount,
+                payment_method: paymentData.payment_method,
+                payment_account_id: paymentData.payment_account_id,
+                notes: paymentData.notes
+            }])
+            .select()
+            .single();
+          
+          if (payError) throw payError;
+          paymentId = newPay.id;
+
+          // Update Invoice
+          const newPaidAmount = currentPaid + amount;
+          const newStatus = newPaidAmount >= selectedInvoice.total_amount ? 'PAID' : 'PARTIAL';
+          await supabase
+            .from('purchase_invoices')
+            .update({ paid_amount: newPaidAmount, status: newStatus })
+            .eq('id', selectedInvoice.id);
+      }
+
+      // --- CREATE JOURNAL ENTRY (GL) ---
+      // Dr: Hutang Usaha
+      // Cr: Kas/Bank
+      if (apAccount && paymentData.payment_account_id && paymentId) {
+          const { data: entry, error: entryError } = await supabase
+            .from('journal_entries')
+            .insert([{
+                entry_date: paymentData.payment_date,
+                voucher_no: `PAY-${selectedInvoice.invoice_number}-${Date.now().toString().slice(-4)}`,
+                description: `Pembayaran Hutang ${selectedInvoice.invoice_number} (${selectedInvoice.suppliers?.name || ''}) - ${paymentData.notes}`,
+                entry_type: 'PAYMENT',
+                total_amount: amount,
+                reference: paymentId // Link to payment
+            }])
+            .select()
+            .single();
+        
+         if (!entryError && entry) {
+             await supabase.from('journal_entry_items').insert([
+                 {
+                     journal_entry_id: entry.id,
+                     account_id: apAccount.id, // Hutang Usaha
+                     debit: amount,
+                     credit: 0,
+                     description: 'Pelunasan Hutang'
+                 },
+                 {
+                     journal_entry_id: entry.id,
+                     account_id: paymentData.payment_account_id, // Kas/Bank
+                     debit: 0,
+                     credit: amount,
+                     description: 'Pengeluaran Kas/Bank'
+                 }
+             ]);
+         }
+      }
+
+      toast.success(editingPaymentId ? "Pembayaran berhasil diperbarui" : "Pembayaran berhasil diproses");
       setIsPayOpen(false);
       fetchInvoices();
+      if (activeTab === 'history') fetchPaymentHistory();
 
     } catch (error: any) {
       toast.error("Gagal memproses pembayaran: " + error.message);
@@ -218,10 +376,20 @@ export default function PurchasePayment() {
     }
   };
 
-  const filteredInvoices = invoices.filter(inv => 
-    inv.invoice_number.toLowerCase().includes(search.toLowerCase()) ||
-    inv.suppliers?.name.toLowerCase().includes(search.toLowerCase())
-  );
+  const filteredInvoices = invoices.filter(inv => {
+    const matchSearch = inv.invoice_number.toLowerCase().includes(search.toLowerCase()) ||
+                        inv.suppliers?.name.toLowerCase().includes(search.toLowerCase());
+    const matchStatus = statusFilter === 'ALL' ? true : inv.status === statusFilter;
+    
+    // Date filter for Invoices (Usually based on Invoice Date or Due Date)
+    // Here let's use Invoice Date
+    const invDate = new Date(inv.invoice_date);
+    const start = new Date(dateFilter.startDate);
+    const end = new Date(dateFilter.endDate);
+    const matchDate = invDate >= start && invDate <= end;
+
+    return matchSearch && matchStatus && matchDate;
+  });
 
   const [isAccountSelectOpen, setIsAccountSelectOpen] = useState(false); // For custom dialog
 
@@ -280,84 +448,165 @@ export default function PurchasePayment() {
     <div className="space-y-6">
         {AccountSelector()}
       <div className="flex items-center justify-between">
-        <h2 className="text-3xl font-bold tracking-tight">Pembayaran Pembelian (Hutang)</h2>
+        <h2 className="text-3xl font-bold tracking-tight">Pembayaran Pembelian & Hutang</h2>
         <Button variant="outline" onClick={handleSyncInvoices} disabled={isSyncing}>
             <RefreshCw className={`mr-2 h-4 w-4 ${isSyncing ? 'animate-spin' : ''}`} />
             Sinkronisasi Tagihan PO
         </Button>
       </div>
 
-      <Card>
-        <CardHeader className="pb-3">
-            <div className="flex justify-between">
-                <CardTitle>Daftar Tagihan Supplier</CardTitle>
-                <div className="relative w-64">
-                    <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
-                    <Input placeholder="Cari Invoice / Supplier..." className="pl-8" value={search} onChange={e => setSearch(e.target.value)} />
-                </div>
-            </div>
-        </CardHeader>
-        <CardContent>
-            <Table>
-                <TableHeader>
-                    <TableRow>
-                        <TableHead>No. Invoice</TableHead>
-                        <TableHead>Tanggal</TableHead>
-                        <TableHead>Jatuh Tempo</TableHead>
-                        <TableHead>Supplier</TableHead>
-                        <TableHead>Total Tagihan</TableHead>
-                        <TableHead>Sudah Dibayar</TableHead>
-                        <TableHead>Sisa</TableHead>
-                        <TableHead>Status</TableHead>
-                        <TableHead className="text-right">Aksi</TableHead>
-                    </TableRow>
-                </TableHeader>
-                <TableBody>
-                    {filteredInvoices.length === 0 ? (
-                        <TableRow><TableCell colSpan={9} className="text-center py-8">Tidak ada tagihan.</TableCell></TableRow>
-                    ) : (
-                        filteredInvoices.map(inv => {
-                            const remaining = inv.total_amount - (inv.paid_amount || 0);
-                            return (
-                                <TableRow key={inv.id}>
-                                    <TableCell className="font-medium">{inv.invoice_number}</TableCell>
-                                    <TableCell>{formatDate(inv.invoice_date)}</TableCell>
-                                    <TableCell className={new Date(inv.due_date) < new Date() && inv.status !== 'PAID' ? 'text-red-600 font-bold' : ''}>
-                                        {formatDate(inv.due_date)}
-                                    </TableCell>
-                                    <TableCell>{inv.suppliers?.name}</TableCell>
-                                    <TableCell>{formatCurrency(inv.total_amount)}</TableCell>
-                                    <TableCell className="text-green-600">{formatCurrency(inv.paid_amount || 0)}</TableCell>
-                                    <TableCell className="font-bold text-red-600">{formatCurrency(remaining)}</TableCell>
-                                    <TableCell>
-                                        <span className={`px-2 py-1 rounded text-xs font-semibold 
-                                            ${inv.status === 'PAID' ? 'bg-green-100 text-green-800' : 
-                                              inv.status === 'PARTIAL' ? 'bg-yellow-100 text-yellow-800' : 'bg-red-100 text-red-800'}`}>
-                                            {inv.status === 'PAID' ? 'LUNAS' : inv.status === 'PARTIAL' ? 'SEBAGIAN' : 'BELUM BAYAR'}
-                                        </span>
-                                    </TableCell>
-                                    <TableCell className="text-right">
-                                        {inv.status !== 'PAID' && (
-                                            <Button size="sm" onClick={() => handlePayClick(inv)}>
-                                                <Wallet className="mr-2 h-4 w-4" /> Bayar
-                                            </Button>
-                                        )}
-                                    </TableCell>
-                                </TableRow>
-                            );
-                        })
-                    )}
-                </TableBody>
-            </Table>
-        </CardContent>
-      </Card>
+      <Tabs value={activeTab} onValueChange={setActiveTab}>
+          <TabsList>
+              <TabsTrigger value="invoices">Tagihan (Invoices)</TabsTrigger>
+              <TabsTrigger value="history">Riwayat Pembayaran</TabsTrigger>
+          </TabsList>
+          
+          <div className="my-4 flex flex-col md:flex-row gap-4 items-end md:items-center bg-slate-50 p-4 rounded-lg border">
+              <div className="space-y-1">
+                  <Label>Filter Tanggal</Label>
+                  <div className="flex items-center gap-2">
+                    <Input type="date" value={dateFilter.startDate} onChange={e => setDateFilter({...dateFilter, startDate: e.target.value})} className="bg-white" />
+                    <span>-</span>
+                    <Input type="date" value={dateFilter.endDate} onChange={e => setDateFilter({...dateFilter, endDate: e.target.value})} className="bg-white" />
+                  </div>
+              </div>
+              
+              {activeTab === 'invoices' && (
+                  <div className="space-y-1 min-w-[200px]">
+                      <Label>Status</Label>
+                      <Select value={statusFilter} onValueChange={setStatusFilter}>
+                          <SelectTrigger className="bg-white">
+                              <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                              <SelectItem value="ALL">Semua Status</SelectItem>
+                              <SelectItem value="UNPAID">Belum Bayar (Unpaid)</SelectItem>
+                              <SelectItem value="PARTIAL">Sebagian (Partial)</SelectItem>
+                              <SelectItem value="PAID">Lunas (Paid)</SelectItem>
+                          </SelectContent>
+                      </Select>
+                  </div>
+              )}
+          </div>
+
+          <TabsContent value="invoices">
+            <Card>
+                <CardHeader className="pb-3">
+                    <div className="flex justify-between">
+                        <CardTitle>Daftar Tagihan Supplier</CardTitle>
+                        <div className="relative w-64">
+                            <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+                            <Input placeholder="Cari Invoice / Supplier..." className="pl-8" value={search} onChange={e => setSearch(e.target.value)} />
+                        </div>
+                    </div>
+                </CardHeader>
+                <CardContent>
+                    <Table>
+                        <TableHeader>
+                            <TableRow>
+                                <TableHead>No. Invoice</TableHead>
+                                <TableHead>Tanggal</TableHead>
+                                <TableHead>Jatuh Tempo</TableHead>
+                                <TableHead>Supplier</TableHead>
+                                <TableHead>Total Tagihan</TableHead>
+                                <TableHead>Sudah Dibayar</TableHead>
+                                <TableHead>Sisa</TableHead>
+                                <TableHead>Status</TableHead>
+                                <TableHead className="text-right">Aksi</TableHead>
+                            </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                            {filteredInvoices.length === 0 ? (
+                                <TableRow><TableCell colSpan={9} className="text-center py-8">Tidak ada tagihan sesuai filter.</TableCell></TableRow>
+                            ) : (
+                                filteredInvoices.map(inv => {
+                                    const remaining = inv.total_amount - (inv.paid_amount || 0);
+                                    return (
+                                        <TableRow key={inv.id}>
+                                            <TableCell className="font-medium">{inv.invoice_number}</TableCell>
+                                            <TableCell>{formatDate(inv.invoice_date)}</TableCell>
+                                            <TableCell className={new Date(inv.due_date) < new Date() && inv.status !== 'PAID' ? 'text-red-600 font-bold' : ''}>
+                                                {formatDate(inv.due_date)}
+                                            </TableCell>
+                                            <TableCell>{inv.suppliers?.name}</TableCell>
+                                            <TableCell>{formatCurrency(inv.total_amount)}</TableCell>
+                                            <TableCell className="text-green-600">{formatCurrency(inv.paid_amount || 0)}</TableCell>
+                                            <TableCell className="font-bold text-red-600">{formatCurrency(remaining)}</TableCell>
+                                            <TableCell>
+                                                <span className={`px-2 py-1 rounded text-xs font-semibold 
+                                                    ${inv.status === 'PAID' ? 'bg-green-100 text-green-800' : 
+                                                    inv.status === 'PARTIAL' ? 'bg-yellow-100 text-yellow-800' : 'bg-red-100 text-red-800'}`}>
+                                                    {inv.status === 'PAID' ? 'LUNAS' : inv.status === 'PARTIAL' ? 'SEBAGIAN' : 'BELUM BAYAR'}
+                                                </span>
+                                            </TableCell>
+                                            <TableCell className="text-right">
+                                                {inv.status !== 'PAID' && (
+                                                    <Button size="sm" onClick={() => handlePayClick(inv)}>
+                                                        <Wallet className="mr-2 h-4 w-4" /> Bayar
+                                                    </Button>
+                                                )}
+                                            </TableCell>
+                                        </TableRow>
+                                    );
+                                })
+                            )}
+                        </TableBody>
+                    </Table>
+                </CardContent>
+            </Card>
+          </TabsContent>
+          
+          <TabsContent value="history">
+              <Card>
+                  <CardHeader>
+                      <CardTitle>Riwayat Pembayaran</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                      <Table>
+                          <TableHeader>
+                              <TableRow>
+                                  <TableHead>Tanggal Bayar</TableHead>
+                                  <TableHead>No. Invoice</TableHead>
+                                  <TableHead>Supplier</TableHead>
+                                  <TableHead>Akun Pembayar</TableHead>
+                                  <TableHead>Jumlah Bayar</TableHead>
+                                  <TableHead>Catatan</TableHead>
+                                  <TableHead className="text-right">Aksi</TableHead>
+                              </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                              {paymentHistory.length === 0 ? (
+                                  <TableRow><TableCell colSpan={7} className="text-center py-8">Belum ada riwayat pembayaran.</TableCell></TableRow>
+                              ) : (
+                                  paymentHistory.map(pay => (
+                                      <TableRow key={pay.id}>
+                                          <TableCell>{formatDate(pay.payment_date)}</TableCell>
+                                          <TableCell className="font-mono">{pay.purchase_invoices?.invoice_number}</TableCell>
+                                          <TableCell>{pay.purchase_invoices?.suppliers?.name}</TableCell>
+                                          <TableCell>{pay.payment_account?.account_name || '-'}</TableCell>
+                                          <TableCell className="font-bold">{formatCurrency(pay.amount)}</TableCell>
+                                          <TableCell>{pay.notes}</TableCell>
+                                          <TableCell className="text-right">
+                                              <Button variant="outline" size="sm" onClick={() => handleEditClick(pay)}>
+                                                  <Edit className="h-4 w-4 mr-2" /> Edit
+                                              </Button>
+                                          </TableCell>
+                                      </TableRow>
+                                  ))
+                              )}
+                          </TableBody>
+                      </Table>
+                  </CardContent>
+              </Card>
+          </TabsContent>
+      </Tabs>
 
       <Dialog open={isPayOpen} onOpenChange={setIsPayOpen}>
         <DialogContent>
             <DialogHeader>
-                <DialogTitle>Proses Pembayaran</DialogTitle>
+                <DialogTitle>{editingPaymentId ? 'Edit Pembayaran' : 'Proses Pembayaran'}</DialogTitle>
                 <DialogDescription>
-                    Pembayaran untuk Invoice: <b>{selectedInvoice?.invoice_number}</b><br/>
+                    {editingPaymentId ? 'Koreksi pembayaran untuk' : 'Pembayaran untuk'} Invoice: <b>{selectedInvoice?.invoice_number}</b><br/>
                     Supplier: {selectedInvoice?.suppliers?.name}
                 </DialogDescription>
             </DialogHeader>
@@ -370,7 +619,11 @@ export default function PurchasePayment() {
                         onChange={e => setPaymentData({...paymentData, amount: Number(e.target.value)})} 
                     />
                     <p className="text-xs text-gray-500">
-                        Sisa Tagihan: {formatCurrency(selectedInvoice ? selectedInvoice.total_amount - (selectedInvoice.paid_amount || 0) : 0)}
+                        Sisa Tagihan: {formatCurrency(
+                            editingPaymentId 
+                            ? (selectedInvoice?.total_amount - (selectedInvoice?.paid_amount || 0) + originalPaymentAmount)
+                            : (selectedInvoice ? selectedInvoice.total_amount - (selectedInvoice.paid_amount || 0) : 0)
+                        )}
                     </p>
                 </div>
                 <div className="space-y-2">
@@ -395,6 +648,11 @@ export default function PurchasePayment() {
                         />
                         <Button variant="outline" onClick={() => setIsAccountSelectOpen(true)}>Pilih</Button>
                     </div>
+                    {!apAccount && (
+                        <p className="text-xs text-red-500 mt-1">
+                            Warning: Akun 'Hutang Usaha' tidak ditemukan di COA. Jurnal mungkin tidak lengkap.
+                        </p>
+                    )}
                 </div>
                 <div className="space-y-2">
                     <Label>Catatan</Label>
@@ -403,7 +661,7 @@ export default function PurchasePayment() {
             </div>
             <DialogFooter>
                 <Button variant="outline" onClick={() => setIsPayOpen(false)}>Batal</Button>
-                <Button onClick={handleProcessPayment} disabled={loading}>{loading ? 'Memproses...' : 'Bayar Sekarang'}</Button>
+                <Button onClick={handleProcessPayment} disabled={loading}>{loading ? 'Memproses...' : (editingPaymentId ? 'Simpan Perubahan' : 'Bayar Sekarang')}</Button>
             </DialogFooter>
         </DialogContent>
       </Dialog>
