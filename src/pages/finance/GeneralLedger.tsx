@@ -120,7 +120,10 @@ export default function GeneralLedger() {
               id: item.id,
               date: item.journal_entries.entry_date,
               voucher_no: item.journal_entries.voucher_no,
-              description: item.description || item.journal_entries.description,
+              // Fix: Prefer header description if item description is too short/generic (e.g. "Pelunasan Hutang")
+              description: (item.description && item.description.length > 20) 
+                  ? item.description 
+                  : (item.journal_entries.description || item.description),
               type: item.journal_entries.entry_type,
               debit,
               credit,
