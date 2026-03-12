@@ -26,6 +26,7 @@ import PrintVehicleEntry from "@/pages/print/PrintVehicleEntry";
 import PrintGoodsIssue from "@/pages/print/PrintGoodsIssue";
 import PrintInvoice from "@/pages/print/PrintInvoice";
 import UserManagement from "@/pages/admin/UserManagement";
+import DemoGenerator from "@/pages/admin/DemoGenerator"; // Import Demo
 import AgencyProfile from "@/pages/admin/AgencyProfile";
 import PurchasePayment from "@/pages/finance/PurchasePayment";
 import SalesInvoice from "@/pages/finance/SalesInvoice"; // Import Sales Invoice
@@ -93,6 +94,7 @@ export default function App() {
               {/* Admin */}
               <Route path="/admin/users" element={<UserManagement />} />
               <Route path="/admin/agency" element={<AgencyProfile />} />
+              <Route path="/admin/demo" element={<DemoGenerator />} /> {/* Demo Route */}
               <Route path="/debug" element={<DebugDashboard />} />
             </Route>
           </Route>
