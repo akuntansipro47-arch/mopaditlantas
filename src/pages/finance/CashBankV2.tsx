@@ -16,6 +16,10 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 
+import {
+  Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle,
+} from "@/components/ui/dialog";
+
 // Types
 type COA = {
   id: string;
@@ -70,6 +74,11 @@ export default function CashBankV2() {
 
   // --- Edit State ---
   const [editingId, setEditingId] = useState<string | null>(null);
+
+  // --- Account Search Modal State ---
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
+  const [activeRowId, setActiveRowId] = useState<string | null>(null); // To track which row is requesting account
+  const [searchQuery, setSearchQuery] = useState('');
 
   useEffect(() => {
     fetchAccounts();
@@ -415,8 +424,90 @@ export default function CashBankV2() {
     setActiveTab('history');
   };
 
+  const handleAccountSelect = (account: COA) => {
+    if (!activeRowId) return;
+
+    if (activeTab === 'deposit') {
+        updateDepositItem(activeRowId, 'account_id', account.id);
+    } else {
+        updatePaymentItem(activeRowId, 'account_id', account.id);
+    }
+    
+    setIsSearchOpen(false);
+    setActiveRowId(null);
+    setSearchQuery('');
+  };
+
+  const openAccountSearch = (rowId: string) => {
+    setActiveRowId(rowId);
+    setSearchQuery('');
+    setIsSearchOpen(true);
+  };
+
+  const filteredAccounts = allAccounts.filter(acc => 
+    acc.account_code.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    acc.account_name.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
+  // Reusable Account Search Modal
+  const AccountSearchModal = () => (
+    <Dialog open={isSearchOpen} onOpenChange={setIsSearchOpen}>
+        <DialogContent className="max-w-3xl">
+            <DialogHeader>
+                <DialogTitle>Pilih Akun</DialogTitle>
+                <DialogDescription>Cari dan pilih akun untuk transaksi ini.</DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4">
+                <div className="relative">
+                    <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+                    <Input 
+                        placeholder="Cari Kode atau Nama Akun..." 
+                        className="pl-8" 
+                        value={searchQuery}
+                        onChange={e => setSearchQuery(e.target.value)}
+                        autoFocus
+                    />
+                </div>
+                <div className="max-h-[400px] overflow-auto border rounded-md">
+                    <Table>
+                        <TableHeader className="bg-slate-100 sticky top-0">
+                            <TableRow>
+                                <TableHead className="w-[120px] font-bold text-black">Kode Akun</TableHead>
+                                <TableHead className="font-bold text-black">Nama Akun</TableHead>
+                                <TableHead className="w-[150px] font-bold text-black">Kategori</TableHead>
+                                <TableHead className="w-[80px]"></TableHead>
+                            </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                            {filteredAccounts.length === 0 ? (
+                                <TableRow><TableCell colSpan={4} className="text-center py-8">Tidak ada akun ditemukan.</TableCell></TableRow>
+                            ) : (
+                                filteredAccounts.map(acc => (
+                                    <TableRow key={acc.id} className="cursor-pointer hover:bg-blue-50 transition-colors" onClick={() => handleAccountSelect(acc)}>
+                                        <TableCell className="font-mono font-bold text-blue-700">{acc.account_code}</TableCell>
+                                        <TableCell className="font-medium">{acc.account_name}</TableCell>
+                                        <TableCell className="text-xs text-gray-500">
+                                            <span className="bg-slate-100 px-2 py-1 rounded border">
+                                                {acc.category} - {acc.sub_category?.replace('_', ' ')}
+                                            </span>
+                                        </TableCell>
+                                        <TableCell>
+                                            <Button size="sm" variant="ghost" className="text-blue-600 hover:text-blue-800">Pilih</Button>
+                                        </TableCell>
+                                    </TableRow>
+                                ))
+                            )}
+                        </TableBody>
+                    </Table>
+                </div>
+            </div>
+        </DialogContent>
+    </Dialog>
+  );
+
   return (
     <div className="space-y-6">
+      {AccountSearchModal()}
       <div className="flex items-center justify-between">
         <h2 className="text-3xl font-bold tracking-tight">Kas & Bank (Jurnal)</h2>
         {editingId && (
@@ -519,16 +610,18 @@ export default function CashBankV2() {
                             {depositItems.map((item, index) => (
                                 <TableRow key={item.id}>
                                     <TableCell>
-                                        <Select value={item.account_id} onValueChange={v => updateDepositItem(item.id, 'account_id', v)}>
-                                            <SelectTrigger className="h-9">
-                                                <SelectValue placeholder="Pilih Akun..." />
-                                            </SelectTrigger>
-                                            <SelectContent>
-                                                {allAccounts.map(acc => (
-                                                    <SelectItem key={acc.id} value={acc.id}>{acc.account_code} - {acc.account_name}</SelectItem>
-                                                ))}
-                                            </SelectContent>
-                                        </Select>
+                                        <div className="flex gap-2">
+                                            <Input 
+                                                readOnly
+                                                value={allAccounts.find(a => a.id === item.account_id)?.account_name || ''} 
+                                                placeholder="Pilih Akun..."
+                                                className="cursor-pointer bg-slate-50"
+                                                onClick={() => openAccountSearch(item.id)}
+                                            />
+                                            <Button variant="outline" size="icon" onClick={() => openAccountSearch(item.id)}>
+                                                <Search className="h-4 w-4" />
+                                            </Button>
+                                        </div>
                                     </TableCell>
                                     <TableCell>
                                         <Input 
@@ -653,16 +746,18 @@ export default function CashBankV2() {
                             {paymentItems.map((item, index) => (
                                 <TableRow key={item.id}>
                                     <TableCell>
-                                        <Select value={item.account_id} onValueChange={v => updatePaymentItem(item.id, 'account_id', v)}>
-                                            <SelectTrigger className="h-9">
-                                                <SelectValue placeholder="Pilih Akun..." />
-                                            </SelectTrigger>
-                                            <SelectContent>
-                                                {allAccounts.map(acc => (
-                                                    <SelectItem key={acc.id} value={acc.id}>{acc.account_code} - {acc.account_name}</SelectItem>
-                                                ))}
-                                            </SelectContent>
-                                        </Select>
+                                        <div className="flex gap-2">
+                                            <Input 
+                                                readOnly
+                                                value={allAccounts.find(a => a.id === item.account_id)?.account_name || ''} 
+                                                placeholder="Pilih Akun..."
+                                                className="cursor-pointer bg-slate-50"
+                                                onClick={() => openAccountSearch(item.id)}
+                                            />
+                                            <Button variant="outline" size="icon" onClick={() => openAccountSearch(item.id)}>
+                                                <Search className="h-4 w-4" />
+                                            </Button>
+                                        </div>
                                     </TableCell>
                                     <TableCell>
                                         <Input 
