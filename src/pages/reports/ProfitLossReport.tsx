@@ -156,15 +156,23 @@ export default function ProfitLossReport() {
     }
   }
 
-  const sumTotal = (items: any[]) => items.reduce((acc, curr) => acc + curr.amount, 0);
+  const sumTotal = (items: any[]) => {
+      if (!Array.isArray(items)) return 0;
+      return items.reduce((acc, curr) => acc + (curr?.amount || 0), 0);
+  };
 
-  const totalRevenue = sumTotal(reportData.revenue);
-  const totalCOGS = sumTotal(reportData.cogs);
+  const safeMap = (items: any[], render: (item: any, idx: number) => any) => {
+      if (!Array.isArray(items)) return null;
+      return items.map(render);
+  };
+
+  const totalRevenue = sumTotal(reportData?.revenue);
+  const totalCOGS = sumTotal(reportData?.cogs);
   const grossProfit = totalRevenue - totalCOGS;
-  const totalExpenses = sumTotal(reportData.expenses);
+  const totalExpenses = sumTotal(reportData?.expenses);
   const operatingProfit = grossProfit - totalExpenses;
-  const totalOtherRevenue = sumTotal(reportData.other_revenue);
-  const totalOtherExpenses = sumTotal(reportData.other_expenses);
+  const totalOtherRevenue = sumTotal(reportData?.other_revenue);
+  const totalOtherExpenses = sumTotal(reportData?.other_expenses);
   const netProfit = operatingProfit + totalOtherRevenue - totalOtherExpenses;
 
   const exportToExcel = () => {
@@ -254,7 +262,7 @@ export default function ProfitLossReport() {
                     <h3 className="font-bold bg-slate-100 p-2 uppercase">Pendapatan Usaha</h3>
                     <Table>
                         <TableBody>
-                            {reportData.revenue.length === 0 ? (
+                            {(!reportData?.revenue || reportData.revenue.length === 0) ? (
                                 <TableRow><TableCell className="italic text-gray-500">Tidak ada pendapatan</TableCell></TableRow>
                             ) : (
                                 reportData.revenue.map((item: any, idx: number) => (
@@ -277,7 +285,7 @@ export default function ProfitLossReport() {
                     <h3 className="font-bold bg-slate-100 p-2 uppercase">Harga Pokok Penjualan (HPP)</h3>
                     <Table>
                         <TableBody>
-                            {reportData.cogs.length === 0 ? (
+                            {(!reportData?.cogs || reportData.cogs.length === 0) ? (
                                 <TableRow><TableCell className="italic text-gray-500">Tidak ada HPP</TableCell></TableRow>
                             ) : (
                                 reportData.cogs.map((item: any, idx: number) => (
@@ -306,7 +314,7 @@ export default function ProfitLossReport() {
                     <h3 className="font-bold bg-slate-100 p-2 uppercase">Beban Operasional</h3>
                     <Table>
                         <TableBody>
-                            {reportData.expenses.length === 0 ? (
+                            {(!reportData?.expenses || reportData.expenses.length === 0) ? (
                                 <TableRow><TableCell className="italic text-gray-500">Tidak ada beban</TableCell></TableRow>
                             ) : (
                                 reportData.expenses.map((item: any, idx: number) => (
@@ -331,18 +339,18 @@ export default function ProfitLossReport() {
                 </div>
 
                 {/* OTHER INCOME/EXPENSES */}
-                {(reportData.other_revenue.length > 0 || reportData.other_expenses.length > 0) && (
+                {((reportData?.other_revenue?.length || 0) > 0 || (reportData?.other_expenses?.length || 0) > 0) && (
                     <div>
                         <h3 className="font-bold bg-slate-100 p-2 uppercase">Pendapatan & Beban Lainnya</h3>
                         <Table>
                             <TableBody>
-                                {reportData.other_revenue.map((item: any, idx: number) => (
+                                {reportData.other_revenue?.map((item: any, idx: number) => (
                                     <TableRow key={`or-${idx}`}>
                                         <TableCell>{item.name}</TableCell>
                                         <TableCell className="text-right text-green-600">+{formatCurrency(item.amount)}</TableCell>
                                     </TableRow>
                                 ))}
-                                {reportData.other_expenses.map((item: any, idx: number) => (
+                                {reportData.other_expenses?.map((item: any, idx: number) => (
                                     <TableRow key={`oe-${idx}`}>
                                         <TableCell>{item.name}</TableCell>
                                         <TableCell className="text-right text-red-600">-{formatCurrency(item.amount)}</TableCell>
