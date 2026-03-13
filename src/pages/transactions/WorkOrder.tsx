@@ -207,7 +207,6 @@ export default function WorkOrder() {
 
         if (billings && billings.length > 0) {
             billings.forEach((item: any) => {
-                if (item.is_info_only) return;
                 if (item.item_type === 'JOB') totalServices += Number(item.total_price) || 0;
                 else totalParts += Number(item.total_price) || 0;
             });

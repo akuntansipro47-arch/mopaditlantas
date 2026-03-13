@@ -71,7 +71,6 @@ export default function DebugSync() {
         let totalParts = 0;
         
         billings.forEach(item => {
-            if (item.is_info_only) return;
             if (item.item_type === 'JOB') {
                 totalService += item.total_price || 0;
             } else {
