@@ -1572,7 +1572,7 @@ export default function WorkOrderV2() {
                             <TableHead className="w-[10%]">Group</TableHead>
                             <TableHead className="w-[20%]">Daftar Pengerjaan</TableHead>
                             <TableHead className="w-[20%]">Sparepart</TableHead>
-                            <TableHead className="w-[8%] text-center">Info Only</TableHead>
+                            <TableHead className="w-[8%] text-center">Part Luar</TableHead>
                             <TableHead className="w-[15%]">Harga Pagu</TableHead>
                             <TableHead className="w-[8%]">Qty</TableHead>
                             <TableHead className="w-[17%] text-right">Nominal</TableHead>
@@ -1624,8 +1624,8 @@ export default function WorkOrderV2() {
                                     {/* INFO ONLY INDICATOR */}
                                     {item.is_info_only && (
                                         <div className="flex items-center gap-1.5 mt-1.5">
-                                            <div className="w-2.5 h-2.5 rounded-full bg-yellow-400 border border-yellow-500 shadow-sm" title="Info Only"></div>
-                                            <span className="text-[10px] text-yellow-700 font-medium bg-yellow-50 px-1.5 py-0.5 rounded border border-yellow-100">Info Only</span>
+                                            <div className="w-2.5 h-2.5 rounded-full bg-yellow-400 border border-yellow-500 shadow-sm" title="Part Luar (Tidak Potong Stok)"></div>
+                                            <span className="text-[10px] text-yellow-700 font-medium bg-yellow-50 px-1.5 py-0.5 rounded border border-yellow-100">Part Luar</span>
                                         </div>
                                     )}
                                 </TableCell>
@@ -1634,7 +1634,7 @@ export default function WorkOrderV2() {
                                         <Checkbox 
                                             checked={item.is_info_only} 
                                             onCheckedChange={(checked) => handleBillingItemChange(index, 'is_info_only', checked)}
-                                            title="Info Only (Tidak Potong Stok)"
+                                            title="Part Luar (Tidak Potong Stok)"
                                         />
                                     </div>
                                 </TableCell>

@@ -248,7 +248,7 @@ export default function ItemHistoryReport() {
                         qty_in: 0,
                         qty_out: item.is_info_only ? 0 : item.quantity,
                         balance: 0,
-                        description: item.is_info_only ? 'Info Only (Pemakaian)' : 'Pemakaian / Keluar',
+                        description: item.is_info_only ? 'Part Luar (Pemakaian)' : 'Pemakaian / Keluar',
                         is_info_only: item.is_info_only
                     });
                  }
@@ -402,7 +402,7 @@ export default function ItemHistoryReport() {
                                                 {t.qty_out > 0 ? (
                                                     <span className="text-red-600 font-medium">-{t.qty_out}</span>
                                                 ) : t.is_info_only ? (
-                                                    <span className="text-blue-500 text-xs italic">Info Only</span>
+                                                    <span className="text-blue-500 text-xs italic">Part Luar</span>
                                                 ) : '-'}
                                             </TableCell>
                                             <TableCell className="text-right font-bold bg-slate-50">{t.balance}</TableCell>

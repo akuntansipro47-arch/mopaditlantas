@@ -465,7 +465,7 @@ export default function GoodsIssuePage() {
                             {item.is_info_only && (
                                 <span className="text-[10px] bg-yellow-100 text-yellow-700 px-1.5 rounded-full border border-yellow-200 flex items-center gap-1">
                                     <span className="w-1.5 h-1.5 rounded-full bg-yellow-500"></span>
-                                    Info Only
+                                    Part Luar
                                 </span>
                             )}
                         </Label>
@@ -510,7 +510,7 @@ export default function GoodsIssuePage() {
                             htmlFor={`info-${index}`}
                             className="text-[10px] font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer"
                           >
-                            Info Only
+                            Part Luar (Tidak Potong Stok)
                           </label>
                         </div>
                       </div>

@@ -169,7 +169,7 @@ export default function WorkOrderDetailReport() {
                     'Mekanik': wo.mechanics?.name || '-',
                     'Item': bill.item_name,
                     'Tipe Item': bill.item_type,
-                    'Info Only': bill.is_info_only ? 'YA' : 'TIDAK',
+                    'Part Luar': bill.is_info_only ? 'YA' : 'TIDAK',
                     'Qty': bill.qty,
                     'Harga Satuan': bill.unit_price,
                     'Total Harga': bill.total_price

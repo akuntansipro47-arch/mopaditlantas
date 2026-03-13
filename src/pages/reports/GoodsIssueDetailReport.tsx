@@ -112,7 +112,7 @@ export default function GoodsIssueDetailReport() {
       'Nama Item': item.item_name,
       'Qty': item.is_info_only ? 0 : item.qty,
       'Satuan': item.satuan,
-      'Keterangan': item.is_info_only ? 'Info Only (+-)' : item.keterangan
+      'Keterangan': item.is_info_only ? 'Part Luar (+-)' : item.keterangan
     })));
 
     const wb = XLSX.utils.book_new();
@@ -186,7 +186,7 @@ export default function GoodsIssueDetailReport() {
                       <TableCell className="text-center text-xs text-gray-500">{item.satuan}</TableCell>
                       <TableCell className="text-xs text-gray-500 truncate max-w-[150px]">
                          {item.is_info_only ? (
-                           <span className="text-blue-600 font-semibold italic">Info Only (+-)</span>
+                           <span className="text-blue-600 font-semibold italic">Part Luar (+-)</span>
                          ) : (
                            item.keterangan
                          )}
