@@ -192,11 +192,14 @@ export default function BalanceSheetReport() {
     }
   }
 
-  const sumTotal = (items: any[]) => items.reduce((acc, curr) => acc + curr.balance, 0);
+  const sumTotal = (items: any[]) => {
+    if (!Array.isArray(items)) return 0;
+    return items.reduce((acc, curr) => acc + (curr?.balance || 0), 0);
+  };
 
-  const totalAssets = sumTotal(reportData.assets);
-  const totalLiabilities = sumTotal(reportData.liabilities);
-  const totalEquity = sumTotal(reportData.equity) + reportData.currentEarnings;
+  const totalAssets = sumTotal(reportData?.assets);
+  const totalLiabilities = sumTotal(reportData?.liabilities);
+  const totalEquity = sumTotal(reportData?.equity) + (reportData?.currentEarnings || 0);
 
   const exportToExcel = () => {
     // We'll create two columns: Left (Assets), Right (Liabilities + Equity)
@@ -210,20 +213,20 @@ export default function BalanceSheetReport() {
     
     rows.push(['AKTIVA (ASSETS)', '']);
     rows.push(['Kode Akun', 'Nama Akun', 'Saldo (Rp)']);
-    reportData.assets.forEach((a: any) => rows.push([a.account_code, a.account_name, a.balance]));
+    (reportData?.assets || []).forEach((a: any) => rows.push([a.account_code, a.account_name, a.balance]));
     rows.push(['TOTAL AKTIVA', '', totalAssets]);
     rows.push(['']);
 
     rows.push(['KEWAJIBAN (LIABILITIES)', '']);
     rows.push(['Kode Akun', 'Nama Akun', 'Saldo (Rp)']);
-    reportData.liabilities.forEach((l: any) => rows.push([l.account_code, l.account_name, l.balance]));
+    (reportData?.liabilities || []).forEach((l: any) => rows.push([l.account_code, l.account_name, l.balance]));
     rows.push(['TOTAL KEWAJIBAN', '', totalLiabilities]);
     rows.push(['']);
 
     rows.push(['MODAL (EQUITY)', '']);
     rows.push(['Kode Akun', 'Nama Akun', 'Saldo (Rp)']);
-    reportData.equity.forEach((e: any) => rows.push([e.account_code, e.account_name, e.balance]));
-    rows.push(['', 'Laba Tahun Berjalan', reportData.currentEarnings]);
+    (reportData?.equity || []).forEach((e: any) => rows.push([e.account_code, e.account_name, e.balance]));
+    rows.push(['', 'Laba Tahun Berjalan', reportData?.currentEarnings || 0]);
     rows.push(['TOTAL MODAL', '', totalEquity]);
     rows.push(['']);
 

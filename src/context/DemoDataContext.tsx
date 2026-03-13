@@ -214,7 +214,22 @@ export function DemoProvider({ children }: { children: React.ReactNode }) {
 export function useDemo() {
   const context = useContext(DemoContext);
   if (context === undefined) {
-    throw new Error('useDemo must be used within a DemoProvider');
+    return {
+      isDemo: false,
+      suppliers: [],
+      goods: [],
+      purchaseOrders: [],
+      journals: [],
+      workOrders: [],
+      mechanics: [],
+      entries: [],
+      addSupplier: () => {},
+      addGood: () => {},
+      addPO: () => {},
+      addJournal: () => {},
+      addWO: () => {},
+      updateWOStatus: () => {}
+    };
   }
   return context;
 }
