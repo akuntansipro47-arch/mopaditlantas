@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
 import { 
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow 
@@ -16,6 +16,7 @@ import { useDemo } from '@/context/DemoDataContext';
 export default function ProfitLossReport() {
   const { isDemo, journals: demoJournals } = useDemo();
   const [loading, setLoading] = useState(false);
+  const requestSeq = useRef(0);
   const [reportData, setReportData] = useState<any>({
       revenue: [],
       cogs: [],
@@ -30,10 +31,14 @@ export default function ProfitLossReport() {
   });
 
   useEffect(() => {
-    fetchReport();
-  }, [isDemo, demoJournals, dateFilter]); // Add dependencies
+    const t = window.setTimeout(() => {
+      fetchReport();
+    }, 250);
+    return () => window.clearTimeout(t);
+  }, [isDemo, demoJournals, dateFilter.startDate, dateFilter.endDate]);
 
   async function fetchReport() {
+    const currentReq = ++requestSeq.current;
     setLoading(true);
     try {
         let data: any[] = [];
@@ -147,12 +152,12 @@ export default function ProfitLossReport() {
             other_expenses: Object.values(grouped.other_expenses),
         };
 
-        setReportData(result);
+        if (currentReq === requestSeq.current) setReportData(result);
 
     } catch (error: any) {
-        toast.error("Gagal memuat laporan: " + error.message);
+        if (currentReq === requestSeq.current) toast.error("Gagal memuat laporan: " + error.message);
     } finally {
-        setLoading(false);
+        if (currentReq === requestSeq.current) setLoading(false);
     }
   }
 
@@ -235,14 +240,14 @@ export default function ProfitLossReport() {
                     type="date" 
                     className="w-auto h-8 bg-white" 
                     value={dateFilter.startDate}
-                    onChange={e => setDateFilter({...dateFilter, startDate: e.target.value})}
+                    onChange={e => setDateFilter(prev => ({...prev, startDate: e.target.value}))}
                 />
                 <span className="text-gray-400">-</span>
                 <Input 
                     type="date" 
                     className="w-auto h-8 bg-white" 
                     value={dateFilter.endDate}
-                    onChange={e => setDateFilter({...dateFilter, endDate: e.target.value})}
+                    onChange={e => setDateFilter(prev => ({...prev, endDate: e.target.value}))}
                 />
             </div>
         </CardHeader>
