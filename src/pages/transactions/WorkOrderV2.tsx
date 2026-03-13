@@ -743,17 +743,26 @@ export default function WorkOrderV2() {
              const grandTotal = totalService + totalParts;
 
              if (grandTotal > 0) {
-                // 2. Find Accounts
-                const { data: accounts } = await supabase
-                    .from('chart_of_accounts')
-                    .select('id, account_name, account_code');
-                
-                const findAccount = (keyword: string) => accounts?.find(a => a.account_name.toLowerCase().includes(keyword.toLowerCase()));
+               // 2. Find Accounts
+               const { data: accounts } = await supabase
+                   .from('chart_of_accounts')
+                   .select('id, account_name, account_code, account_type, category');
+               
+               const isDetail = (a: any) => (a?.account_type || '').toUpperCase() === 'DETAIL';
+               const isRevenue = (a: any) => {
+                    const c = (a?.category || '').toUpperCase();
+                    return c === 'PENDAPATAN' || c === 'PENJUALAN';
+               };
+               const findByCode = (code: string) => accounts?.find(a => isDetail(a) && a?.account_code === code);
+               const findByName = (keyword: string, revenueOnly = false) => accounts?.find(a => {
+                    if (!isDetail(a)) return false;
+                    if (revenueOnly && !isRevenue(a)) return false;
+                    return (a?.account_name || '').toLowerCase().includes(keyword.toLowerCase());
+               });
 
-                const accReceivable = findAccount('Piutang Usaha') || findAccount('Piutang') || findAccount('Receivable');
-                // const accRevenue = findAccount('Pendapatan Jasa') || findAccount('Pendapatan') || findAccount('Service');
-                const accServiceRev = findAccount('Pendapatan Jasa') || findAccount('Jasa') || findAccount('Service');
-                const accPartsRev = findAccount('Pendapatan Sparepart') || findAccount('Sparepart') || accServiceRev;
+               const accReceivable = findByName('Piutang Usaha') || findByName('Piutang') || findByName('Receivable');
+               const accServiceRev = findByCode('4100101') || findByName('Pendapatan Jasa', true) || findByName('Jasa', true) || findByName('Service', true);
+               const accPartsRev = findByCode('4100102') || findByName('Pendapatan Sparepart', true) || findByName('Sparepart', true) || accServiceRev;
 
                 if (accReceivable && accServiceRev) {
                     // 3. Create Journal Header
@@ -1136,13 +1145,23 @@ export default function WorkOrderV2() {
         // 3. Find Accounts
         const { data: accounts } = await supabase
             .from('chart_of_accounts')
-            .select('id, account_name');
+            .select('id, account_name, account_code, account_type, category');
         
-        const findAccount = (keyword: string) => accounts?.find(a => a.account_name.toLowerCase().includes(keyword.toLowerCase()));
+        const isDetail = (a: any) => (a?.account_type || '').toUpperCase() === 'DETAIL';
+        const isRevenue = (a: any) => {
+            const c = (a?.category || '').toUpperCase();
+            return c === 'PENDAPATAN' || c === 'PENJUALAN';
+        };
+        const findByCode = (code: string) => accounts?.find(a => isDetail(a) && a?.account_code === code);
+        const findByName = (keyword: string, revenueOnly = false) => accounts?.find(a => {
+            if (!isDetail(a)) return false;
+            if (revenueOnly && !isRevenue(a)) return false;
+            return (a?.account_name || '').toLowerCase().includes(keyword.toLowerCase());
+        });
 
-        const accReceivable = findAccount('Piutang Usaha') || findAccount('Piutang') || findAccount('Receivable');
-        const accServiceRev = findAccount('Pendapatan Jasa') || findAccount('Jasa') || findAccount('Service');
-        const accPartsRev = findAccount('Pendapatan Sparepart') || findAccount('Sparepart') || accServiceRev;
+        const accReceivable = findByName('Piutang Usaha') || findByName('Piutang') || findByName('Receivable');
+        const accServiceRev = findByCode('4100101') || findByName('Pendapatan Jasa', true) || findByName('Jasa', true) || findByName('Service', true);
+        const accPartsRev = findByCode('4100102') || findByName('Pendapatan Sparepart', true) || findByName('Sparepart', true) || accServiceRev;
 
         if (!accReceivable || !accServiceRev) {
             toast.error("Gagal: Akun Piutang/Pendapatan tidak ditemukan di COA.");
