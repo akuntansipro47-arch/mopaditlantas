@@ -197,11 +197,32 @@ export default function WorkOrder() {
         
         if (woErr) throw woErr;
         
-        const totalServices = wo.total_services || 0;
-        const totalParts = wo.total_parts || 0;
-        const grandTotal = wo.grand_total || (totalServices + totalParts);
+        const { data: billings } = await supabase
+            .from('work_order_billings')
+            .select('item_type, total_price, is_info_only')
+            .eq('work_order_id', woId);
 
-        if (grandTotal <= 0) return; // No journal if zero
+        let totalServices = 0;
+        let totalParts = 0;
+
+        if (billings && billings.length > 0) {
+            billings.forEach((item: any) => {
+                if (item.is_info_only) return;
+                if (item.item_type === 'JOB') totalServices += Number(item.total_price) || 0;
+                else totalParts += Number(item.total_price) || 0;
+            });
+        } else {
+            totalServices = Number(wo.total_services) || 0;
+            totalParts = Number(wo.total_parts) || 0;
+            const woGrand = Number(wo.grand_total) || 0;
+            if (woGrand > 0 && woGrand !== (totalServices + totalParts)) {
+                if (totalServices === 0 && totalParts > 0) totalServices = woGrand - totalParts;
+                else if (totalParts === 0 && totalServices > 0) totalParts = woGrand - totalServices;
+            }
+        }
+
+        const grandTotal = totalServices + totalParts;
+        if (grandTotal <= 0) return;
 
         // 2. Find Accounts (Receivable & Revenue)
         const { data: accounts } = await supabase
@@ -227,6 +248,18 @@ export default function WorkOrder() {
         if (!accReceivable || !accServiceRev) {
             console.warn("Auto Journal Skipped: Accounts not found");
             toast.warning("Jurnal otomatis GAGAL: Akun 'Piutang Usaha' atau 'Pendapatan Jasa' belum dibuat di Master Akun.");
+            return;
+        }
+
+        const { data: existingJournal } = await supabase
+            .from('journal_entries')
+            .select('id')
+            .eq('reference_number', wo.wo_number)
+            .eq('entry_type', 'AUTOMATIC')
+            .limit(1);
+
+        if (existingJournal && existingJournal.length > 0) {
+            toast.info("Jurnal WO sudah ada.");
             return;
         }
 
