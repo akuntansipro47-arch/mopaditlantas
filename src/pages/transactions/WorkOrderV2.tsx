@@ -764,7 +764,8 @@ export default function WorkOrderV2() {
                             description: `Jurnal Otomatis WO ${activeWO.wo_number}`,
                             reference_number: activeWO.wo_number,
                             total_amount: grandTotal,
-                            status: 'POSTED'
+                            status: 'POSTED',
+                            entry_type: 'AUTOMATIC' // FIX: Required field
                         }])
                         .select()
                         .single();
@@ -1157,7 +1158,8 @@ export default function WorkOrderV2() {
                 description: `Jurnal Otomatis WO ${wo.wo_number}`,
                 reference_number: wo.wo_number,
                 total_amount: grandTotal,
-                status: 'POSTED'
+                status: 'POSTED',
+                entry_type: 'AUTOMATIC' // FIX: Required field
             }])
             .select()
             .single();

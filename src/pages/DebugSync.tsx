@@ -113,7 +113,8 @@ export default function DebugSync() {
                 description: `Jurnal Otomatis WO ${wo.wo_number}`,
                 reference_number: wo.wo_number,
                 total_amount: grandTotal,
-                status: 'POSTED'
+                status: 'POSTED',
+                entry_type: 'AUTOMATIC' // FIX: Required field
             }])
             .select()
             .single();
