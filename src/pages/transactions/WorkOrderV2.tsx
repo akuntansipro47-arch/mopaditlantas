@@ -6,7 +6,7 @@ import {
 } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Plus, Search, Eye, Trash2, ClipboardCheck, Play, CheckCircle, Printer, XCircle, RefreshCw, Check, X, Camera, Upload, Image as ImageIcon, Pencil, Wrench, Info } from 'lucide-react';
+import { Plus, Search, Eye, Trash2, ClipboardCheck, Play, CheckCircle, Printer, XCircle, RefreshCw, Check, X, Camera, Upload, Image as ImageIcon, Pencil, Wrench, Info, FileText } from 'lucide-react';
 import { Checkbox } from "@/components/ui/checkbox";
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { toast } from 'sonner';
@@ -340,6 +340,10 @@ export default function WorkOrderV2() {
 
   const handlePrintSuratJalan = (woId: string) => {
     window.open(`/print/surat-jalan/${woId}`, '_blank');
+  };
+
+  const handlePrintInvoice = (woId: string) => {
+    window.open(`/print/invoice/${woId}`, '_blank');
   };
 
   const handleStatusChange = async (id: string, newStatus: string) => {
@@ -1498,6 +1502,11 @@ export default function WorkOrderV2() {
                                 </Button>
                               )}
                             </>
+                          )}
+                          {(item.status === 'COMPLETED' || item.status === 'CLOSED') && (
+                            <Button variant="outline" size="sm" className="h-8" onClick={() => handlePrintInvoice(item.id)}>
+                              <FileText className="h-4 w-4 mr-1" /> Invoice
+                            </Button>
                           )}
                           <Button variant="ghost" size="icon" onClick={() => handlePrintSuratJalan(item.id)} title="Cetak Surat Jalan / WO">
                               <Printer className="h-4 w-4" />
