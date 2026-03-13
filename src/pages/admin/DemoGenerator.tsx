@@ -184,9 +184,9 @@ export default function DemoGenerator() {
             if (woErr) throw woErr;
 
             // WO Items (Billing)
-            await supabase.from('wo_billing_items').insert([
-                { wo_id: wo.id, item_type: 'PART', item_name: good.name, qty: 2, unit_price: good.selling_price, total_price: good.selling_price * 2, goods_id: good.id },
-                { wo_id: wo.id, item_type: 'JASA', item_name: job.job_name, qty: 1, unit_price: job.selling_price, total_price: job.selling_price, job_id: job.id }
+            await supabase.from('work_order_billings').insert([
+                { work_order_id: wo.id, item_type: 'PART', item_name: good.name, qty: 2, unit_price: good.selling_price, total_price: good.selling_price * 2, goods_id: good.id },
+                { work_order_id: wo.id, item_type: 'JOB', item_name: job.job_name, qty: 1, unit_price: job.selling_price, total_price: job.selling_price, job_type_id: job.id }
             ]);
 
             // Goods Issue (Barang Keluar)

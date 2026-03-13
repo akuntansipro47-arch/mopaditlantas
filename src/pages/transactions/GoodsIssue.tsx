@@ -460,7 +460,15 @@ export default function GoodsIssuePage() {
                   {issueItems.map((item, index) => (
                     <div key={index} className={cn("grid grid-cols-12 gap-2 items-end p-2 rounded", item.is_info_only ? "bg-yellow-50" : "")}>
                       <div className="col-span-6 space-y-1">
-                        <Label className="text-xs">Barang</Label>
+                        <Label className="text-xs flex items-center gap-2">
+                            Barang
+                            {item.is_info_only && (
+                                <span className="text-[10px] bg-yellow-100 text-yellow-700 px-1.5 rounded-full border border-yellow-200 flex items-center gap-1">
+                                    <span className="w-1.5 h-1.5 rounded-full bg-yellow-500"></span>
+                                    Info Only
+                                </span>
+                            )}
+                        </Label>
                         <Button
                           type="button"
                           variant="outline"

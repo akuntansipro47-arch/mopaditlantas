@@ -1,7 +1,7 @@
 import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { AuthProvider } from "@/context/AuthContext";
-import { DemoProvider } from "@/context/DemoDataContext"; // Import DemoProvider
+// import { DemoProvider } from "@/context/DemoDataContext"; // Import DemoProvider (DISABLED)
 import { Toaster } from "sonner";
 import ProtectedRoute from "@/components/layout/ProtectedRoute";
 import Login from "@/pages/auth/Login";
@@ -41,17 +41,22 @@ import EmployeeData from "@/pages/hr/EmployeeData"; // Import HR
 // ReportsUpdated to V2
 // import ReloadPrompt from "@/components/ReloadPrompt";
 import DebugDashboard from "@/pages/DebugDashboard";
+import DebugSync from "@/pages/DebugSync"; // EMERGENCY DEBUG SYNC
 
 export default function App() {
+  console.log("App.tsx Loaded - Version DEBUG SYNC ADDED");
   return (
     <AuthProvider>
-      <DemoProvider>
+      {/* <DemoProvider> */}
         <Router>
         {/* <ReloadPrompt /> */}
         <Routes>
           <Route path="/login" element={<Login />} />
           
           <Route element={<ProtectedRoute />}>
+            {/* EMERGENCY DEBUG SYNC ROUTE */}
+            <Route path="/debug-sync" element={<DebugSync />} />
+            
             {/* Dedicated Print Routes (No Layout) */}
             <Route path="/print/po/:id" element={<PrintPO />} />
             <Route path="/print/surat-jalan/:id" element={<PrintSuratJalan />} />
@@ -104,7 +109,7 @@ export default function App() {
         </Routes>
       </Router>
       <Toaster />
-      </DemoProvider>
+      {/* </DemoProvider> */}
     </AuthProvider>
   );
 }

@@ -6,7 +6,7 @@ import {
 } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Plus, Search, Eye, Trash2, ClipboardCheck, Play, CheckCircle } from 'lucide-react';
+import { Plus, Search, Eye, Trash2, ClipboardCheck, Play, CheckCircle, RefreshCw } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { toast } from 'sonner';
 import {
@@ -31,7 +31,8 @@ type WOWithDetails = WO & {
 };
 
 export default function WorkOrder() {
-  const { isDemo, addJournal } = useDemo();
+  // Demo Mode Removed as per user request
+  // const { isDemo, addJournal, workOrders: demoWOs, mechanics: demoMechanics, entries: demoEntries, addWO, updateWOStatus } = useDemo();
   const [wos, setWos] = useState<WOWithDetails[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -71,6 +72,12 @@ export default function WorkOrder() {
   }, [formData.vehicle_entry_id, entries]);
 
   async function fetchMasterData() {
+    // if (isDemo) {
+    //     setEntries(demoEntries as any);
+    //     setMechanics(demoMechanics as any);
+    //     return;
+    // }
+    
     // Fetch OPEN Vehicle Entries that haven't been processed yet
     const { data: e } = await supabase
       .from('vehicle_entries')
@@ -90,6 +97,12 @@ export default function WorkOrder() {
   }
 
   async function fetchWOs() {
+    // if (isDemo) {
+    //     setWos(demoWOs as any);
+    //     setLoading(false);
+    //     return;
+    // }
+
     setLoading(true);
     try {
       const { data, error } = await supabase
@@ -139,6 +152,15 @@ export default function WorkOrder() {
   };
 
   const handleStatusChange = async (id: string, newStatus: string) => {
+    // if (isDemo) {
+    //     updateWOStatus(id, newStatus);
+    //     if (newStatus === 'COMPLETED') {
+    //         await createAutoJournal(id);
+    //     }
+    //     toast.success(`Status WO diubah menjadi ${newStatus} (Demo Mode)`);
+    //     return;
+    // }
+
     try {
       const { error } = await supabase
         .from('work_orders')
@@ -160,30 +182,10 @@ export default function WorkOrder() {
   };
 
   const createAutoJournal = async (woId: string) => {
-    // DEMO MODE: Real Logic for Demo
-    if (isDemo) {
-        // Fetch WO from state since it's demo
-        const wo = wos.find(w => w.id === woId);
-        if (!wo) return;
-
-        const totalServices = wo.total_services || 0;
-        const totalParts = wo.total_parts || 0;
-        const grandTotal = wo.grand_total || 0;
-
-        addJournal({
-            date: new Date().toISOString(),
-            desc: `Jurnal Otomatis WO ${wo.wo_number}`,
-            total: grandTotal,
-            items: [
-                { account_id: 'acc-piutang', account_name: 'Piutang Usaha', account_code: '1-1100', debit: grandTotal, credit: 0, category: 'AKTIVA' },
-                { account_id: 'acc-pendapatan-jasa', account_name: 'Pendapatan Jasa', account_code: '4-1000', debit: 0, credit: totalServices, category: 'PENDAPATAN' },
-                { account_id: 'acc-pendapatan-part', account_name: 'Pendapatan Sparepart', account_code: '4-2000', debit: 0, credit: totalParts, category: 'PENDAPATAN' }
-            ].filter(i => i.debit > 0 || i.credit > 0)
-        });
-
-        toast.success("Jurnal Otomatis Berhasil Dibuat (Demo Mode)");
-        return;
-    }
+    // DEMO MODE: Removed
+    // if (isDemo) {
+    //     ...
+    // }
 
     try {
         // 1. Fetch WO details with total amounts
@@ -322,6 +324,10 @@ export default function WorkOrder() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
+
+    // if (isDemo) {
+    //     ...
+    // }
 
     try {
       const payload = {
@@ -543,6 +549,18 @@ export default function WorkOrder() {
                           <Button variant="outline" size="sm" className="h-8" onClick={() => handlePrint(item)}>
                              <ClipboardCheck className="h-4 w-4 mr-1" /> SPK
                           </Button>
+                          {/* EMERGENCY SYNC BUTTON - ALWAYS SHOW FOR CLOSED/COMPLETED WO */}
+                          {(item.status === 'CLOSED' || item.status === 'COMPLETED') && (
+                              <Button 
+                                variant="destructive" 
+                                size="sm" 
+                                className="bg-pink-600 hover:bg-pink-700 text-white font-bold h-8" 
+                                onClick={() => createAutoJournal(item.id)} 
+                                title="SYNC JURNAL SEKARANG"
+                              >
+                                  <RefreshCw className="h-4 w-4 mr-1" /> SYNC
+                              </Button>
+                          )}
                           <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => handleEdit(item)}><Eye className="h-4 w-4" /></Button>
                         </div>
                       </TableCell>

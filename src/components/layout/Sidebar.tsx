@@ -238,6 +238,22 @@ export function Sidebar() {
               <Building2 className="mr-3 h-5 w-5 text-slate-500 group-hover:text-slate-300" />
               Profil Instansi
             </NavLink>
+
+            {/* EMERGENCY DEBUG MENU */}
+            <NavLink
+              to="/debug-sync"
+              className={({ isActive }) =>
+                cn(
+                  "flex items-center rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-200 text-red-400 hover:bg-red-900/20",
+                  isActive 
+                    ? "bg-red-900/30 text-red-300" 
+                    : ""
+                )
+              }
+            >
+              <Wrench className="mr-3 h-5 w-5 text-red-500" />
+              Debug & Fix Data
+            </NavLink>
           </div>
         )}
       </nav>
@@ -256,7 +272,7 @@ export function Sidebar() {
               <p className="text-sm font-semibold text-white truncate max-w-[120px]">{user?.full_name || 'User'}</p>
               <div className="flex items-center gap-1 text-xs text-slate-500 truncate">
                 <span>{user?.role || 'Guest'}</span>
-                <span className="text-[10px] bg-slate-800 px-1 rounded">v3.0.5</span>
+                <span className="text-[10px] bg-red-900 text-red-200 px-1 rounded">v3.0.6-DEBUG</span>
               </div>
             </div>
           </div>

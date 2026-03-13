@@ -8,6 +8,34 @@ export interface DemoPO { id: string; number: string; supplier_id: string; date:
 export interface DemoPOItem { goods_id: string; qty: number; price: number; total: number; }
 export interface DemoJournal { id: string; date: string; desc: string; total: number; items: DemoJournalItem[]; }
 export interface DemoJournalItem { account_id: string; account_name: string; account_code: string; debit: number; credit: number; category?: string; }
+export interface DemoWO { 
+    id: string; 
+    wo_number: string; 
+    work_date: string; 
+    status: string; 
+    total_services: number; 
+    total_parts: number; 
+    grand_total: number; 
+    mechanic_id: string; 
+    vehicle_entry_id: string;
+    // Relations for UI
+    mechanics?: { name: string };
+    vehicle_entries?: { 
+        nota_dinas_number: string; 
+        vehicles?: { license_plate: string; brand_type: string };
+    };
+}
+export interface DemoMechanic { id: string; name: string; specialization: string; }
+export interface DemoEntry { 
+    id: string; 
+    entry_number: string; 
+    status: string;
+    nota_dinas_number: string;
+    driver_name: string;
+    notes: string;
+    vehicles?: { license_plate: string; brand_type: string };
+    vehicle_entry_jobs?: any[];
+}
 
 interface DemoContextType {
   isDemo: boolean;
@@ -15,11 +43,16 @@ interface DemoContextType {
   goods: DemoGood[];
   purchaseOrders: DemoPO[];
   journals: DemoJournal[];
+  workOrders: DemoWO[];
+  mechanics: DemoMechanic[];
+  entries: DemoEntry[];
   // Actions
   addSupplier: (s: Omit<DemoSupplier, 'id'>) => void;
   addGood: (g: Omit<DemoGood, 'id'>) => void;
   addPO: (po: Omit<DemoPO, 'id'>) => void;
   addJournal: (j: Omit<DemoJournal, 'id'>) => void;
+  addWO: (wo: Omit<DemoWO, 'id'>) => void;
+  updateWOStatus: (id: string, status: string) => void;
 }
 
 const DemoContext = createContext<DemoContextType | undefined>(undefined);
@@ -32,6 +65,9 @@ export function DemoProvider({ children }: { children: React.ReactNode }) {
   const [goods, setGoods] = useState<DemoGood[]>([]);
   const [purchaseOrders, setPurchaseOrders] = useState<DemoPO[]>([]);
   const [journals, setJournals] = useState<DemoJournal[]>([]);
+  const [workOrders, setWorkOrders] = useState<DemoWO[]>([]);
+  const [mechanics, setMechanics] = useState<DemoMechanic[]>([]);
+  const [entries, setEntries] = useState<DemoEntry[]>([]);
 
   // Init Data when Demo User logs in
   useEffect(() => {
@@ -73,8 +109,47 @@ export function DemoProvider({ children }: { children: React.ReactNode }) {
       }));
       setPurchaseOrders(newPOs);
 
+      // Mechanics
+      const newMechanics = Array.from({ length: 5 }).map((_, i) => ({
+          id: `mech-${i}`,
+          name: `Mekanik Demo ${i+1}`,
+          specialization: 'UMUM'
+      }));
+      setMechanics(newMechanics);
+
+      // Entries
+      const newEntries = Array.from({ length: 5 }).map((_, i) => ({
+          id: `ent-${i}`,
+          entry_number: `ENT-${1000+i}`,
+          status: 'OPEN',
+          nota_dinas_number: `ND-${1000+i}`,
+          driver_name: `Driver ${i+1}`,
+          notes: 'Keluhan Demo',
+          vehicles: { license_plate: `B ${1000+i} DEM`, brand_type: 'AVANZA' },
+          vehicle_entry_jobs: [{ job_types: { job_name: 'Ganti Oli' }, notes: 'Cek Filter' }]
+      }));
+      setEntries(newEntries);
+
+      // WOs (Some existing)
+      const newWOs = Array.from({ length: 5 }).map((_, i) => ({
+          id: `wo-${i}`,
+          wo_number: `WO-DEMO-${2000+i}`,
+          work_date: new Date().toISOString(),
+          status: 'IN_PROGRESS',
+          total_services: 150000,
+          total_parts: 300000,
+          grand_total: 450000,
+          mechanic_id: newMechanics[i % 5].id,
+          vehicle_entry_id: newEntries[i % 5].id,
+          mechanics: { name: newMechanics[i % 5].name },
+          vehicle_entries: { 
+              nota_dinas_number: newEntries[i % 5].nota_dinas_number,
+              vehicles: newEntries[i % 5].vehicles
+          }
+      }));
+      setWorkOrders(newWOs);
+
       // Init Journals (Saldo Awal / Dummy Transaction)
-      // Example: Modal Awal
       setJournals([
           {
               id: 'j-0',
@@ -106,6 +181,14 @@ export function DemoProvider({ children }: { children: React.ReactNode }) {
     setJournals(prev => [...prev, { ...j, id: `j-${Date.now()}` }]);
   };
 
+  const addWO = (wo: Omit<DemoWO, 'id'>) => {
+      setWorkOrders(prev => [{ ...wo, id: `wo-${Date.now()}` }, ...prev]);
+  };
+
+  const updateWOStatus = (id: string, status: string) => {
+      setWorkOrders(prev => prev.map(w => w.id === id ? { ...w, status } : w));
+  };
+
   return (
     <DemoContext.Provider value={{ 
         isDemo, 
@@ -113,10 +196,15 @@ export function DemoProvider({ children }: { children: React.ReactNode }) {
         goods, 
         purchaseOrders,
         journals,
+        workOrders,
+        mechanics,
+        entries,
         addSupplier, 
         addGood, 
         addPO,
-        addJournal
+        addJournal,
+        addWO,
+        updateWOStatus
     }}>
       {children}
     </DemoContext.Provider>

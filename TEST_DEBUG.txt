@@ -1,0 +1,3 @@
+INI ADALAH FILE TEST UNTUK MEMASTIKAN FOLDER BENAR.
+Dibuat pada: 2026-03-12
+Jika Anda melihat file ini, berarti AI mengedit folder yang benar.

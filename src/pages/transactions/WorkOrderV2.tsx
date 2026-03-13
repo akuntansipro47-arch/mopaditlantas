@@ -659,38 +659,17 @@ export default function WorkOrderV2() {
 
         // D. Sync Billing Items to Stock
         if (targetIssueId) {
-            for (const item of billingItems) {
+            // Optimization: Process in parallel to reduce delay
+            const promises = billingItems.map(async (item) => {
                 // STRICTLY FOLLOW RULE: Only "Service Ringan" items trigger auto-stock deduction in WO.
-                // "Perbaikan" items are assumed to be handled in Goods Issue module manually (Informational only here).
-                if (!isServiceRingan(item.job_group)) continue;
+                if (!isServiceRingan(item.job_group)) return;
 
                 if (item.goods_id) {
-                    // Only process items that are meant to be auto-deducted (usually from WO interface)
-                    // But to be safe, we check if it's NOT already covered by a manual Goods Issue.
-                    // If the item came from 'GOODS_ISSUE' source (loaded in handleFinishWO), we assume it's already done.
-                    // BUT, `issuedMap` includes ALL issues.
-                    
                     const billedQty = item.qty;
                     const alreadyIssuedQty = issuedMap.get(item.goods_id) || 0;
-                    
-                    // Logic:
-                    // If source is 'GOODS_ISSUE', it means it was loaded from existing issues. We shouldn't double deduct.
-                    // If source is 'WO_INTERFACE', we need to ensure it's issued.
-                    
-                    // Simplified: Calculate 'Needed' vs 'Issued'.
-                    // CAUTION: 'issuedMap' contains ALL issues (Manual + Auto).
-                    // If we have 1 Manual Issue (Qty 1) and Billing says Qty 1.
-                    // Then alreadyIssuedQty = 1. billedQty = 1. Diff = 0. No action. Correct.
-                    
-                    // If we have 0 Issued. Billing says Qty 1.
-                    // Diff = 1. We need to issue 1 more.
-                    
-                    // If we have 1 Manual Issue. Billing says Qty 2 (User increased it).
-                    // Diff = 1. We need to issue 1 more.
-                    
                     const diff = billedQty - alreadyIssuedQty;
 
-                    if (diff > 0) { // Only handle POSITIVE diff (Deduction). Do not handle returns here to be safe.
+                    if (diff > 0) { // Only handle POSITIVE diff (Deduction)
                         // 1. Adjust Stock (ONLY IF NOT INFO ONLY)
                         if (!item.is_info_only) {
                             const { data: currentGood } = await supabase
@@ -708,10 +687,6 @@ export default function WorkOrderV2() {
                         }
 
                         // 2. Add/Update Goods Issue Item
-                        // We append the difference to the targetIssueId (Auto-generated).
-                        // Check if this good already exists in the TARGET issue (to update) or insert new.
-                        
-                        // Need to check specifically in targetIssueId
                         const { data: existingTargetItem } = await supabase
                             .from('goods_issue_items')
                             .select('*')
@@ -720,28 +695,124 @@ export default function WorkOrderV2() {
                             .single();
 
                         if (existingTargetItem) {
-                            // Update existing auto-item
                             await supabase
                                 .from('goods_issue_items')
                                 .update({ 
                                     quantity: existingTargetItem.quantity + diff,
-                                    is_info_only: item.is_info_only // Update flag if needed
+                                    is_info_only: item.is_info_only 
                                 })
                                 .eq('id', existingTargetItem.id);
                         } else {
-                            // Insert new item
                              await supabase
                                  .from('goods_issue_items')
                                  .insert({
                                      issue_id: targetIssueId,
                                      goods_id: item.goods_id,
                                      quantity: diff,
-                                     is_info_only: item.is_info_only // Pass the flag
+                                     is_info_only: item.is_info_only
                                  });
                         }
                     }
                 }
-            }
+            });
+
+            await Promise.all(promises);
+        }
+
+        // --- E. AUTO JOURNALING (Piutang vs Pendapatan) ---
+        // Debit: Piutang Usaha (Grand Total)
+        // Credit: Pendapatan Jasa (Total Service)
+        // Credit: Pendapatan Sparepart (Total Parts)
+        
+        try {
+             // 1. Calculate Totals
+             let totalService = 0;
+             let totalParts = 0;
+             
+             billingItems.forEach(item => {
+                 // Skip Info Only items from Journal? Usually yes, as they are not billed.
+                 if (item.is_info_only) return;
+
+                 if (item.item_type === 'JOB') {
+                     totalService += item.total_price || 0;
+                 } else {
+                     totalParts += item.total_price || 0;
+                 }
+             });
+             
+             const grandTotal = totalService + totalParts;
+
+             if (grandTotal > 0) {
+                // 2. Find Accounts
+                const { data: accounts } = await supabase
+                    .from('chart_of_accounts')
+                    .select('id, account_name, account_code');
+                
+                const findAccount = (keyword: string) => accounts?.find(a => a.account_name.toLowerCase().includes(keyword.toLowerCase()));
+
+                const accReceivable = findAccount('Piutang Usaha') || findAccount('Piutang') || findAccount('Receivable');
+                // const accRevenue = findAccount('Pendapatan Jasa') || findAccount('Pendapatan') || findAccount('Service');
+                const accServiceRev = findAccount('Pendapatan Jasa') || findAccount('Jasa') || findAccount('Service');
+                const accPartsRev = findAccount('Pendapatan Sparepart') || findAccount('Sparepart') || accServiceRev;
+
+                if (accReceivable && accServiceRev) {
+                    // 3. Create Journal Header
+                    const { data: journal, error: jErr } = await supabase
+                        .from('journal_entries')
+                        .insert([{
+                            entry_date: new Date().toISOString(),
+                            description: `Jurnal Otomatis WO ${activeWO.wo_number}`,
+                            reference_number: activeWO.wo_number,
+                            total_amount: grandTotal,
+                            status: 'POSTED'
+                        }])
+                        .select()
+                        .single();
+
+                    if (!jErr && journal) {
+                        const journalItems = [];
+
+                        // DEBIT: Piutang
+                        journalItems.push({
+                            journal_entry_id: journal.id,
+                            account_id: accReceivable.id,
+                            debit: grandTotal,
+                            credit: 0,
+                            description: `Piutang WO ${activeWO.wo_number}`
+                        });
+
+                        // CREDIT: Pendapatan Jasa
+                        if (totalService > 0) {
+                            journalItems.push({
+                                journal_entry_id: journal.id,
+                                account_id: accServiceRev.id,
+                                debit: 0,
+                                credit: totalService,
+                                description: `Pendapatan Jasa WO ${activeWO.wo_number}`
+                            });
+                        }
+
+                        // CREDIT: Pendapatan Sparepart
+                        if (totalParts > 0) {
+                             journalItems.push({
+                                journal_entry_id: journal.id,
+                                account_id: accPartsRev?.id || accServiceRev.id,
+                                debit: 0,
+                                credit: totalParts,
+                                description: `Pendapatan Sparepart WO ${activeWO.wo_number}`
+                            });
+                        }
+
+                        await supabase.from('journal_entry_items').insert(journalItems);
+                        toast.success("Jurnal Otomatis Berhasil Dibuat");
+                    }
+                } else {
+                    toast.warning("Jurnal Otomatis GAGAL: Akun Piutang/Pendapatan belum disetting di COA.");
+                }
+             }
+        } catch (jError) {
+            console.error("Auto Journal Error:", jError);
+            toast.error("Gagal membuat jurnal otomatis (Data WO tetap tersimpan).");
         }
 
         // 3. Update WO Status to COMPLETED
@@ -1011,6 +1082,131 @@ export default function WorkOrderV2() {
     }
   };
 
+  const handleSyncJournal = async (wo: WOWithDetails) => {
+    if (!confirm(`Buat Jurnal Otomatis untuk WO ${wo.wo_number}? (Hanya jika belum ada)`)) return;
+    
+    setLoading(true);
+    try {
+        // 1. Check if journal exists
+        const { data: existingJournal } = await supabase
+            .from('journal_entries')
+            .select('id')
+            .eq('reference_number', wo.wo_number)
+            .maybeSingle(); // Use maybeSingle to avoid error if not found
+
+        if (existingJournal) {
+            toast.info("Jurnal sudah ada untuk WO ini.");
+            setLoading(false);
+            return;
+        }
+
+        // 2. Fetch Billings to calculate totals
+        const { data: billings } = await supabase
+            .from('work_order_billings')
+            .select('*')
+            .eq('work_order_id', wo.id);
+        
+        if (!billings || billings.length === 0) {
+            toast.error("Tidak ada data tagihan di WO ini.");
+            setLoading(false);
+            return;
+        }
+
+        let totalService = 0;
+        let totalParts = 0;
+        
+        billings.forEach(item => {
+            if (item.is_info_only) return;
+            if (item.item_type === 'JOB') {
+                totalService += item.total_price || 0;
+            } else {
+                totalParts += item.total_price || 0;
+            }
+        });
+        
+        const grandTotal = totalService + totalParts;
+
+        if (grandTotal <= 0) {
+            toast.info("Total tagihan 0, tidak perlu jurnal.");
+            setLoading(false);
+            return;
+        }
+
+        // 3. Find Accounts
+        const { data: accounts } = await supabase
+            .from('chart_of_accounts')
+            .select('id, account_name');
+        
+        const findAccount = (keyword: string) => accounts?.find(a => a.account_name.toLowerCase().includes(keyword.toLowerCase()));
+
+        const accReceivable = findAccount('Piutang Usaha') || findAccount('Piutang') || findAccount('Receivable');
+        const accServiceRev = findAccount('Pendapatan Jasa') || findAccount('Jasa') || findAccount('Service');
+        const accPartsRev = findAccount('Pendapatan Sparepart') || findAccount('Sparepart') || accServiceRev;
+
+        if (!accReceivable || !accServiceRev) {
+            toast.error("Gagal: Akun Piutang/Pendapatan tidak ditemukan di COA.");
+            setLoading(false);
+            return;
+        }
+
+        // 4. Create Journal
+        const { data: journal, error: jErr } = await supabase
+            .from('journal_entries')
+            .insert([{
+                entry_date: wo.work_date, // Use WO date for backfill? Or current date? Usually WO date is better for accrual.
+                description: `Jurnal Otomatis WO ${wo.wo_number}`,
+                reference_number: wo.wo_number,
+                total_amount: grandTotal,
+                status: 'POSTED'
+            }])
+            .select()
+            .single();
+
+        if (jErr) throw jErr;
+
+        const journalItems = [];
+
+        // DEBIT
+        journalItems.push({
+            journal_entry_id: journal.id,
+            account_id: accReceivable.id,
+            debit: grandTotal,
+            credit: 0,
+            description: `Piutang WO ${wo.wo_number}`
+        });
+
+        // CREDIT Service
+        if (totalService > 0) {
+            journalItems.push({
+                journal_entry_id: journal.id,
+                account_id: accServiceRev.id,
+                debit: 0,
+                credit: totalService,
+                description: `Pendapatan Jasa WO ${wo.wo_number}`
+            });
+        }
+
+        // CREDIT Parts
+        if (totalParts > 0) {
+                journalItems.push({
+                journal_entry_id: journal.id,
+                account_id: accPartsRev?.id || accServiceRev.id,
+                debit: 0,
+                credit: totalParts,
+                description: `Pendapatan Sparepart WO ${wo.wo_number}`
+            });
+        }
+
+        await supabase.from('journal_entry_items').insert(journalItems);
+        toast.success("Jurnal Berhasil Disinkronisasi (Backfill)");
+
+    } catch (e: any) {
+        toast.error("Gagal sync jurnal: " + e.message);
+    } finally {
+        setLoading(false);
+    }
+  };
+
   const filteredWOs = wos.filter(w => 
     w.wo_number.toLowerCase().includes(search.toLowerCase()) ||
     w.vehicle_entries?.vehicles?.license_plate.toLowerCase().includes(search.toLowerCase()) ||
@@ -1025,7 +1221,7 @@ export default function WorkOrderV2() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h2 className="text-3xl font-bold tracking-tight text-blue-700">Work Order (WO)</h2>
+        <h2 className="text-3xl font-bold tracking-tight text-blue-700">Work Order (WO) - DEBUG MODE</h2>
         <Dialog open={isDialogOpen} onOpenChange={(open) => { setIsDialogOpen(open); if(!open) resetForm(); }}>
           <DialogTrigger asChild>
             <Button><Plus className="mr-2 h-4 w-4" /> Buat WO Baru</Button>
@@ -1242,6 +1438,19 @@ export default function WorkOrderV2() {
                       </TableCell>
                       <TableCell className="text-right">
                         <div className="flex justify-end gap-2">
+                          {/* EMERGENCY SYNC BUTTON - ALWAYS SHOW FOR CLOSED WO */}
+                          {item.status === 'CLOSED' && (
+                             <Button 
+                                variant="destructive" 
+                                size="sm" 
+                                className="bg-pink-600 hover:bg-pink-700 text-white font-bold animate-pulse" 
+                                onClick={() => handleSyncJournal(item)} 
+                                title="SYNC JURNAL SEKARANG"
+                              >
+                                  SYNC JURNAL
+                              </Button>
+                          )}
+
                           {item.status === 'OPEN' && (
                             <Button size="sm" variant="outline" onClick={() => handleStatusChange(item.id, 'IN_PROGRESS')}>
                               <Play className="h-4 w-4 mr-1" /> Mulai
@@ -1291,11 +1500,23 @@ export default function WorkOrderV2() {
                               <Trash2 className="h-4 w-4" />
                             </Button>
                           )}
-                          {/* Fix Stock Button for Closed WO (Admin Only) */}
-                          {item.status === 'CLOSED' && (user?.role === 'SUPER_ADMIN' || user?.role === 'ADMIN') && (
-                              <Button variant="outline" size="icon" className="text-purple-600 border-purple-200 hover:bg-purple-50" onClick={() => handleFixStock(item)} title="Fix Stock / Sinkronisasi Stok">
-                                  <Wrench className="h-4 w-4" />
-                              </Button>
+                          {/* Fix Stock & Sync Journal Buttons for Closed WO - DEBUG MODE: ALWAYS SHOW */}
+                          {item.status === 'CLOSED' && (
+                              <div className="flex gap-1">
+                                  <Button variant="outline" size="icon" className="text-purple-600 border-purple-200 hover:bg-purple-50" onClick={() => handleFixStock(item)} title="Fix Stock / Sinkronisasi Stok">
+                                      <Wrench className="h-4 w-4" />
+                                  </Button>
+                                  
+                                  <Button 
+                                    variant="destructive" 
+                                    size="sm" 
+                                    className="h-8 px-2 text-xs bg-blue-600 hover:bg-blue-700 text-white" 
+                                    onClick={() => handleSyncJournal(item)} 
+                                    title="KLIK DISINI UNTUK SYNC JURNAL"
+                                  >
+                                      SYNC JURNAL
+                                  </Button>
+                              </div>
                           )}
                         </div>
                       </TableCell>
@@ -1373,6 +1594,13 @@ export default function WorkOrderV2() {
                                         <span className="text-xs text-gray-500 italic">
                                             {item.item_type === 'PART' ? item.item_name.replace('Penggantian ', '') : '(Tidak ada part)'}
                                         </span>
+                                    )}
+                                    {/* INFO ONLY INDICATOR */}
+                                    {item.is_info_only && (
+                                        <div className="flex items-center gap-1.5 mt-1.5">
+                                            <div className="w-2.5 h-2.5 rounded-full bg-yellow-400 border border-yellow-500 shadow-sm" title="Info Only"></div>
+                                            <span className="text-[10px] text-yellow-700 font-medium bg-yellow-50 px-1.5 py-0.5 rounded border border-yellow-100">Info Only</span>
+                                        </div>
                                     )}
                                 </TableCell>
                                 <TableCell className="text-center">
