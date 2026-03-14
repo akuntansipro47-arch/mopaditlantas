@@ -11,10 +11,7 @@ import { formatCurrency, formatDate } from '@/lib/utils';
 import { Printer, RefreshCw, Download } from 'lucide-react';
 import * as XLSX from 'xlsx';
 
-import { useDemo } from '@/context/DemoDataContext';
-
 export default function BalanceSheetReport() {
-  const { isDemo, journals: demoJournals } = useDemo();
   const [loading, setLoading] = useState(false);
   const [reportData, setReportData] = useState<any>({
       assets: [],
@@ -27,34 +24,20 @@ export default function BalanceSheetReport() {
 
   useEffect(() => {
     fetchReport();
-  }, [isDemo, demoJournals, reportDate]);
+  }, [reportDate]);
 
   async function fetchReport() {
     setLoading(true);
     try {
         // 1. Fetch Accounts
-        let accounts: any[] = [];
-        
-        if (isDemo) {
-            // Mock Accounts
-            accounts = [
-                { id: 'acc-kas', account_code: '1-1001', account_name: 'Kas Besar', category: 'AKTIVA', account_type: 'DETAIL' },
-                { id: 'acc-piutang', account_code: '1-1100', account_name: 'Piutang Usaha', category: 'AKTIVA', account_type: 'DETAIL' },
-                { id: 'acc-persediaan', account_code: '1-1200', account_name: 'Persediaan Barang', category: 'AKTIVA', account_type: 'DETAIL' },
-                { id: 'acc-modal', account_code: '3-1000', account_name: 'Modal Pemilik', category: 'MODAL', account_type: 'DETAIL' },
-                { id: 'acc-hutang', account_code: '2-1000', account_name: 'Hutang Usaha', category: 'KEWAJIBAN', account_type: 'DETAIL' },
-            ];
-        } else {
-            const { data: sbAccounts, error: accError } = await supabase
-                .from('chart_of_accounts')
-                .select('id, account_code, account_name, category, sub_category, balance_type, account_type')
-                .order('account_code');
-            if (accError) throw accError;
-            accounts = sbAccounts || [];
-        }
+        const { data: accounts, error: accError } = await supabase
+            .from('chart_of_accounts')
+            .select('id, account_code, account_name, category, sub_category, balance_type, account_type')
+            .order('account_code');
+        if (accError) throw accError;
 
         // Filter relevant accounts (Aktiva/Passiva/Modal OR Code 1/2/3)
-        const relevantAccounts = accounts.filter((acc: any) => {
+        const relevantAccounts = (accounts || []).filter((acc: any) => {
             const code = acc.account_code || '';
             return (
                 ['AKTIVA', 'KEWAJIBAN', 'EKUITAS', 'MODAL', 'PASSIVA', 'ASSETS', 'LIABILITIES', 'EQUITY'].includes(acc.category) ||
@@ -65,34 +48,18 @@ export default function BalanceSheetReport() {
         });
 
         // 2. Fetch Journals
-        let journals: any[] = [];
-        
-        if (isDemo) {
-            // Filter Demo Journals
-            const filteredJournals = demoJournals.filter(j => j.date <= reportDate);
-            journals = filteredJournals.flatMap(j => 
-                j.items.map(i => ({
-                    debit: i.debit,
-                    credit: i.credit,
-                    account_id: i.account_id,
-                    journal_entries: { entry_date: j.date }
-                }))
-            );
-        } else {
-            const { data: sbJournals, error: jError } = await supabase
-                .from('journal_entry_items')
-                .select(`
-                    debit, credit, account_id,
-                    journal_entries!inner (entry_date)
-                `)
-                .lte('journal_entries.entry_date', reportDate);
-            if (jError) throw jError;
-            journals = sbJournals || [];
-        }
+        const { data: journals, error: jError } = await supabase
+            .from('journal_entry_items')
+            .select(`
+                debit, credit, account_id,
+                journal_entries!inner (entry_date)
+            `)
+            .lte('journal_entries.entry_date', reportDate);
+        if (jError) throw jError;
 
         // 3. Calculate Balances
         const balances: Record<string, number> = {};
-        journals?.forEach((j: any) => {
+        (journals || [])?.forEach((j: any) => {
             if (!balances[j.account_id]) balances[j.account_id] = 0;
             balances[j.account_id] += (j.debit || 0) - (j.credit || 0);
         });
@@ -100,31 +67,18 @@ export default function BalanceSheetReport() {
         // 4. Calculate Current Earnings
         let currentEarnings = 0;
         
-        // Fetch Income Journals (Demo or Live)
-        let incomeJournals: any[] = [];
-        
-        if (isDemo) {
-             const filteredJournals = demoJournals.filter(j => j.date <= reportDate);
-             incomeJournals = filteredJournals.flatMap(j => 
-                j.items.filter(i => ['PENDAPATAN', 'HPP', 'BEBAN', 'PENJUALAN'].includes(i.category || '')).map(i => ({
-                    debit: i.debit, 
-                    credit: i.credit,
-                    account: { category: i.category }
-                }))
-            );
-        } else {
-            const { data: sbIncome } = await supabase
-                .from('journal_entry_items')
-                .select(`
-                    debit, credit, 
-                    account:chart_of_accounts!inner (category)
-                `)
-                .in('account.category', ['PENDAPATAN', 'HPP', 'BEBAN', 'PENJUALAN'])
-                .lte('journal_entries.entry_date', reportDate) as any;
-            incomeJournals = sbIncome || [];
-        }
+        const { data: incomeJournals, error: incErr } = await supabase
+            .from('journal_entry_items')
+            .select(`
+                debit, credit,
+                account:chart_of_accounts!inner (category),
+                journal_entries!inner (entry_date)
+            `)
+            .in('account.category', ['PENDAPATAN', 'HPP', 'BEBAN', 'PENJUALAN'])
+            .lte('journal_entries.entry_date', reportDate) as any;
+        if (incErr) throw incErr;
 
-        incomeJournals?.forEach((j: any) => {
+        (incomeJournals || [])?.forEach((j: any) => {
             const cat = j.account.category;
             if (cat === 'PENDAPATAN' || cat === 'PENJUALAN') {
                 currentEarnings += (j.credit - j.debit);

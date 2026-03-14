@@ -18,7 +18,6 @@ import {
 } from "@/components/ui/select";
 import { formatDate } from '@/lib/utils';
 import { Badge } from "@/components/ui/badge";
-import { useDemo } from '@/context/DemoDataContext';
 
 type WO = Database['public']['Tables']['work_orders']['Row'];
 type VehicleEntry = Database['public']['Tables']['vehicle_entries']['Row'];
@@ -31,8 +30,6 @@ type WOWithDetails = WO & {
 };
 
 export default function WorkOrder() {
-  // Demo Mode Removed as per user request
-  // const { isDemo, addJournal, workOrders: demoWOs, mechanics: demoMechanics, entries: demoEntries, addWO, updateWOStatus } = useDemo();
   const [wos, setWos] = useState<WOWithDetails[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -72,12 +69,6 @@ export default function WorkOrder() {
   }, [formData.vehicle_entry_id, entries]);
 
   async function fetchMasterData() {
-    // if (isDemo) {
-    //     setEntries(demoEntries as any);
-    //     setMechanics(demoMechanics as any);
-    //     return;
-    // }
-    
     // Fetch OPEN Vehicle Entries that haven't been processed yet
     const { data: e } = await supabase
       .from('vehicle_entries')
@@ -97,12 +88,6 @@ export default function WorkOrder() {
   }
 
   async function fetchWOs() {
-    // if (isDemo) {
-    //     setWos(demoWOs as any);
-    //     setLoading(false);
-    //     return;
-    // }
-
     setLoading(true);
     try {
       const { data, error } = await supabase
@@ -152,15 +137,6 @@ export default function WorkOrder() {
   };
 
   const handleStatusChange = async (id: string, newStatus: string) => {
-    // if (isDemo) {
-    //     updateWOStatus(id, newStatus);
-    //     if (newStatus === 'COMPLETED') {
-    //         await createAutoJournal(id);
-    //     }
-    //     toast.success(`Status WO diubah menjadi ${newStatus} (Demo Mode)`);
-    //     return;
-    // }
-
     try {
       const { error } = await supabase
         .from('work_orders')
@@ -182,11 +158,6 @@ export default function WorkOrder() {
   };
 
   const createAutoJournal = async (woId: string) => {
-    // DEMO MODE: Removed
-    // if (isDemo) {
-    //     ...
-    // }
-
     try {
         // 1. Fetch WO details with total amounts
         const { data: wo, error: woErr } = await supabase
@@ -365,10 +336,6 @@ export default function WorkOrder() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
-
-    // if (isDemo) {
-    //     ...
-    // }
 
     try {
       const payload = {

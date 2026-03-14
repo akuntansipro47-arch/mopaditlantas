@@ -39,22 +39,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const login = async (username: string, password: string): Promise<boolean> => {
     try {
-      // 1. DEMO LOGIN (Hardcoded)
-      if (username === 'demo' && password === 'demo') {
-        const demoUser: User = {
-          id: 'demo-user-id',
-          username: 'demo',
-          full_name: 'Demo User (Read-Only)',
-          role: 'SUPER_ADMIN', // Give full access to see everything
-          allowed_menus: ['*'] // Full menu access
-        };
-        setUser(demoUser);
-        localStorage.setItem('app_user', JSON.stringify(demoUser));
-        toast.success('Welcome to Demo Mode! Data is temporary.');
-        return true;
-      }
-
-      // 2. SUPABASE LOGIN
+      // 1. SUPABASE LOGIN
       // Call RPC login_user
       const { data, error } = await supabase.rpc('login_user', { 
         p_username: username, 

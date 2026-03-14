@@ -78,7 +78,6 @@ const navigation = [
     ]
   },
   { name: 'Laporan', href: '/reports', icon: BarChart3, key: 'reports' },
-  { name: 'Demo Data', href: '/admin/demo', icon: Wrench, key: 'admin_demo' }, // Temporary
 ];
 
 export function Sidebar() {

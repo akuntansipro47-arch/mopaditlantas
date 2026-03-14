@@ -11,10 +11,7 @@ import { formatCurrency, formatDate } from '@/lib/utils';
 import { Printer, Calendar as CalendarIcon, RefreshCw, Download } from 'lucide-react';
 import * as XLSX from 'xlsx';
 
-import { useDemo } from '@/context/DemoDataContext';
-
 export default function ProfitLossReport() {
-  const { isDemo, journals: demoJournals } = useDemo();
   const [loading, setLoading] = useState(false);
   const requestSeq = useRef(0);
   const [reportData, setReportData] = useState<any>({
@@ -35,52 +32,25 @@ export default function ProfitLossReport() {
       fetchReport();
     }, 250);
     return () => window.clearTimeout(t);
-  }, [isDemo, demoJournals, dateFilter.startDate, dateFilter.endDate]);
+  }, [dateFilter.startDate, dateFilter.endDate]);
 
   async function fetchReport() {
     const currentReq = ++requestSeq.current;
     setLoading(true);
     try {
-        let data: any[] = [];
+        const { data, error } = await supabase
+            .from('journal_entry_items')
+            .select(`
+                debit, credit,
+                account:chart_of_accounts (
+                    id, account_code, account_name, category, sub_category
+                ),
+                journal_entries!inner (entry_date)
+            `)
+            .gte('journal_entries.entry_date', dateFilter.startDate)
+            .lte('journal_entries.entry_date', dateFilter.endDate);
 
-        if (isDemo) {
-            // Filter Demo Journals by Date
-            const filteredJournals = demoJournals.filter(j => 
-                j.date >= dateFilter.startDate && j.date <= dateFilter.endDate
-            );
-            
-            // Flatten to items format similar to Supabase response
-            data = filteredJournals.flatMap(j => 
-                j.items.map(i => ({
-                    debit: i.debit,
-                    credit: i.credit,
-                    account: {
-                        id: i.account_id,
-                        account_code: i.account_code,
-                        account_name: i.account_name,
-                        category: i.category || 'UMUM',
-                        sub_category: 'NONE'
-                    },
-                    journal_entries: { entry_date: j.date }
-                }))
-            );
-        } else {
-            // Supabase Fetch
-            const { data: sbData, error } = await supabase
-                .from('journal_entry_items')
-                .select(`
-                    debit, credit,
-                    account:chart_of_accounts (
-                        id, account_code, account_name, category, sub_category
-                    ),
-                    journal_entries!inner (entry_date)
-                `)
-                .gte('journal_entries.entry_date', dateFilter.startDate)
-                .lte('journal_entries.entry_date', dateFilter.endDate);
-
-            if (error) throw error;
-            data = sbData || [];
-        }
+        if (error) throw error;
 
         // Grouping
         const grouped: any = {
@@ -91,7 +61,7 @@ export default function ProfitLossReport() {
             other_expenses: {}
         };
 
-        data?.forEach((item: any) => {
+        (data || [])?.forEach((item: any) => {
             const cat = item.account.category;
             const sub = item.account.sub_category;
             const accId = item.account.id;

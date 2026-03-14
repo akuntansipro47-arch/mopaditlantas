@@ -1,7 +1,6 @@
 import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { AuthProvider } from "@/context/AuthContext";
-// import { DemoProvider } from "@/context/DemoDataContext"; // Import DemoProvider (DISABLED)
 import { Toaster } from "sonner";
 import ProtectedRoute from "@/components/layout/ProtectedRoute";
 import Login from "@/pages/auth/Login";
@@ -28,7 +27,6 @@ import PrintVehicleEntry from "@/pages/print/PrintVehicleEntry";
 import PrintGoodsIssue from "@/pages/print/PrintGoodsIssue";
 import PrintInvoice from "@/pages/print/PrintInvoice";
 import UserManagement from "@/pages/admin/UserManagement";
-import DemoGenerator from "@/pages/admin/DemoGenerator"; // Import Demo
 import AgencyProfile from "@/pages/admin/AgencyProfile";
 import PurchasePayment from "@/pages/finance/PurchasePayment";
 import SalesInvoice from "@/pages/finance/SalesInvoice"; // Import Sales Invoice
@@ -47,8 +45,7 @@ export default function App() {
   console.log("App.tsx Loaded - Version DEBUG SYNC ADDED");
   return (
     <AuthProvider>
-      {/* <DemoProvider> */}
-        <Router>
+      <Router>
         {/* <ReloadPrompt /> */}
         <Routes>
           <Route path="/login" element={<Login />} />
@@ -102,14 +99,12 @@ export default function App() {
               {/* Admin */}
               <Route path="/admin/users" element={<UserManagement />} />
               <Route path="/admin/agency" element={<AgencyProfile />} />
-              <Route path="/admin/demo" element={<DemoGenerator />} /> {/* Demo Route */}
               <Route path="/debug" element={<DebugDashboard />} />
             </Route>
           </Route>
         </Routes>
       </Router>
       <Toaster />
-      {/* </DemoProvider> */}
     </AuthProvider>
   );
 }
