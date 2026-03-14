@@ -1074,7 +1074,7 @@ export default function WorkOrderV2() {
                             }
                         }
                         updatedCount++;
-                        console.log(`Fixed Stock for ${currentGood?.name}: Diff ${diff}`);
+                        console.log(`Fixed Stock for ${item.goods_id}: Diff ${diff}`);
                     }
                 }
             }

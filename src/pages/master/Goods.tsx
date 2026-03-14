@@ -27,6 +27,7 @@ export default function Goods() {
   const { isDemo, goods: demoGoods, addGood } = useDemo();
   const [goods, setGoods] = useState<Goods[]>([]);
   const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
   const [search, setSearch] = useState('');
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
@@ -141,7 +142,7 @@ export default function Goods() {
       return;
     }
 
-    setLoading(true);
+    setSaving(true);
     try {
       if (isEditing && currentId) {
         const { error } = await supabase.from('goods').update(formData as any).eq('id', currentId);
@@ -158,7 +159,7 @@ export default function Goods() {
     } catch (error: any) {
       toast.error('Gagal menyimpan: ' + error.message);
     } finally {
-      setLoading(false);
+      setSaving(false);
     }
   };
 
@@ -235,7 +236,7 @@ export default function Goods() {
                 </div>
               </div>
               <DialogFooter>
-                <Button type="submit" disabled={loading}>{loading ? 'Menyimpan...' : 'Simpan'}</Button>
+                <Button type="submit" disabled={saving}>{saving ? 'Menyimpan...' : 'Simpan'}</Button>
               </DialogFooter>
             </form>
           </DialogContent>

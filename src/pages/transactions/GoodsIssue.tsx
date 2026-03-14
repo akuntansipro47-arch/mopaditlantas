@@ -310,7 +310,7 @@ export default function GoodsIssuePage() {
       toast.success(editingId ? 'Data berhasil diperbarui' : 'Pengeluaran barang berhasil dicatat');
       setIsDialogOpen(false);
       setFormData({ issue_date: new Date().toISOString().split('T')[0], work_order_id: '' });
-      setIssueItems([{ goods_id: '', quantity: 1 }]);
+      setIssueItems([{ goods_id: '', quantity: 1, is_info_only: false }]);
       setEditingId(null);
       fetchIssues();
       fetchMasterData();
@@ -331,7 +331,7 @@ export default function GoodsIssuePage() {
 
   const resetForm = () => {
     setFormData({ issue_date: new Date().toISOString().split('T')[0], work_order_id: '' });
-    setIssueItems([{ goods_id: '', quantity: 1 }]);
+    setIssueItems([{ goods_id: '', quantity: 1, is_info_only: false }]);
     setEditingId(null);
   };
 
@@ -416,7 +416,8 @@ export default function GoodsIssuePage() {
                                       if (billings && billings.length > 0) {
                                           const mappedItems = billings.map(b => ({
                                               goods_id: b.goods_id!,
-                                              quantity: b.qty
+                                              quantity: b.qty,
+                                              is_info_only: b.is_info_only || false
                                           }));
                                           setIssueItems(mappedItems);
                                           toast.success(`${mappedItems.length} item dimuat dari WO.`);

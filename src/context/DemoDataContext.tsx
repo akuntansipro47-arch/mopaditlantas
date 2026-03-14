@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect } from 'react';
+import { createContext, useContext, useState, useEffect, useRef } from 'react';
 import { useAuth } from './AuthContext';
 
 // --- TYPES ---
@@ -214,7 +214,7 @@ export function DemoProvider({ children }: { children: React.ReactNode }) {
 export function useDemo() {
   const context = useContext(DemoContext);
   if (context === undefined) {
-    return {
+    const fallback = useRef<DemoContextType>({
       isDemo: false,
       suppliers: [],
       goods: [],
@@ -229,7 +229,8 @@ export function useDemo() {
       addJournal: () => {},
       addWO: () => {},
       updateWOStatus: () => {}
-    };
+    });
+    return fallback.current;
   }
   return context;
 }

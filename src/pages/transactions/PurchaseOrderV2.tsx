@@ -672,14 +672,14 @@ export default function PurchaseOrderV2() {
                               </span>
                               <Search className="ml-2 h-4 w-4 opacity-50" />
                             </Button>
-                            {item.work_order_id && item.work_orders ? (
+                            {((item as any).work_order_id && (item as any).work_orders) ? (
                           <div className="flex flex-col text-xs mt-1 space-y-1">
                             <span className="font-semibold text-indigo-700">
-                              WO: {item.work_orders.wo_number}
+                              WO: {(item as any).work_orders.wo_number}
                             </span>
-                            {(item.work_orders as any).vehicle_entries?.vehicles && (
+                            {((item as any).work_orders as any).vehicle_entries?.vehicles && (
                               <span className="text-gray-600">
-                                {(item.work_orders as any).vehicle_entries.license_plate} - {(item.work_orders as any).vehicle_entries.vehicles.brand_type}
+                                {((item as any).work_orders as any).vehicle_entries.license_plate} - {((item as any).work_orders as any).vehicle_entries.vehicles.brand_type}
                               </span>
                             )}
                           </div>
