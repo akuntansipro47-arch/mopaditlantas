@@ -115,7 +115,7 @@ export function Sidebar() {
               <span className="text-white italic">Oto</span>
               <span className="text-lime-500 italic">Smart</span>
             </h1>
-            <p className="text-[9px] text-slate-400 font-medium tracking-widest uppercase mt-0.5 ml-0.5">Complete control</p>
+            <p className="text-[9px] text-slate-400 font-medium tracking-widest uppercase mt-0.5 ml-0.5">Complete Control Smart System</p>
           </div>
         </div>
       </div>

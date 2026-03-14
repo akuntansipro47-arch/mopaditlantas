@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect } from 'react';
+import { createContext, useContext, useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { toast } from 'sonner';
 
@@ -24,13 +24,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Check local storage for persistent login
     const storedUser = localStorage.getItem('app_user');
     if (storedUser) {
       try {
         const parsed = JSON.parse(storedUser);
         setUser(parsed);
-      } catch (e) {
+      } catch {
         localStorage.removeItem('app_user');
       }
     }
@@ -39,51 +38,42 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const login = async (username: string, password: string): Promise<boolean> => {
     try {
-      // 1. SUPABASE LOGIN
-      // Call RPC login_user
-      const { data, error } = await supabase.rpc('login_user', { 
-        p_username: username, 
-        p_password: password 
+      const { data, error } = await supabase.rpc('login_user', {
+        p_username: username,
+        p_password: password
       });
 
       if (error) {
-        console.error('Login RPC Error:', error);
         toast.error('Login failed: ' + error.message);
         return false;
       }
 
-      // data is returned as an array of rows
       if (data && data.length > 0) {
-         // Check success flag from RPC response if applicable, or just assume data presence is success
-         // The RPC returns table(success boolean, message text, ...)
-         // Let's check the first row
-         const result = data[0];
-         
-         if (result.success) {
-             const loggedInUser: User = {
-               id: result.id,
-               username: result.username,
-               full_name: result.full_name,
-               role: result.role,
-               allowed_menus: result.allowed_menus || []
-             };
-             
-             setUser(loggedInUser);
-             localStorage.setItem('app_user', JSON.stringify(loggedInUser));
-             toast.success(`Welcome back, ${loggedInUser.full_name}!`);
-             return true;
-         } else {
-             toast.error(result.message || 'Login failed');
-             return false;
-         }
-      } else {
-         toast.error('Username atau Password salah');
-         return false;
+        const result = data[0];
+
+        if (result.success) {
+          const loggedInUser: User = {
+            id: result.id,
+            username: result.username,
+            full_name: result.full_name,
+            role: result.role,
+            allowed_menus: result.allowed_menus || []
+          };
+
+          setUser(loggedInUser);
+          localStorage.setItem('app_user', JSON.stringify(loggedInUser));
+          toast.success(`Welcome back, ${loggedInUser.full_name}!`);
+          return true;
+        }
+
+        toast.error(result.message || 'Login failed');
+        return false;
       }
 
-    } catch (error: any) {
-      console.error(error);
-      toast.error('Login error: ' + error.message);
+      toast.error('Username atau Password salah');
+      return false;
+    } catch (err: any) {
+      toast.error('Login error: ' + err.message);
       return false;
     }
   };
@@ -108,3 +98,4 @@ export function useAuth() {
   }
   return context;
 }
+

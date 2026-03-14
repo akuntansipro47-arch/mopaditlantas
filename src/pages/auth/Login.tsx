@@ -35,7 +35,7 @@ export default function Login() {
                 <span className="text-white italic">Oto</span>
                 <span className="text-lime-500 italic">Smart</span>
               </h1>
-              <p className="text-[10px] text-slate-400 font-medium tracking-[0.2em] uppercase mt-1">Complete control</p>
+              <p className="text-[10px] text-slate-400 font-medium tracking-[0.2em] uppercase mt-1">Complete Control Smart System</p>
             </div>
           </div>
           <CardTitle className="text-center text-slate-200 mt-6">Sign In</CardTitle>
