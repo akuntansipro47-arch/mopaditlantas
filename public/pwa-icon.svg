@@ -1,4 +1,22 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
-  <rect width="512" height="512" fill="#1e40af"/>
-  <path d="M256 96L96 256h96v160h128V256h96L256 96z" fill="white"/>
+  <rect x="16" y="16" width="480" height="480" rx="112" fill="#ffffff"/>
+  <rect x="16" y="16" width="480" height="480" rx="112" fill="none" stroke="#e2e8f0" stroke-width="16"/>
+  <circle cx="256" cy="256" r="168" fill="#1e3a5f"/>
+
+  <g fill="#ffffff">
+    <g transform="rotate(0 256 256)"><rect x="240" y="72" width="32" height="56" rx="16"/></g>
+    <g transform="rotate(45 256 256)"><rect x="240" y="72" width="32" height="56" rx="16"/></g>
+    <g transform="rotate(90 256 256)"><rect x="240" y="72" width="32" height="56" rx="16"/></g>
+    <g transform="rotate(135 256 256)"><rect x="240" y="72" width="32" height="56" rx="16"/></g>
+    <g transform="rotate(180 256 256)"><rect x="240" y="72" width="32" height="56" rx="16"/></g>
+    <g transform="rotate(225 256 256)"><rect x="240" y="72" width="32" height="56" rx="16"/></g>
+    <g transform="rotate(270 256 256)"><rect x="240" y="72" width="32" height="56" rx="16"/></g>
+    <g transform="rotate(315 256 256)"><rect x="240" y="72" width="32" height="56" rx="16"/></g>
+  </g>
+
+  <circle cx="256" cy="256" r="112" fill="none" stroke="#ffffff" stroke-width="24" opacity="0.95"/>
+
+  <circle cx="210" cy="276" r="52" fill="none" stroke="#ffffff" stroke-width="32"/>
+  <path d="M338 214c-18.4-12.8-45.6-11.2-57.6 2.4-8.8 9.6-6.4 24 4 30.4 13.6 8 51.2 6.4 51.2 33.6 0 30.4-42.4 41.6-65.6 21.6"
+        fill="none" stroke="#a3e635" stroke-width="32" stroke-linecap="round" stroke-linejoin="round"/>
 </svg>
