@@ -5,7 +5,8 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
-import { Loader2, Gauge } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
+import LogoMark from '@/components/brand/LogoMark';
 
 export default function Login() {
   const [username, setUsername] = useState('');
@@ -29,7 +30,7 @@ export default function Login() {
       <Card className="w-full max-w-sm border-slate-800 bg-slate-950/50 text-slate-200">
         <CardHeader className="space-y-4 pt-8">
           <div className="flex flex-col items-center gap-1.5">
-            <Gauge className="h-16 w-16 text-white" strokeWidth={2.5} />
+            <LogoMark className="h-16 w-16 text-white" />
             <div className="flex flex-col items-center -mt-1">
               <h1 className="text-5xl font-black tracking-tighter leading-none flex items-baseline">
                 <span className="text-white italic">Oto</span>

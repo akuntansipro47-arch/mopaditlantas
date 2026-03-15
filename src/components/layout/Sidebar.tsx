@@ -23,9 +23,9 @@ import {
   LogOut,
   CreditCard,
   Building2,
-  Gauge, // Added Gauge for the new logo icon
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import LogoMark from '@/components/brand/LogoMark';
 
 const navigation = [
   { name: 'Dashboard', href: '/', icon: LayoutDashboard, key: 'dashboard' },
@@ -107,7 +107,7 @@ export function Sidebar() {
       <div className="flex h-24 items-center px-4 border-b border-slate-800/60 bg-slate-950/30">
         <div className="flex items-center gap-1.5 w-full">
           <div className="relative h-12 w-12 flex-shrink-0 flex items-center justify-center">
-             <Gauge className="h-12 w-12 text-white" strokeWidth={2.5} />
+             <LogoMark className="h-12 w-12 text-white" />
           </div>
           
           <div className="flex flex-col justify-center -mt-1">
