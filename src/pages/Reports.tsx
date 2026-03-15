@@ -109,8 +109,9 @@ export default function Reports() {
 
   useEffect(() => {
     const byTab = allowedCards.find(r => r.value === activeTab)?.category;
-    if (byTab && byTab !== activeCategory) setActiveCategory(byTab);
-  }, [activeTab, allowedCards, activeCategory]);
+    if (!byTab) return;
+    setActiveCategory((prev) => (prev === byTab ? prev : byTab));
+  }, [activeTab, allowedCards]);
 
   useEffect(() => {
     try {
