@@ -19,8 +19,7 @@ import VehicleEntryReport from './reports/VehicleEntryReport';
 import EstimationVsRealizationReport from './reports/EstimationVsRealizationReport';
 import BudgetMonitoringReport from './reports/BudgetMonitoringReport';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Card } from '@/components/ui/card';
-import { BarChart3, PieChart, FileText, Activity } from 'lucide-react';
+import { Activity } from 'lucide-react';
 
 import ItemHistoryReport from './reports/ItemHistoryReport';
 
@@ -85,92 +84,121 @@ export default function Reports() {
       </div>
       
       <Tabs defaultValue={defaultTab} className="w-full">
-        <TabsList className="w-full h-auto flex flex-wrap gap-2 bg-transparent p-0 mb-8 justify-start print:hidden">
-          {canAccess('report_po') && (
-            <TabsTrigger value="po" className="data-[state=active]:bg-indigo-600 data-[state=active]:text-white data-[state=active]:shadow-md border border-slate-200 bg-white px-4 py-2.5 rounded-lg transition-all hover:border-indigo-300">
-              Pembelian (PO)
-            </TabsTrigger>
-          )}
-          {canAccess('report_podetail') && (
-            <TabsTrigger value="podetail" className="data-[state=active]:bg-indigo-600 data-[state=active]:text-white data-[state=active]:shadow-md border border-slate-200 bg-white px-4 py-2.5 rounded-lg transition-all hover:border-indigo-300">
-              Rincian Pembelian
-            </TabsTrigger>
-          )}
-          {canAccess('report_receipt') && (
-            <TabsTrigger value="receipt" className="data-[state=active]:bg-indigo-600 data-[state=active]:text-white data-[state=active]:shadow-md border border-slate-200 bg-white px-4 py-2.5 rounded-lg transition-all hover:border-indigo-300">
-              Barang Masuk
-            </TabsTrigger>
-          )}
-          {canAccess('report_stock') && (
-            <TabsTrigger value="stock" className="data-[state=active]:bg-indigo-600 data-[state=active]:text-white data-[state=active]:shadow-md border border-slate-200 bg-white px-4 py-2.5 rounded-lg transition-all hover:border-indigo-300">
-              Stok Barang
-            </TabsTrigger>
-          )}
-          {canAccess('report_stock') && ( // Reusing stock permission for Inventory Value
-            <TabsTrigger value="inventory_value" className="data-[state=active]:bg-emerald-600 data-[state=active]:text-white data-[state=active]:shadow-md border border-slate-200 bg-white px-4 py-2.5 rounded-lg transition-all hover:border-emerald-300 font-medium">
-              Nilai Persediaan
-            </TabsTrigger>
-          )}
-          {canAccess('report_stock') && (
-            <TabsTrigger value="item_history" className="data-[state=active]:bg-indigo-600 data-[state=active]:text-white data-[state=active]:shadow-md border border-slate-200 bg-white px-4 py-2.5 rounded-lg transition-all hover:border-indigo-300">
-              History Barang
-            </TabsTrigger>
-          )}
-          {canAccess('report_issue') && (
-            <TabsTrigger value="issue" className="data-[state=active]:bg-indigo-600 data-[state=active]:text-white data-[state=active]:shadow-md border border-slate-200 bg-white px-4 py-2.5 rounded-lg transition-all hover:border-indigo-300">
-              Rekap Keluar
-            </TabsTrigger>
-          )}
-          {canAccess('report_issuedetail') && (
-            <TabsTrigger value="issuedetail" className="data-[state=active]:bg-indigo-600 data-[state=active]:text-white data-[state=active]:shadow-md border border-slate-200 bg-white px-4 py-2.5 rounded-lg transition-all hover:border-indigo-300">
-              Detail Barang Keluar
-            </TabsTrigger>
-          )}
-          {canAccess('report_wo') && (
-            <TabsTrigger value="wo" className="data-[state=active]:bg-indigo-600 data-[state=active]:text-white data-[state=active]:shadow-md border border-slate-200 bg-white px-4 py-2.5 rounded-lg transition-all hover:border-indigo-300">
-              Work Order
-            </TabsTrigger>
-          )}
-          {canAccess('report_wo') && (
-            <TabsTrigger value="wodetail" className="data-[state=active]:bg-indigo-600 data-[state=active]:text-white data-[state=active]:shadow-md border border-slate-200 bg-white px-4 py-2.5 rounded-lg transition-all hover:border-indigo-300">
-              Detail WO
-            </TabsTrigger>
-          )}
-          {canAccess('report_vehicle_entry') && (
-            <TabsTrigger value="vehicle_entry" className="data-[state=active]:bg-indigo-600 data-[state=active]:text-white data-[state=active]:shadow-md border border-slate-200 bg-white px-4 py-2.5 rounded-lg transition-all hover:border-indigo-300">
-              Unit Masuk
-            </TabsTrigger>
-          )}
-          {canAccess('report_profit') && (
-            <TabsTrigger value="profit" className="data-[state=active]:bg-indigo-600 data-[state=active]:text-white data-[state=active]:shadow-md border border-slate-200 bg-white px-4 py-2.5 rounded-lg transition-all hover:border-indigo-300">
-              Laba Kotor
-            </TabsTrigger>
-          )}
-          {canAccess('report_profit_loss') && (
-            <TabsTrigger value="profit_loss" className="data-[state=active]:bg-emerald-600 data-[state=active]:text-white data-[state=active]:shadow-md border border-slate-200 bg-white px-4 py-2.5 rounded-lg transition-all hover:border-emerald-300 font-medium">
-              Laba Rugi (Net)
-            </TabsTrigger>
-          )}
-          {canAccess('report_balance_sheet') && (
-            <TabsTrigger value="balance_sheet" className="data-[state=active]:bg-blue-600 data-[state=active]:text-white data-[state=active]:shadow-md border border-slate-200 bg-white px-4 py-2.5 rounded-lg transition-all hover:border-blue-300 font-medium">
-              Neraca (Balance Sheet)
-            </TabsTrigger>
-          )}
-          {canAccess('report_supplier_payable') && (
-            <TabsTrigger value="supplier_payable" className="data-[state=active]:bg-red-600 data-[state=active]:text-white data-[state=active]:shadow-md border border-slate-200 bg-white px-4 py-2.5 rounded-lg transition-all hover:border-red-300 font-medium">
-              Sisa Hutang Supplier
-            </TabsTrigger>
-          )}
-          {canAccess('report_estimation') && (
-            <TabsTrigger value="estimation" className="data-[state=active]:bg-orange-600 data-[state=active]:text-white data-[state=active]:shadow-md border border-slate-200 bg-white px-4 py-2.5 rounded-lg transition-all hover:border-orange-300 font-medium">
-              Estimasi vs Realisasi
-            </TabsTrigger>
-          )}
-          {canAccess('report_budget') && (
-            <TabsTrigger value="budget" className="data-[state=active]:bg-cyan-600 data-[state=active]:text-white data-[state=active]:shadow-md border border-slate-200 bg-white px-4 py-2.5 rounded-lg transition-all hover:border-cyan-300 font-medium">
-              Monitoring Pagu
-            </TabsTrigger>
-          )}
+        <TabsList className="w-full h-auto bg-transparent p-0 mb-8 justify-start print:hidden flex flex-col gap-6 items-stretch">
+          <div className="flex flex-col gap-2">
+            <div className="text-xs font-semibold uppercase tracking-wider text-slate-500">Keuangan</div>
+            <div className="flex flex-wrap gap-2">
+              {canAccess('report_profit_loss') && (
+                <TabsTrigger value="profit_loss" className="data-[state=active]:bg-emerald-600 data-[state=active]:text-white data-[state=active]:shadow-md border border-slate-200 bg-white px-4 py-2.5 rounded-lg transition-all hover:border-emerald-300 font-medium">
+                  Laba Rugi
+                </TabsTrigger>
+              )}
+              {canAccess('report_balance_sheet') && (
+                <TabsTrigger value="balance_sheet" className="data-[state=active]:bg-blue-600 data-[state=active]:text-white data-[state=active]:shadow-md border border-slate-200 bg-white px-4 py-2.5 rounded-lg transition-all hover:border-blue-300 font-medium">
+                  Neraca
+                </TabsTrigger>
+              )}
+              {canAccess('report_profit') && (
+                <TabsTrigger value="profit" className="data-[state=active]:bg-indigo-600 data-[state=active]:text-white data-[state=active]:shadow-md border border-slate-200 bg-white px-4 py-2.5 rounded-lg transition-all hover:border-indigo-300">
+                  Laba Kotor
+                </TabsTrigger>
+              )}
+              {canAccess('report_supplier_payable') && (
+                <TabsTrigger value="supplier_payable" className="data-[state=active]:bg-red-600 data-[state=active]:text-white data-[state=active]:shadow-md border border-slate-200 bg-white px-4 py-2.5 rounded-lg transition-all hover:border-red-300 font-medium">
+                  Hutang Supplier
+                </TabsTrigger>
+              )}
+            </div>
+          </div>
+
+          <div className="flex flex-col gap-2">
+            <div className="text-xs font-semibold uppercase tracking-wider text-slate-500">Persediaan</div>
+            <div className="flex flex-wrap gap-2">
+              {canAccess('report_stock') && (
+                <TabsTrigger value="stock" className="data-[state=active]:bg-indigo-600 data-[state=active]:text-white data-[state=active]:shadow-md border border-slate-200 bg-white px-4 py-2.5 rounded-lg transition-all hover:border-indigo-300">
+                  Stok Barang
+                </TabsTrigger>
+              )}
+              {canAccess('report_stock') && (
+                <TabsTrigger value="inventory_value" className="data-[state=active]:bg-emerald-600 data-[state=active]:text-white data-[state=active]:shadow-md border border-slate-200 bg-white px-4 py-2.5 rounded-lg transition-all hover:border-emerald-300 font-medium">
+                  Nilai Persediaan
+                </TabsTrigger>
+              )}
+              {canAccess('report_stock') && (
+                <TabsTrigger value="item_history" className="data-[state=active]:bg-indigo-600 data-[state=active]:text-white data-[state=active]:shadow-md border border-slate-200 bg-white px-4 py-2.5 rounded-lg transition-all hover:border-indigo-300">
+                  History Barang
+                </TabsTrigger>
+              )}
+            </div>
+          </div>
+
+          <div className="flex flex-col gap-2">
+            <div className="text-xs font-semibold uppercase tracking-wider text-slate-500">Pembelian</div>
+            <div className="flex flex-wrap gap-2">
+              {canAccess('report_po') && (
+                <TabsTrigger value="po" className="data-[state=active]:bg-indigo-600 data-[state=active]:text-white data-[state=active]:shadow-md border border-slate-200 bg-white px-4 py-2.5 rounded-lg transition-all hover:border-indigo-300">
+                  Pembelian (PO)
+                </TabsTrigger>
+              )}
+              {canAccess('report_podetail') && (
+                <TabsTrigger value="podetail" className="data-[state=active]:bg-indigo-600 data-[state=active]:text-white data-[state=active]:shadow-md border border-slate-200 bg-white px-4 py-2.5 rounded-lg transition-all hover:border-indigo-300">
+                  Rincian Pembelian
+                </TabsTrigger>
+              )}
+              {canAccess('report_receipt') && (
+                <TabsTrigger value="receipt" className="data-[state=active]:bg-indigo-600 data-[state=active]:text-white data-[state=active]:shadow-md border border-slate-200 bg-white px-4 py-2.5 rounded-lg transition-all hover:border-indigo-300">
+                  Barang Masuk
+                </TabsTrigger>
+              )}
+            </div>
+          </div>
+
+          <div className="flex flex-col gap-2">
+            <div className="text-xs font-semibold uppercase tracking-wider text-slate-500">Operasional</div>
+            <div className="flex flex-wrap gap-2">
+              {canAccess('report_wo') && (
+                <TabsTrigger value="wo" className="data-[state=active]:bg-indigo-600 data-[state=active]:text-white data-[state=active]:shadow-md border border-slate-200 bg-white px-4 py-2.5 rounded-lg transition-all hover:border-indigo-300">
+                  Work Order
+                </TabsTrigger>
+              )}
+              {canAccess('report_wo') && (
+                <TabsTrigger value="wodetail" className="data-[state=active]:bg-indigo-600 data-[state=active]:text-white data-[state=active]:shadow-md border border-slate-200 bg-white px-4 py-2.5 rounded-lg transition-all hover:border-indigo-300">
+                  Detail WO
+                </TabsTrigger>
+              )}
+              {canAccess('report_vehicle_entry') && (
+                <TabsTrigger value="vehicle_entry" className="data-[state=active]:bg-indigo-600 data-[state=active]:text-white data-[state=active]:shadow-md border border-slate-200 bg-white px-4 py-2.5 rounded-lg transition-all hover:border-indigo-300">
+                  Unit Masuk
+                </TabsTrigger>
+              )}
+              {canAccess('report_issue') && (
+                <TabsTrigger value="issue" className="data-[state=active]:bg-indigo-600 data-[state=active]:text-white data-[state=active]:shadow-md border border-slate-200 bg-white px-4 py-2.5 rounded-lg transition-all hover:border-indigo-300">
+                  Rekap Keluar
+                </TabsTrigger>
+              )}
+              {canAccess('report_issuedetail') && (
+                <TabsTrigger value="issuedetail" className="data-[state=active]:bg-indigo-600 data-[state=active]:text-white data-[state=active]:shadow-md border border-slate-200 bg-white px-4 py-2.5 rounded-lg transition-all hover:border-indigo-300">
+                  Detail Barang Keluar
+                </TabsTrigger>
+              )}
+            </div>
+          </div>
+
+          <div className="flex flex-col gap-2">
+            <div className="text-xs font-semibold uppercase tracking-wider text-slate-500">Anggaran</div>
+            <div className="flex flex-wrap gap-2">
+              {canAccess('report_budget') && (
+                <TabsTrigger value="budget" className="data-[state=active]:bg-cyan-600 data-[state=active]:text-white data-[state=active]:shadow-md border border-slate-200 bg-white px-4 py-2.5 rounded-lg transition-all hover:border-cyan-300 font-medium">
+                  Monitoring Pagu
+                </TabsTrigger>
+              )}
+              {canAccess('report_estimation') && (
+                <TabsTrigger value="estimation" className="data-[state=active]:bg-orange-600 data-[state=active]:text-white data-[state=active]:shadow-md border border-slate-200 bg-white px-4 py-2.5 rounded-lg transition-all hover:border-orange-300 font-medium">
+                  Estimasi vs Realisasi
+                </TabsTrigger>
+              )}
+            </div>
+          </div>
         </TabsList>
         
         <div className="mt-6 min-h-[500px]">

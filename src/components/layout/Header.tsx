@@ -1,11 +1,39 @@
-import { Bell, Search, User, Menu } from 'lucide-react';
+import { Bell, Search, User } from 'lucide-react';
+import { useLocation } from 'react-router-dom';
 
 export function Header() {
+  const { pathname } = useLocation();
+
+  const title =
+    pathname === '/' ? 'Dashboard' :
+    pathname.startsWith('/master/vehicles') ? 'Master Data • Kendaraan' :
+    pathname.startsWith('/master/goods') ? 'Master Data • Barang/Jasa' :
+    pathname.startsWith('/master/budget') ? 'Master Data • Anggaran' :
+    pathname.startsWith('/master/jobs') ? 'Master Data • Pekerjaan' :
+    pathname.startsWith('/master/suppliers') ? 'Master Data • Supplier' :
+    pathname.startsWith('/master/mechanics') ? 'Master Data • Mekanik' :
+    pathname.startsWith('/master/coa') ? 'Master Data • Chart of Accounts' :
+    pathname.startsWith('/transactions/entry') ? 'Transaksi • Entry Kendaraan' :
+    pathname.startsWith('/transactions/po-return') ? 'Transaksi • Retur Pembelian' :
+    pathname.startsWith('/transactions/po') ? 'Transaksi • Purchase Order' :
+    pathname.startsWith('/transactions/receive') ? 'Transaksi • Penerimaan Barang' :
+    pathname.startsWith('/transactions/issue') ? 'Transaksi • Barang Keluar' :
+    pathname.startsWith('/transactions/wo') ? 'Transaksi • Work Order' :
+    pathname.startsWith('/finance/payments') ? 'Keuangan • Pembayaran Hutang' :
+    pathname.startsWith('/finance/sales') ? 'Keuangan • Pembayaran Piutang' :
+    pathname.startsWith('/finance/cash-bank') ? 'Keuangan • Kas & Bank' :
+    pathname.startsWith('/finance/journal-entry') ? 'Keuangan • Jurnal Umum' :
+    pathname.startsWith('/finance/general-ledger') ? 'Keuangan • Buku Besar' :
+    pathname.startsWith('/hr/employees') ? 'Kepegawaian • Data Karyawan' :
+    pathname.startsWith('/reports') ? 'Laporan • Pusat Laporan' :
+    pathname.startsWith('/debug') ? 'Debug' :
+    'OtoSmart';
+
   return (
     <header className="flex h-16 w-full items-center justify-between border-b border-slate-200 bg-white/80 backdrop-blur-sm px-6 shadow-sm sticky top-0 z-30">
       <div className="flex items-center gap-4">
         {/* Mobile menu trigger could go here */}
-        <h2 className="text-lg font-semibold text-slate-800 tracking-tight">Dashboard Overview</h2>
+        <h2 className="text-lg font-semibold text-slate-800 tracking-tight">{title}</h2>
       </div>
       
       <div className="flex items-center space-x-4">
