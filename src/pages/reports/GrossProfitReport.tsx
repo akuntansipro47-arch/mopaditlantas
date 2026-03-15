@@ -196,27 +196,36 @@ export default function GrossProfitReport() {
         });
       });
 
-      // 3. Fetch Last Purchase Price for PARTS
+      // 3. Fetch Last Received Purchase Price for PARTS
       const partHppMap: Record<string, number> = {};
       let hasPoHistory = false;
 
       if (goodsIds.size > 0) {
         const { data: poItems } = await supabase
           .from('purchase_order_items')
-          .select('goods_id, unit_price, created_at')
+          .select(`
+            goods_id,
+            unit_price,
+            created_at,
+            purchase_orders!inner (status, po_date)
+          `)
           .in('goods_id', Array.from(goodsIds))
+          .in('purchase_orders.status', ['RECEIVED_PART', 'RECEIVED_FULL'])
+          .lte('purchase_orders.po_date', dateRange.end)
+          .order('po_date', { foreignTable: 'purchase_orders', ascending: false })
           .order('created_at', { ascending: false });
         
         if (poItems && poItems.length > 0) {
             hasPoHistory = true;
             poItems.forEach(item => {
                 if (item.goods_id && partHppMap[item.goods_id] === undefined) {
-                    partHppMap[item.goods_id] = item.unit_price;
+                    partHppMap[item.goods_id] = Number((item as any).unit_price) || 0;
                 }
             });
         }
       }
-      setMissingPoHistory(!hasPoHistory && goodsIds.size > 0);
+      const missingAnyPo = Array.from(goodsIds).some(id => partHppMap[id] === undefined);
+      setMissingPoHistory((!hasPoHistory && goodsIds.size > 0) || missingAnyPo);
 
       // 4. Fetch COGS (HPP) for JOBS from job_types table
       const jobHppMap: Record<string, number> = {};
@@ -275,7 +284,7 @@ export default function GrossProfitReport() {
             
             if (bill.item_type === 'PART' && bill.goods_id) {
                 hppSatuan = partHppMap[bill.goods_id] || 0;
-                hppSource = partHppMap[bill.goods_id] !== undefined ? 'PO Terakhir' : 'Tidak Ada PO';
+                hppSource = partHppMap[bill.goods_id] !== undefined ? 'PO Diterima Terakhir' : 'Tidak Ada PO';
             } else if (bill.item_type === 'JOB' && bill.job_type_id) {
                 hppSatuan = jobHppMap[bill.job_type_id] || 0;
                 hppSource = 'Master Jasa';

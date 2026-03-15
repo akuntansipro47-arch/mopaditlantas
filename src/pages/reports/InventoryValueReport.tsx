@@ -29,12 +29,18 @@ export default function InventoryValueReport() {
       
       if (goodsError) throw goodsError;
 
-      // 2. Fetch Latest PO Items for Pricing
-      // We need to find the latest price for each good. 
-      // Strategy: Fetch all PO items ordered by date desc, then process in JS (simpler for small-medium datasets)
+      // 2. Fetch Latest Received PO Items for Pricing
+      // Strategy: Ambil PO item dari PO yang sudah diterima (PART/FULL), lalu ambil harga terakhir per barang.
       const { data: poItems, error: poError } = await supabase
         .from('purchase_order_items')
-        .select('goods_id, unit_price, created_at')
+        .select(`
+          goods_id,
+          unit_price,
+          created_at,
+          purchase_orders!inner (status, po_date)
+        `)
+        .in('purchase_orders.status', ['RECEIVED_PART', 'RECEIVED_FULL'])
+        .order('po_date', { foreignTable: 'purchase_orders', ascending: false })
         .order('created_at', { ascending: false });
 
       if (poError) throw poError;
@@ -42,8 +48,9 @@ export default function InventoryValueReport() {
       // Create a map of goods_id -> latest_price
       const priceMap = new Map();
       poItems?.forEach(item => {
-        if (!priceMap.has(item.goods_id) && item.unit_price) {
-          priceMap.set(item.goods_id, item.unit_price);
+        const price = Number((item as any).unit_price) || 0;
+        if (!priceMap.has(item.goods_id) && price > 0) {
+          priceMap.set(item.goods_id, price);
         }
       });
 
@@ -56,7 +63,7 @@ export default function InventoryValueReport() {
           ...item,
           cost_price: costPrice,
           total_value: totalValue,
-          price_source: priceMap.has(item.id) ? 'Last PO' : 'N/A'
+          price_source: priceMap.has(item.id) ? 'PO Diterima Terakhir' : 'N/A'
         };
       });
 
