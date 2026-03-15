@@ -20,7 +20,7 @@ import EstimationVsRealizationReport from './reports/EstimationVsRealizationRepo
 import BudgetMonitoringReport from './reports/BudgetMonitoringReport';
 import { Tabs, TabsContent } from '@/components/ui/tabs';
 import { Input } from '@/components/ui/input';
-import { Activity } from 'lucide-react';
+import { Activity, ChevronDown, ChevronUp } from 'lucide-react';
 
 import ItemHistoryReport from './reports/ItemHistoryReport';
 
@@ -94,6 +94,14 @@ export default function Reports() {
   const [activeTab, setActiveTab] = useState(defaultTab);
   const [activeCategory, setActiveCategory] = useState(initialCategory);
   const [cardQuery, setCardQuery] = useState('');
+  const [panelOpen, setPanelOpen] = useState(() => {
+    try {
+      if (typeof window === 'undefined') return true;
+      return localStorage.getItem('reports_panel_open') !== '0';
+    } catch {
+      return true;
+    }
+  });
 
   useEffect(() => {
     setActiveTab(defaultTab);
@@ -104,12 +112,22 @@ export default function Reports() {
     if (byTab && byTab !== activeCategory) setActiveCategory(byTab);
   }, [activeTab, allowedCards, activeCategory]);
 
+  useEffect(() => {
+    try {
+      localStorage.setItem('reports_panel_open', panelOpen ? '1' : '0');
+    } catch {}
+  }, [panelOpen]);
+
   const visibleCards = useMemo(() => {
     const q = cardQuery.trim().toLowerCase();
     return allowedCards
       .filter(r => r.category === activeCategory)
       .filter(r => !q || r.label.toLowerCase().includes(q) || r.description.toLowerCase().includes(q));
   }, [allowedCards, activeCategory, cardQuery]);
+
+  const activeMeta = useMemo(() => {
+    return allowedCards.find(r => r.value === activeTab) || null;
+  }, [allowedCards, activeTab]);
 
   // If specific report type is requested (e.g. print view), render that instead
   if (reportType === 'po' && reportId) {
@@ -141,57 +159,80 @@ export default function Reports() {
       
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
         <div className="print:hidden rounded-xl border border-slate-200 bg-white overflow-hidden">
-          <div className="grid grid-cols-1 md:grid-cols-[220px_1fr]">
-            <div className="border-b md:border-b-0 md:border-r border-slate-200 bg-slate-50/50 p-3">
-              <div className="text-xs font-semibold uppercase tracking-wider text-slate-500 px-2 py-2">
-                Kategori
+          <div className="flex items-center justify-between gap-3 border-b border-slate-200 px-4 py-3">
+            <div className="min-w-0">
+              <div className="text-sm font-semibold text-slate-900 truncate">
+                {activeMeta ? activeMeta.label : 'Pusat Laporan'}
               </div>
-              <div className="flex md:flex-col gap-2 overflow-x-auto md:overflow-visible px-1 pb-2">
-                {categories.map((c) => (
-                  <button
-                    key={c}
-                    type="button"
-                    onClick={() => setActiveCategory(c)}
-                    className={`whitespace-nowrap md:whitespace-normal rounded-lg px-3 py-2 text-sm font-medium border transition-colors ${
-                      activeCategory === c
-                        ? 'bg-indigo-600 text-white border-indigo-600'
-                        : 'bg-white text-slate-700 border-slate-200 hover:border-indigo-300'
-                    }`}
-                  >
-                    {c}
-                  </button>
-                ))}
-              </div>
+              {activeMeta && (
+                <div className="text-xs text-slate-500 truncate">
+                  {activeMeta.category}
+                </div>
+              )}
             </div>
-            <div className="p-4">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
-                <div className="text-sm font-semibold text-slate-900">{activeCategory}</div>
-                <Input
-                  value={cardQuery}
-                  onChange={(e) => setCardQuery(e.target.value)}
-                  placeholder="Cari laporan..."
-                  className="h-9 sm:w-72"
-                />
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
-                {visibleCards.map((r) => (
-                  <button
-                    key={r.value}
-                    type="button"
-                    onClick={() => setActiveTab(r.value)}
-                    className={`text-left rounded-xl border p-4 transition-all ${
-                      activeTab === r.value
-                        ? 'border-indigo-300 bg-indigo-50 shadow-sm'
-                        : 'border-slate-200 bg-white hover:border-indigo-200 hover:shadow-sm'
-                    }`}
-                  >
-                    <div className="font-semibold text-slate-900">{r.label}</div>
-                    <div className="text-xs text-slate-500 mt-1 overflow-hidden text-ellipsis">{r.description}</div>
-                  </button>
-                ))}
-              </div>
-            </div>
+            <button
+              type="button"
+              onClick={() => setPanelOpen(v => !v)}
+              className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:border-indigo-200 hover:shadow-sm transition-all whitespace-nowrap"
+            >
+              {panelOpen ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+              {panelOpen ? 'Sembunyikan Panel' : 'Pilih Laporan'}
+            </button>
           </div>
+
+          {panelOpen && (
+            <div className="grid grid-cols-1 md:grid-cols-[220px_1fr]">
+              <div className="border-b md:border-b-0 md:border-r border-slate-200 bg-slate-50/50 p-3">
+                <div className="text-xs font-semibold uppercase tracking-wider text-slate-500 px-2 py-2">
+                  Kategori
+                </div>
+                <div className="flex md:flex-col gap-2 overflow-x-auto md:overflow-visible px-1 pb-2">
+                  {categories.map((c) => (
+                    <button
+                      key={c}
+                      type="button"
+                      onClick={() => setActiveCategory(c)}
+                      className={`whitespace-nowrap md:whitespace-normal rounded-lg px-3 py-2 text-sm font-medium border transition-colors ${
+                        activeCategory === c
+                          ? 'bg-indigo-600 text-white border-indigo-600'
+                          : 'bg-white text-slate-700 border-slate-200 hover:border-indigo-300'
+                      }`}
+                    >
+                      {c}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="p-4">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+                  <div className="text-sm font-semibold text-slate-900">{activeCategory}</div>
+                  <Input
+                    value={cardQuery}
+                    onChange={(e) => setCardQuery(e.target.value)}
+                    placeholder="Cari laporan..."
+                    className="h-9 sm:w-72"
+                  />
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
+                  {visibleCards.map((r) => (
+                    <button
+                      key={r.value}
+                      type="button"
+                      onClick={() => { setActiveTab(r.value); setPanelOpen(false); }}
+                      className={`text-left rounded-xl border p-4 transition-all ${
+                        activeTab === r.value
+                          ? 'border-indigo-300 bg-indigo-50 shadow-sm'
+                          : 'border-slate-200 bg-white hover:border-indigo-200 hover:shadow-sm'
+                      }`}
+                    >
+                      <div className="font-semibold text-slate-900">{r.label}</div>
+                      <div className="text-xs text-slate-500 mt-1 overflow-hidden text-ellipsis">{r.description}</div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
         </div>
         
         <div className="mt-6 min-h-[500px]">
