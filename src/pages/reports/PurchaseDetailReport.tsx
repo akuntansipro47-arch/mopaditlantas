@@ -48,6 +48,7 @@ export default function PurchaseDetailReport() {
             po_number,
             po_date,
             status,
+            work_order_id,
             suppliers (name, id)
           )
         `)
@@ -80,6 +81,45 @@ export default function PurchaseDetailReport() {
         return poDate >= dateRange.start && poDate <= dateRange.end;
       });
 
+      const woIds = Array.from(
+        new Set(
+          items
+            .map((item: any) => item.purchase_orders?.work_order_id)
+            .filter(Boolean)
+        )
+      );
+
+      if (woIds.length > 0) {
+        const { data: woData, error: woErr } = await supabase
+          .from('work_orders')
+          .select(`
+            id,
+            wo_number,
+            vehicle_entries (
+              id,
+              license_plate,
+              vehicles (brand_type, vehicle_type)
+            )
+          `)
+          .in('id', woIds);
+
+        if (woErr) throw woErr;
+
+        const woMap = new Map((woData || []).map((w: any) => [w.id, w]));
+        items = items.map((item: any) => ({
+          ...item,
+          purchase_orders: {
+            ...item.purchase_orders,
+            work_orders: item.purchase_orders?.work_order_id ? (woMap.get(item.purchase_orders.work_order_id) || null) : null
+          }
+        }));
+      } else {
+        items = items.map((item: any) => ({
+          ...item,
+          purchase_orders: { ...item.purchase_orders, work_orders: null }
+        }));
+      }
+
       setData(items);
     } catch (error) {
       console.error('Error fetching Purchase Details:', error);
@@ -101,6 +141,10 @@ export default function PurchaseDetailReport() {
       'No. PO': item.purchase_orders?.po_number,
       'Tanggal': formatDate(item.purchase_orders?.po_date),
       'Supplier': item.purchase_orders?.suppliers?.name,
+      'No. WO': item.purchase_orders?.work_orders?.wo_number || '',
+      'Nopol / Kendaraan': item.purchase_orders?.work_orders?.vehicle_entries?.vehicles
+        ? `${item.purchase_orders?.work_orders?.vehicle_entries?.license_plate || ''} - ${item.purchase_orders?.work_orders?.vehicle_entries?.vehicles?.brand_type || ''}`.trim()
+        : '',
       'Kode Barang': item.goods?.item_code,
       'Nama Barang': item.goods?.name,
       'Qty': item.quantity,
@@ -169,6 +213,8 @@ export default function PurchaseDetailReport() {
                 <TableHead>Tanggal</TableHead>
                 <TableHead>No. PO</TableHead>
                 <TableHead>Supplier</TableHead>
+                <TableHead>No. WO</TableHead>
+                <TableHead>Nopol / Kendaraan</TableHead>
                 <TableHead>Nama Barang</TableHead>
                 <TableHead className="text-center">Qty</TableHead>
                 <TableHead className="text-right">Harga Satuan</TableHead>
@@ -177,13 +223,21 @@ export default function PurchaseDetailReport() {
             </TableHeader>
             <TableBody>
               {filteredData.length === 0 ? (
-                <TableRow><TableCell colSpan={7} className="text-center py-8">Tidak ada data.</TableCell></TableRow>
+                <TableRow><TableCell colSpan={9} className="text-center py-8">Tidak ada data.</TableCell></TableRow>
               ) : (
                 filteredData.map((item, idx) => (
                   <TableRow key={idx}>
                     <TableCell>{formatDate(item.purchase_orders?.po_date)}</TableCell>
                     <TableCell className="font-medium">{item.purchase_orders?.po_number}</TableCell>
                     <TableCell>{item.purchase_orders?.suppliers?.name}</TableCell>
+                    <TableCell className="font-medium text-indigo-700">
+                      {item.purchase_orders?.work_orders?.wo_number || '-'}
+                    </TableCell>
+                    <TableCell>
+                      {item.purchase_orders?.work_orders?.vehicle_entries?.vehicles
+                        ? `${item.purchase_orders?.work_orders?.vehicle_entries?.license_plate || '-'} - ${item.purchase_orders?.work_orders?.vehicle_entries?.vehicles?.brand_type || '-'}`
+                        : '-'}
+                    </TableCell>
                     <TableCell>
                       <div className="font-medium">{item.goods?.name}</div>
                       <div className="text-xs text-gray-500">{item.goods?.item_code}</div>

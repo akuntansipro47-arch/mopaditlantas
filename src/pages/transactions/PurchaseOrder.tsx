@@ -88,29 +88,47 @@ export default function PurchaseOrder() {
   async function fetchPOs() {
     setLoading(true);
     try {
-      const { data, error } = await supabase
+      const { data: poData, error } = await supabase
         .from('purchase_orders')
         .select(`
           *,
-          suppliers (*),
-          work_orders (
+          suppliers (*)
+        `)
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+
+      let allPOs = (poData as any) || [];
+      const woIds = allPOs
+        .filter((p: any) => p.work_order_id)
+        .map((p: any) => p.work_order_id);
+
+      if (woIds.length > 0) {
+        const { data: woData, error: woErr } = await supabase
+          .from('work_orders')
+          .select(`
             id,
             wo_number,
             vehicle_entries (
               id,
               license_plate,
-              vehicles (
-                brand_type,
-                vehicle_type
-              )
+              vehicles (brand_type, vehicle_type)
             )
-          )
-        `)
-        .order('created_at', { ascending: false });
+          `)
+          .in('id', woIds);
 
-      if (error) throw error;
-      console.log('Fetched POs:', data);
-      setPos(data as any || []);
+        if (woErr) throw woErr;
+
+        const woMap = new Map((woData || []).map((w: any) => [w.id, w]));
+        allPOs = allPOs.map((p: any) => ({
+          ...p,
+          work_orders: p.work_order_id ? (woMap.get(p.work_order_id) || null) : null,
+        }));
+      } else {
+        allPOs = allPOs.map((p: any) => ({ ...p, work_orders: null }));
+      }
+
+      setPos(allPOs);
     } catch (error: any) {
       toast.error('Gagal mengambil data PO: ' + error.message);
     } finally {
@@ -556,7 +574,9 @@ export default function PurchaseOrder() {
                   <TableHead>No. PO</TableHead>
                   <TableHead>Tanggal PO</TableHead>
                   <TableHead>Supplier</TableHead>
-                  <TableHead>Tipe / Detail Project</TableHead>
+                  <TableHead>Tipe</TableHead>
+                  <TableHead>No. WO</TableHead>
+                  <TableHead>Nopol / Kendaraan</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Total Amount</TableHead>
                   <TableHead className="text-right">Aksi</TableHead>
@@ -564,7 +584,7 @@ export default function PurchaseOrder() {
               </TableHeader>
               <TableBody>
                 {pos.length === 0 ? (
-                  <TableRow><TableCell colSpan={7} className="text-center h-24">Tidak ada data PO.</TableCell></TableRow>
+                  <TableRow><TableCell colSpan={9} className="text-center h-24">Tidak ada data PO.</TableCell></TableRow>
                 ) : (
                   pos.map((item) => (
                     <TableRow key={item.id}>
@@ -572,28 +592,23 @@ export default function PurchaseOrder() {
                       <TableCell>{formatDate(item.po_date || item.created_at)}</TableCell>
                       <TableCell>{item.suppliers?.name || '-'}</TableCell>
                       <TableCell>
-                        <div className="flex flex-col">
-                          <span className={`px-2 py-1 rounded-full text-xs font-semibold w-fit ${
-                            item.work_order_id ? 'bg-indigo-100 text-indigo-800' : 'bg-gray-100 text-gray-800'
-                          }`}>
-                            {item.work_order_id ? 'Project (WO)' : 'Stok Gudang'}
+                        <span className={`px-2 py-1 rounded-full text-xs font-semibold w-fit ${
+                          item.work_order_id ? 'bg-indigo-100 text-indigo-800' : 'bg-gray-100 text-gray-800'
+                        }`}>
+                          {item.work_order_id ? 'Project (WO)' : 'Stok Gudang'}
+                        </span>
+                      </TableCell>
+                      <TableCell>
+                        {item.work_order_id && item.work_orders ? (
+                          <span className="font-semibold text-indigo-600">{(item.work_orders as any).wo_number}</span>
+                        ) : '-'}
+                      </TableCell>
+                      <TableCell>
+                        {item.work_order_id && item.work_orders && (item.work_orders as any).vehicle_entries?.vehicles ? (
+                          <span className="text-sm text-gray-700">
+                            {(item.work_orders as any).vehicle_entries.license_plate} - {(item.work_orders as any).vehicle_entries.vehicles.brand_type}
                           </span>
-                          
-                          {item.work_order_id && !item.work_orders && (
-                            <span className="text-[10px] text-red-500 italic mt-1">(Data WO tidak ditemukan)</span>
-                          )}
-                          
-                          {item.work_order_id && item.work_orders && (
-                            <div className="mt-1 text-xs text-gray-600 flex flex-col">
-                              <span className="font-semibold text-indigo-600">{(item.work_orders as any).wo_number}</span>
-                              {(item.work_orders as any).vehicle_entries?.vehicles && (
-                                <span>
-                                  {(item.work_orders as any).vehicle_entries.license_plate} - {(item.work_orders as any).vehicle_entries.vehicles.brand_type}
-                                </span>
-                              )}
-                            </div>
-                          )}
-                        </div>
+                        ) : '-'}
                       </TableCell>
                       <TableCell>
                         <span className={`px-2 py-1 rounded-full text-xs font-semibold ${

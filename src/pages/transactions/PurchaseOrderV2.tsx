@@ -799,7 +799,9 @@ export default function PurchaseOrderV2() {
                   <TableHead>No. PO</TableHead>
                   <TableHead>Tanggal PO</TableHead>
                   <TableHead>Supplier</TableHead>
-                  <TableHead>Tipe / Detail Project</TableHead>
+                  <TableHead>Tipe</TableHead>
+                  <TableHead>No. WO</TableHead>
+                  <TableHead>Nopol / Kendaraan</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Total Amount</TableHead>
                   <TableHead className="text-right">Aksi</TableHead>
@@ -807,7 +809,7 @@ export default function PurchaseOrderV2() {
               </TableHeader>
               <TableBody>
                 {filteredPOs.length === 0 ? (
-                  <TableRow><TableCell colSpan={7} className="text-center h-24">Tidak ada data PO.</TableCell></TableRow>
+                  <TableRow><TableCell colSpan={9} className="text-center h-24">Tidak ada data PO.</TableCell></TableRow>
                 ) : (
                   filteredPOs.map((item) => (
                     <TableRow key={item.id}>
@@ -820,17 +822,18 @@ export default function PurchaseOrderV2() {
                         }`}>
                           {item.work_order_id ? 'Project (WO)' : 'Stok Gudang'}
                         </span>
-                        
-                        {item.work_order_id && item.work_orders && (
-                            <div className="mt-1 text-xs text-gray-600 flex flex-col">
-                              <span className="font-semibold text-indigo-600">{(item.work_orders as any).wo_number}</span>
-                              {(item.work_orders as any).vehicle_entries?.vehicles && (
-                                <span>
-                                  {(item.work_orders as any).vehicle_entries.license_plate} - {(item.work_orders as any).vehicle_entries.vehicles.brand_type}
-                                </span>
-                              )}
-                            </div>
-                          )}
+                      </TableCell>
+                      <TableCell>
+                        {item.work_order_id && item.work_orders ? (
+                          <span className="font-semibold text-indigo-600">{(item.work_orders as any).wo_number}</span>
+                        ) : '-'}
+                      </TableCell>
+                      <TableCell>
+                        {item.work_order_id && item.work_orders && (item.work_orders as any).vehicle_entries?.vehicles ? (
+                          <span className="text-sm text-gray-700">
+                            {(item.work_orders as any).vehicle_entries.license_plate} - {(item.work_orders as any).vehicle_entries.vehicles.brand_type}
+                          </span>
+                        ) : '-'}
                       </TableCell>
                       <TableCell>
                         <span className={`px-2 py-1 rounded-full text-xs font-semibold ${

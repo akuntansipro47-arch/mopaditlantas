@@ -34,6 +34,7 @@ export default function Reports() {
   const canAccess = (reportKey: string) => {
     if (!user) return false;
     if (user.role === 'SUPER_ADMIN') return true;
+    if (user.allowed_menus?.includes('reports')) return true;
     return user.allowed_menus?.includes(reportKey) || false;
   };
 
