@@ -8,6 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Download, Calendar, Search } from 'lucide-react';
 import { formatCurrency, formatDate } from '@/lib/utils';
 import * as XLSX from 'xlsx';
+import { toast } from 'sonner';
 
 export default function PurchaseDetailReport() {
   const [data, setData] = useState<any[]>([]);
@@ -36,51 +37,78 @@ export default function PurchaseDetailReport() {
   async function fetchData() {
     setLoading(true);
     try {
-      // Fetch POs that are RECEIVED (Full or Part) to get the purchased items
-      let query = supabase
+      const statusFilter = ['ISSUED', 'RECEIVED_FULL', 'RECEIVED_PART'];
+
+      const { data: posWithDate, error: posWithDateErr } = await supabase
+        .from('purchase_orders')
+        .select(`
+          id,
+          po_number,
+          po_date,
+          created_at,
+          status,
+          supplier_id,
+          work_order_id,
+          suppliers (name, id)
+        `)
+        .in('status', statusFilter)
+        .order('created_at', { ascending: false });
+
+      const { data: posNoDate, error: posNoDateErr } = posWithDateErr
+        ? await supabase
+            .from('purchase_orders')
+            .select(`
+              id,
+              po_number,
+              created_at,
+              status,
+              supplier_id,
+              work_order_id,
+              suppliers (name, id)
+            `)
+            .in('status', statusFilter)
+            .order('created_at', { ascending: false })
+        : { data: null, error: null };
+
+      if (posWithDateErr && posNoDateErr) throw posNoDateErr;
+
+      let purchaseOrders: any[] = (posWithDateErr ? posNoDate : posWithDate) || [];
+
+      purchaseOrders = purchaseOrders.filter((po: any) => {
+        const rawDate = po.po_date || (po.created_at ? String(po.created_at).slice(0, 10) : '');
+        if (!rawDate) return false;
+        if (rawDate < dateRange.start || rawDate > dateRange.end) return false;
+        if (supplierFilter !== 'ALL' && po.suppliers?.id !== supplierFilter) return false;
+        return true;
+      });
+
+      const poMap = new Map(purchaseOrders.map((po: any) => [po.id, po]));
+      const poIds = Array.from(poMap.keys());
+
+      if (poIds.length === 0) {
+        setData([]);
+        return;
+      }
+
+      const { data: itemsRaw, error: itemsErr } = await supabase
         .from('purchase_order_items')
         .select(`
+          po_id,
           quantity,
           unit_price,
           total_price,
-          goods (name, item_code, unit),
-          purchase_orders (
-            po_number,
-            po_date,
-            status,
-            work_order_id,
-            suppliers (name, id)
-          )
+          goods (name, item_code, unit)
         `)
-        // Filter by PO Date via the relationship
-        // Note: filtering nested relations in Supabase can be tricky. 
-        // We often have to filter on the parent. 
-        // But here we start from items.
-        // Let's try filtering on the join.
-        .gte('purchase_orders.po_date', dateRange.start)
-        .lte('purchase_orders.po_date', dateRange.end)
-        .in('purchase_orders.status', ['RECEIVED_FULL', 'RECEIVED_PART']);
+        .in('po_id', poIds);
 
-      const { data: result, error } = await query;
-      
-      if (error) throw error;
+      if (itemsErr) throw itemsErr;
 
-      // Client-side filtering for supplier since deep filtering is complex
-      let items = result || [];
-      
-      // Filter out null purchase_orders (if inner join failed)
+      let items = (itemsRaw || []).map((item: any) => ({
+        ...item,
+        purchase_orders: poMap.get(item.po_id) || null,
+      }));
+
       items = items.filter((item: any) => item.purchase_orders);
-
-      if (supplierFilter !== 'ALL') {
-        items = items.filter((item: any) => item.purchase_orders.suppliers?.id === supplierFilter);
-      }
-      
-      // Filter by date range (double check as Supabase nested filter might not apply strict INNER JOIN logic depending on setup)
-      items = items.filter((item: any) => {
-        const poDate = item.purchase_orders?.po_date;
-        if (!poDate) return false;
-        return poDate >= dateRange.start && poDate <= dateRange.end;
-      });
 
       const woIds = Array.from(
         new Set(
@@ -124,6 +152,8 @@ export default function PurchaseDetailReport() {
       setData(items);
     } catch (error) {
       console.error('Error fetching Purchase Details:', error);
+      toast.error('Gagal memuat laporan rincian pembelian.');
+      setData([]);
     } finally {
       setLoading(false);
     }
