@@ -66,6 +66,14 @@ export default function Dashboard() {
     fetchDashboardData();
   }, []);
 
+  const classifyVehicleType = (vehicleType: string) => {
+    const vt = String(vehicleType || '').toUpperCase();
+    if (vt.includes('R2_KECIL') || vt.includes('R2 KECIL') || vt.includes('KECIL')) return 'R2 Kecil';
+    if (vt === 'R4' || vt.includes('R4') || vt.includes('MOBIL')) return 'R4';
+    if (vt === 'R2' || vt.includes('R2') || vt.includes('MOTOR')) return 'R2';
+    return 'Lainnya';
+  };
+
   async function fetchDashboardData() {
     setLoading(true);
     
@@ -99,10 +107,10 @@ export default function Dashboard() {
       // Initialize array for all months
       const monthlyData = months.map(m => ({
           name: m,
-          unitMasuk: 0,
-          unitBelumWO: 0,
-          unitWoProses: 0,
-          unitWoClose: 0
+          unitMasuk: { total: 0, r4: 0, r2: 0, r2kecil: 0 },
+          unitBelumWO: { total: 0, r4: 0, r2: 0, r2kecil: 0 },
+          unitWoProses: { total: 0, r4: 0, r2: 0, r2kecil: 0 },
+          unitWoClose: { total: 0, r4: 0, r2: 0, r2kecil: 0 },
       }));
 
       // --- 1. KPI COUNTS & Monthly Stats (Parallel) ---
@@ -118,6 +126,7 @@ export default function Dashboard() {
             .select(`
                 entry_date, 
                 status,
+                vehicles (vehicle_type),
                 work_orders (
                     id,
                     status
@@ -138,27 +147,39 @@ export default function Dashboard() {
               const monthIdx = date.getMonth(); // 0-11
               
               if (monthIdx >= 0 && monthIdx < 12) {
-                  monthlyData[monthIdx].unitMasuk++;
+                  const typeKey = classifyVehicleType(e.vehicles?.vehicle_type);
+                  const slot =
+                    typeKey === 'R4' ? 'r4' :
+                    typeKey === 'R2' ? 'r2' :
+                    typeKey === 'R2 Kecil' ? 'r2kecil' :
+                    null;
+
+                  monthlyData[monthIdx].unitMasuk.total++;
+                  if (slot) monthlyData[monthIdx].unitMasuk[slot]++;
                   
                   const wo = (e.work_orders as any) && (e.work_orders as any).length > 0 ? (e.work_orders as any)[0] : null;
 
                   if (!wo) {
                       // No WO linked yet
                       if (e.status === 'OPEN') {
-                          monthlyData[monthIdx].unitBelumWO++;
+                          monthlyData[monthIdx].unitBelumWO.total++;
+                          if (slot) monthlyData[monthIdx].unitBelumWO[slot]++;
                       } else {
                           // Status is PROCESSED/CLOSED but no WO found? 
                           // Treat as Process to balance the math, or maybe it's a ghost entry.
                           // Let's assume it's in process if it's not OPEN.
-                          monthlyData[monthIdx].unitWoProses++;
+                          monthlyData[monthIdx].unitWoProses.total++;
+                          if (slot) monthlyData[monthIdx].unitWoProses[slot]++;
                       }
                   } else {
                       // WO Exists
                       if (wo.status === 'COMPLETED' || wo.status === 'CLOSED') {
-                          monthlyData[monthIdx].unitWoClose++;
+                          monthlyData[monthIdx].unitWoClose.total++;
+                          if (slot) monthlyData[monthIdx].unitWoClose[slot]++;
                       } else {
                           // WO is OPEN or IN_PROGRESS
-                          monthlyData[monthIdx].unitWoProses++;
+                          monthlyData[monthIdx].unitWoProses.total++;
+                          if (slot) monthlyData[monthIdx].unitWoProses[slot]++;
                       }
                   }
               }
@@ -505,10 +526,18 @@ export default function Dashboard() {
                 {monthlyStats.map((row) => (
                   <TableRow key={row.name}>
                     <TableCell className="font-medium">{row.name}</TableCell>
-                    <TableCell className="text-center">{row.unitMasuk > 0 ? row.unitMasuk : '-'}</TableCell>
-                    <TableCell className="text-center font-semibold text-orange-600 bg-orange-50/50">{row.unitBelumWO > 0 ? row.unitBelumWO : '-'}</TableCell>
-                    <TableCell className="text-center font-semibold text-blue-600 bg-blue-50/50">{row.unitWoProses > 0 ? row.unitWoProses : '-'}</TableCell>
-                    <TableCell className="text-center font-semibold text-green-600 bg-green-50/50">{row.unitWoClose > 0 ? row.unitWoClose : '-'}</TableCell>
+                    <TableCell className="text-center">
+                      <MonthlyTypeBreakdown value={row.unitMasuk} />
+                    </TableCell>
+                    <TableCell className="text-center font-semibold text-orange-600 bg-orange-50/50">
+                      <MonthlyTypeBreakdown value={row.unitBelumWO} />
+                    </TableCell>
+                    <TableCell className="text-center font-semibold text-blue-600 bg-blue-50/50">
+                      <MonthlyTypeBreakdown value={row.unitWoProses} />
+                    </TableCell>
+                    <TableCell className="text-center font-semibold text-green-600 bg-green-50/50">
+                      <MonthlyTypeBreakdown value={row.unitWoClose} />
+                    </TableCell>
                   </TableRow>
                 ))}
               </TableBody>
@@ -578,6 +607,20 @@ function KpiCard({ title, value, icon: Icon, trend, trendColor, iconColor, bgCol
         <p className={`text-xs mt-1 ${trendColor}`}>{trend}</p>
       </CardContent>
     </Card>
+  );
+}
+
+function MonthlyTypeBreakdown({ value }: { value: { total: number; r4: number; r2: number; r2kecil: number } }) {
+  if (!value || value.total <= 0) return <span className="text-slate-400 font-medium">-</span>;
+  return (
+    <div className="flex flex-col items-center leading-tight">
+      <div className="text-sm font-bold text-slate-900">{value.total}</div>
+      <div className="mt-1 flex flex-wrap justify-center gap-1 text-[10px] font-medium text-slate-600">
+        <span className="rounded bg-white/60 px-1.5 py-0.5 border border-slate-200">R4 {value.r4}</span>
+        <span className="rounded bg-white/60 px-1.5 py-0.5 border border-slate-200">R2 {value.r2}</span>
+        <span className="rounded bg-white/60 px-1.5 py-0.5 border border-slate-200">R2K {value.r2kecil}</span>
+      </div>
+    </div>
   );
 }
 
