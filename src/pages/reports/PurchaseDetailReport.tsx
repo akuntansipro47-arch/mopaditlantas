@@ -151,8 +151,14 @@ export default function PurchaseDetailReport() {
 
       setData(items);
     } catch (error) {
+      const msg =
+        (error as any)?.message
+          ? String((error as any).message)
+          : (error as any)?.error_description
+            ? String((error as any).error_description)
+            : 'Terjadi kesalahan.';
       console.error('Error fetching Purchase Details:', error);
-      toast.error('Gagal memuat laporan rincian pembelian.');
+      toast.error(`Gagal memuat laporan rincian pembelian: ${msg}`);
       setData([]);
     } finally {
       setLoading(false);
