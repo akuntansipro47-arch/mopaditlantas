@@ -9,6 +9,7 @@ import { formatCurrency, formatDate } from '@/lib/utils';
 import * as XLSX from 'xlsx';
 
 import { Badge } from '@/components/ui/badge';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 export default function EstimationVsRealizationReport() {
   const [data, setData] = useState<any[]>([]);
@@ -18,6 +19,7 @@ export default function EstimationVsRealizationReport() {
     startDate: new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0],
     endDate: new Date().toISOString().split('T')[0]
   });
+  const [vehicleTypeFilter, setVehicleTypeFilter] = useState('ALL');
 
   useEffect(() => {
     fetchData();
@@ -49,7 +51,7 @@ export default function EstimationVsRealizationReport() {
             qty,
             estimated_price
           ),
-          vehicles (license_plate, brand_type)
+          vehicles (license_plate, brand_type, vehicle_type)
         `)
         .gte('entry_date', dateFilter.startDate)
         .lte('entry_date', dateFilter.endDate)
@@ -100,6 +102,7 @@ export default function EstimationVsRealizationReport() {
             status: woInfo ? woInfo.status : entry.status, // Fallback to Entry Status if no WO
             license_plate: entry.vehicles?.license_plate || '-',
             brand: entry.vehicles?.brand_type || '-',
+            vehicle_type: entry.vehicles?.vehicle_type || '-',
             nota_dinas: entry.nota_dinas_number || '-',
             
             est_job: estJob,
@@ -129,13 +132,27 @@ export default function EstimationVsRealizationReport() {
     item.nota_dinas.toLowerCase().includes(search.toLowerCase())
   );
 
+  const filteredByType = vehicleTypeFilter === 'ALL'
+    ? filteredData
+    : filteredData.filter((item: any) => {
+        const vt = String(item.vehicle_type || '').toUpperCase();
+        if (vehicleTypeFilter === 'R2_KECIL') {
+          return vt.includes('R2_KECIL') || vt.includes('R2 KECIL') || vt.includes('KECIL');
+        }
+        if (vehicleTypeFilter === 'R4') {
+          return vt === 'R4' || vt.includes('R4') || vt.includes('MOBIL');
+        }
+        return vt === 'R2' || vt.includes('R2') || vt.includes('MOTOR');
+      });
+
   const exportToExcel = () => {
-    const exportData = filteredData.map((item, index) => ({
+    const exportData = filteredByType.map((item, index) => ({
       'No': index + 1,
       'Tanggal': formatDate(item.date),
       'No. WO': item.wo_number,
       'Status': item.status,
       'Nopol': item.license_plate,
+      'Jenis': item.vehicle_type,
       'Nota Dinas': item.nota_dinas,
       'Est. Jasa': item.est_job,
       'Est. Part': item.est_part,
@@ -153,11 +170,22 @@ export default function EstimationVsRealizationReport() {
     XLSX.writeFile(wb, `Laporan_Estimasi_Vs_Realisasi_${dateFilter.startDate}_${dateFilter.endDate}.xlsx`);
   };
 
-  const grandTotal = filteredData.reduce((acc, curr) => ({
+  const grandTotal = filteredByType.reduce((acc, curr) => ({
       est: acc.est + curr.total_est,
       real: acc.real + curr.total_real,
       var: acc.var + curr.variance
   }), { est: 0, real: 0, var: 0 });
+
+  const summaryByType = filteredData.reduce((acc: any, item: any) => {
+    const vt = String(item.vehicle_type || '').toUpperCase();
+    const key =
+      vt.includes('R2_KECIL') || vt.includes('R2 KECIL') || vt.includes('KECIL') ? 'R2 Kecil' :
+      vt === 'R4' || vt.includes('R4') || vt.includes('MOBIL') ? 'R4' :
+      vt === 'R2' || vt.includes('R2') || vt.includes('MOTOR') ? 'R2' :
+      'Lainnya';
+    acc[key] = (acc[key] || 0) + 1;
+    return acc;
+  }, {});
 
   return (
     <div className="space-y-6">
@@ -195,6 +223,20 @@ export default function EstimationVsRealizationReport() {
                         className="w-auto"
                     />
                 </div>
+                <div className="flex items-center gap-2">
+                    <span className="text-sm font-medium">Jenis:</span>
+                    <Select value={vehicleTypeFilter} onValueChange={setVehicleTypeFilter}>
+                        <SelectTrigger className="w-[140px] bg-white h-9">
+                            <SelectValue placeholder="Semua Jenis" />
+                        </SelectTrigger>
+                        <SelectContent>
+                            <SelectItem value="ALL">Semua</SelectItem>
+                            <SelectItem value="R4">R4</SelectItem>
+                            <SelectItem value="R2">R2</SelectItem>
+                            <SelectItem value="R2_KECIL">R2 Kecil</SelectItem>
+                        </SelectContent>
+                    </Select>
+                </div>
                 <div className="relative w-64">
                     <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
                     <Input 
@@ -204,6 +246,11 @@ export default function EstimationVsRealizationReport() {
                         onChange={(e) => setSearch(e.target.value)}
                     />
                 </div>
+            </div>
+            <div className="mt-3 flex flex-wrap gap-2 text-xs">
+              <div className="rounded-full bg-slate-100 px-3 py-1 text-slate-700">R4: {summaryByType['R4'] || 0}</div>
+              <div className="rounded-full bg-slate-100 px-3 py-1 text-slate-700">R2: {summaryByType['R2'] || 0}</div>
+              <div className="rounded-full bg-slate-100 px-3 py-1 text-slate-700">R2 Kecil: {summaryByType['R2 Kecil'] || 0}</div>
             </div>
         </CardHeader>
         <CardContent>
@@ -216,6 +263,7 @@ export default function EstimationVsRealizationReport() {
                                 <TableHead className="font-semibold text-slate-700">Tanggal</TableHead>
                                 <TableHead className="font-semibold text-slate-700">No. WO / Status</TableHead>
                                 <TableHead className="font-semibold text-slate-700">Kendaraan</TableHead>
+                                <TableHead className="font-semibold text-slate-700 w-[100px]">Jenis</TableHead>
                                 <TableHead className="text-right font-semibold text-orange-700 bg-orange-50/50">Total Estimasi</TableHead>
                                 <TableHead className="text-right font-semibold text-green-700 bg-green-50/50">Total Realisasi</TableHead>
                                 <TableHead className="text-right font-semibold text-slate-700">Selisih</TableHead>
@@ -224,11 +272,11 @@ export default function EstimationVsRealizationReport() {
                         </TableHeader>
                         <TableBody>
                             {loading ? (
-                                <TableRow><TableCell colSpan={8} className="text-center h-24 text-muted-foreground">Memuat data...</TableCell></TableRow>
-                            ) : filteredData.length === 0 ? (
-                                <TableRow><TableCell colSpan={8} className="text-center h-24 text-muted-foreground">Tidak ada data.</TableCell></TableRow>
+                                <TableRow><TableCell colSpan={9} className="text-center h-24 text-muted-foreground">Memuat data...</TableCell></TableRow>
+                            ) : filteredByType.length === 0 ? (
+                                <TableRow><TableCell colSpan={9} className="text-center h-24 text-muted-foreground">Tidak ada data.</TableCell></TableRow>
                             ) : (
-                                filteredData.map((item, index) => (
+                                filteredByType.map((item, index) => (
                                     <TableRow key={item.id} className="hover:bg-slate-50/50 transition-colors">
                                         <TableCell className="text-center">{index + 1}</TableCell>
                                         <TableCell className="text-sm">{formatDate(item.date)}</TableCell>
@@ -251,6 +299,9 @@ export default function EstimationVsRealizationReport() {
                                                 <span className="text-xs text-muted-foreground">{item.brand}</span>
                                             </div>
                                         </TableCell>
+                                        <TableCell className="font-semibold text-slate-700">
+                                            {item.vehicle_type || '-'}
+                                        </TableCell>
                                         <TableCell className="text-right font-medium text-orange-700 bg-orange-50/30">
                                             {formatCurrency(item.total_est)}
                                         </TableCell>
@@ -267,10 +318,10 @@ export default function EstimationVsRealizationReport() {
                                 ))
                             )}
                         </TableBody>
-                        {filteredData.length > 0 && (
+                        {filteredByType.length > 0 && (
                             <TableBody>
                                 <TableRow className="bg-slate-100 border-t-2 border-slate-300 font-bold sticky bottom-0 shadow-inner z-10">
-                                    <TableCell colSpan={4} className="text-right text-slate-700">GRAND TOTAL</TableCell>
+                                    <TableCell colSpan={5} className="text-right text-slate-700">GRAND TOTAL</TableCell>
                                     <TableCell className="text-right text-orange-800">{formatCurrency(grandTotal.est)}</TableCell>
                                     <TableCell className="text-right text-green-800">{formatCurrency(grandTotal.real)}</TableCell>
                                     <TableCell className={`text-right ${grandTotal.var >= 0 ? 'text-green-700' : 'text-red-700'}`}>{formatCurrency(grandTotal.var)}</TableCell>
