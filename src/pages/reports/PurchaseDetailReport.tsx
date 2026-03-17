@@ -77,7 +77,8 @@ export default function PurchaseDetailReport() {
       
       // Filter by date range (double check as Supabase nested filter might not apply strict INNER JOIN logic depending on setup)
       items = items.filter((item: any) => {
-        const poDate = item.purchase_orders.po_date;
+        const poDate = item.purchase_orders?.po_date;
+        if (!poDate) return false;
         return poDate >= dateRange.start && poDate <= dateRange.end;
       });
 
@@ -128,11 +129,13 @@ export default function PurchaseDetailReport() {
     }
   }
 
-  const filteredData = data.filter(item => 
-    item.goods?.name.toLowerCase().includes(search.toLowerCase()) ||
-    item.purchase_orders?.po_number.toLowerCase().includes(search.toLowerCase()) ||
-    item.purchase_orders?.suppliers?.name.toLowerCase().includes(search.toLowerCase())
-  );
+  const filteredData = data.filter(item => {
+    const q = search.toLowerCase();
+    const goodsName = String(item.goods?.name || '').toLowerCase();
+    const poNumber = String(item.purchase_orders?.po_number || '').toLowerCase();
+    const supplierName = String(item.purchase_orders?.suppliers?.name || '').toLowerCase();
+    return goodsName.includes(q) || poNumber.includes(q) || supplierName.includes(q);
+  });
 
   const totalAmount = filteredData.reduce((sum, item) => sum + (item.total_price || 0), 0);
 
