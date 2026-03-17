@@ -126,8 +126,7 @@ export default function PurchaseDetailReport() {
             wo_number,
             vehicle_entries (
               id,
-              license_plate,
-              vehicles (brand_type, vehicle_type)
+              vehicles (license_plate, brand_type, vehicle_type)
             )
           `)
           .in('id', woIds);
@@ -182,7 +181,7 @@ export default function PurchaseDetailReport() {
       'Supplier': item.purchase_orders?.suppliers?.name,
       'No. WO': item.purchase_orders?.work_orders?.wo_number || '',
       'Nopol / Kendaraan': item.purchase_orders?.work_orders?.vehicle_entries?.vehicles
-        ? `${item.purchase_orders?.work_orders?.vehicle_entries?.license_plate || ''} - ${item.purchase_orders?.work_orders?.vehicle_entries?.vehicles?.brand_type || ''}`.trim()
+        ? `${item.purchase_orders?.work_orders?.vehicle_entries?.vehicles?.license_plate || ''} - ${item.purchase_orders?.work_orders?.vehicle_entries?.vehicles?.brand_type || ''}`.trim()
         : '',
       'Kode Barang': item.goods?.item_code,
       'Nama Barang': item.goods?.name,
@@ -274,7 +273,7 @@ export default function PurchaseDetailReport() {
                     </TableCell>
                     <TableCell>
                       {item.purchase_orders?.work_orders?.vehicle_entries?.vehicles
-                        ? `${item.purchase_orders?.work_orders?.vehicle_entries?.license_plate || '-'} - ${item.purchase_orders?.work_orders?.vehicle_entries?.vehicles?.brand_type || '-'}`
+                        ? `${item.purchase_orders?.work_orders?.vehicle_entries?.vehicles?.license_plate || '-'} - ${item.purchase_orders?.work_orders?.vehicle_entries?.vehicles?.brand_type || '-'}`
                         : '-'}
                     </TableCell>
                     <TableCell>

@@ -146,8 +146,7 @@ export default function PurchaseOrderV2() {
             wo_number,
             vehicle_entries (
               id,
-              license_plate,
-              vehicles (brand_type, vehicle_type)
+              vehicles (license_plate, brand_type, vehicle_type)
             )
           `)
           .in('id', woIds);
@@ -831,7 +830,7 @@ export default function PurchaseOrderV2() {
                       <TableCell>
                         {item.work_order_id && item.work_orders && (item.work_orders as any).vehicle_entries?.vehicles ? (
                           <span className="text-sm text-gray-700">
-                            {(item.work_orders as any).vehicle_entries.license_plate} - {(item.work_orders as any).vehicle_entries.vehicles.brand_type}
+                            {(item.work_orders as any).vehicle_entries.vehicles.license_plate} - {(item.work_orders as any).vehicle_entries.vehicles.brand_type}
                           </span>
                         ) : '-'}
                       </TableCell>
