@@ -223,36 +223,39 @@ export function Sidebar() {
               </NavLink>
             )}
 
-            <NavLink
-              to="/admin/agency"
-              className={({ isActive }) =>
-                cn(
-                  "flex items-center rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-200",
-                  isActive 
-                    ? "bg-indigo-600 text-white shadow-lg shadow-indigo-900/20" 
-                    : "text-slate-400 hover:bg-slate-800/50 hover:text-white"
-                )
-              }
-            >
-              <Building2 className="mr-3 h-5 w-5 text-slate-500 group-hover:text-slate-300" />
-              Profil Instansi
-            </NavLink>
+            {user?.role === 'SUPER_ADMIN' && (
+              <NavLink
+                to="/admin/agency"
+                className={({ isActive }) =>
+                  cn(
+                    "flex items-center rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-200",
+                    isActive 
+                      ? "bg-indigo-600 text-white shadow-lg shadow-indigo-900/20" 
+                      : "text-slate-400 hover:bg-slate-800/50 hover:text-white"
+                  )
+                }
+              >
+                <Building2 className="mr-3 h-5 w-5 text-slate-500 group-hover:text-slate-300" />
+                Profil Instansi
+              </NavLink>
+            )}
 
-            {/* EMERGENCY DEBUG MENU */}
-            <NavLink
-              to="/debug-sync"
-              className={({ isActive }) =>
-                cn(
-                  "flex items-center rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-200 text-red-400 hover:bg-red-900/20",
-                  isActive 
-                    ? "bg-red-900/30 text-red-300" 
-                    : ""
-                )
-              }
-            >
-              <Wrench className="mr-3 h-5 w-5 text-red-500" />
-              Debug & Fix Data
-            </NavLink>
+            {user?.role === 'SUPER_ADMIN' && (
+              <NavLink
+                to="/debug-sync"
+                className={({ isActive }) =>
+                  cn(
+                    "flex items-center rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-200 text-red-400 hover:bg-red-900/20",
+                    isActive 
+                      ? "bg-red-900/30 text-red-300" 
+                      : ""
+                  )
+                }
+              >
+                <Wrench className="mr-3 h-5 w-5 text-red-500" />
+                Debug & Fix Data
+              </NavLink>
+            )}
           </div>
         )}
       </nav>

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { toast } from 'sonner';
+import { useAuth } from '@/context/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -9,6 +10,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Loader2, Upload, X } from 'lucide-react';
 
 export default function AgencyProfile() {
+  const { user } = useAuth();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const fileRef = useRef<HTMLInputElement | null>(null);
@@ -23,6 +25,22 @@ export default function AgencyProfile() {
   });
 
   const hasForm = useMemo(() => !!form.name, [form.name]);
+
+  if (!user || user.role !== 'SUPER_ADMIN') {
+    return (
+      <div className="space-y-6">
+        <h2 className="text-3xl font-bold tracking-tight">Profil Instansi</h2>
+        <Card>
+          <CardHeader>
+            <CardTitle>Akses Ditolak</CardTitle>
+          </CardHeader>
+          <CardContent className="text-sm text-muted-foreground">
+            Halaman ini hanya untuk Super Admin.
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
   useEffect(() => {
     fetchProfile();

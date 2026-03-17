@@ -5,11 +5,29 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { toast } from 'sonner';
 import { RefreshCw, CheckCircle, AlertTriangle } from 'lucide-react';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { useAuth } from '@/context/AuthContext';
 
 export default function DebugSync() {
+  const { user } = useAuth();
   const [wos, setWos] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [logs, setLogs] = useState<string[]>([]);
+
+  if (!user || user.role !== 'SUPER_ADMIN') {
+    return (
+      <div className="space-y-6">
+        <h2 className="text-3xl font-bold tracking-tight">Debug & Fix Data</h2>
+        <Card>
+          <CardHeader>
+            <CardTitle>Akses Ditolak</CardTitle>
+          </CardHeader>
+          <CardContent className="text-sm text-muted-foreground">
+            Halaman ini hanya untuk Super Admin.
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
   useEffect(() => {
     fetchProblematicWOs();

@@ -2,11 +2,29 @@ import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { useAuth } from '@/context/AuthContext';
 
 export default function DebugDashboard() {
+  const { user } = useAuth();
   const [data, setData] = useState<any[]>([]);
   const [rawStatus, setRawStatus] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
+
+  if (!user || user.role !== 'SUPER_ADMIN') {
+    return (
+      <div className="space-y-6 p-8">
+        <h1 className="text-2xl font-bold">Debug Dashboard Query</h1>
+        <Card>
+          <CardHeader>
+            <CardTitle>Akses Ditolak</CardTitle>
+          </CardHeader>
+          <CardContent className="text-sm text-muted-foreground">
+            Halaman ini hanya untuk Super Admin.
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
   const fetchRawData = async () => {
     setLoading(true);
