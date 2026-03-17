@@ -4,6 +4,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Download, Calendar, Search, RefreshCw, AlertTriangle, Info } from 'lucide-react';
 import { formatCurrency, formatDate } from '@/lib/utils';
 import { toast } from 'sonner';
@@ -13,6 +14,7 @@ export default function GrossProfitReport() {
   const [data, setData] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
+  const [vehicleTypeFilter, setVehicleTypeFilter] = useState('ALL');
   const [dateRange, setDateRange] = useState({
     start: new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0], // Default current month
     end: new Date().toISOString().split('T')[0]
@@ -164,7 +166,7 @@ export default function GrossProfitReport() {
           vehicle_entries (
             nota_dinas_number,
             service_group,
-            vehicles (license_plate, brand_type)
+            vehicles (license_plate, brand_type, vehicle_type)
           ),
           billings:work_order_billings (
             item_type,
@@ -298,6 +300,7 @@ export default function GrossProfitReport() {
                 tgl: wo.work_date, 
                 nopol: wo.vehicle_entries?.vehicles?.license_plate || '-',
                 merk_type: wo.vehicle_entries?.vehicles?.brand_type || '-',
+                vehicle_type: wo.vehicle_entries?.vehicles?.vehicle_type || '-',
                 nota_dinas: wo.vehicle_entries?.nota_dinas_number || '-',
                 group: woFinalGroup, // Gunakan Group Final WO
                 klasifikasi: woFinalGroup, 
@@ -331,11 +334,36 @@ export default function GrossProfitReport() {
     item.item.toLowerCase().includes(search.toLowerCase())
   );
 
+  const summaryByType = filteredData.reduce((acc: any, item: any) => {
+    const vt = String(item.vehicle_type || '').toUpperCase();
+    const key =
+      vt.includes('R2_KECIL') || vt.includes('R2 KECIL') || vt.includes('KECIL') ? 'R2 Kecil' :
+      vt === 'R4' || vt.includes('R4') || vt.includes('MOBIL') ? 'R4' :
+      vt === 'R2' || vt.includes('R2') || vt.includes('MOTOR') ? 'R2' :
+      'Lainnya';
+    acc[key] = (acc[key] || 0) + 1;
+    return acc;
+  }, {});
+
+  const filteredByType = vehicleTypeFilter === 'ALL'
+    ? filteredData
+    : filteredData.filter((item: any) => {
+        const vt = String(item.vehicle_type || '').toUpperCase();
+        if (vehicleTypeFilter === 'R2_KECIL') {
+          return vt.includes('R2_KECIL') || vt.includes('R2 KECIL') || vt.includes('KECIL');
+        }
+        if (vehicleTypeFilter === 'R4') {
+          return vt === 'R4' || vt.includes('R4') || vt.includes('MOBIL');
+        }
+        return vt === 'R2' || vt.includes('R2') || vt.includes('MOTOR');
+      });
+
   const exportToExcel = () => {
-    const ws = XLSX.utils.json_to_sheet(filteredData.map(item => ({
+    const ws = XLSX.utils.json_to_sheet(filteredByType.map(item => ({
       'Tgl': formatDate(item.tgl),
       'No.Pol': item.nopol,
       'Merk/Type': item.merk_type,
+      'Jenis': item.vehicle_type,
       'No. Nota Dinas': item.nota_dinas,
       'Group': item.group,
       'Klasifikasi': item.klasifikasi,
@@ -356,8 +384,8 @@ export default function GrossProfitReport() {
     XLSX.writeFile(wb, `Laporan_Laba_Kotor_${dateRange.start}_${dateRange.end}.xlsx`);
   };
 
-  const totalRevenue = filteredData.reduce((sum, item) => sum + item.total_harga, 0);
-  const totalHPP = filteredData.reduce((sum, item) => sum + item.hpp_total, 0);
+  const totalRevenue = filteredByType.reduce((sum, item) => sum + item.total_harga, 0);
+  const totalHPP = filteredByType.reduce((sum, item) => sum + item.hpp_total, 0);
   const totalMargin = totalRevenue - totalHPP;
   const totalMarginPercent = totalRevenue ? (totalMargin / totalRevenue) * 100 : 0;
 
@@ -372,6 +400,17 @@ export default function GrossProfitReport() {
               <span className="text-gray-400 font-medium">-</span>
               <Input type="date" className="border-0 h-9 w-36 focus-visible:ring-0 cursor-pointer" value={dateRange.end} onChange={e => setDateRange({...dateRange, end: e.target.value})} />
            </div>
+           <Select value={vehicleTypeFilter} onValueChange={setVehicleTypeFilter}>
+            <SelectTrigger className="w-[140px] h-10">
+              <SelectValue placeholder="Jenis" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="ALL">Semua Jenis</SelectItem>
+              <SelectItem value="R4">R4</SelectItem>
+              <SelectItem value="R2">R2</SelectItem>
+              <SelectItem value="R2_KECIL">R2 Kecil</SelectItem>
+            </SelectContent>
+           </Select>
            <Button variant="outline" onClick={exportToExcel}><Download className="mr-2 h-4 w-4" /> Export</Button>
            <Button variant="outline" onClick={handleSyncData} disabled={isSyncing}>
                 {isSyncing ? <RefreshCw className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
@@ -439,6 +478,11 @@ export default function GrossProfitReport() {
               <Input placeholder="Cari Nopol / Item..." className="pl-8" value={search} onChange={e => setSearch(e.target.value)} />
             </div>
           </div>
+          <div className="mt-3 flex flex-wrap gap-2 text-xs">
+            <div className="rounded-full bg-slate-100 px-3 py-1 text-slate-700">R4: {summaryByType['R4'] || 0}</div>
+            <div className="rounded-full bg-slate-100 px-3 py-1 text-slate-700">R2: {summaryByType['R2'] || 0}</div>
+            <div className="rounded-full bg-slate-100 px-3 py-1 text-slate-700">R2 Kecil: {summaryByType['R2 Kecil'] || 0}</div>
+          </div>
         </CardHeader>
         <CardContent>
           <div className="rounded-md border overflow-hidden">
@@ -449,6 +493,7 @@ export default function GrossProfitReport() {
                     <TableHead>Tgl</TableHead>
                     <TableHead>No.Pol</TableHead>
                     <TableHead>Merk/Tipe</TableHead>
+                    <TableHead>Jenis</TableHead>
                     <TableHead>No. Nota</TableHead>
                     <TableHead>Group</TableHead>
                     <TableHead>Klasifikasi</TableHead>
@@ -464,14 +509,15 @@ export default function GrossProfitReport() {
                 </TableRow>
                 </TableHeader>
                 <TableBody>
-                {filteredData.length === 0 ? (
-                    <TableRow><TableCell colSpan={15} className="text-center py-8">Tidak ada data.</TableCell></TableRow>
+                {filteredByType.length === 0 ? (
+                    <TableRow><TableCell colSpan={16} className="text-center py-8">Tidak ada data.</TableCell></TableRow>
                 ) : (
-                    filteredData.map((item, idx) => (
-                    <TableRow key={idx}>
+                    filteredByType.map((item, index) => (
+                    <TableRow key={index}>
                         <TableCell>{formatDate(item.tgl)}</TableCell>
                         <TableCell className="font-medium">{item.nopol}</TableCell>
                         <TableCell>{item.merk_type}</TableCell>
+                        <TableCell className="font-semibold">{item.vehicle_type || '-'}</TableCell>
                         <TableCell>{item.nota_dinas}</TableCell>
                         <TableCell>
                             <span className="text-xs bg-slate-100 px-2 py-1 rounded">

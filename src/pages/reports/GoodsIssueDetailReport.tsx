@@ -6,12 +6,14 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Download, Calendar, Search } from 'lucide-react';
 import { formatCurrency, formatDate } from '@/lib/utils';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import * as XLSX from 'xlsx';
 
 export default function GoodsIssueDetailReport() {
   const [data, setData] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
+  const [vehicleTypeFilter, setVehicleTypeFilter] = useState('ALL');
   const [dateRange, setDateRange] = useState({
     start: new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0],
     end: new Date().toISOString().split('T')[0]
@@ -38,7 +40,7 @@ export default function GoodsIssueDetailReport() {
               wo_number,
               vehicle_entries (
                 nota_dinas_number,
-                vehicles (license_plate, brand_type)
+                vehicles (license_plate, brand_type, vehicle_type)
               )
             )
           )
@@ -71,6 +73,7 @@ export default function GoodsIssueDetailReport() {
                 no_wo: wo?.wo_number || '-',
                 nopol: vehicle?.license_plate || '-',
                 merk_tipe: vehicle?.brand_type || '-',
+                vehicle_type: vehicle?.vehicle_type || '-',
                 item_name: good?.name || '-',
                 kode_barang: good?.item_code || '-',
                 qty: item.is_info_only ? 0 : item.quantity,
@@ -102,12 +105,37 @@ export default function GoodsIssueDetailReport() {
     (item.item_name && item.item_name.toLowerCase().includes(search.toLowerCase()))
   );
 
+  const summaryByType = filteredData.reduce((acc: any, item: any) => {
+    const vt = String(item.vehicle_type || '').toUpperCase();
+    const key =
+      vt.includes('R2_KECIL') || vt.includes('R2 KECIL') || vt.includes('KECIL') ? 'R2 Kecil' :
+      vt === 'R4' || vt.includes('R4') || vt.includes('MOBIL') ? 'R4' :
+      vt === 'R2' || vt.includes('R2') || vt.includes('MOTOR') ? 'R2' :
+      'Lainnya';
+    acc[key] = (acc[key] || 0) + 1;
+    return acc;
+  }, {});
+
+  const filteredByType = vehicleTypeFilter === 'ALL'
+    ? filteredData
+    : filteredData.filter((item: any) => {
+        const vt = String(item.vehicle_type || '').toUpperCase();
+        if (vehicleTypeFilter === 'R2_KECIL') {
+          return vt.includes('R2_KECIL') || vt.includes('R2 KECIL') || vt.includes('KECIL');
+        }
+        if (vehicleTypeFilter === 'R4') {
+          return vt === 'R4' || vt.includes('R4') || vt.includes('MOBIL');
+        }
+        return vt === 'R2' || vt.includes('R2') || vt.includes('MOTOR');
+      });
+
   const exportToExcel = () => {
-    const ws = XLSX.utils.json_to_sheet(filteredData.map(item => ({
+    const ws = XLSX.utils.json_to_sheet(filteredByType.map(item => ({
       'Tgl Keluar': formatDate(item.tgl_keluar),
       'No. WO': item.no_wo,
       'No. Polisi': item.nopol,
       'Merk/Tipe': item.merk_tipe,
+      'Jenis': item.vehicle_type,
       'Kode Barang': item.kode_barang,
       'Nama Item': item.item_name,
       'Qty': item.is_info_only ? 0 : item.qty,
@@ -131,6 +159,17 @@ export default function GoodsIssueDetailReport() {
               <span className="text-gray-400 font-medium">-</span>
               <Input type="date" className="border-0 h-9 w-36 focus-visible:ring-0 cursor-pointer" value={dateRange.end} onChange={e => setDateRange({...dateRange, end: e.target.value})} />
            </div>
+          <Select value={vehicleTypeFilter} onValueChange={setVehicleTypeFilter}>
+            <SelectTrigger className="w-[140px] h-10">
+              <SelectValue placeholder="Jenis" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="ALL">Semua Jenis</SelectItem>
+              <SelectItem value="R4">R4</SelectItem>
+              <SelectItem value="R2">R2</SelectItem>
+              <SelectItem value="R2_KECIL">R2 Kecil</SelectItem>
+            </SelectContent>
+          </Select>
            <Button variant="outline" onClick={exportToExcel}><Download className="mr-2 h-4 w-4" /> Export</Button>
         </div>
       </div>
@@ -144,6 +183,11 @@ export default function GoodsIssueDetailReport() {
               <Input placeholder="Cari WO / Nopol / Item..." className="pl-8" value={search} onChange={e => setSearch(e.target.value)} />
             </div>
           </div>
+          <div className="mt-3 flex flex-wrap gap-2 text-xs">
+            <div className="rounded-full bg-slate-100 px-3 py-1 text-slate-700">R4: {summaryByType['R4'] || 0}</div>
+            <div className="rounded-full bg-slate-100 px-3 py-1 text-slate-700">R2: {summaryByType['R2'] || 0}</div>
+            <div className="rounded-full bg-slate-100 px-3 py-1 text-slate-700">R2 Kecil: {summaryByType['R2 Kecil'] || 0}</div>
+          </div>
         </CardHeader>
         <CardContent>
           <div className="rounded-md border overflow-x-auto">
@@ -154,6 +198,7 @@ export default function GoodsIssueDetailReport() {
                   <TableHead>No. WO</TableHead>
                   <TableHead>No. Polisi</TableHead>
                   <TableHead>Merk/Tipe</TableHead>
+                  <TableHead>Jenis</TableHead>
                   <TableHead>Nama Item</TableHead>
                   <TableHead className="text-center">Qty</TableHead>
                   <TableHead className="text-center">Satuan</TableHead>
@@ -161,15 +206,16 @@ export default function GoodsIssueDetailReport() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filteredData.length === 0 ? (
-                  <TableRow><TableCell colSpan={7} className="text-center py-8">Tidak ada data.</TableCell></TableRow>
+                {filteredByType.length === 0 ? (
+                  <TableRow><TableCell colSpan={9} className="text-center py-8">Tidak ada data.</TableCell></TableRow>
                 ) : (
-                  filteredData.map((item, idx) => (
+                  filteredByType.map((item, idx) => (
                     <TableRow key={idx}>
                       <TableCell>{formatDate(item.tgl_keluar)}</TableCell>
                       <TableCell className="font-medium">{item.no_wo}</TableCell>
                       <TableCell>{item.nopol}</TableCell>
                       <TableCell>{item.merk_tipe}</TableCell>
+                      <TableCell className="font-semibold">{item.vehicle_type || '-'}</TableCell>
                       <TableCell>
                         <div className="flex flex-col">
                             <span>{item.item_name}</span>
