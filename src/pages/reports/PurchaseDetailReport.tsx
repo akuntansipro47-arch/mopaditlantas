@@ -169,7 +169,19 @@ export default function PurchaseDetailReport() {
     const goodsName = String(item.goods?.name || '').toLowerCase();
     const poNumber = String(item.purchase_orders?.po_number || '').toLowerCase();
     const supplierName = String(item.purchase_orders?.suppliers?.name || '').toLowerCase();
-    return goodsName.includes(q) || poNumber.includes(q) || supplierName.includes(q);
+    const woNumber = String(item.purchase_orders?.work_orders?.wo_number || '').toLowerCase();
+    const nopol = String(item.purchase_orders?.work_orders?.vehicle_entries?.vehicles?.license_plate || '').toLowerCase();
+    const kendaraan = String(item.purchase_orders?.work_orders?.vehicle_entries?.vehicles?.brand_type || '').toLowerCase();
+    const jenisKendaraan = String(item.purchase_orders?.work_orders?.vehicle_entries?.vehicles?.vehicle_type || '').toLowerCase();
+    return (
+      goodsName.includes(q) ||
+      poNumber.includes(q) ||
+      supplierName.includes(q) ||
+      woNumber.includes(q) ||
+      nopol.includes(q) ||
+      kendaraan.includes(q) ||
+      jenisKendaraan.includes(q)
+    );
   });
 
   const totalAmount = filteredData.reduce((sum, item) => sum + (item.total_price || 0), 0);
@@ -240,7 +252,7 @@ export default function PurchaseDetailReport() {
             <CardTitle>Daftar Barang Dibeli</CardTitle>
             <div className="relative w-64">
               <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
-              <Input placeholder="Cari Barang / PO / Supplier..." className="pl-8" value={search} onChange={e => setSearch(e.target.value)} />
+              <Input placeholder="Cari Barang / PO / Supplier / WO / Nopol / Kendaraan..." className="pl-8" value={search} onChange={e => setSearch(e.target.value)} />
             </div>
           </div>
         </CardHeader>
