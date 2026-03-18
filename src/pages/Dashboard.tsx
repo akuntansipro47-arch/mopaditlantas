@@ -58,6 +58,7 @@ export default function Dashboard() {
   const [woStatusData, setWoStatusData] = useState<any[]>([]);
   const [monthlySpendingData, setMonthlySpendingData] = useState<any[]>([]);
   const [lowStockItems, setLowStockItems] = useState<any[]>([]);
+  const [fastMovingItems, setFastMovingItems] = useState<any[]>([]);
   const [monthlyStats, setMonthlyStats] = useState<any[]>([]);
 
   useEffect(() => {
@@ -261,7 +262,68 @@ export default function Dashboard() {
           setMonthlySpendingData(Object.entries(spendingMap).map(([name, value]) => ({ name, value })).reverse());
       } catch (e) { console.error("Spending Data Error:", e); }
 
-      // 2c. WO Status & Low Stock
+      // 2c. Fast Moving Items (Last 30 days)
+      try {
+          const fastStart = new Date();
+          fastStart.setDate(fastStart.getDate() - 30);
+          const startDate = fastStart.toISOString().slice(0, 10);
+          const endDate = today.toISOString().slice(0, 10);
+
+          const { data: issueIds, error: issueIdsErr } = await supabase
+            .from('goods_issues')
+            .select('id')
+            .gte('issue_date', startDate)
+            .lte('issue_date', endDate)
+            .order('issue_date', { ascending: false })
+            .limit(1000);
+
+          if (issueIdsErr) throw issueIdsErr;
+
+          const ids = (issueIds || []).map((x: any) => x.id).filter(Boolean);
+          if (ids.length === 0) {
+            setFastMovingItems([]);
+          } else {
+            const { data: issueItems, error: issueItemsErr } = await supabase
+              .from('goods_issue_items')
+              .select('goods_id, quantity, is_info_only, goods (name, item_code, unit, current_stock)')
+              .in('issue_id', ids)
+              .range(0, 4999);
+
+            if (issueItemsErr) throw issueItemsErr;
+
+            const map = new Map<string, { goods: any; qty: number }>();
+
+            for (const it of issueItems || []) {
+              if ((it as any).is_info_only) continue;
+              const gid = (it as any).goods_id;
+              if (!gid) continue;
+              const q = Number((it as any).quantity || 0);
+              if (!Number.isFinite(q) || q <= 0) continue;
+              const existing = map.get(gid);
+              const goods = (it as any).goods || existing?.goods || null;
+              map.set(gid, { goods, qty: (existing?.qty || 0) + q });
+            }
+
+            const top = Array.from(map.entries())
+              .map(([goods_id, v]) => ({
+                goods_id,
+                qty: v.qty,
+                name: v.goods?.name,
+                item_code: v.goods?.item_code,
+                unit: v.goods?.unit,
+                current_stock: v.goods?.current_stock,
+              }))
+              .sort((a, b) => b.qty - a.qty)
+              .slice(0, 10);
+
+            setFastMovingItems(top);
+          }
+      } catch (e) {
+          console.error('Fast Moving Calc Error:', e);
+          setFastMovingItems([]);
+      }
+
+      // 2d. WO Status & Low Stock
       try {
           const wos = wosRes.data;
           const woStatusCounts = { OPEN: 0, IN_PROGRESS: 0, COMPLETED: 0, CLOSED: 0 };
@@ -513,6 +575,47 @@ export default function Dashboard() {
                     <div className="text-right">
                       <span className="text-sm font-bold text-amber-600">{item.current_stock}</span>
                       <span className="text-xs text-slate-400 ml-1">{item.unit}</span>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="shadow-md border-slate-200 col-span-2 md:col-span-1">
+          <CardHeader className="flex flex-row items-center justify-between">
+            <div>
+              <CardTitle className="flex items-center gap-2">
+                <Activity className="h-5 w-5 text-lime-600" />
+                Fast Moving (30 Hari)
+              </CardTitle>
+              <CardDescription>Sparepart paling sering keluar & sisa stok</CardDescription>
+            </div>
+            <Button variant="ghost" size="sm" className="text-xs" asChild>
+              <a href="/reports/item-history">Detail</a>
+            </Button>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-4">
+              {fastMovingItems.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-6 text-slate-500">
+                  <Activity className="h-8 w-8 mb-2 opacity-40" />
+                  <p className="text-sm font-medium">Belum ada data pemakaian.</p>
+                </div>
+              ) : (
+                fastMovingItems.map((item: any) => (
+                  <div key={item.goods_id} className="flex items-center justify-between border-b border-slate-100 pb-3 last:border-0 last:pb-0">
+                    <div className="flex items-center gap-3">
+                      <div className="h-2 w-2 rounded-full bg-lime-500 animate-pulse" />
+                      <div>
+                        <p className="text-sm font-medium text-slate-900">{item.name || '-'}</p>
+                        <p className="text-xs text-slate-500">{item.item_code || '-'}</p>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <div className="text-xs text-slate-500">Keluar: <span className="font-semibold text-slate-700">{item.qty}</span></div>
+                      <div className="text-xs text-slate-500">Sisa: <span className="font-bold text-slate-900">{item.current_stock ?? '-'}</span><span className="text-slate-400 ml-1">{item.unit || ''}</span></div>
                     </div>
                   </div>
                 ))
