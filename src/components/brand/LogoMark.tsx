@@ -12,28 +12,15 @@ export default function LogoMark({ className }: Props) {
       xmlns="http://www.w3.org/2000/svg"
       role="img"
       aria-label="OtoSmart"
+      fill="none"
     >
-      <rect x="2" y="2" width="60" height="60" rx="14" fill="#ffffff" stroke="#e2e8f0" strokeWidth="2" />
-      <circle cx="32" cy="32" r="21" fill="#1e3a5f" />
-
-      <g fill="#ffffff">
-        <g transform="rotate(0 32 32)"><rect x="30" y="9" width="4" height="7" rx="2" /></g>
-        <g transform="rotate(45 32 32)"><rect x="30" y="9" width="4" height="7" rx="2" /></g>
-        <g transform="rotate(90 32 32)"><rect x="30" y="9" width="4" height="7" rx="2" /></g>
-        <g transform="rotate(135 32 32)"><rect x="30" y="9" width="4" height="7" rx="2" /></g>
-        <g transform="rotate(180 32 32)"><rect x="30" y="9" width="4" height="7" rx="2" /></g>
-        <g transform="rotate(225 32 32)"><rect x="30" y="9" width="4" height="7" rx="2" /></g>
-        <g transform="rotate(270 32 32)"><rect x="30" y="9" width="4" height="7" rx="2" /></g>
-        <g transform="rotate(315 32 32)"><rect x="30" y="9" width="4" height="7" rx="2" /></g>
-      </g>
-      <circle cx="32" cy="32" r="14" fill="none" stroke="#ffffff" strokeWidth="3" opacity="0.95" />
-
-      <circle cx="26" cy="34" r="6.5" fill="none" stroke="#ffffff" strokeWidth="4" />
+      <rect x="6" y="6" width="52" height="52" rx="16" stroke="currentColor" strokeWidth="3" opacity="0.22" />
+      <circle cx="22" cy="36" r="9.5" stroke="currentColor" strokeWidth="5" />
+      <circle cx="22" cy="36" r="2.6" fill="currentColor" />
       <path
-        d="M42 28c-2.3-1.6-5.7-1.4-7.2 0.3-1.1 1.2-0.8 3 0.5 3.8 1.7 1 6.4 0.8 6.4 4.2 0 3.8-5.3 5.2-8.2 2.7"
-        fill="none"
+        d="M48 24c-3.4-3-9.5-3.1-12.8 0c-2.2 2.1-1.5 5.4 1.7 6.6c3.2 1.2 10.2 1 10.2 7.1c0 5.9-8.1 8.2-14 5"
         stroke="#a3e635"
-        strokeWidth="4"
+        strokeWidth="5"
         strokeLinecap="round"
         strokeLinejoin="round"
       />
