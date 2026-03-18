@@ -336,6 +336,16 @@ export default function PurchaseOrder() {
     }
   };
 
+  const filteredPOs = pos.filter((item: any) => {
+    const q = search.trim().toLowerCase();
+    if (!q) return true;
+    const poNumber = String(item.po_number || '').toLowerCase();
+    const supplierName = String(item.suppliers?.name || '').toLowerCase();
+    const nopol = String(item.work_orders?.vehicle_entries?.vehicles?.license_plate || '').toLowerCase();
+    const kendaraan = String(item.work_orders?.vehicle_entries?.vehicles?.brand_type || '').toLowerCase();
+    return poNumber.includes(q) || supplierName.includes(q) || nopol.includes(q) || kendaraan.includes(q);
+  });
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -561,7 +571,7 @@ export default function PurchaseOrder() {
             <CardTitle>Daftar Purchase Order</CardTitle>
             <div className="relative w-64">
               <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
-              <Input placeholder="Cari No. PO..." className="pl-8" value={search} onChange={e => setSearch(e.target.value)} />
+              <Input placeholder="Cari PO / Supplier / Nopol / Kendaraan..." className="pl-8" value={search} onChange={e => setSearch(e.target.value)} />
             </div>
           </div>
         </CardHeader>
@@ -582,10 +592,10 @@ export default function PurchaseOrder() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {pos.length === 0 ? (
+                {filteredPOs.length === 0 ? (
                   <TableRow><TableCell colSpan={9} className="text-center h-24">Tidak ada data PO.</TableCell></TableRow>
                 ) : (
-                  pos.map((item) => (
+                  filteredPOs.map((item) => (
                     <TableRow key={item.id}>
                       <TableCell className="font-medium">{item.po_number}</TableCell>
                       <TableCell>{formatDate(item.po_date || item.created_at)}</TableCell>

@@ -432,10 +432,15 @@ export default function PurchaseOrderV2() {
     }
   };
 
-  const filteredPOs = pos.filter(item => 
-    item.po_number.toLowerCase().includes(search.toLowerCase()) ||
-    item.suppliers?.name.toLowerCase().includes(search.toLowerCase())
-  );
+  const filteredPOs = pos.filter(item => {
+    const q = search.trim().toLowerCase();
+    if (!q) return true;
+    const poNumber = String(item.po_number || '').toLowerCase();
+    const supplierName = String(item.suppliers?.name || '').toLowerCase();
+    const nopol = String((item as any).work_orders?.vehicle_entries?.vehicles?.license_plate || '').toLowerCase();
+    const kendaraan = String((item as any).work_orders?.vehicle_entries?.vehicles?.brand_type || '').toLowerCase();
+    return poNumber.includes(q) || supplierName.includes(q) || nopol.includes(q) || kendaraan.includes(q);
+  });
 
   return (
     <div className="space-y-6">
@@ -785,7 +790,7 @@ export default function PurchaseOrderV2() {
                 </div>
                 <div className="relative w-64 ml-4">
                   <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground pointer-events-none" />
-                  <Input placeholder="Cari No. PO..." className="pl-8 h-9" value={search} onChange={e => setSearch(e.target.value)} />
+                  <Input placeholder="Cari PO / Supplier / Nopol / Kendaraan..." className="pl-8 h-9" value={search} onChange={e => setSearch(e.target.value)} />
                 </div>
              </div>
           </div>
