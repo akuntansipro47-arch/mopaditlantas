@@ -1094,6 +1094,10 @@ export default function WorkOrderV2() {
   };
 
   const handleSyncJournal = async (wo: WOWithDetails) => {
+    if (!user || user.role !== 'SUPER_ADMIN') {
+      toast.error('Akses ditolak. Fitur ini hanya untuk Super Admin.');
+      return;
+    }
     if (!confirm(`Buat Jurnal Otomatis untuk WO ${wo.wo_number}? (Hanya jika belum ada)`)) return;
     
     setLoading(true);
@@ -1460,7 +1464,7 @@ export default function WorkOrderV2() {
                       <TableCell className="text-right">
                         <div className="flex justify-end gap-2">
                           {/* EMERGENCY SYNC BUTTON - ALWAYS SHOW FOR CLOSED WO */}
-                          {item.status === 'CLOSED' && (
+                          {item.status === 'CLOSED' && user?.role === 'SUPER_ADMIN' && (
                              <Button 
                                 variant="destructive" 
                                 size="sm" 
@@ -1533,15 +1537,17 @@ export default function WorkOrderV2() {
                                       <Wrench className="h-4 w-4" />
                                   </Button>
                                   
-                                  <Button 
-                                    variant="destructive" 
-                                    size="sm" 
-                                    className="h-8 px-2 text-xs bg-blue-600 hover:bg-blue-700 text-white" 
-                                    onClick={() => handleSyncJournal(item)} 
-                                    title="KLIK DISINI UNTUK SYNC JURNAL"
-                                  >
-                                      SYNC JURNAL
-                                  </Button>
+                                  {user?.role === 'SUPER_ADMIN' && (
+                                    <Button 
+                                      variant="destructive" 
+                                      size="sm" 
+                                      className="h-8 px-2 text-xs bg-blue-600 hover:bg-blue-700 text-white" 
+                                      onClick={() => handleSyncJournal(item)} 
+                                      title="KLIK DISINI UNTUK SYNC JURNAL"
+                                    >
+                                        SYNC JURNAL
+                                    </Button>
+                                  )}
                               </div>
                           )}
                         </div>
