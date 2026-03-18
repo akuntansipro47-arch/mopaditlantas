@@ -13,7 +13,6 @@ import {
   ArrowUpRight,
   ArrowDownRight,
   Package,
-  Car,
   CheckCircle
 } from "lucide-react";
 import { 
@@ -58,7 +57,6 @@ export default function Dashboard() {
   
   const [woStatusData, setWoStatusData] = useState<any[]>([]);
   const [monthlySpendingData, setMonthlySpendingData] = useState<any[]>([]);
-  const [recentVehicles, setRecentVehicles] = useState<any[]>([]);
   const [lowStockItems, setLowStockItems] = useState<any[]>([]);
   const [monthlyStats, setMonthlyStats] = useState<any[]>([]);
 
@@ -191,17 +189,12 @@ export default function Dashboard() {
       // Run these in a second batch or independently to not block the initial render if we were using streaming, 
       // but here we just parallelize them to speed up total time.
       
-      const [goodsRes, poItemsRes, posRes, wosRes, lowStockRes, simpleEntriesRes] = await Promise.all([
+      const [goodsRes, poItemsRes, posRes, wosRes, lowStockRes] = await Promise.all([
           supabase.from('goods').select('id, current_stock, item_type').gt('current_stock', 0),
           supabase.from('purchase_order_items').select('goods_id, unit_price').order('created_at', { ascending: false }).limit(2000),
           supabase.from('purchase_orders').select('total_amount, po_date, created_at').gte('created_at', sixMonthsAgo.toISOString()).neq('status', 'DRAFT'),
           supabase.from('work_orders').select('status'),
-          supabase.from('goods').select('id, name, item_code, current_stock, unit').lt('current_stock', 10).gt('current_stock', 0).order('current_stock', { ascending: true }).limit(5),
-          supabase.from('vehicle_entries')
-            .select('id, entry_date, entry_number, license_plate, status, vehicles (brand_type, vehicle_type)')
-            .eq('status', 'OPEN')
-            .order('entry_date', { ascending: false })
-            .limit(20)
+          supabase.from('goods').select('id, name, item_code, current_stock, unit').lt('current_stock', 10).gt('current_stock', 0).order('current_stock', { ascending: true }).limit(5)
       ]);
 
       // 2a. Inventory Value Calc
@@ -268,7 +261,7 @@ export default function Dashboard() {
           setMonthlySpendingData(Object.entries(spendingMap).map(([name, value]) => ({ name, value })).reverse());
       } catch (e) { console.error("Spending Data Error:", e); }
 
-      // 2c. WO Status & Low Stock & Recent Vehicles
+      // 2c. WO Status & Low Stock
       try {
           const wos = wosRes.data;
           const woStatusCounts = { OPEN: 0, IN_PROGRESS: 0, COMPLETED: 0, CLOSED: 0 };
@@ -293,7 +286,6 @@ export default function Dashboard() {
 
           setLowStockItems(lowStockRes.data || []);
           statsData.lowStockCount = lowStockRes.data?.length || 0;
-          setRecentVehicles(simpleEntriesRes.data || []);
 
       } catch (e) { console.error("WO/Stock/Recent Error:", e); }
 
@@ -310,18 +302,6 @@ export default function Dashboard() {
   if (loading) {
     return <DashboardSkeleton />;
   }
-
-  const openEntryByType = recentVehicles.reduce(
-    (acc: any, e: any) => {
-      const vt = String(e.vehicles?.vehicle_type || '').toUpperCase();
-      if (vt.includes('R2_KECIL') || vt.includes('R2 KECIL') || vt.includes('KECIL')) acc.r2kecil++;
-      else if (vt === 'R4' || vt.includes('R4') || vt.includes('MOBIL')) acc.r4++;
-      else if (vt === 'R2' || vt.includes('R2') || vt.includes('MOTOR')) acc.r2++;
-      else acc.other++;
-      return acc;
-    },
-    { r4: 0, r2: 0, r2kecil: 0, other: 0 }
-  );
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500 pb-10">
@@ -376,54 +356,6 @@ export default function Dashboard() {
           bgColor="bg-indigo-50"
         />
       </div>
-
-      <Card className="shadow-md border-slate-200">
-        <CardHeader className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
-          <div>
-            <CardTitle>Unit Masuk (Status OPEN)</CardTitle>
-            <CardDescription>Ringkasan unit yang belum diproses WO</CardDescription>
-          </div>
-          <div className="flex flex-wrap gap-2 text-xs">
-            <div className="rounded-full bg-slate-100 px-3 py-1 text-slate-700">R4: {openEntryByType.r4}</div>
-            <div className="rounded-full bg-slate-100 px-3 py-1 text-slate-700">R2: {openEntryByType.r2}</div>
-            <div className="rounded-full bg-slate-100 px-3 py-1 text-slate-700">R2 Kecil: {openEntryByType.r2kecil}</div>
-          </div>
-        </CardHeader>
-        <CardContent>
-          <div className="rounded-md border">
-            <Table>
-              <TableHeader>
-                <TableRow className="bg-slate-50">
-                  <TableHead>Tanggal</TableHead>
-                  <TableHead>No. Entry</TableHead>
-                  <TableHead>No. Polisi</TableHead>
-                  <TableHead>Merk/Tipe</TableHead>
-                  <TableHead className="w-[120px]">Jenis</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {recentVehicles.length === 0 ? (
-                  <TableRow>
-                    <TableCell colSpan={5} className="text-center py-8 text-slate-500">
-                      Tidak ada unit OPEN.
-                    </TableCell>
-                  </TableRow>
-                ) : (
-                  recentVehicles.slice(0, 10).map((e: any) => (
-                    <TableRow key={e.id}>
-                      <TableCell>{formatDate(e.entry_date)}</TableCell>
-                      <TableCell className="font-medium">{e.entry_number}</TableCell>
-                      <TableCell className="font-semibold">{e.license_plate || e.vehicles?.license_plate || '-'}</TableCell>
-                      <TableCell className="text-slate-600">{e.vehicles?.brand_type || '-'}</TableCell>
-                      <TableCell className="font-semibold">{e.vehicles?.vehicle_type || '-'}</TableCell>
-                    </TableRow>
-                  ))
-                )}
-              </TableBody>
-            </Table>
-          </div>
-        </CardContent>
-      </Card>
 
       <div className="grid gap-4 md:grid-cols-7">
         {/* Charts Section */}
