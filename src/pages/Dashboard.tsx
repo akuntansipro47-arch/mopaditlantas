@@ -41,7 +41,10 @@ import {
   TableRow 
 } from "@/components/ui/table";
 
+import { useAuth } from '@/context/AuthContext';
+
 export default function Dashboard() {
+  const { user } = useAuth();
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState({
     monthlyPOSpending: 0,
@@ -381,77 +384,83 @@ export default function Dashboard() {
       
       {/* KPI Cards */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-        <KpiCard 
-          title="Nilai Stok Persediaan" 
-          value={formatCurrency(stats.inventoryPersediaan)} 
-          icon={Package}
-          trend="Barang Persediaan"
-          trendColor="text-slate-500"
-          iconColor="text-emerald-600"
-          bgColor="bg-emerald-50"
-        />
-        <KpiCard 
-          title="Nilai Aset Peralatan" 
-          value={formatCurrency(stats.inventoryPeralatan)} 
-          icon={Wrench}
-          trend="Peralatan Workshop"
-          trendColor="text-slate-500"
-          iconColor="text-blue-600"
-          bgColor="bg-blue-50"
-        />
-        <KpiCard 
-          title="Nilai Inventaris Kantor" 
-          value={formatCurrency(stats.inventoryInventaris)} 
-          icon={ShoppingCart}
-          trend="Inventaris & Furniture"
-          trendColor="text-slate-500"
-          iconColor="text-orange-600"
-          bgColor="bg-orange-50"
-        />
-        <KpiCard 
-          title="Belanja Bulan Ini" 
-          value={formatCurrency(stats.monthlyPOSpending)} 
-          icon={CreditCard}
-          trend="Total PO diterbitkan bulan ini"
-          trendColor="text-slate-500"
-          iconColor="text-indigo-600"
-          bgColor="bg-indigo-50"
-        />
+        {user?.role !== 'USER' && (
+          <>
+            <KpiCard 
+              title="Nilai Stok Persediaan" 
+              value={formatCurrency(stats.inventoryPersediaan)} 
+              icon={Package}
+              trend="Barang Persediaan"
+              trendColor="text-slate-500"
+              iconColor="text-emerald-600"
+              bgColor="bg-emerald-50"
+            />
+            <KpiCard 
+              title="Nilai Aset Peralatan" 
+              value={formatCurrency(stats.inventoryPeralatan)} 
+              icon={Wrench}
+              trend="Peralatan Workshop"
+              trendColor="text-slate-500"
+              iconColor="text-blue-600"
+              bgColor="bg-blue-50"
+            />
+            <KpiCard 
+              title="Nilai Inventaris Kantor" 
+              value={formatCurrency(stats.inventoryInventaris)} 
+              icon={ShoppingCart}
+              trend="Inventaris & Furniture"
+              trendColor="text-slate-500"
+              iconColor="text-orange-600"
+              bgColor="bg-orange-50"
+            />
+            <KpiCard 
+              title="Belanja Bulan Ini" 
+              value={formatCurrency(stats.monthlyPOSpending)} 
+              icon={CreditCard}
+              trend="Total PO diterbitkan bulan ini"
+              trendColor="text-slate-500"
+              iconColor="text-indigo-600"
+              bgColor="bg-indigo-50"
+            />
+          </>
+        )}
       </div>
 
-      <div className="grid gap-4 md:grid-cols-7">
+      <div className={`grid gap-4 ${user?.role !== 'USER' ? 'md:grid-cols-7' : 'md:grid-cols-1'}`}>
         {/* Charts Section */}
-        <Card className="col-span-4 shadow-md border-slate-200">
-          <CardHeader>
-            <CardTitle>Tren Belanja (6 Bulan Terakhir)</CardTitle>
-            <CardDescription>Total nominal Purchase Order per bulan</CardDescription>
-          </CardHeader>
-          <CardContent className="pl-2">
-            <div className="h-[300px] w-full">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={monthlySpendingData}>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
-                  <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fill: '#64748b', fontSize: 12}} dy={10} />
-                  <YAxis 
-                    axisLine={false} 
-                    tickLine={false} 
-                    tick={{fill: '#64748b', fontSize: 12}} 
-                    tickFormatter={(value) => `Rp${(value/1000000).toFixed(0)}jt`}
-                  />
-                  <Tooltip 
-                    cursor={{fill: '#f1f5f9'}}
-                    contentStyle={{borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)'}}
-                    formatter={(value: number) => [formatCurrency(value), 'Total Belanja']}
-                  />
-                  <Bar dataKey="value" fill="#6366f1" radius={[4, 4, 0, 0]} barSize={40} />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          </CardContent>
-        </Card>
+        {user?.role !== 'USER' && (
+          <Card className="col-span-4 shadow-md border-slate-200">
+            <CardHeader>
+              <CardTitle>Tren Belanja (6 Bulan Terakhir)</CardTitle>
+              <CardDescription>Total nominal Purchase Order per bulan</CardDescription>
+            </CardHeader>
+            <CardContent className="pl-2">
+              <div className="h-[300px] w-full">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={monthlySpendingData}>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                    <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fill: '#64748b', fontSize: 12}} dy={10} />
+                    <YAxis 
+                      axisLine={false} 
+                      tickLine={false} 
+                      tick={{fill: '#64748b', fontSize: 12}} 
+                      tickFormatter={(value) => `Rp${(value/1000000).toFixed(0)}jt`}
+                    />
+                    <Tooltip 
+                      cursor={{fill: '#f1f5f9'}}
+                      contentStyle={{borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)'}}
+                      formatter={(value: number) => [formatCurrency(value), 'Total Belanja']}
+                    />
+                    <Bar dataKey="value" fill="#6366f1" radius={[4, 4, 0, 0]} barSize={40} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </CardContent>
+          </Card>
+        )}
         
         {/* WO Status Chart */}
-        <Card className="col-span-3 shadow-md border-slate-200">
+        <Card className={`${user?.role !== 'USER' ? 'col-span-3' : 'col-span-1'} shadow-md border-slate-200`}>
           <CardHeader>
             <CardTitle>Status Work Order</CardTitle>
             <CardDescription>Distribusi status pekerjaan saat ini</CardDescription>
