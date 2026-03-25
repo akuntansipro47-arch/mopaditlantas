@@ -52,7 +52,7 @@ export default function WorkOrderDetailReport() {
                 job_types (
                     job_name,
                     job_group,
-                    base_price
+                    selling_price
                 )
             ),
             vehicle_entry_spareparts (
@@ -107,8 +107,8 @@ export default function WorkOrderDetailReport() {
                   item_type: 'JOB',
                   item_name: ej.job_types?.job_name || 'Pekerjaan',
                   qty: 1,
-                  unit_price: ej.job_types?.base_price || 0,
-                  total_price: ej.job_types?.base_price || 0,
+                  unit_price: ej.job_types?.selling_price || 0,
+                  total_price: ej.job_types?.selling_price || 0,
                   job_group: ej.job_types?.job_group || 'Umum',
                   is_estimation: true
               }));
