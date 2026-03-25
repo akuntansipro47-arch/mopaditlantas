@@ -238,7 +238,13 @@ export default function VehicleEntryPage() {
         // Find parts for this job
         const parts = existingParts 
             ? existingParts
-                .filter(p => p.job_type_id === j.job_type_id || (!j.job_type_id && !p.job_type_id)) // fallback jika null
+                .filter(p => {
+                    if (p.job_type_id === j.job_type_id) return true;
+                    // Strict fallback: only claim null-job_id parts if this job actually NEEDS spareparts
+                    const groupStr = (jobDef?.job_group || item.service_group) as string;
+                    if (!p.job_type_id && needsSparepartDetail({ group: groupStr, job_id: j.job_type_id || '' })) return true;
+                    return false;
+                })
                 .map(p => ({
                     name: p.item_name,
                     qty: p.qty,
@@ -249,7 +255,8 @@ export default function VehicleEntryPage() {
         // Remove from existingParts so we don't assign them again
         if (existingParts) {
             existingParts.forEach((p, idx) => {
-                if (p.job_type_id === j.job_type_id || (!j.job_type_id && !p.job_type_id)) {
+                const groupStr = (jobDef?.job_group || item.service_group) as string;
+                if (p.job_type_id === j.job_type_id || (!p.job_type_id && needsSparepartDetail({ group: groupStr, job_id: j.job_type_id || '' }))) {
                     (p as any).assigned = true;
                 }
             });
@@ -266,22 +273,19 @@ export default function VehicleEntryPage() {
       // Check for unassigned parts (maybe parts were added without a specific job_type_id, or job was deleted but part remains)
       const unassignedParts = existingParts?.filter((p: any) => !p.assigned) || [];
       if (unassignedParts.length > 0) {
-          // Find a job that might be "GANTI SPAREPART" or similar, or just append to the first job
-          const firstGantiJobIdx = mappedJobs.findIndex(j => needsSparepartDetail(j));
-          
           const partsToAdd = unassignedParts.map(p => ({
               name: p.item_name,
               qty: p.qty,
               price: p.estimated_price
           }));
 
-          if (firstGantiJobIdx >= 0) {
-              mappedJobs[firstGantiJobIdx].spareparts = [...(mappedJobs[firstGantiJobIdx].spareparts || []), ...partsToAdd];
-          } else if (mappedJobs.length > 0) {
-              // Just add to the first job if no specific "GANTI" job found
-              mappedJobs[0].spareparts = [...(mappedJobs[0].spareparts || []), ...partsToAdd];
+          // Try to find a job that might be "GANTI SPAREPART" or similar
+          const gantiJobIdx = mappedJobs.findIndex(j => needsSparepartDetail(j));
+          
+          if (gantiJobIdx >= 0) {
+              mappedJobs[gantiJobIdx].spareparts = [...(mappedJobs[gantiJobIdx].spareparts || []), ...partsToAdd];
           } else {
-               // If no jobs exist, create a dummy one to hold parts
+               // If no "GANTI" job, create a new block specifically for these parts
                mappedJobs.push({
                    group: 'PERBAIKAN',
                    job_id: '',
