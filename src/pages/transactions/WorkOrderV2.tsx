@@ -6,8 +6,7 @@ import {
 } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Plus, Search, Eye, Trash2, ClipboardCheck, Play, CheckCircle, Printer, XCircle, RefreshCw, Check, X, Camera, Upload, Image as ImageIcon, Pencil, Wrench, Info, FileText } from 'lucide-react';
-import { Checkbox } from "@/components/ui/checkbox";
+import { Plus, Search, Eye, Trash2, ClipboardCheck, Play, CheckCircle, Printer, XCircle, RefreshCw, Check, X, Camera, Upload, Image as ImageIcon, Pencil, Wrench } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { toast } from 'sonner';
 import {
@@ -36,18 +35,17 @@ type WOWithDetails = WO & {
 };
 
 type WOBillingItem = {
-    id?: string;
-    item_type: 'JOB' | 'PART';
-    job_type_id: string | null;
-    goods_id: string | null;
-    item_name: string;
-    qty: number;
-    unit_price: number;
-    total_price: number;
-    job_group: 'PERBAIKAN' | 'SERVICE_RINGAN' | string;
-    source?: 'GOODS_ISSUE' | 'WO_INTERFACE';
-    is_info_only?: boolean; // New flag for info-only stock
-  };
+  id?: string;
+  item_type: 'JOB' | 'PART';
+  job_type_id: string | null;
+  goods_id: string | null;
+  item_name: string;
+  qty: number;
+  unit_price: number;
+  total_price: number;
+  job_group: 'PERBAIKAN' | 'SERVICE_RINGAN' | string;
+  source?: 'GOODS_ISSUE' | 'WO_INTERFACE'; // Add source tracking
+};
 
 export default function WorkOrderV2() {
   const { user } = useAuth();
@@ -78,6 +76,14 @@ export default function WorkOrderV2() {
 
   const [activeWOImages, setActiveWOImages] = useState<any[]>([]);
   const [isImageDialogOpen, setIsImageDialogOpen] = useState(false);
+
+  const classifyVehicleType = (vehicleType?: string | null) => {
+    const vt = String(vehicleType || '').toUpperCase();
+    if (vt.includes('R2_KECIL') || vt.includes('R2 KECIL') || vt.includes('KECIL')) return 'R2 Kecil';
+    if (vt === 'R4' || vt.includes('R4') || vt.includes('MOBIL')) return 'R4';
+    if (vt === 'R2' || vt.includes('R2') || vt.includes('MOTOR')) return 'R2';
+    return '-';
+  };
   const [uploadingImage, setUploadingImage] = useState(false);
 
   // Print State
@@ -271,11 +277,7 @@ export default function WorkOrderV2() {
   }
 
   async function fetchGoods() {
-    const { data } = await supabase
-      .from('goods')
-      .select('*')
-      .eq('is_active', true) // Only active goods
-      .order('name');
+    const { data } = await supabase.from('goods').select('*').order('name');
     setGoodsList(data || []);
   }
 
@@ -340,10 +342,6 @@ export default function WorkOrderV2() {
 
   const handlePrintSuratJalan = (woId: string) => {
     window.open(`/print/surat-jalan/${woId}`, '_blank');
-  };
-
-  const handlePrintInvoice = (woId: string) => {
-    window.open(`/print/invoice/${woId}`, '_blank');
   };
 
   const handleStatusChange = async (id: string, newStatus: string) => {
@@ -465,8 +463,7 @@ export default function WorkOrderV2() {
           unit_price: b.unit_price,
           total_price: b.total_price,
           job_group: b.job_group,
-          source: 'WO_INTERFACE', // Default
-          is_info_only: b.is_info_only || false
+          source: 'WO_INTERFACE' // Default
         }));
 
         // Remove old Perbaikan parts (source: GOODS_ISSUE) from saved billing to avoid stale data
@@ -497,8 +494,7 @@ export default function WorkOrderV2() {
                 qty: 1,
                 unit_price: j.job_types.selling_price || 0,
                 total_price: j.job_types.selling_price || 0,
-                source: 'WO_INTERFACE',
-                is_info_only: false
+                source: 'WO_INTERFACE'
                 });
             }
             });
@@ -531,8 +527,7 @@ export default function WorkOrderV2() {
                         qty: item.quantity,
                         unit_price: item.goods.selling_price || 0,
                         total_price: (item.goods.selling_price || 0) * item.quantity,
-                        source: 'GOODS_ISSUE', // Flag as from Goods Issue
-                        is_info_only: item.is_info_only || false
+                        source: 'GOODS_ISSUE' // Flag as from Goods Issue
                     });
                 }
               }
@@ -602,8 +597,7 @@ export default function WorkOrderV2() {
                 qty: item.qty,
                 unit_price: item.unit_price,
                 total_price: item.total_price,
-                job_group: item.job_group,
-                is_info_only: item.is_info_only
+                job_group: item.job_group
             })));
 
         if (billingError) throw billingError;
@@ -663,34 +657,57 @@ export default function WorkOrderV2() {
 
         // D. Sync Billing Items to Stock
         if (targetIssueId) {
-            // Optimization: Process in parallel to reduce delay
-            const promises = billingItems.map(async (item) => {
+            for (const item of billingItems) {
                 // STRICTLY FOLLOW RULE: Only "Service Ringan" items trigger auto-stock deduction in WO.
-                if (!isServiceRingan(item.job_group)) return;
+                // "Perbaikan" items are assumed to be handled in Goods Issue module manually (Informational only here).
+                if (!isServiceRingan(item.job_group)) continue;
 
                 if (item.goods_id) {
+                    // Only process items that are meant to be auto-deducted (usually from WO interface)
+                    // But to be safe, we check if it's NOT already covered by a manual Goods Issue.
+                    // If the item came from 'GOODS_ISSUE' source (loaded in handleFinishWO), we assume it's already done.
+                    // BUT, `issuedMap` includes ALL issues.
+                    
                     const billedQty = item.qty;
                     const alreadyIssuedQty = issuedMap.get(item.goods_id) || 0;
+                    
+                    // Logic:
+                    // If source is 'GOODS_ISSUE', it means it was loaded from existing issues. We shouldn't double deduct.
+                    // If source is 'WO_INTERFACE', we need to ensure it's issued.
+                    
+                    // Simplified: Calculate 'Needed' vs 'Issued'.
+                    // CAUTION: 'issuedMap' contains ALL issues (Manual + Auto).
+                    // If we have 1 Manual Issue (Qty 1) and Billing says Qty 1.
+                    // Then alreadyIssuedQty = 1. billedQty = 1. Diff = 0. No action. Correct.
+                    
+                    // If we have 0 Issued. Billing says Qty 1.
+                    // Diff = 1. We need to issue 1 more.
+                    
+                    // If we have 1 Manual Issue. Billing says Qty 2 (User increased it).
+                    // Diff = 1. We need to issue 1 more.
+                    
                     const diff = billedQty - alreadyIssuedQty;
 
-                    if (diff > 0) { // Only handle POSITIVE diff (Deduction)
-                        // 1. Adjust Stock (ONLY IF NOT INFO ONLY)
-                        if (!item.is_info_only) {
-                            const { data: currentGood } = await supabase
-                                .from('goods')
-                                .select('current_stock')
-                                .eq('id', item.goods_id)
-                                .single();
+                    if (diff > 0) { // Only handle POSITIVE diff (Deduction). Do not handle returns here to be safe.
+                        // 1. Adjust Stock
+                        const { data: currentGood } = await supabase
+                            .from('goods')
+                            .select('current_stock')
+                            .eq('id', item.goods_id)
+                            .single();
 
-                            if (currentGood) {
-                                await supabase
-                                    .from('goods')
-                                    .update({ current_stock: (currentGood.current_stock || 0) - diff })
-                                    .eq('id', item.goods_id);
-                            }
+                        if (currentGood) {
+                             await supabase
+                                .from('goods')
+                                .update({ current_stock: (currentGood.current_stock || 0) - diff })
+                                .eq('id', item.goods_id);
                         }
 
                         // 2. Add/Update Goods Issue Item
+                        // We append the difference to the targetIssueId (Auto-generated).
+                        // Check if this good already exists in the TARGET issue (to update) or insert new.
+                        
+                        // Need to check specifically in targetIssueId
                         const { data: existingTargetItem } = await supabase
                             .from('goods_issue_items')
                             .select('*')
@@ -699,131 +716,24 @@ export default function WorkOrderV2() {
                             .single();
 
                         if (existingTargetItem) {
+                            // Update existing auto-item
                             await supabase
                                 .from('goods_issue_items')
-                                .update({ 
-                                    quantity: existingTargetItem.quantity + diff,
-                                    is_info_only: item.is_info_only 
-                                })
+                                .update({ quantity: existingTargetItem.quantity + diff })
                                 .eq('id', existingTargetItem.id);
                         } else {
+                            // Insert new item
                              await supabase
                                  .from('goods_issue_items')
                                  .insert({
                                      issue_id: targetIssueId,
                                      goods_id: item.goods_id,
-                                     quantity: diff,
-                                     is_info_only: item.is_info_only
+                                     quantity: diff
                                  });
                         }
                     }
                 }
-            });
-
-            await Promise.all(promises);
-        }
-
-        // --- E. AUTO JOURNALING (Piutang vs Pendapatan) ---
-        // Debit: Piutang Usaha (Grand Total)
-        // Credit: Pendapatan Jasa (Total Service)
-        // Credit: Pendapatan Sparepart (Total Parts)
-        
-        try {
-             // 1. Calculate Totals
-             let totalService = 0;
-             let totalParts = 0;
-             
-             billingItems.forEach(item => {
-                 if (item.item_type === 'JOB') {
-                     totalService += item.total_price || 0;
-                 } else {
-                     totalParts += item.total_price || 0;
-                 }
-             });
-             
-             const grandTotal = totalService + totalParts;
-
-             if (grandTotal > 0) {
-               // 2. Find Accounts
-               const { data: accounts } = await supabase
-                   .from('chart_of_accounts')
-                   .select('id, account_name, account_code, account_type, category');
-               
-               const isDetail = (a: any) => (a?.account_type || '').toUpperCase() === 'DETAIL';
-               const isRevenue = (a: any) => {
-                    const c = (a?.category || '').toUpperCase();
-                    return c === 'PENDAPATAN' || c === 'PENJUALAN';
-               };
-               const findByCode = (code: string) => accounts?.find(a => isDetail(a) && a?.account_code === code);
-               const findByName = (keyword: string, revenueOnly = false) => accounts?.find(a => {
-                    if (!isDetail(a)) return false;
-                    if (revenueOnly && !isRevenue(a)) return false;
-                    return (a?.account_name || '').toLowerCase().includes(keyword.toLowerCase());
-               });
-
-               const accReceivable = findByName('Piutang Usaha') || findByName('Piutang') || findByName('Receivable');
-               const accServiceRev = findByCode('4100101') || findByName('Pendapatan Jasa', true) || findByName('Jasa', true) || findByName('Service', true);
-               const accPartsRev = findByCode('4100102') || findByName('Pendapatan Sparepart', true) || findByName('Sparepart', true) || accServiceRev;
-
-                if (accReceivable && accServiceRev) {
-                    // 3. Create Journal Header
-                    const { data: journal, error: jErr } = await supabase
-                        .from('journal_entries')
-                        .insert([{
-                            entry_date: new Date().toISOString(),
-                            description: `Jurnal Otomatis WO ${activeWO.wo_number}`,
-                            reference_number: activeWO.wo_number,
-                            total_amount: grandTotal,
-                            status: 'POSTED',
-                            entry_type: 'AUTOMATIC' // FIX: Required field
-                        }])
-                        .select()
-                        .single();
-
-                    if (!jErr && journal) {
-                        const journalItems = [];
-
-                        // DEBIT: Piutang
-                        journalItems.push({
-                            journal_entry_id: journal.id,
-                            account_id: accReceivable.id,
-                            debit: grandTotal,
-                            credit: 0,
-                            description: `Piutang WO ${activeWO.wo_number}`
-                        });
-
-                        // CREDIT: Pendapatan Jasa
-                        if (totalService > 0) {
-                            journalItems.push({
-                                journal_entry_id: journal.id,
-                                account_id: accServiceRev.id,
-                                debit: 0,
-                                credit: totalService,
-                                description: `Pendapatan Jasa WO ${activeWO.wo_number}`
-                            });
-                        }
-
-                        // CREDIT: Pendapatan Sparepart
-                        if (totalParts > 0) {
-                             journalItems.push({
-                                journal_entry_id: journal.id,
-                                account_id: accPartsRev?.id || accServiceRev.id,
-                                debit: 0,
-                                credit: totalParts,
-                                description: `Pendapatan Sparepart WO ${activeWO.wo_number}`
-                            });
-                        }
-
-                        await supabase.from('journal_entry_items').insert(journalItems);
-                        toast.success("Jurnal Otomatis Berhasil Dibuat");
-                    }
-                } else {
-                    toast.warning("Jurnal Otomatis GAGAL: Akun Piutang/Pendapatan belum disetting di COA.");
-                }
-             }
-        } catch (jError) {
-            console.error("Auto Journal Error:", jError);
-            toast.error("Gagal membuat jurnal otomatis (Data WO tetap tersimpan).");
+            }
         }
 
         // 3. Update WO Status to COMPLETED
@@ -1029,20 +939,18 @@ export default function WorkOrderV2() {
                     const diff = billedQty - alreadyIssuedQty;
 
                     if (diff > 0) { // Only handle positive diff
-                        // Adjust Stock (ONLY IF NOT INFO ONLY)
-                        if (!item.is_info_only) {
-                            const { data: currentGood } = await supabase
-                                .from('goods')
-                                .select('current_stock, name')
-                                .eq('id', item.goods_id)
-                                .single();
+                        // Adjust Stock
+                        const { data: currentGood } = await supabase
+                            .from('goods')
+                            .select('current_stock, name')
+                            .eq('id', item.goods_id)
+                            .single();
 
-                            if (currentGood) {
-                                await supabase
-                                    .from('goods')
-                                    .update({ current_stock: (currentGood.current_stock || 0) - diff })
-                                    .eq('id', item.goods_id);
-                            }
+                        if (currentGood) {
+                             await supabase
+                                .from('goods')
+                                .update({ current_stock: (currentGood.current_stock || 0) - diff })
+                                .eq('id', item.goods_id);
                         }
 
                         // Update/Insert Issue Item
@@ -1056,10 +964,7 @@ export default function WorkOrderV2() {
                         if (existingTargetItem) {
                             await supabase
                                 .from('goods_issue_items')
-                                .update({ 
-                                    quantity: existingTargetItem.quantity + diff,
-                                    is_info_only: item.is_info_only // Update flag if needed (though usually insert)
-                                })
+                                .update({ quantity: existingTargetItem.quantity + diff })
                                 .eq('id', existingTargetItem.id);
                         } else {
                             if (diff > 0) {
@@ -1068,13 +973,12 @@ export default function WorkOrderV2() {
                                     .insert({
                                         issue_id: targetIssueId,
                                         goods_id: item.goods_id,
-                                        quantity: diff,
-                                        is_info_only: item.is_info_only // Pass the flag
+                                        quantity: diff
                                     });
                             }
                         }
                         updatedCount++;
-                        console.log(`Fixed Stock for ${item.goods_id}: Diff ${diff}`);
+                        console.log(`Fixed Stock for ${currentGood?.name}: Diff ${diff}`);
                     }
                 }
             }
@@ -1088,145 +992,6 @@ export default function WorkOrderV2() {
 
     } catch (e: any) {
         toast.error("Gagal fix stock: " + e.message);
-    } finally {
-        setLoading(false);
-    }
-  };
-
-  const handleSyncJournal = async (wo: WOWithDetails) => {
-    if (!user || user.role !== 'SUPER_ADMIN') {
-      toast.error('Akses ditolak. Fitur ini hanya untuk Super Admin.');
-      return;
-    }
-    if (!confirm(`Buat Jurnal Otomatis untuk WO ${wo.wo_number}? (Hanya jika belum ada)`)) return;
-    
-    setLoading(true);
-    try {
-        // 1. Check if journal exists
-        const { data: existingJournal } = await supabase
-            .from('journal_entries')
-            .select('id')
-            .eq('reference_number', wo.wo_number)
-            .maybeSingle(); // Use maybeSingle to avoid error if not found
-
-        if (existingJournal) {
-            toast.info("Jurnal sudah ada untuk WO ini.");
-            setLoading(false);
-            return;
-        }
-
-        // 2. Fetch Billings to calculate totals
-        const { data: billings } = await supabase
-            .from('work_order_billings')
-            .select('*')
-            .eq('work_order_id', wo.id);
-        
-        if (!billings || billings.length === 0) {
-            toast.error("Tidak ada data tagihan di WO ini.");
-            setLoading(false);
-            return;
-        }
-
-        let totalService = 0;
-        let totalParts = 0;
-        
-        billings.forEach(item => {
-            if (item.item_type === 'JOB') {
-                totalService += item.total_price || 0;
-            } else {
-                totalParts += item.total_price || 0;
-            }
-        });
-        
-        const grandTotal = totalService + totalParts;
-
-        if (grandTotal <= 0) {
-            toast.info("Total tagihan 0, tidak perlu jurnal.");
-            setLoading(false);
-            return;
-        }
-
-        // 3. Find Accounts
-        const { data: accounts } = await supabase
-            .from('chart_of_accounts')
-            .select('id, account_name, account_code, account_type, category');
-        
-        const isDetail = (a: any) => (a?.account_type || '').toUpperCase() === 'DETAIL';
-        const isRevenue = (a: any) => {
-            const c = (a?.category || '').toUpperCase();
-            return c === 'PENDAPATAN' || c === 'PENJUALAN';
-        };
-        const findByCode = (code: string) => accounts?.find(a => isDetail(a) && a?.account_code === code);
-        const findByName = (keyword: string, revenueOnly = false) => accounts?.find(a => {
-            if (!isDetail(a)) return false;
-            if (revenueOnly && !isRevenue(a)) return false;
-            return (a?.account_name || '').toLowerCase().includes(keyword.toLowerCase());
-        });
-
-        const accReceivable = findByName('Piutang Usaha') || findByName('Piutang') || findByName('Receivable');
-        const accServiceRev = findByCode('4100101') || findByName('Pendapatan Jasa', true) || findByName('Jasa', true) || findByName('Service', true);
-        const accPartsRev = findByCode('4100102') || findByName('Pendapatan Sparepart', true) || findByName('Sparepart', true) || accServiceRev;
-
-        if (!accReceivable || !accServiceRev) {
-            toast.error("Gagal: Akun Piutang/Pendapatan tidak ditemukan di COA.");
-            setLoading(false);
-            return;
-        }
-
-        // 4. Create Journal
-        const { data: journal, error: jErr } = await supabase
-            .from('journal_entries')
-            .insert([{
-                entry_date: wo.work_date, // Use WO date for backfill? Or current date? Usually WO date is better for accrual.
-                description: `Jurnal Otomatis WO ${wo.wo_number}`,
-                reference_number: wo.wo_number,
-                total_amount: grandTotal,
-                status: 'POSTED',
-                entry_type: 'AUTOMATIC' // FIX: Required field
-            }])
-            .select()
-            .single();
-
-        if (jErr) throw jErr;
-
-        const journalItems = [];
-
-        // DEBIT
-        journalItems.push({
-            journal_entry_id: journal.id,
-            account_id: accReceivable.id,
-            debit: grandTotal,
-            credit: 0,
-            description: `Piutang WO ${wo.wo_number}`
-        });
-
-        // CREDIT Service
-        if (totalService > 0) {
-            journalItems.push({
-                journal_entry_id: journal.id,
-                account_id: accServiceRev.id,
-                debit: 0,
-                credit: totalService,
-                description: `Pendapatan Jasa WO ${wo.wo_number}`
-            });
-        }
-
-        // CREDIT Parts
-        if (totalParts > 0) {
-                journalItems.push({
-                journal_entry_id: journal.id,
-                account_id: accPartsRev?.id || accServiceRev.id,
-                debit: 0,
-                credit: totalParts,
-                description: `Pendapatan Sparepart WO ${wo.wo_number}`
-            });
-        }
-
-        await supabase.from('journal_entry_items').insert(journalItems);
-        toast.success("Jurnal Berhasil Disinkronisasi (Backfill)");
-
-    } catch (e: any) {
-        toast.error("Gagal sync jurnal: " + e.message);
     } finally {
         setLoading(false);
     }
@@ -1246,7 +1011,7 @@ export default function WorkOrderV2() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h2 className="text-3xl font-bold tracking-tight text-blue-700">Work Order (WO) - DEBUG MODE</h2>
+        <h2 className="text-3xl font-bold tracking-tight text-blue-700">Work Order (WO)</h2>
         <Dialog open={isDialogOpen} onOpenChange={(open) => { setIsDialogOpen(open); if(!open) resetForm(); }}>
           <DialogTrigger asChild>
             <Button><Plus className="mr-2 h-4 w-4" /> Buat WO Baru</Button>
@@ -1431,6 +1196,7 @@ export default function WorkOrderV2() {
                   <TableHead>No. WO</TableHead>
                   <TableHead>Tanggal</TableHead>
                   <TableHead>Kendaraan</TableHead>
+                  <TableHead>Group</TableHead>
                   <TableHead>Mekanik</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead className="text-right">Aksi</TableHead>
@@ -1451,6 +1217,11 @@ export default function WorkOrderV2() {
                           <span className="text-xs text-muted-foreground">{item.vehicle_entries?.nota_dinas_number}</span>
                         </div>
                       </TableCell>
+                      <TableCell>
+                        <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-slate-100 text-slate-700">
+                          {classifyVehicleType(item.vehicle_entries?.vehicles?.vehicle_type)}
+                        </span>
+                      </TableCell>
                       <TableCell>{item.mechanics?.name || '-'}</TableCell>
                       <TableCell>
                         <Badge variant={
@@ -1463,19 +1234,6 @@ export default function WorkOrderV2() {
                       </TableCell>
                       <TableCell className="text-right">
                         <div className="flex justify-end gap-2">
-                          {/* EMERGENCY SYNC BUTTON - ALWAYS SHOW FOR CLOSED WO */}
-                          {item.status === 'CLOSED' && user?.role === 'SUPER_ADMIN' && (
-                             <Button 
-                                variant="destructive" 
-                                size="sm" 
-                                className="bg-pink-600 hover:bg-pink-700 text-white font-bold animate-pulse" 
-                                onClick={() => handleSyncJournal(item)} 
-                                title="SYNC JURNAL SEKARANG"
-                              >
-                                  SYNC JURNAL
-                              </Button>
-                          )}
-
                           {item.status === 'OPEN' && (
                             <Button size="sm" variant="outline" onClick={() => handleStatusChange(item.id, 'IN_PROGRESS')}>
                               <Play className="h-4 w-4 mr-1" /> Mulai
@@ -1503,11 +1261,6 @@ export default function WorkOrderV2() {
                               )}
                             </>
                           )}
-                          {(item.status === 'COMPLETED' || item.status === 'CLOSED') && (
-                            <Button variant="outline" size="sm" className="h-8" onClick={() => handlePrintInvoice(item.id)}>
-                              <FileText className="h-4 w-4 mr-1" /> Invoice
-                            </Button>
-                          )}
                           <Button variant="ghost" size="icon" onClick={() => handlePrintSuratJalan(item.id)} title="Cetak Surat Jalan / WO">
                               <Printer className="h-4 w-4" />
                           </Button>
@@ -1530,25 +1283,11 @@ export default function WorkOrderV2() {
                               <Trash2 className="h-4 w-4" />
                             </Button>
                           )}
-                          {/* Fix Stock & Sync Journal Buttons for Closed WO - DEBUG MODE: ALWAYS SHOW */}
-                          {item.status === 'CLOSED' && (
-                              <div className="flex gap-1">
-                                  <Button variant="outline" size="icon" className="text-purple-600 border-purple-200 hover:bg-purple-50" onClick={() => handleFixStock(item)} title="Fix Stock / Sinkronisasi Stok">
-                                      <Wrench className="h-4 w-4" />
-                                  </Button>
-                                  
-                                  {user?.role === 'SUPER_ADMIN' && (
-                                    <Button 
-                                      variant="destructive" 
-                                      size="sm" 
-                                      className="h-8 px-2 text-xs bg-blue-600 hover:bg-blue-700 text-white" 
-                                      onClick={() => handleSyncJournal(item)} 
-                                      title="KLIK DISINI UNTUK SYNC JURNAL"
-                                    >
-                                        SYNC JURNAL
-                                    </Button>
-                                  )}
-                              </div>
+                          {/* Fix Stock Button for Closed WO (Admin Only) */}
+                          {item.status === 'CLOSED' && (user?.role === 'SUPER_ADMIN' || user?.role === 'ADMIN') && (
+                              <Button variant="outline" size="icon" className="text-purple-600 border-purple-200 hover:bg-purple-50" onClick={() => handleFixStock(item)} title="Fix Stock / Sinkronisasi Stok">
+                                  <Wrench className="h-4 w-4" />
+                              </Button>
                           )}
                         </div>
                       </TableCell>
@@ -1576,9 +1315,8 @@ export default function WorkOrderV2() {
                     <TableHeader>
                         <TableRow>
                             <TableHead className="w-[10%]">Group</TableHead>
-                            <TableHead className="w-[20%]">Daftar Pengerjaan</TableHead>
-                            <TableHead className="w-[20%]">Sparepart</TableHead>
-                            <TableHead className="w-[8%] text-center">Part Luar</TableHead>
+                            <TableHead className="w-[25%]">Daftar Pengerjaan</TableHead>
+                            <TableHead className="w-[25%]">Sparepart</TableHead>
                             <TableHead className="w-[15%]">Harga Pagu</TableHead>
                             <TableHead className="w-[8%]">Qty</TableHead>
                             <TableHead className="w-[17%] text-right">Nominal</TableHead>
@@ -1586,7 +1324,7 @@ export default function WorkOrderV2() {
                     </TableHeader>
                     <TableBody>
                         {billingItems.map((item, index) => (
-                            <TableRow key={index} className={item.is_info_only ? 'bg-yellow-50 hover:bg-yellow-100' : ''}>
+                            <TableRow key={index}>
                                 <TableCell>
                                     <Badge variant="outline" className={isServiceRingan(item.job_group) ? 'bg-blue-50' : 'bg-orange-50'}>
                                         {item.job_group || (isServiceRingan(item.job_group) ? 'Service Ringan' : 'Perbaikan')}
@@ -1627,30 +1365,13 @@ export default function WorkOrderV2() {
                                             {item.item_type === 'PART' ? item.item_name.replace('Penggantian ', '') : '(Tidak ada part)'}
                                         </span>
                                     )}
-                                    {/* INFO ONLY INDICATOR */}
-                                    {item.is_info_only && (
-                                        <div className="flex items-center gap-1.5 mt-1.5">
-                                            <div className="w-2.5 h-2.5 rounded-full bg-yellow-400 border border-yellow-500 shadow-sm" title="Part Luar (Tidak Potong Stok)"></div>
-                                            <span className="text-[10px] text-yellow-700 font-medium bg-yellow-50 px-1.5 py-0.5 rounded border border-yellow-100">Part Luar</span>
-                                        </div>
-                                    )}
-                                </TableCell>
-                                <TableCell className="text-center">
-                                    <div className="flex justify-center items-center h-full">
-                                        <Checkbox 
-                                            checked={item.is_info_only} 
-                                            onCheckedChange={(checked) => handleBillingItemChange(index, 'is_info_only', checked)}
-                                            title="Part Luar (Tidak Potong Stok)"
-                                        />
-                                    </div>
                                 </TableCell>
                                 <TableCell>
                                     <Input 
-                                        type="text" 
-                                        inputMode="numeric"
+                                        type="number" 
                                         className="h-8 text-right bg-gray-50"
-                                        value={item.unit_price}
-                                        readOnly={true} 
+                                        value={item.unit_price} 
+                                        readOnly={true} // Always Read-only (Price from Master)
                                     />
                                 </TableCell>
                                 <TableCell>

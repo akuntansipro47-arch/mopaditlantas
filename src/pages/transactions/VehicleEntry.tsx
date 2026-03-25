@@ -303,7 +303,7 @@ export default function VehicleEntryPage() {
     try {
       const entryPayload = {
         entry_date: formData.entry_date,
-        vehicle_id: formData.vehicle_id || null, // Fix UUID error
+        vehicle_id: formData.vehicle_id,
         nota_dinas_number: formData.nota_dinas_number,
         service_group: formData.service_group,
         notes: formData.notes,
@@ -399,6 +399,13 @@ export default function VehicleEntryPage() {
     e.vehicles?.license_plate.toLowerCase().includes(search.toLowerCase())
   );
 
+  const classifyVehicleType = (vehicleType?: string | null) => {
+    const vt = String(vehicleType || '').toUpperCase();
+    if (vt.includes('R2_KECIL') || vt.includes('R2 KECIL') || vt.includes('KECIL')) return 'R2 Kecil';
+    if (vt === 'R4' || vt.includes('R4') || vt.includes('MOBIL')) return 'R4';
+    if (vt === 'R2' || vt.includes('R2') || vt.includes('MOTOR')) return 'R2';
+    return '-';
+  };
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -632,20 +639,16 @@ export default function VehicleEntryPage() {
                                 <div className="w-16 space-y-1">
                                     <Label className="text-xs">Qty</Label>
                                     <Input 
-                                        type="text" 
-                                        inputMode="numeric"
+                                        type="number" 
                                         value={part.qty} 
-                                        onChange={(e) => {
-                                            const val = e.target.value.replace(/[^0-9]/g, '');
-                                            handleTempSparepartChange(idx, 'qty', val ? parseInt(val) : 0);
-                                        }} 
+                                        onChange={(e) => handleTempSparepartChange(idx, 'qty', parseInt(e.target.value) || 0)} 
                                         className="h-8 text-center"
                                     />
                                 </div>
                                 <div className="w-28 space-y-1">
                                     <Label className="text-xs">Harga Pagu</Label>
                                     <Input 
-                                        type="text" 
+                                        type="number" 
                                         value={part.price} 
                                         readOnly
                                         className="h-8 text-right bg-gray-100 text-gray-500"
@@ -755,6 +758,7 @@ export default function VehicleEntryPage() {
                   <TableHead>No. Entry</TableHead>
                   <TableHead>Tanggal</TableHead>
                   <TableHead>Kendaraan</TableHead>
+                  <TableHead>Group</TableHead>
                   <TableHead>Nota Dinas</TableHead>
                   <TableHead className="w-[30%]">Daftar Pekerjaan</TableHead>
                   <TableHead className="text-right">Total Estimasi</TableHead>
@@ -775,6 +779,11 @@ export default function VehicleEntryPage() {
                           <span className="font-medium">{item.vehicles?.license_plate}</span>
                           <span className="text-xs text-muted-foreground">{item.vehicles?.brand_type}</span>
                         </div>
+                      </TableCell>
+                      <TableCell>
+                        <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-slate-100 text-slate-700">
+                          {classifyVehicleType(item.vehicles?.vehicle_type)}
+                        </span>
                       </TableCell>
                       <TableCell>{item.nota_dinas_number || '-'}</TableCell>
                       <TableCell>
