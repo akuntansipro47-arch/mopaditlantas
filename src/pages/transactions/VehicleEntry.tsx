@@ -819,7 +819,7 @@ export default function VehicleEntryPage() {
                   <TableHead className="w-[30%]">Daftar Pekerjaan</TableHead>
                   <TableHead className="text-right">Total Estimasi</TableHead>
                   <TableHead>Status</TableHead>
-                  <TableHead className="text-right">Aksi</TableHead>
+                  <TableHead className="text-right w-[140px] pr-6">Aksi</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -895,8 +895,8 @@ export default function VehicleEntryPage() {
                           )}
                         </div>
                       </TableCell>
-                      <TableCell className="text-right">
-                        <div className="flex justify-end gap-2">
+                      <TableCell className="text-right pr-6">
+                        <div className="flex justify-end gap-3">
                           <Button variant="ghost" size="icon" onClick={() => handlePrintEntry(item.id)} title="Cetak SPK Awal">
                               <Printer className="h-4 w-4" />
                           </Button>
