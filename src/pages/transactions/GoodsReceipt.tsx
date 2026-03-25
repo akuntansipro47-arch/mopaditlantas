@@ -513,7 +513,7 @@ export default function GoodsReceipt() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {selectedPO && Array.from(new Set(selectedPO.items.map(i => String((i as any).goods_id)))).map((goodsId: string) => {
+                    {selectedPO && Array.from(new Set(selectedPO.items.map(i => i.goods_id))).map((goodsId) => {
                        if (!goodsId) return null;
                        const item = selectedPO.items.find(i => i.goods_id === goodsId);
                        if (!item) return null;

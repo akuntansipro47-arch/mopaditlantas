@@ -6,7 +6,7 @@ import {
 } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Plus, Search, Eye, Trash2, ClipboardCheck, Play, CheckCircle, RefreshCw } from 'lucide-react';
+import { Plus, Search, Eye, Trash2, ClipboardCheck, Play, CheckCircle } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { toast } from 'sonner';
 import {
@@ -144,153 +144,11 @@ export default function WorkOrder() {
         .eq('id', id);
       
       if (error) throw error;
-
-      // --- AUTO JOURNAL LOGIC (IF COMPLETED) ---
-      if (newStatus === 'COMPLETED') {
-        await createAutoJournal(id);
-      }
       
       toast.success(`Status WO diubah menjadi ${newStatus}`);
       fetchWOs();
     } catch (error: any) {
       toast.error('Gagal update status: ' + error.message);
-    }
-  };
-
-  const createAutoJournal = async (woId: string) => {
-    try {
-        // 1. Fetch WO details with total amounts
-        const { data: wo, error: woErr } = await supabase
-            .from('work_orders')
-            .select('*')
-            .eq('id', woId)
-            .single();
-        
-        if (woErr) throw woErr;
-        
-        const { data: billings } = await supabase
-            .from('work_order_billings')
-            .select('item_type, total_price, is_info_only')
-            .eq('work_order_id', woId);
-
-        let totalServices = 0;
-        let totalParts = 0;
-
-        if (billings && billings.length > 0) {
-            billings.forEach((item: any) => {
-                if (item.item_type === 'JOB') totalServices += Number(item.total_price) || 0;
-                else totalParts += Number(item.total_price) || 0;
-            });
-        } else {
-            totalServices = Number(wo.total_services) || 0;
-            totalParts = Number(wo.total_parts) || 0;
-            const woGrand = Number(wo.grand_total) || 0;
-            if (woGrand > 0 && woGrand !== (totalServices + totalParts)) {
-                if (totalServices === 0 && totalParts > 0) totalServices = woGrand - totalParts;
-                else if (totalParts === 0 && totalServices > 0) totalParts = woGrand - totalServices;
-            }
-        }
-
-        const grandTotal = totalServices + totalParts;
-        if (grandTotal <= 0) return;
-
-        // 2. Find Accounts (Receivable & Revenue)
-        const { data: accounts } = await supabase
-            .from('chart_of_accounts')
-            .select('id, account_name, account_code, account_type, category');
-        
-        const isDetail = (a: any) => (a?.account_type || '').toUpperCase() === 'DETAIL';
-        const isRevenue = (a: any) => {
-            const c = (a?.category || '').toUpperCase();
-            return c === 'PENDAPATAN' || c === 'PENJUALAN';
-        };
-        const findByCode = (code: string) => accounts?.find(a => isDetail(a) && a?.account_code === code);
-        const findByName = (keyword: string, revenueOnly = false) => accounts?.find(a => {
-            if (!isDetail(a)) return false;
-            if (revenueOnly && !isRevenue(a)) return false;
-            return (a?.account_name || '').toLowerCase().includes(keyword.toLowerCase());
-        });
-        
-        const accReceivable = findByName('Piutang Usaha') || findByName('Piutang') || findByName('Receivable');
-        const accServiceRev = findByCode('4100101') || findByName('Pendapatan Jasa', true) || findByName('Jasa', true) || findByName('Service', true);
-        const accPartsRev = findByCode('4100102') || findByName('Pendapatan Sparepart', true) || findByName('Sparepart', true) || accServiceRev;
-
-        if (!accReceivable || !accServiceRev) {
-            console.warn("Auto Journal Skipped: Accounts not found");
-            toast.warning("Jurnal otomatis GAGAL: Akun 'Piutang Usaha' atau 'Pendapatan Jasa' belum dibuat di Master Akun.");
-            return;
-        }
-
-        const { data: existingJournal } = await supabase
-            .from('journal_entries')
-            .select('id')
-            .eq('reference_number', wo.wo_number)
-            .eq('entry_type', 'AUTOMATIC')
-            .limit(1);
-
-        if (existingJournal && existingJournal.length > 0) {
-            toast.info("Jurnal WO sudah ada.");
-            return;
-        }
-
-        // 3. Create Journal Entry Header
-        const { data: journal, error: jErr } = await supabase
-            .from('journal_entries')
-            .insert([{
-                entry_date: new Date().toISOString(),
-                description: `Jurnal Otomatis WO ${wo.wo_number}`,
-                reference_number: wo.wo_number,
-                total_amount: grandTotal,
-                status: 'POSTED',
-                entry_type: 'AUTOMATIC' // FIX: Required field
-            }])
-            .select()
-            .single();
-        
-        if (jErr) throw jErr;
-
-        // 4. Create Journal Items
-        const items = [];
-
-        // DEBIT: Piutang Usaha (Grand Total)
-        items.push({
-            journal_entry_id: journal.id,
-            account_id: accReceivable.id,
-            debit: grandTotal,
-            credit: 0,
-            description: `Piutang WO ${wo.wo_number}`
-        });
-
-        // CREDIT: Pendapatan Jasa
-        if (totalServices > 0) {
-            items.push({
-                journal_entry_id: journal.id,
-                account_id: accServiceRev.id,
-                debit: 0,
-                credit: totalServices,
-                description: `Pendapatan Jasa WO ${wo.wo_number}`
-            });
-        }
-
-        // CREDIT: Pendapatan Sparepart
-        if (totalParts > 0) {
-             items.push({
-                journal_entry_id: journal.id,
-                account_id: accPartsRev?.id || accServiceRev.id, // Fallback to service if parts acc not found
-                debit: 0,
-                credit: totalParts,
-                description: `Pendapatan Sparepart WO ${wo.wo_number}`
-            });
-        }
-
-        const { error: iErr } = await supabase.from('journal_entry_items').insert(items);
-        if (iErr) throw iErr;
-
-        toast.success("Jurnal Otomatis Berhasil Dibuat (Piutang vs Pendapatan)");
-
-    } catch (error: any) {
-        console.error("Auto Journal Error:", error);
-        toast.error("Gagal membuat jurnal otomatis: " + error.message);
     }
   };
 
@@ -557,18 +415,6 @@ export default function WorkOrder() {
                           <Button variant="outline" size="sm" className="h-8" onClick={() => handlePrint(item)}>
                              <ClipboardCheck className="h-4 w-4 mr-1" /> SPK
                           </Button>
-                          {/* EMERGENCY SYNC BUTTON - ALWAYS SHOW FOR CLOSED/COMPLETED WO */}
-                          {(item.status === 'CLOSED' || item.status === 'COMPLETED') && (
-                              <Button 
-                                variant="destructive" 
-                                size="sm" 
-                                className="bg-pink-600 hover:bg-pink-700 text-white font-bold h-8" 
-                                onClick={() => createAutoJournal(item.id)} 
-                                title="SYNC JURNAL SEKARANG"
-                              >
-                                  <RefreshCw className="h-4 w-4 mr-1" /> SYNC
-                              </Button>
-                          )}
                           <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => handleEdit(item)}><Eye className="h-4 w-4" /></Button>
                         </div>
                       </TableCell>

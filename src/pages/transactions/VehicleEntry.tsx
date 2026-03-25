@@ -219,7 +219,7 @@ export default function VehicleEntryPage() {
       notes: item.notes || '',
     });
     
-    // Fetch existing jobs for this entry
+      // Fetch existing jobs for this entry
     const { data: existingJobs } = await supabase
       .from('vehicle_entry_jobs')
       .select('*')
@@ -231,20 +231,29 @@ export default function VehicleEntryPage() {
       .select('*')
       .eq('vehicle_entry_id', item.id);
     
-    if (existingJobs) {
+    if (existingJobs && existingJobs.length > 0) {
       const mappedJobs = existingJobs.map(j => {
         const jobDef = jobs.find(jd => jd.id === j.job_type_id);
         
         // Find parts for this job
         const parts = existingParts 
             ? existingParts
-                .filter(p => p.job_type_id === j.job_type_id)
+                .filter(p => p.job_type_id === j.job_type_id || (!j.job_type_id && !p.job_type_id)) // fallback jika null
                 .map(p => ({
                     name: p.item_name,
                     qty: p.qty,
                     price: p.estimated_price
                 }))
             : [];
+
+        // Remove from existingParts so we don't assign them again
+        if (existingParts) {
+            existingParts.forEach((p, idx) => {
+                if (p.job_type_id === j.job_type_id || (!j.job_type_id && !p.job_type_id)) {
+                    (p as any).assigned = true;
+                }
+            });
+        }
 
         return {
           group: (jobDef?.job_group || item.service_group) as string,
@@ -253,10 +262,53 @@ export default function VehicleEntryPage() {
           spareparts: parts
         };
       });
+      
+      // Check for unassigned parts (maybe parts were added without a specific job_type_id, or job was deleted but part remains)
+      const unassignedParts = existingParts?.filter((p: any) => !p.assigned) || [];
+      if (unassignedParts.length > 0) {
+          // Find a job that might be "GANTI SPAREPART" or similar, or just append to the first job
+          const firstGantiJobIdx = mappedJobs.findIndex(j => needsSparepartDetail(j));
+          
+          const partsToAdd = unassignedParts.map(p => ({
+              name: p.item_name,
+              qty: p.qty,
+              price: p.estimated_price
+          }));
+
+          if (firstGantiJobIdx >= 0) {
+              mappedJobs[firstGantiJobIdx].spareparts = [...(mappedJobs[firstGantiJobIdx].spareparts || []), ...partsToAdd];
+          } else if (mappedJobs.length > 0) {
+              // Just add to the first job if no specific "GANTI" job found
+              mappedJobs[0].spareparts = [...(mappedJobs[0].spareparts || []), ...partsToAdd];
+          } else {
+               // If no jobs exist, create a dummy one to hold parts
+               mappedJobs.push({
+                   group: 'PERBAIKAN',
+                   job_id: '',
+                   notes: 'Suku Cadang Tambahan',
+                   spareparts: partsToAdd
+               });
+          }
+      }
+
       setEntryJobs(mappedJobs);
-    } else {
-      setEntryJobs([]);
-    }
+    } else if (existingParts && existingParts.length > 0) {
+        // Handle case where there are parts but no jobs
+        const partsToAdd = existingParts.map(p => ({
+              name: p.item_name,
+              qty: p.qty,
+              price: p.estimated_price
+        }));
+        
+        setEntryJobs([{
+            group: 'PERBAIKAN',
+            job_id: '',
+            notes: 'Suku Cadang Tambahan',
+            spareparts: partsToAdd
+        }]);
+      } else {
+        setEntryJobs([{ group: item.service_group as string, job_id: '', notes: '', spareparts: [] }]);
+      }
 
     setIsEditing(true);
     setCurrentId(item.id);

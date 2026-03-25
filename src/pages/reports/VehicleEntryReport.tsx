@@ -28,11 +28,10 @@ export default function VehicleEntryReport() {
 
   // Status Filter
   const [statusFilter, setStatusFilter] = useState('ALL');
-  const [vehicleTypeFilter, setVehicleTypeFilter] = useState('ALL');
 
   useEffect(() => {
     fetchEntries();
-  }, [dateFilter, statusFilter, vehicleTypeFilter]);
+  }, [dateFilter, statusFilter]);
 
   async function fetchEntries() {
     setLoading(true);
@@ -41,7 +40,7 @@ export default function VehicleEntryReport() {
         .from('vehicle_entries')
         .select(`
           *,
-          vehicles (license_plate, brand_type, vehicle_type),
+          vehicles (license_plate, brand_type),
           vehicle_entry_jobs (
             job_types (job_name, job_group),
             notes
@@ -95,19 +94,6 @@ export default function VehicleEntryReport() {
           });
       }
 
-      if (vehicleTypeFilter !== 'ALL') {
-          finalData = finalData.filter((e: any) => {
-              const vt = String(e.vehicles?.vehicle_type || '').toUpperCase();
-              if (vehicleTypeFilter === 'R2_KECIL') {
-                  return vt.includes('R2_KECIL') || vt.includes('R2 KECIL') || vt.includes('KECIL');
-              }
-              if (vehicleTypeFilter === 'R4') {
-                  return vt === 'R4' || vt.includes('R4') || vt.includes('MOBIL');
-              }
-              return vt === 'R2' || vt.includes('R2') || vt.includes('MOTOR');
-          });
-      }
-
       setEntries(finalData);
     } catch (error: any) {
       toast.error('Gagal mengambil data laporan: ' + error.message);
@@ -123,7 +109,6 @@ export default function VehicleEntryReport() {
       'Tanggal': formatDate(item.entry_date),
       'Nopol': item.vehicles?.license_plate || '-',
       'Tipe Kendaraan': item.vehicles?.brand_type || '-',
-      'Jenis': item.vehicles?.vehicle_type || '-',
       'Nota Dinas': item.nota_dinas_number || '-',
       'Daftar Pekerjaan': item.vehicle_entry_jobs?.map((j: any) => j.job_types?.job_name).join(', ') || '-',
       'Status Entry': item.status,
@@ -147,17 +132,6 @@ export default function VehicleEntryReport() {
     e.vehicles?.license_plate.toLowerCase().includes(search.toLowerCase()) ||
     e.nota_dinas_number?.toLowerCase().includes(search.toLowerCase())
   );
-
-  const summaryByType = filteredEntries.reduce((acc: any, e: any) => {
-    const vt = String(e.vehicles?.vehicle_type || '').toUpperCase();
-    const key =
-      vt.includes('R2_KECIL') || vt.includes('R2 KECIL') || vt.includes('KECIL') ? 'R2 Kecil' :
-      vt === 'R4' || vt.includes('R4') || vt.includes('MOBIL') ? 'R4' :
-      vt === 'R2' || vt.includes('R2') || vt.includes('MOTOR') ? 'R2' :
-      'Lainnya';
-    acc[key] = (acc[key] || 0) + 1;
-    return acc;
-  }, {});
 
   return (
     <Card className="w-full">
@@ -216,21 +190,6 @@ export default function VehicleEntryReport() {
              </Select>
           </div>
 
-          <div className="flex items-center gap-2">
-             <span className="text-sm font-medium">Jenis:</span>
-             <Select value={vehicleTypeFilter} onValueChange={setVehicleTypeFilter}>
-                <SelectTrigger className="w-[140px] bg-white h-8">
-                    <SelectValue placeholder="Semua Jenis" />
-                </SelectTrigger>
-                <SelectContent>
-                    <SelectItem value="ALL">Semua</SelectItem>
-                    <SelectItem value="R4">R4</SelectItem>
-                    <SelectItem value="R2">R2</SelectItem>
-                    <SelectItem value="R2_KECIL">R2 Kecil</SelectItem>
-                </SelectContent>
-             </Select>
-          </div>
-
           <div className="relative w-64">
               <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground pointer-events-none" />
               <Input 
@@ -240,12 +199,6 @@ export default function VehicleEntryReport() {
                 onChange={e => setSearch(e.target.value)} 
               />
             </div>
-        </div>
-
-        <div className="mt-3 flex flex-wrap gap-2 text-xs print:hidden">
-          <div className="rounded-full bg-slate-100 px-3 py-1 text-slate-700">R4: {summaryByType['R4'] || 0}</div>
-          <div className="rounded-full bg-slate-100 px-3 py-1 text-slate-700">R2: {summaryByType['R2'] || 0}</div>
-          <div className="rounded-full bg-slate-100 px-3 py-1 text-slate-700">R2 Kecil: {summaryByType['R2 Kecil'] || 0}</div>
         </div>
       </CardHeader>
       <CardContent>
@@ -257,7 +210,6 @@ export default function VehicleEntryReport() {
                 <TableHead>No. Entry</TableHead>
                 <TableHead>Tanggal</TableHead>
                 <TableHead>Kendaraan</TableHead>
-                <TableHead>Jenis</TableHead>
                 <TableHead>Nota Dinas</TableHead>
                 <TableHead className="w-[30%]">Pekerjaan / Keluhan</TableHead>
                 <TableHead>Status</TableHead>
@@ -265,7 +217,7 @@ export default function VehicleEntryReport() {
             </TableHeader>
             <TableBody>
               {filteredEntries.length === 0 ? (
-                <TableRow><TableCell colSpan={8} className="text-center h-24">Tidak ada data.</TableCell></TableRow>
+                <TableRow><TableCell colSpan={7} className="text-center h-24">Tidak ada data.</TableCell></TableRow>
               ) : (
                 filteredEntries.map((item, index) => (
                   <TableRow key={item.id} className="align-top">
@@ -282,9 +234,6 @@ export default function VehicleEntryReport() {
                         <span className="font-bold">{item.vehicles?.license_plate}</span>
                         <span className="text-xs text-muted-foreground">{item.vehicles?.brand_type}</span>
                       </div>
-                    </TableCell>
-                    <TableCell className="font-semibold">
-                      {item.vehicles?.vehicle_type || '-'}
                     </TableCell>
                     <TableCell>{item.nota_dinas_number || '-'}</TableCell>
                     <TableCell>

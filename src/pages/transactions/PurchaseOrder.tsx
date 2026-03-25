@@ -49,7 +49,7 @@ export default function PurchaseOrder() {
   // Filtered Suppliers for Search
   const filteredSuppliers = suppliers.filter(s => 
     s.name.toLowerCase().includes(supplierSearchQuery.toLowerCase()) ||
-    (s.contact_person && s.contact_person.toLowerCase().includes(supplierSearchQuery.toLowerCase()))
+    ((s as any).contact_person && (s as any).contact_person.toLowerCase().includes(supplierSearchQuery.toLowerCase()))
   );
 
   const [poType, setPoType] = useState<'WO' | 'STOCK'>('WO');
@@ -447,8 +447,8 @@ export default function PurchaseOrder() {
                                       onClick={() => handleSupplierSelect(s)}
                                     >
                                       <TableCell className="font-medium">{s.name}</TableCell>
-                                      <TableCell>{s.contact_person}</TableCell>
-                                      <TableCell className="text-right text-xs text-gray-500">{s.city}</TableCell>
+                                      <TableCell>{(s as any).contact_person}</TableCell>
+                                      <TableCell className="text-right text-xs text-gray-500">{(s as any).city}</TableCell>
                                     </TableRow>
                                   ))}
                                 </TableBody>

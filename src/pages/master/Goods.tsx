@@ -86,7 +86,7 @@ export default function Goods() {
       unit: item.unit,
       item_type: item.item_type,
       selling_price: item.selling_price || 0,
-      is_active: item.is_active !== false, // Default to true if null
+      is_active: (item as any).is_active !== false, // Default to true if null
     });
     setIsEditing(true);
     setCurrentId(item.id);
@@ -239,11 +239,11 @@ export default function Goods() {
                   <TableRow><TableCell colSpan={8} className="text-center h-24">Tidak ada data.</TableCell></TableRow>
                 ) : (
                   filteredGoods.map((item) => (
-                    <TableRow key={item.id} className={!item.is_active ? 'bg-gray-50 opacity-60' : ''}>
+                    <TableRow key={item.id} className={!(item as any).is_active ? 'bg-gray-50 opacity-60' : ''}>
                       <TableCell>{item.item_code || 'Auto'}</TableCell>
                       <TableCell className="font-medium">
                         {item.name}
-                        {!item.is_active && <span className="ml-2 text-xs text-red-500 font-bold">(Non-Aktif)</span>}
+                        {!(item as any).is_active && <span className="ml-2 text-xs text-red-500 font-bold">(Non-Aktif)</span>}
                       </TableCell>
                       <TableCell>{item.unit}</TableCell>
                       <TableCell>
@@ -254,7 +254,7 @@ export default function Goods() {
                       <TableCell>{formatCurrency(item.selling_price || 0)}</TableCell>
                       <TableCell>{item.current_stock}</TableCell>
                       <TableCell className="text-center">
-                        {item.is_active !== false ? (
+                        {(item as any).is_active !== false ? (
                           <CheckCircle className="h-4 w-4 text-green-500 mx-auto" />
                         ) : (
                           <XCircle className="h-4 w-4 text-red-500 mx-auto" />

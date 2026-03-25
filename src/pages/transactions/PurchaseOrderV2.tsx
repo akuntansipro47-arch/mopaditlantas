@@ -47,20 +47,6 @@ export default function PurchaseOrderV2() {
   const [goodsList, setGoodsList] = useState<Goods[]>([]);
   const [workOrders, setWorkOrders] = useState<any[]>([]); // To link PO to WO if needed
 
-  const [supplierSearchOpen, setSupplierSearchOpen] = useState(false);
-  const [supplierSearchQuery, setSupplierSearchQuery] = useState('');
-
-  // Filtered Suppliers for Search
-  const filteredSuppliers = suppliers.filter(s => 
-    s.name.toLowerCase().includes(supplierSearchQuery.toLowerCase()) ||
-    (s.contact_person && s.contact_person.toLowerCase().includes(supplierSearchQuery.toLowerCase()))
-  );
-
-  const handleSupplierSelect = (supplier: Supplier) => {
-    setFormData({ ...formData, supplier_id: supplier.id });
-    setSupplierSearchOpen(false);
-  };
-
   const [poType, setPoType] = useState<'WO' | 'STOCK'>('WO');
 
   // Form State
@@ -120,8 +106,7 @@ export default function PurchaseOrderV2() {
   async function fetchPOs() {
     setLoading(true);
     try {
-      // 1. Fetch Basic PO Data
-      const { data: poData, error } = await supabase
+      const { data, error } = await supabase
         .from('purchase_orders')
         .select(`
           *,
@@ -131,35 +116,7 @@ export default function PurchaseOrderV2() {
 
       if (error) throw error;
       
-      let allPOs = poData as any || [];
-
-      // 2. Collect WO IDs to fetch details separately (avoid deep join error)
-      const woIds = allPOs
-        .filter((p: any) => p.work_order_id)
-        .map((p: any) => p.work_order_id);
-
-      if (woIds.length > 0) {
-        const { data: woData } = await supabase
-          .from('work_orders')
-          .select(`
-            id,
-            wo_number,
-            vehicle_entries (
-              id,
-              vehicles (license_plate, brand_type, vehicle_type)
-            )
-          `)
-          .in('id', woIds);
-
-        // Map WO details back to POs
-        const woMap = new Map(woData?.map((w: any) => [w.id, w]));
-        
-        allPOs = allPOs.map((p: any) => ({
-          ...p,
-          work_orders: p.work_order_id ? woMap.get(p.work_order_id) : null
-        }));
-      }
-
+      const allPOs = data as any || [];
       
       // Filter Logic: (Date in Range) OR (Status != RECEIVED_FULL)
       // Assuming RECEIVED_FULL is the "Closed" state.
@@ -432,22 +389,17 @@ export default function PurchaseOrderV2() {
     }
   };
 
-  const filteredPOs = pos.filter(item => {
-    const q = search.trim().toLowerCase();
-    if (!q) return true;
-    const poNumber = String(item.po_number || '').toLowerCase();
-    const supplierName = String(item.suppliers?.name || '').toLowerCase();
-    const nopol = String((item as any).work_orders?.vehicle_entries?.vehicles?.license_plate || '').toLowerCase();
-    const kendaraan = String((item as any).work_orders?.vehicle_entries?.vehicles?.brand_type || '').toLowerCase();
-    return poNumber.includes(q) || supplierName.includes(q) || nopol.includes(q) || kendaraan.includes(q);
-  });
+  const filteredPOs = pos.filter(item => 
+    item.po_number.toLowerCase().includes(search.toLowerCase()) ||
+    item.suppliers?.name.toLowerCase().includes(search.toLowerCase())
+  );
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h2 className="text-3xl font-bold tracking-tight text-slate-900">Purchase Order (PO)</h2>
+        <h2 className="text-3xl font-bold tracking-tight text-blue-700">Purchase Order (PO)</h2>
         <div className="flex gap-2">
-          <Button onClick={() => { resetForm(); setIsDialogOpen(true); }} className="bg-lime-600 hover:bg-lime-700">
+          <Button onClick={() => { resetForm(); setIsDialogOpen(true); }}>
             <Plus className="mr-2 h-4 w-4" /> Buat PO Baru
           </Button>
         </div>
@@ -502,58 +454,14 @@ export default function PurchaseOrderV2() {
 
                   <div className="space-y-2">
                     <Label>Supplier</Label>
-                    <div className="relative">
-                      <Button 
-                        type="button" 
-                        variant="outline" 
-                        className="w-full justify-between text-left font-normal border-lime-200 hover:border-lime-500"
-                        onClick={() => !isReadOnly && setSupplierSearchOpen(true)}
-                        disabled={isReadOnly}
-                      >
-                        {formData.supplier_id 
-                          ? suppliers.find(s => s.id === formData.supplier_id)?.name || 'Pilih Supplier'
-                          : 'Pilih Supplier'}
-                        <Search className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-                      </Button>
-                    </div>
-
-                    {/* Supplier Search Dialog */}
-                    <Dialog open={supplierSearchOpen} onOpenChange={setSupplierSearchOpen}>
-                      <DialogContent className="sm:max-w-[500px]">
-                        <DialogHeader>
-                          <DialogTitle>Cari Supplier</DialogTitle>
-                        </DialogHeader>
-                        <div className="space-y-4">
-                          <Input 
-                            placeholder="Cari nama supplier..." 
-                            value={supplierSearchQuery} 
-                            onChange={(e) => setSupplierSearchQuery(e.target.value)}
-                            autoFocus
-                          />
-                          <div className="max-h-[300px] overflow-y-auto border rounded-md">
-                            {filteredSuppliers.length === 0 ? (
-                              <div className="p-4 text-center text-sm text-gray-500">Supplier tidak ditemukan.</div>
-                            ) : (
-                              <Table>
-                                <TableBody>
-                                  {filteredSuppliers.map((s) => (
-                                    <TableRow 
-                                      key={s.id} 
-                                      className="cursor-pointer hover:bg-slate-50"
-                                      onClick={() => handleSupplierSelect(s)}
-                                    >
-                                      <TableCell className="font-medium">{s.name}</TableCell>
-                                      <TableCell>{s.contact_person}</TableCell>
-                                      <TableCell className="text-right text-xs text-gray-500">{s.city}</TableCell>
-                                    </TableRow>
-                                  ))}
-                                </TableBody>
-                              </Table>
-                            )}
-                          </div>
-                        </div>
-                      </DialogContent>
-                    </Dialog>
+                    <Select value={formData.supplier_id} onValueChange={(v) => setFormData({...formData, supplier_id: v})} disabled={isReadOnly}>
+                      <SelectTrigger><SelectValue placeholder="Pilih Supplier" /></SelectTrigger>
+                      <SelectContent>
+                        {suppliers.map(s => (
+                          <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                   </div>
                   
                 {/* WO Selection Popup */}
@@ -676,19 +584,7 @@ export default function PurchaseOrderV2() {
                               </span>
                               <Search className="ml-2 h-4 w-4 opacity-50" />
                             </Button>
-                            {((item as any).work_order_id && (item as any).work_orders) ? (
-                          <div className="flex flex-col text-xs mt-1 space-y-1">
-                            <span className="font-semibold text-indigo-700">
-                              WO: {(item as any).work_orders.wo_number}
-                            </span>
-                            {((item as any).work_orders as any).vehicle_entries?.vehicles && (
-                              <span className="text-gray-600">
-                                {((item as any).work_orders as any).vehicle_entries.license_plate} - {((item as any).work_orders as any).vehicle_entries.vehicles.brand_type}
-                              </span>
-                            )}
-                          </div>
-                        ) : null}
-                      </TableCell>
+                          </TableCell>
                           <TableCell>
                             <Input 
                               className="h-9" placeholder="Merk/Tipe..."
@@ -790,7 +686,7 @@ export default function PurchaseOrderV2() {
                 </div>
                 <div className="relative w-64 ml-4">
                   <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground pointer-events-none" />
-                  <Input placeholder="Cari PO / Supplier / Nopol / Kendaraan..." className="pl-8 h-9" value={search} onChange={e => setSearch(e.target.value)} />
+                  <Input placeholder="Cari No. PO..." className="pl-8 h-9" value={search} onChange={e => setSearch(e.target.value)} />
                 </div>
              </div>
           </div>
@@ -803,9 +699,7 @@ export default function PurchaseOrderV2() {
                   <TableHead>No. PO</TableHead>
                   <TableHead>Tanggal PO</TableHead>
                   <TableHead>Supplier</TableHead>
-                  <TableHead>Tipe</TableHead>
-                  <TableHead>No. WO</TableHead>
-                  <TableHead>Nopol / Kendaraan</TableHead>
+                  <TableHead>Tipe Pengadaan (Project/Stok)</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Total Amount</TableHead>
                   <TableHead className="text-right">Aksi</TableHead>
@@ -813,7 +707,7 @@ export default function PurchaseOrderV2() {
               </TableHeader>
               <TableBody>
                 {filteredPOs.length === 0 ? (
-                  <TableRow><TableCell colSpan={9} className="text-center h-24">Tidak ada data PO.</TableCell></TableRow>
+                  <TableRow><TableCell colSpan={7} className="text-center h-24">Tidak ada data PO.</TableCell></TableRow>
                 ) : (
                   filteredPOs.map((item) => (
                     <TableRow key={item.id}>
@@ -821,23 +715,11 @@ export default function PurchaseOrderV2() {
                       <TableCell>{formatDate(item.po_date || item.created_at)}</TableCell>
                       <TableCell>{item.suppliers?.name || '-'}</TableCell>
                       <TableCell>
-                        <span className={`px-2 py-1 rounded-full text-xs font-semibold w-fit ${
+                        <span className={`px-2 py-1 rounded-full text-xs font-semibold ${
                           item.work_order_id ? 'bg-indigo-100 text-indigo-800' : 'bg-gray-100 text-gray-800'
                         }`}>
                           {item.work_order_id ? 'Project (WO)' : 'Stok Gudang'}
                         </span>
-                      </TableCell>
-                      <TableCell>
-                        {item.work_order_id && item.work_orders ? (
-                          <span className="font-semibold text-indigo-600">{(item.work_orders as any).wo_number}</span>
-                        ) : '-'}
-                      </TableCell>
-                      <TableCell>
-                        {item.work_order_id && item.work_orders && (item.work_orders as any).vehicle_entries?.vehicles ? (
-                          <span className="text-sm text-gray-700">
-                            {(item.work_orders as any).vehicle_entries.vehicles.license_plate} - {(item.work_orders as any).vehicle_entries.vehicles.brand_type}
-                          </span>
-                        ) : '-'}
                       </TableCell>
                       <TableCell>
                         <span className={`px-2 py-1 rounded-full text-xs font-semibold ${

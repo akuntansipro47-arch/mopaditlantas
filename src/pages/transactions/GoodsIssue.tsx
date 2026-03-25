@@ -23,8 +23,6 @@ import {
 import { cn } from "@/lib/utils";
 import { Check } from 'lucide-react';
 
-import { Checkbox } from "@/components/ui/checkbox";
-
 type GoodsIssue = Database['public']['Tables']['goods_issues']['Row'];
 type GoodsIssueItem = Database['public']['Tables']['goods_issue_items']['Row'];
 type WO = Database['public']['Tables']['work_orders']['Row'];
@@ -67,8 +65,7 @@ export default function GoodsIssuePage() {
   const [issueItems, setIssueItems] = useState<{
     goods_id: string;
     quantity: number;
-    is_info_only: boolean;
-  }[]>([{ goods_id: '', quantity: 1, is_info_only: false }]);
+  }[]>([{ goods_id: '', quantity: 1 }]);
 
   // Filter State
   const [dateFilter, setDateFilter] = useState({
@@ -91,11 +88,7 @@ export default function GoodsIssuePage() {
       .limit(100); // Limit to recent 100 to avoid performance issues
     setWos(w as any || []);
 
-    const { data: g } = await supabase
-      .from('goods')
-      .select('*')
-      .eq('is_active', true) // Only active goods
-      .order('name');
+    const { data: g } = await supabase.from('goods').select('*').order('name');
     setGoodsList(g || []);
   }
 
@@ -132,7 +125,7 @@ export default function GoodsIssuePage() {
   }
 
   const handleAddItem = () => {
-    setIssueItems([...issueItems, { goods_id: '', quantity: 1, is_info_only: false }]);
+    setIssueItems([...issueItems, { goods_id: '', quantity: 1 }]);
   };
 
   const handleRemoveItem = (index: number) => {
@@ -160,7 +153,6 @@ export default function GoodsIssuePage() {
     setIssueItems(issue.items.map(i => ({
       goods_id: i.goods_id || '',
       quantity: i.quantity,
-      is_info_only: i.is_info_only || false,
     })));
     setIsDialogOpen(true);
   };
@@ -181,8 +173,7 @@ export default function GoodsIssuePage() {
       
       if (items) {
         for (const item of items) {
-          // Restore stock only if NOT info only
-          if (item.goods_id && !item.is_info_only) {
+          if (item.goods_id) {
             const { data: currentGood } = await supabase
               .from('goods')
               .select('current_stock')
@@ -233,8 +224,7 @@ export default function GoodsIssuePage() {
 
         if (oldItems) {
            for (const item of oldItems) {
-             // Only restore stock if NOT info only
-             if (item.goods_id && !item.is_info_only) {
+             if (item.goods_id) {
                const { data: g } = await supabase.from('goods').select('current_stock').eq('id', item.goods_id).single();
                if (g) {
                  await supabase.from('goods').update({ current_stock: (g.current_stock || 0) + item.quantity }).eq('id', item.goods_id);
@@ -279,7 +269,6 @@ export default function GoodsIssuePage() {
           issue_id: targetIssueId,
           goods_id: item.goods_id,
           quantity: item.quantity,
-          is_info_only: item.is_info_only,
         }));
 
         const { error: itemsError } = await supabase
@@ -290,7 +279,7 @@ export default function GoodsIssuePage() {
 
         // Deduct Stock
         for (const item of issueItems) {
-          if (item.goods_id && !item.is_info_only) {
+          if (item.goods_id) {
              const { data: currentGood } = await supabase
                .from('goods')
                .select('current_stock')
@@ -310,7 +299,7 @@ export default function GoodsIssuePage() {
       toast.success(editingId ? 'Data berhasil diperbarui' : 'Pengeluaran barang berhasil dicatat');
       setIsDialogOpen(false);
       setFormData({ issue_date: new Date().toISOString().split('T')[0], work_order_id: '' });
-      setIssueItems([{ goods_id: '', quantity: 1, is_info_only: false }]);
+      setIssueItems([{ goods_id: '', quantity: 1 }]);
       setEditingId(null);
       fetchIssues();
       fetchMasterData();
@@ -331,7 +320,7 @@ export default function GoodsIssuePage() {
 
   const resetForm = () => {
     setFormData({ issue_date: new Date().toISOString().split('T')[0], work_order_id: '' });
-    setIssueItems([{ goods_id: '', quantity: 1, is_info_only: false }]);
+    setIssueItems([{ goods_id: '', quantity: 1 }]);
     setEditingId(null);
   };
 
@@ -416,8 +405,7 @@ export default function GoodsIssuePage() {
                                       if (billings && billings.length > 0) {
                                           const mappedItems = billings.map(b => ({
                                               goods_id: b.goods_id!,
-                                              quantity: b.qty,
-                                              is_info_only: b.is_info_only || false
+                                              quantity: b.qty
                                           }));
                                           setIssueItems(mappedItems);
                                           toast.success(`${mappedItems.length} item dimuat dari WO.`);
@@ -459,17 +447,9 @@ export default function GoodsIssuePage() {
                   </div>
                   
                   {issueItems.map((item, index) => (
-                    <div key={index} className={cn("grid grid-cols-12 gap-2 items-end p-2 rounded", item.is_info_only ? "bg-yellow-50" : "")}>
-                      <div className="col-span-6 space-y-1">
-                        <Label className="text-xs flex items-center gap-2">
-                            Barang
-                            {item.is_info_only && (
-                                <span className="text-[10px] bg-yellow-100 text-yellow-700 px-1.5 rounded-full border border-yellow-200 flex items-center gap-1">
-                                    <span className="w-1.5 h-1.5 rounded-full bg-yellow-500"></span>
-                                    Part Luar
-                                </span>
-                            )}
-                        </Label>
+                    <div key={index} className="grid grid-cols-12 gap-2 items-end">
+                      <div className="col-span-8 space-y-1">
+                        <Label className="text-xs">Barang</Label>
                         <Button
                           type="button"
                           variant="outline"
@@ -487,7 +467,7 @@ export default function GoodsIssuePage() {
                           <Search className="ml-2 h-3 w-3 opacity-50" />
                         </Button>
                       </div>
-                      <div className="col-span-2 space-y-1">
+                      <div className="col-span-3 space-y-1">
                         <Label className="text-xs">Qty</Label>
                         <Input 
                           type="text" 
@@ -499,21 +479,6 @@ export default function GoodsIssuePage() {
                             handleItemChange(index, 'quantity', val ? parseInt(val) : 0);
                           }}
                         />
-                      </div>
-                      <div className="col-span-3 space-y-1 flex items-center pt-6 justify-center">
-                        <div className="flex items-center space-x-2">
-                          <Checkbox 
-                            id={`info-${index}`} 
-                            checked={item.is_info_only}
-                            onCheckedChange={(checked) => handleItemChange(index, 'is_info_only', checked)}
-                          />
-                          <label
-                            htmlFor={`info-${index}`}
-                            className="text-[10px] font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer"
-                          >
-                            Part Luar (Tidak Potong Stok)
-                          </label>
-                        </div>
                       </div>
                       <div className="col-span-1">
                         {issueItems.length > 1 && (
