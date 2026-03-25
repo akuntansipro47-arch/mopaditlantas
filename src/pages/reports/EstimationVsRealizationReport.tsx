@@ -9,11 +9,13 @@ import { formatCurrency, formatDate } from '@/lib/utils';
 import * as XLSX from 'xlsx';
 
 import { Badge } from '@/components/ui/badge';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 export default function EstimationVsRealizationReport() {
   const [data, setData] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
+  const [groupFilter, setGroupFilter] = useState('ALL');
   const [dateFilter, setDateFilter] = useState({
     startDate: new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0],
     endDate: new Date().toISOString().split('T')[0]
@@ -136,11 +138,21 @@ export default function EstimationVsRealizationReport() {
     }
   }
 
-  const filteredData = data.filter(item => 
-    item.wo_number.toLowerCase().includes(search.toLowerCase()) ||
-    item.license_plate.toLowerCase().includes(search.toLowerCase()) ||
-    item.nota_dinas.toLowerCase().includes(search.toLowerCase())
-  );
+  const getGroupKey = (label: string) => {
+    if (label === 'R2') return 'R2';
+    if (label === 'R4') return 'R4';
+    if (label === 'R2 Kecil') return 'R2_KECIL';
+    return '';
+  };
+
+  const filteredData = data.filter(item => {
+    const matchSearch =
+      item.wo_number.toLowerCase().includes(search.toLowerCase()) ||
+      item.license_plate.toLowerCase().includes(search.toLowerCase()) ||
+      item.nota_dinas.toLowerCase().includes(search.toLowerCase());
+    const matchGroup = groupFilter === 'ALL' ? true : getGroupKey(item.group) === groupFilter;
+    return matchSearch && matchGroup;
+  });
 
   const exportToExcel = () => {
     const exportData = filteredData.map((item, index) => ({
@@ -209,14 +221,28 @@ export default function EstimationVsRealizationReport() {
                         className="w-auto"
                     />
                 </div>
-                <div className="relative w-64">
-                    <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
-                    <Input 
-                        placeholder="Cari WO / Nopol..." 
-                        className="pl-8" 
-                        value={search}
-                        onChange={(e) => setSearch(e.target.value)}
-                    />
+                <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-2">
+                        <span className="text-sm font-medium">Group:</span>
+                        <Select value={groupFilter} onValueChange={setGroupFilter}>
+                            <SelectTrigger className="w-[140px] bg-white"><SelectValue placeholder="Semua" /></SelectTrigger>
+                            <SelectContent>
+                                <SelectItem value="ALL">Semua</SelectItem>
+                                <SelectItem value="R2">R2</SelectItem>
+                                <SelectItem value="R4">R4</SelectItem>
+                                <SelectItem value="R2_KECIL">R2 Kecil</SelectItem>
+                            </SelectContent>
+                        </Select>
+                    </div>
+                    <div className="relative w-64">
+                        <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+                        <Input 
+                            placeholder="Cari WO / Nopol..." 
+                            className="pl-8" 
+                            value={search}
+                            onChange={(e) => setSearch(e.target.value)}
+                        />
+                    </div>
                 </div>
             </div>
         </CardHeader>

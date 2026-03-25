@@ -30,6 +30,7 @@ export default function WorkOrderDetailReport() {
     end: formatDateForInput(today)
   });
   const [statusFilter, setStatusFilter] = useState('ALL');
+  const [groupFilter, setGroupFilter] = useState('ALL');
   const [errorMsg, setErrorMsg] = useState('');
 
   useEffect(() => {
@@ -162,11 +163,21 @@ export default function WorkOrderDetailReport() {
       return hasServiceItem ? '-' : '-';
   };
 
+  const getVehicleGroupKey = (wo: any) => {
+      const label = getVehicleGroupLabel(wo);
+      if (label === 'R2') return 'R2';
+      if (label === 'R4') return 'R4';
+      if (label === 'R2 Kecil') return 'R2_KECIL';
+      return '';
+  };
+
+  const filteredWos = data.filter(wo => (groupFilter === 'ALL' ? true : getVehicleGroupKey(wo) === groupFilter));
+
   const exportToExcel = () => {
     // Flatten data for Excel
     const rows: any[] = [];
     
-    data.forEach(wo => {
+    filteredWos.forEach(wo => {
         const groupName = getVehicleGroupLabel(wo);
         const billingsToExport = wo.merged_billings || wo.work_order_billings || [];
 
@@ -231,7 +242,7 @@ export default function WorkOrderDetailReport() {
         <div>
           <h2 className="text-3xl font-bold tracking-tight">Laporan Detail Work Order (Revisi)</h2>
           <p className="text-muted-foreground">Laporan rinci transaksi WO per item pekerjaan/barang.</p>
-          <p className="text-xs text-blue-600 font-medium mt-1">Total Data: {data.length} WO ditemukan</p>
+          <p className="text-xs text-blue-600 font-medium mt-1">Total Data: {filteredWos.length} WO ditemukan</p>
           {errorMsg && (
             <div className="mt-2 p-3 bg-red-100 border border-red-200 text-red-700 rounded-md">
                 Error: {errorMsg}
@@ -239,7 +250,7 @@ export default function WorkOrderDetailReport() {
           )}
         </div>
         <div className="flex gap-2">
-           <Button variant="outline" onClick={exportToExcel} disabled={data.length === 0}>
+           <Button variant="outline" onClick={exportToExcel} disabled={filteredWos.length === 0}>
              <Download className="mr-2 h-4 w-4" /> Export Excel
            </Button>
         </div>
@@ -280,6 +291,19 @@ export default function WorkOrderDetailReport() {
                     </Select>
                 </div>
 
+                <div className="flex items-center gap-2">
+                    <span className="font-medium text-sm text-gray-500">Group:</span>
+                    <Select value={groupFilter} onValueChange={setGroupFilter}>
+                        <SelectTrigger className="w-[140px] bg-white"><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                            <SelectItem value="ALL">Semua</SelectItem>
+                            <SelectItem value="R2">R2</SelectItem>
+                            <SelectItem value="R4">R4</SelectItem>
+                            <SelectItem value="R2_KECIL">R2 Kecil</SelectItem>
+                        </SelectContent>
+                    </Select>
+                </div>
+
                 <Button variant="ghost" size="sm" onClick={fetchData} disabled={loading} className="ml-auto">
                     <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
                 </Button>
@@ -305,10 +329,10 @@ export default function WorkOrderDetailReport() {
                     <TableBody>
                         {loading ? (
                             <TableRow><TableCell colSpan={9} className="text-center h-32">Memuat data...</TableCell></TableRow>
-                        ) : data.length === 0 ? (
+                        ) : filteredWos.length === 0 ? (
                             <TableRow><TableCell colSpan={9} className="text-center h-32 text-muted-foreground">Tidak ada data ditemukan.</TableCell></TableRow>
                         ) : (
-                            data.map((wo) => {
+                            filteredWos.map((wo) => {
                                 const billings = wo.merged_billings || wo.work_order_billings || [];
                                 const rowSpan = billings.length > 0 ? billings.length : 1;
                                 

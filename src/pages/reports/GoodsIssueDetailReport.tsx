@@ -6,16 +6,37 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Download, Calendar, Search } from 'lucide-react';
 import { formatCurrency, formatDate } from '@/lib/utils';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import * as XLSX from 'xlsx';
 
 export default function GoodsIssueDetailReport() {
   const [data, setData] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
+  const [groupFilter, setGroupFilter] = useState('ALL');
   const [dateRange, setDateRange] = useState({
     start: new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0],
     end: new Date().toISOString().split('T')[0]
   });
+
+  const getVehicleGroupLabel = (serviceGroup: any, vehicleType: any) => {
+    const sg = String(serviceGroup || '').toUpperCase();
+    if (sg.includes('R2_KECIL') || sg.includes('R2 KECIL') || sg.includes('KECIL')) return 'R2 Kecil';
+    if (sg.includes('R4')) return 'R4';
+    if (sg.includes('R2')) return 'R2';
+    const vt = String(vehicleType || '').toUpperCase();
+    if (vt.includes('R2_KECIL') || vt.includes('R2 KECIL') || vt.includes('KECIL')) return 'R2 Kecil';
+    if (vt === 'R4' || vt.includes('R4') || vt.includes('MOBIL')) return 'R4';
+    if (vt === 'R2' || vt.includes('R2') || vt.includes('MOTOR')) return 'R2';
+    return '-';
+  };
+
+  const getGroupKeyFromLabel = (label: string) => {
+    if (label === 'R2') return 'R2';
+    if (label === 'R4') return 'R4';
+    if (label === 'R2 Kecil') return 'R2_KECIL';
+    return '';
+  };
 
   useEffect(() => {
     fetchData();
@@ -33,11 +54,13 @@ export default function GoodsIssueDetailReport() {
           goods_issues (
             issue_number,
             issue_date,
+            notes,
             work_orders (
               wo_number,
               vehicle_entries (
                 nota_dinas_number,
-                vehicles (license_plate, brand_type)
+                service_group,
+                vehicles (license_plate, brand_type, vehicle_type)
               )
             )
           )
@@ -64,12 +87,14 @@ export default function GoodsIssueDetailReport() {
             const wo = issue?.work_orders;
             const vehicle = wo?.vehicle_entries?.vehicles;
             const good = item.goods;
+            const groupLabel = getVehicleGroupLabel(wo?.vehicle_entries?.service_group, vehicle?.vehicle_type);
 
             return {
                 tgl_keluar: issue?.issue_date,
                 no_wo: wo?.wo_number || '-',
                 nopol: vehicle?.license_plate || '-',
                 merk_tipe: vehicle?.brand_type || '-',
+                group: groupLabel,
                 item_name: good?.name || '-',
                 kode_barang: good?.item_code || '-',
                 qty: item.quantity,
@@ -93,11 +118,14 @@ export default function GoodsIssueDetailReport() {
     }
   }
 
-  const filteredData = data.filter(item => 
-    (item.nopol && item.nopol.toLowerCase().includes(search.toLowerCase())) ||
-    (item.no_wo && item.no_wo.toLowerCase().includes(search.toLowerCase())) ||
-    (item.item_name && item.item_name.toLowerCase().includes(search.toLowerCase()))
-  );
+  const filteredData = data.filter(item => {
+    const matchSearch =
+      (item.nopol && item.nopol.toLowerCase().includes(search.toLowerCase())) ||
+      (item.no_wo && item.no_wo.toLowerCase().includes(search.toLowerCase())) ||
+      (item.item_name && item.item_name.toLowerCase().includes(search.toLowerCase()));
+    const matchGroup = groupFilter === 'ALL' ? true : getGroupKeyFromLabel(item.group) === groupFilter;
+    return matchSearch && matchGroup;
+  });
 
   const exportToExcel = () => {
     const ws = XLSX.utils.json_to_sheet(filteredData.map(item => ({
@@ -105,6 +133,7 @@ export default function GoodsIssueDetailReport() {
       'No. WO': item.no_wo,
       'No. Polisi': item.nopol,
       'Merk/Tipe': item.merk_tipe,
+      'Group': item.group,
       'Kode Barang': item.kode_barang,
       'Nama Item': item.item_name,
       'Qty': item.qty,
@@ -136,9 +165,23 @@ export default function GoodsIssueDetailReport() {
         <CardHeader className="pb-3">
           <div className="flex justify-between items-center">
             <CardTitle>Daftar Item Keluar</CardTitle>
-            <div className="relative w-64">
-              <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
-              <Input placeholder="Cari WO / Nopol / Item..." className="pl-8" value={search} onChange={e => setSearch(e.target.value)} />
+            <div className="flex items-center gap-3">
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-medium">Group:</span>
+                <Select value={groupFilter} onValueChange={setGroupFilter}>
+                  <SelectTrigger className="w-[140px] bg-white"><SelectValue placeholder="Semua" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="ALL">Semua</SelectItem>
+                    <SelectItem value="R2">R2</SelectItem>
+                    <SelectItem value="R4">R4</SelectItem>
+                    <SelectItem value="R2_KECIL">R2 Kecil</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="relative w-64">
+                <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+                <Input placeholder="Cari WO / Nopol / Item..." className="pl-8" value={search} onChange={e => setSearch(e.target.value)} />
+              </div>
             </div>
           </div>
         </CardHeader>
@@ -151,6 +194,7 @@ export default function GoodsIssueDetailReport() {
                   <TableHead>No. WO</TableHead>
                   <TableHead>No. Polisi</TableHead>
                   <TableHead>Merk/Tipe</TableHead>
+                  <TableHead>Group</TableHead>
                   <TableHead>Nama Item</TableHead>
                   <TableHead className="text-center">Qty</TableHead>
                   <TableHead className="text-center">Satuan</TableHead>
@@ -159,7 +203,7 @@ export default function GoodsIssueDetailReport() {
               </TableHeader>
               <TableBody>
                 {filteredData.length === 0 ? (
-                  <TableRow><TableCell colSpan={7} className="text-center py-8">Tidak ada data.</TableCell></TableRow>
+                  <TableRow><TableCell colSpan={9} className="text-center py-8">Tidak ada data.</TableCell></TableRow>
                 ) : (
                   filteredData.map((item, idx) => (
                     <TableRow key={idx}>
@@ -167,6 +211,11 @@ export default function GoodsIssueDetailReport() {
                       <TableCell className="font-medium">{item.no_wo}</TableCell>
                       <TableCell>{item.nopol}</TableCell>
                       <TableCell>{item.merk_tipe}</TableCell>
+                      <TableCell>
+                        <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-slate-100 text-slate-700">
+                          {item.group}
+                        </span>
+                      </TableCell>
                       <TableCell>
                         <div className="flex flex-col">
                             <span>{item.item_name}</span>

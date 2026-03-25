@@ -28,6 +28,7 @@ export default function VehicleEntryReport() {
 
   // Status Filter
   const [statusFilter, setStatusFilter] = useState('ALL');
+  const [groupFilter, setGroupFilter] = useState('ALL');
 
   useEffect(() => {
     fetchEntries();
@@ -43,6 +44,14 @@ export default function VehicleEntryReport() {
     if (vt === 'R4' || vt.includes('R4') || vt.includes('MOBIL')) return 'R4';
     if (vt === 'R2' || vt.includes('R2') || vt.includes('MOTOR')) return 'R2';
     return '-';
+  };
+
+  const getVehicleGroupKey = (entry: any) => {
+    const label = getVehicleGroupLabel(entry);
+    if (label === 'R2') return 'R2';
+    if (label === 'R4') return 'R4';
+    if (label === 'R2 Kecil') return 'R2_KECIL';
+    return '';
   };
 
   async function fetchEntries() {
@@ -140,11 +149,14 @@ export default function VehicleEntryReport() {
     window.print();
   };
 
-  const filteredEntries = entries.filter(e => 
-    e.entry_number.toLowerCase().includes(search.toLowerCase()) ||
-    e.vehicles?.license_plate.toLowerCase().includes(search.toLowerCase()) ||
-    e.nota_dinas_number?.toLowerCase().includes(search.toLowerCase())
-  );
+  const filteredEntries = entries.filter(e => {
+    const matchSearch =
+      e.entry_number.toLowerCase().includes(search.toLowerCase()) ||
+      e.vehicles?.license_plate.toLowerCase().includes(search.toLowerCase()) ||
+      e.nota_dinas_number?.toLowerCase().includes(search.toLowerCase());
+    const matchGroup = groupFilter === 'ALL' ? true : getVehicleGroupKey(e) === groupFilter;
+    return matchSearch && matchGroup;
+  });
 
   return (
     <Card className="w-full">
@@ -199,6 +211,21 @@ export default function VehicleEntryReport() {
                     <SelectItem value="OPEN">Open (Belum WO)</SelectItem>
                     <SelectItem value="WO_PROCESS">Sedang Proses WO</SelectItem>
                     <SelectItem value="WO_COMPLETED">Selesai (WO Closed)</SelectItem>
+                </SelectContent>
+             </Select>
+          </div>
+
+          <div className="flex items-center gap-2">
+             <span className="text-sm font-medium">Group:</span>
+             <Select value={groupFilter} onValueChange={setGroupFilter}>
+                <SelectTrigger className="w-[140px] bg-white h-8">
+                    <SelectValue placeholder="Semua" />
+                </SelectTrigger>
+                <SelectContent>
+                    <SelectItem value="ALL">Semua</SelectItem>
+                    <SelectItem value="R2">R2</SelectItem>
+                    <SelectItem value="R4">R4</SelectItem>
+                    <SelectItem value="R2_KECIL">R2 Kecil</SelectItem>
                 </SelectContent>
              </Select>
           </div>
