@@ -97,8 +97,10 @@ export function Sidebar() {
   const hasAccess = (key: string) => {
     if (!user) return false;
     if (user.role === 'SUPER_ADMIN') return true;
-    if (user.allowed_menus.includes('*')) return true;
-    return user.allowed_menus.includes(key);
+    const allowed = Array.isArray(user.allowed_menus) ? user.allowed_menus : [];
+    if (allowed.includes('*')) return true;
+    if (key === 'reports') return allowed.includes('reports') || allowed.some((k: string) => String(k).startsWith('report_'));
+    return allowed.includes(key);
   };
 
   return (

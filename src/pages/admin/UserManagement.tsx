@@ -193,7 +193,12 @@ export default function UserManagement() {
       return;
     }
 
-    const allowed = form.allowAll ? ['*'] : Array.from(form.allowedSet);
+    const rawAllowed = form.allowAll ? ['*'] : Array.from(form.allowedSet);
+    const nextAllowedSet = new Set(rawAllowed);
+    const hasAnyReport = Array.from(nextAllowedSet).some(k => k.startsWith('report_'));
+    if (hasAnyReport) nextAllowedSet.add('reports');
+    if (!hasAnyReport) nextAllowedSet.delete('reports');
+    const allowed = Array.from(nextAllowedSet);
     const cleanedAllowed = allowed
       .map(s => s.trim())
       .filter(Boolean)
@@ -415,6 +420,18 @@ export default function UserManagement() {
                                     const next = new Set(prev.allowedSet);
                                     if (v) next.add(item.key);
                                     else next.delete(item.key);
+
+                                    if (item.key === 'reports' && !v) {
+                                      Array.from(next).forEach(k => {
+                                        if (k.startsWith('report_')) next.delete(k);
+                                      });
+                                    }
+
+                                    if (item.key.startsWith('report_') && v) next.add('reports');
+
+                                    const anyReport = Array.from(next).some(k => k.startsWith('report_'));
+                                    if (anyReport) next.add('reports');
+                                    if (!anyReport) next.delete('reports');
                                     return { ...prev, allowedSet: next };
                                   });
                                 }}
