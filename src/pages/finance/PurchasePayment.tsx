@@ -8,7 +8,7 @@ import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { toast } from 'sonner';
 import { formatCurrency, formatDate } from '@/lib/utils';
-import { Search, Wallet, RefreshCw, Edit } from 'lucide-react';
+import { Search, Wallet, RefreshCw, Edit, X } from 'lucide-react';
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
@@ -38,6 +38,7 @@ export default function PurchasePayment() {
   const [isPayOpen, setIsPayOpen] = useState(false);
   const [selectedInvoice, setSelectedInvoice] = useState<any>(null);
   const [editingPaymentId, setEditingPaymentId] = useState<string | null>(null);
+  const [editingPayment, setEditingPayment] = useState<any>(null);
   const [originalPaymentAmount, setOriginalPaymentAmount] = useState(0);
 
   const [paymentData, setPaymentData] = useState({
@@ -224,6 +225,7 @@ export default function PurchasePayment() {
   const handlePayClick = (invoice: any) => {
     setSelectedInvoice(invoice);
     setEditingPaymentId(null);
+    setEditingPayment(null);
     setOriginalPaymentAmount(0);
     setPaymentData({
       amount: invoice.total_amount - (invoice.paid_amount || 0), // Default full pay
@@ -237,6 +239,7 @@ export default function PurchasePayment() {
 
   const handleEditClick = (payment: any) => {
       setEditingPaymentId(payment.id);
+      setEditingPayment(payment);
       setSelectedInvoice(payment.purchase_invoices);
       setOriginalPaymentAmount(payment.amount);
       setPaymentData({
@@ -248,6 +251,63 @@ export default function PurchasePayment() {
       });
       setIsPayOpen(true);
   }
+
+  const handleCancelPayment = async (payment: any) => {
+    if (!payment?.id || !payment?.invoice_id) return;
+    const ok = window.confirm('Batalkan pembayaran ini? Data pembayaran dan jurnal akan dihapus, dan tagihan akan dikoreksi.');
+    if (!ok) return;
+
+    setLoading(true);
+    try {
+      const { data: invoice, error: invError } = await supabase
+        .from('purchase_invoices')
+        .select('id, total_amount, paid_amount, invoice_number')
+        .eq('id', payment.invoice_id)
+        .single();
+
+      if (invError) throw invError;
+
+      const paymentAmount = Number(payment.amount || 0);
+      const currentPaid = Number(invoice.paid_amount || 0);
+      const totalAmount = Number(invoice.total_amount || 0);
+      const newPaid = Math.max(0, currentPaid - paymentAmount);
+      const newStatus = newPaid >= totalAmount ? 'PAID' : newPaid > 0 ? 'PARTIAL' : 'UNPAID';
+
+      const { error: updErr } = await supabase
+        .from('purchase_invoices')
+        .update({ paid_amount: newPaid, status: newStatus })
+        .eq('id', invoice.id);
+
+      if (updErr) throw updErr;
+
+      const { error: jErr } = await supabase
+        .from('journal_entries')
+        .delete()
+        .eq('reference', payment.id);
+
+      if (jErr) throw jErr;
+
+      const { error: delErr } = await supabase
+        .from('purchase_payments')
+        .delete()
+        .eq('id', payment.id);
+
+      if (delErr) throw delErr;
+
+      toast.success(`Pembayaran ${invoice.invoice_number} berhasil dibatalkan`);
+      setIsPayOpen(false);
+      setEditingPaymentId(null);
+      setEditingPayment(null);
+      setSelectedInvoice(null);
+
+      fetchInvoices();
+      if (activeTab === 'history') fetchPaymentHistory();
+    } catch (e: any) {
+      toast.error('Gagal membatalkan pembayaran: ' + (e?.message || 'Unknown error'));
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleProcessPayment = async () => {
     if (!selectedInvoice) return;
@@ -595,9 +655,14 @@ export default function PurchasePayment() {
                                           <TableCell className="font-bold">{formatCurrency(pay.amount)}</TableCell>
                                           <TableCell>{pay.notes}</TableCell>
                                           <TableCell className="text-right">
-                                              <Button variant="outline" size="sm" onClick={() => handleEditClick(pay)}>
-                                                  <Edit className="h-4 w-4 mr-2" /> Edit
-                                              </Button>
+                                              <div className="flex justify-end gap-2">
+                                                  <Button variant="outline" size="sm" onClick={() => handleEditClick(pay)}>
+                                                      <Edit className="h-4 w-4 mr-2" /> Edit
+                                                  </Button>
+                                                  <Button variant="destructive" size="sm" onClick={() => handleCancelPayment(pay)} disabled={loading}>
+                                                      <X className="h-4 w-4 mr-2" /> Batal Bayar
+                                                  </Button>
+                                              </div>
                                           </TableCell>
                                       </TableRow>
                                   ))
@@ -668,6 +733,11 @@ export default function PurchasePayment() {
                 </div>
             </div>
             <DialogFooter>
+                {editingPaymentId && editingPayment && (
+                    <Button variant="destructive" onClick={() => handleCancelPayment(editingPayment)} disabled={loading}>
+                        <X className="h-4 w-4 mr-2" /> Batalkan Pembayaran
+                    </Button>
+                )}
                 <Button variant="outline" onClick={() => setIsPayOpen(false)}>Batal</Button>
                 <Button onClick={handleProcessPayment} disabled={loading}>{loading ? 'Memproses...' : (editingPaymentId ? 'Simpan Perubahan' : 'Bayar Sekarang')}</Button>
             </DialogFooter>
