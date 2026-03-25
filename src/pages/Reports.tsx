@@ -29,7 +29,9 @@ export default function Reports() {
   const canAccess = (reportKey: string) => {
     if (!user) return false;
     if (user.role === 'SUPER_ADMIN') return true;
-    return user.allowed_menus?.includes(reportKey) || false;
+    const allowed = Array.isArray(user.allowed_menus) ? user.allowed_menus : [];
+    if (allowed.includes('*')) return true;
+    return allowed.includes(reportKey);
   };
 
   // Get the first allowed tab to set as default

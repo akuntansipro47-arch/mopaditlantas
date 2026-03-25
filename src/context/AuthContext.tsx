@@ -19,6 +19,20 @@ export interface AuthContextType {
 
 export const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+function normalizeAllowedMenus(value: any): string[] {
+  if (!value) return [];
+  if (Array.isArray(value)) return value.map(String);
+  if (typeof value === 'string') {
+    try {
+      const parsed = JSON.parse(value);
+      return Array.isArray(parsed) ? parsed.map(String) : [];
+    } catch {
+      return [];
+    }
+  }
+  return [];
+}
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
@@ -28,7 +42,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (storedUser) {
       try {
         const parsed = JSON.parse(storedUser);
-        setUser(parsed);
+        setUser({
+          id: parsed.id,
+          username: parsed.username,
+          full_name: parsed.full_name,
+          role: parsed.role,
+          allowed_menus: normalizeAllowedMenus(parsed.allowed_menus),
+        });
       } catch {
         localStorage.removeItem('app_user');
       }
@@ -57,7 +77,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             username: result.username,
             full_name: result.full_name,
             role: result.role,
-            allowed_menus: result.allowed_menus || []
+            allowed_menus: normalizeAllowedMenus(result.allowed_menus)
           };
 
           setUser(loggedInUser);
@@ -98,4 +118,3 @@ export function useAuth() {
   }
   return context;
 }
-
