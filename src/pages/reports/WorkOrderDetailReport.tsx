@@ -47,7 +47,19 @@ export default function WorkOrderDetailReport() {
           vehicle_entries (
             nota_dinas_number,
             service_group,
-            vehicles (license_plate, brand_type, vehicle_type)
+            vehicles (license_plate, brand_type, vehicle_type),
+            vehicle_entry_jobs (
+                job_types (
+                    job_name,
+                    job_group,
+                    base_price
+                )
+            ),
+            vehicle_entry_spareparts (
+                item_name,
+                qty,
+                estimated_price
+            )
           ),
           mechanics (name),
           work_order_billings (
@@ -82,8 +94,46 @@ export default function WorkOrderDetailReport() {
           throw error;
       }
       
-      console.log("Fetched WOs for Detail Report:", wos?.length, "Range:", dateRange);
-      setData(wos || []);
+      // Process WOs to map billings or fallback to estimates
+      const processedWOs = wos?.map(wo => {
+          let mergedBillings = wo.work_order_billings || [];
+          
+          // If no billings yet (e.g. status OPEN/IN_PROGRESS), use estimation data from entry
+          if (mergedBillings.length === 0 && wo.vehicle_entries) {
+              const entryJobs = wo.vehicle_entries.vehicle_entry_jobs || [];
+              const entryParts = wo.vehicle_entries.vehicle_entry_spareparts || [];
+              
+              const estimatedJobs = entryJobs.map((ej: any) => ({
+                  item_type: 'JOB',
+                  item_name: ej.job_types?.job_name || 'Pekerjaan',
+                  qty: 1,
+                  unit_price: ej.job_types?.base_price || 0,
+                  total_price: ej.job_types?.base_price || 0,
+                  job_group: ej.job_types?.job_group || 'Umum',
+                  is_estimation: true
+              }));
+              
+              const estimatedParts = entryParts.map((ep: any) => ({
+                  item_type: 'PART',
+                  item_name: ep.item_name || 'Sparepart',
+                  qty: ep.qty || 1,
+                  unit_price: ep.estimated_price || 0,
+                  total_price: (ep.qty || 1) * (ep.estimated_price || 0),
+                  job_group: 'Sparepart',
+                  is_estimation: true
+              }));
+              
+              mergedBillings = [...estimatedJobs, ...estimatedParts];
+          }
+          
+          return {
+              ...wo,
+              merged_billings: mergedBillings
+          };
+      });
+
+      console.log("Fetched WOs for Detail Report:", processedWOs?.length, "Range:", dateRange);
+      setData(processedWOs || []);
 
     } catch (error: any) {
       console.error('Error fetching WO Detail report:', error);
@@ -99,7 +149,8 @@ export default function WorkOrderDetailReport() {
       if (sg.includes('R4')) return 'R4';
       if (sg.includes('R2')) return 'R2';
 
-      const hasServiceItem = (wo.work_order_billings || []).some((b: any) => {
+      const billingsToCheck = wo.merged_billings || wo.work_order_billings || [];
+      const hasServiceItem = billingsToCheck.some((b: any) => {
           const name = (b.item_name || '').toUpperCase();
           return name.includes('TUNE UP') || name.includes('SERVICE') || name.includes('SERVIS');
       });
@@ -117,9 +168,10 @@ export default function WorkOrderDetailReport() {
     
     data.forEach(wo => {
         const groupName = getVehicleGroupLabel(wo);
+        const billingsToExport = wo.merged_billings || wo.work_order_billings || [];
 
         // If WO has no billings, still show one row
-        if (!wo.work_order_billings || wo.work_order_billings.length === 0) {
+        if (billingsToExport.length === 0) {
             rows.push({
                 'No. WO': wo.wo_number,
                 'Tanggal': formatDate(wo.work_date),
@@ -136,7 +188,7 @@ export default function WorkOrderDetailReport() {
                 'Total Harga': 0
             });
         } else {
-            wo.work_order_billings.forEach((bill: any) => {
+            billingsToExport.forEach((bill: any) => {
                 rows.push({
                     'No. WO': wo.wo_number,
                     'Tanggal': formatDate(wo.work_date),
@@ -257,7 +309,7 @@ export default function WorkOrderDetailReport() {
                             <TableRow><TableCell colSpan={9} className="text-center h-32 text-muted-foreground">Tidak ada data ditemukan.</TableCell></TableRow>
                         ) : (
                             data.map((wo) => {
-                                const billings = wo.work_order_billings || [];
+                                const billings = wo.merged_billings || wo.work_order_billings || [];
                                 const rowSpan = billings.length > 0 ? billings.length : 1;
                                 
                                 return (
