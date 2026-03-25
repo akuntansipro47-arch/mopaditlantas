@@ -511,6 +511,7 @@ export default function PurchasePayment() {
                         <TableHeader>
                             <TableRow>
                                 <TableHead>No. Invoice</TableHead>
+                                <TableHead>No. PO</TableHead>
                                 <TableHead>Tanggal</TableHead>
                                 <TableHead>Jatuh Tempo</TableHead>
                                 <TableHead>Supplier</TableHead>
@@ -523,13 +524,14 @@ export default function PurchasePayment() {
                         </TableHeader>
                         <TableBody>
                             {filteredInvoices.length === 0 ? (
-                                <TableRow><TableCell colSpan={9} className="text-center py-8">Tidak ada tagihan sesuai filter.</TableCell></TableRow>
+                                <TableRow><TableCell colSpan={10} className="text-center py-8">Tidak ada tagihan sesuai filter.</TableCell></TableRow>
                             ) : (
                                 filteredInvoices.map(inv => {
                                     const remaining = inv.total_amount - (inv.paid_amount || 0);
                                     return (
                                         <TableRow key={inv.id}>
                                             <TableCell className="font-medium">{inv.invoice_number}</TableCell>
+                                            <TableCell className="text-slate-600">{inv.purchase_orders?.po_number || '-'}</TableCell>
                                             <TableCell>{formatDate(inv.invoice_date)}</TableCell>
                                             <TableCell className={new Date(inv.due_date) < new Date() && inv.status !== 'PAID' ? 'text-red-600 font-bold' : ''}>
                                                 {formatDate(inv.due_date)}
