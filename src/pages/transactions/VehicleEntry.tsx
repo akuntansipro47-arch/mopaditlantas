@@ -67,7 +67,7 @@ export default function VehicleEntryPage() {
   });
 
   // Multiple Jobs State
-  const [entryJobs, setEntryJobs] = useState<{ group: string, job_id: string; notes: string; spareparts?: { name: string, qty: number, price: number }[] }[]>([]);
+  const [entryJobs, setEntryJobs] = useState<{ group: string, job_id: string; job_name?: string; notes: string; spareparts?: { name: string, qty: number, price: number }[] }[]>([]);
   
   // Sparepart Dialog State
   const [isSparepartDialogOpen, setIsSparepartDialogOpen] = useState(false);
@@ -173,9 +173,9 @@ export default function VehicleEntryPage() {
   };
 
   // Helper to check if job needs sparepart detail
-  const needsSparepartDetail = (job: { group: string, job_id: string }) => {
+  const needsSparepartDetail = (job: { group: string, job_id: string; job_name?: string }) => {
       const selectedJob = jobs.find(j => j.id === job.job_id);
-      const jobName = selectedJob?.job_name?.toLowerCase() || '';
+      const jobName = (job.job_name || selectedJob?.job_name || '').toLowerCase();
       const groupName = job.group?.toUpperCase() || '';
       
       const isPerbaikan = groupName.includes('PERBAIKAN');
@@ -219,100 +219,79 @@ export default function VehicleEntryPage() {
       notes: item.notes || '',
     });
     
-      // Fetch existing jobs for this entry
-    const { data: existingJobs } = await supabase
-      .from('vehicle_entry_jobs')
-      .select('*')
-      .eq('vehicle_entry_id', item.id);
-      
-    // Fetch existing spareparts for this entry
-    const { data: existingParts } = await supabase
-      .from('vehicle_entry_spareparts')
-      .select('*')
-      .eq('vehicle_entry_id', item.id);
-    
-    if (existingJobs && existingJobs.length > 0) {
-      const mappedJobs = existingJobs.map(j => {
-        const jobDef = jobs.find(jd => jd.id === j.job_type_id);
-        
-        // Find parts for this job
-        const parts = existingParts 
-            ? existingParts
-                .filter(p => {
-                    if (p.job_type_id === j.job_type_id) return true;
-                    // Strict fallback: only claim null-job_id parts if this job actually NEEDS spareparts
-                    const groupStr = (jobDef?.job_group || item.service_group) as string;
-                    if (!p.job_type_id && needsSparepartDetail({ group: groupStr, job_id: j.job_type_id || '' })) return true;
-                    return false;
-                })
-                .map(p => ({
-                    name: p.item_name,
-                    qty: p.qty,
-                    price: p.estimated_price
-                }))
-            : [];
+    const existingJobs = item.vehicle_entry_jobs || [];
+    const existingParts = item.vehicle_entry_spareparts || [];
 
-        // Remove from existingParts so we don't assign them again
-        if (existingParts) {
-            existingParts.forEach((p, idx) => {
-                const groupStr = (jobDef?.job_group || item.service_group) as string;
-                if (p.job_type_id === j.job_type_id || (!p.job_type_id && needsSparepartDetail({ group: groupStr, job_id: j.job_type_id || '' }))) {
-                    (p as any).assigned = true;
-                }
-            });
-        }
+    const mappedJobs = existingJobs.map(j => {
+      const jobTypeId = j.job_type_id || '';
+      const groupStr = (j.job_types?.job_group || item.service_group) as string;
+      const jobName = j.job_types?.job_name || jobs.find(x => x.id === jobTypeId)?.job_name || '';
 
-        return {
-          group: (jobDef?.job_group || item.service_group) as string,
-          job_id: j.job_type_id || '',
-          notes: j.notes || '',
-          spareparts: parts
-        };
-      });
-      
-      // Check for unassigned parts (maybe parts were added without a specific job_type_id, or job was deleted but part remains)
-      const unassignedParts = existingParts?.filter((p: any) => !p.assigned) || [];
-      if (unassignedParts.length > 0) {
-          const partsToAdd = unassignedParts.map(p => ({
-              name: p.item_name,
-              qty: p.qty,
-              price: p.estimated_price
-          }));
-
-          // Try to find a job that might be "GANTI SPAREPART" or similar
-          const gantiJobIdx = mappedJobs.findIndex(j => needsSparepartDetail(j));
-          
-          if (gantiJobIdx >= 0) {
-              mappedJobs[gantiJobIdx].spareparts = [...(mappedJobs[gantiJobIdx].spareparts || []), ...partsToAdd];
-          } else {
-               // If no "GANTI" job, create a new block specifically for these parts
-               mappedJobs.push({
-                   group: 'PERBAIKAN',
-                   job_id: '',
-                   notes: 'Suku Cadang Tambahan',
-                   spareparts: partsToAdd
-               });
-          }
-      }
-
-      setEntryJobs(mappedJobs);
-    } else if (existingParts && existingParts.length > 0) {
-        // Handle case where there are parts but no jobs
-        const partsToAdd = existingParts.map(p => ({
-              name: p.item_name,
-              qty: p.qty,
-              price: p.estimated_price
+      const parts = existingParts
+        .filter(p => p.job_type_id === jobTypeId)
+        .map(p => ({
+          name: p.item_name,
+          qty: p.qty,
+          price: p.estimated_price,
         }));
-        
-        setEntryJobs([{
+
+      return {
+        group: groupStr,
+        job_id: jobTypeId,
+        job_name: jobName,
+        notes: j.notes || '',
+        spareparts: parts,
+      };
+    });
+
+    const knownJobTypeIds = new Set(mappedJobs.map(j => j.job_id).filter(Boolean));
+    const unassignedParts = existingParts.filter(p => !p.job_type_id || !knownJobTypeIds.has(p.job_type_id));
+    if (unassignedParts.length > 0) {
+      const partsToAdd = unassignedParts.map(p => ({
+        name: p.item_name,
+        qty: p.qty,
+        price: p.estimated_price,
+      }));
+
+      const gantiJobIdx = mappedJobs.findIndex(j => needsSparepartDetail(j));
+      if (gantiJobIdx >= 0) {
+        mappedJobs[gantiJobIdx].spareparts = [...(mappedJobs[gantiJobIdx].spareparts || []), ...partsToAdd];
+      } else if (mappedJobs.length > 0) {
+        mappedJobs.push({
+          group: 'PERBAIKAN',
+          job_id: '',
+          job_name: 'Suku Cadang Tambahan',
+          notes: 'Suku Cadang Tambahan',
+          spareparts: partsToAdd,
+        });
+      } else {
+        mappedJobs.push({
+          group: 'PERBAIKAN',
+          job_id: '',
+          job_name: 'Suku Cadang Tambahan',
+          notes: 'Suku Cadang Tambahan',
+          spareparts: partsToAdd,
+        });
+      }
+    }
+
+    if (mappedJobs.length === 0) {
+      if (existingParts.length > 0) {
+        setEntryJobs([
+          {
             group: 'PERBAIKAN',
             job_id: '',
+            job_name: 'Suku Cadang Tambahan',
             notes: 'Suku Cadang Tambahan',
-            spareparts: partsToAdd
-        }]);
+            spareparts: existingParts.map(p => ({ name: p.item_name, qty: p.qty, price: p.estimated_price })),
+          },
+        ]);
       } else {
-        setEntryJobs([{ group: item.service_group as string, job_id: '', notes: '', spareparts: [] }]);
+        setEntryJobs([{ group: item.service_group as string, job_id: '', job_name: '', notes: '', spareparts: [] }]);
       }
+    } else {
+      setEntryJobs(mappedJobs);
+    }
 
     setIsEditing(true);
     setCurrentId(item.id);
@@ -320,7 +299,7 @@ export default function VehicleEntryPage() {
   };
 
   const handleAddJob = () => {
-    setEntryJobs([...entryJobs, { group: 'PERBAIKAN', job_id: '', notes: '' }]);
+    setEntryJobs([...entryJobs, { group: 'PERBAIKAN', job_id: '', job_name: '', notes: '', spareparts: [] }]);
   };
 
   const handleRemoveJob = (index: number) => {
@@ -332,8 +311,10 @@ export default function VehicleEntryPage() {
     if (field === 'group') {
       newJobs[index].group = value;
       newJobs[index].job_id = ''; // Reset job when group changes
+      newJobs[index].job_name = '';
     } else if (field === 'job_id') {
       newJobs[index].job_id = value;
+      newJobs[index].job_name = jobs.find(j => j.id === value)?.job_name || '';
     } else {
       newJobs[index].notes = value;
     }
@@ -591,7 +572,7 @@ export default function VehicleEntryPage() {
                         </div>
                         
                         {/* Sub-column for Sparepart Detail (Conditional) */}
-                        {needsSparepartDetail(job) && (
+                        {(needsSparepartDetail(job) || (job.spareparts && job.spareparts.length > 0)) && (
                             <div className="col-span-12 mt-2 pl-4 border-l-2 border-orange-200">
                                 <div className="bg-orange-50 p-2 rounded-md">
                                     <div className="flex justify-between items-center mb-2">
