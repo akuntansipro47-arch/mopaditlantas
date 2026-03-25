@@ -93,30 +93,22 @@ export default function WorkOrderDetailReport() {
     }
   }
 
-  const getFormattedGroup = (wo: any) => {
-      // LOGIC KONSISTEN: PRIORITAS GROUP WO -> FALLBACK DETEKSI
-      
-      // 1. Ambil Group WO
-      let group = (wo.vehicle_entries?.service_group || '').toUpperCase();
+  const getVehicleGroupLabel = (wo: any) => {
+      const sg = String(wo.vehicle_entries?.service_group || '').toUpperCase();
+      if (sg.includes('R2_KECIL') || sg.includes('R2 KECIL') || sg.includes('KECIL')) return 'R2 Kecil';
+      if (sg.includes('R4')) return 'R4';
+      if (sg.includes('R2')) return 'R2';
 
-      // 2. Fallback HANYA JIKA Kosong
-      if (!group || group === '-') {
-          const hasServiceItem = (wo.work_order_billings || []).some((b: any) => {
-              const name = (b.item_name || '').toUpperCase();
-              return name.includes('TUNE UP') || name.includes('SERVICE') || name.includes('SERVIS');
-          });
+      const hasServiceItem = (wo.work_order_billings || []).some((b: any) => {
+          const name = (b.item_name || '').toUpperCase();
+          return name.includes('TUNE UP') || name.includes('SERVICE') || name.includes('SERVIS');
+      });
 
-          const vType = (wo.vehicle_entries?.vehicles?.vehicle_type || '').toUpperCase();
-          const isR4 = vType === 'R4' || vType.includes('MOBIL');
-          
-          if (hasServiceItem) {
-              group = isR4 ? 'SERVICE RINGAN R4' : 'SERVICE RINGAN R2';
-          } else {
-              group = 'PERBAIKAN';
-          }
-      }
-      
-      return group;
+      const vType = String(wo.vehicle_entries?.vehicles?.vehicle_type || '').toUpperCase();
+      if (vType.includes('R2_KECIL') || vType.includes('R2 KECIL') || vType.includes('KECIL')) return 'R2 Kecil';
+      if (vType === 'R4' || vType.includes('R4') || vType.includes('MOBIL')) return hasServiceItem ? 'R4' : 'R4';
+      if (vType === 'R2' || vType.includes('R2') || vType.includes('MOTOR')) return hasServiceItem ? 'R2' : 'R2';
+      return hasServiceItem ? '-' : '-';
   };
 
   const exportToExcel = () => {
@@ -124,7 +116,7 @@ export default function WorkOrderDetailReport() {
     const rows: any[] = [];
     
     data.forEach(wo => {
-        const groupName = getFormattedGroup(wo);
+        const groupName = getVehicleGroupLabel(wo);
 
         // If WO has no billings, still show one row
         if (!wo.work_order_billings || wo.work_order_billings.length === 0) {
@@ -135,7 +127,7 @@ export default function WorkOrderDetailReport() {
                 'No. Polisi': wo.vehicle_entries?.vehicles?.license_plate || '-',
                 'Kendaraan': wo.vehicle_entries?.vehicles?.brand_type || '-',
                 'Tipe': wo.vehicle_entries?.vehicles?.vehicle_type || '-',
-                'Group WO': groupName,
+                'Group': groupName,
                 'Mekanik': wo.mechanics?.name || '-',
                 'Item': '-',
                 'Tipe Item': '-',
@@ -152,7 +144,7 @@ export default function WorkOrderDetailReport() {
                     'No. Polisi': wo.vehicle_entries?.vehicles?.license_plate || '-',
                     'Kendaraan': wo.vehicle_entries?.vehicles?.brand_type || '-',
                     'Tipe': wo.vehicle_entries?.vehicles?.vehicle_type || '-',
-                    'Group WO': groupName,
+                    'Group': groupName,
                     'Mekanik': wo.mechanics?.name || '-',
                     'Item': bill.item_name,
                     'Tipe Item': bill.item_type,
@@ -251,7 +243,7 @@ export default function WorkOrderDetailReport() {
                             <TableHead>Tanggal</TableHead>
                             <TableHead>Status</TableHead>
                             <TableHead>Kendaraan</TableHead>
-                            <TableHead>Group WO</TableHead>
+                            <TableHead>Group</TableHead>
                             <TableHead>Item Pekerjaan / Barang</TableHead>
                             <TableHead className="text-center">Qty</TableHead>
                             <TableHead className="text-right">Harga</TableHead>
@@ -287,7 +279,9 @@ export default function WorkOrderDetailReport() {
                                                             <div className="text-xs text-gray-500">{wo.vehicle_entries?.vehicles?.brand_type}</div>
                                                         </TableCell>
                                                         <TableCell rowSpan={rowSpan} className="align-top border-r bg-white text-xs">
-                                                            {getFormattedGroup(wo)}
+                                                            <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-slate-100 text-slate-700">
+                                                                {getVehicleGroupLabel(wo)}
+                                                            </span>
                                                         </TableCell>
                                                     </>
                                                 )}
@@ -315,7 +309,11 @@ export default function WorkOrderDetailReport() {
                                                 <div className="font-bold">{wo.vehicle_entries?.vehicles?.license_plate}</div>
                                                 <div className="text-xs text-gray-500">{wo.vehicle_entries?.vehicles?.brand_type}</div>
                                             </TableCell>
-                                            <TableCell className="border-r text-xs">{getFormattedGroup(wo)}</TableCell>
+                                            <TableCell className="border-r text-xs">
+                                                <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-slate-100 text-slate-700">
+                                                    {getVehicleGroupLabel(wo)}
+                                                </span>
+                                            </TableCell>
                                             <TableCell colSpan={4} className="text-center text-gray-400 italic">Belum ada rincian biaya</TableCell>
                                         </TableRow>
                                     )}

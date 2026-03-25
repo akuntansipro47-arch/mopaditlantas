@@ -94,6 +94,18 @@ export default function WorkOrderReport() {
       return 0;
   };
 
+  const getVehicleGroupLabel = (wo: any) => {
+    const sg = String(wo.vehicle_entries?.service_group || '').toUpperCase();
+    if (sg.includes('R2_KECIL') || sg.includes('R2 KECIL') || sg.includes('KECIL')) return 'R2 Kecil';
+    if (sg.includes('R4')) return 'R4';
+    if (sg.includes('R2')) return 'R2';
+    const vt = String(wo.vehicle_entries?.vehicles?.vehicle_type || '').toUpperCase();
+    if (vt.includes('R2_KECIL') || vt.includes('R2 KECIL') || vt.includes('KECIL')) return 'R2 Kecil';
+    if (vt === 'R4' || vt.includes('R4') || vt.includes('MOBIL')) return 'R4';
+    if (vt === 'R2' || vt.includes('R2') || vt.includes('MOTOR')) return 'R2';
+    return '-';
+  };
+
   const exportToExcel = () => {
     const flattenData = filteredData.flatMap(wo => {
         // Handle cases with no billings gracefully
@@ -106,7 +118,7 @@ export default function WorkOrderReport() {
             'Mekanik': wo.mechanics?.name || '-',
             'No. Polisi': wo.vehicle_entries?.vehicles?.license_plate || '-',
             'Merk/Type': wo.vehicle_entries?.vehicles?.brand_type || '-',
-            'Group': wo.vehicle_entries?.service_group || '-',
+            'Group': getVehicleGroupLabel(wo),
             'Item Pekerjaan/Part': bill.item_name || '-',
             'Tipe': bill.item_type || '-',
             'Qty': bill.qty || 0,
@@ -166,6 +178,7 @@ export default function WorkOrderReport() {
                 <TableHead>No. WO</TableHead>
                 <TableHead>Tanggal</TableHead>
                 <TableHead>No. Polisi</TableHead>
+                <TableHead>Group</TableHead>
                 <TableHead>Mekanik</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead className="text-right">Total Biaya</TableHead>
@@ -173,13 +186,18 @@ export default function WorkOrderReport() {
             </TableHeader>
             <TableBody>
               {filteredData.length === 0 ? (
-                <TableRow><TableCell colSpan={6} className="text-center py-8">Tidak ada data.</TableCell></TableRow>
+                <TableRow><TableCell colSpan={7} className="text-center py-8">Tidak ada data.</TableCell></TableRow>
               ) : (
                 filteredData.map((wo) => (
                   <TableRow key={wo.id}>
                     <TableCell className="font-medium">{wo.wo_number}</TableCell>
                     <TableCell>{formatDate(wo.work_date)}</TableCell>
                     <TableCell>{wo.vehicle_entries?.vehicles?.license_plate}</TableCell>
+                    <TableCell>
+                      <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-slate-100 text-slate-700">
+                        {getVehicleGroupLabel(wo)}
+                      </span>
+                    </TableCell>
                     <TableCell>{wo.mechanics?.name}</TableCell>
                     <TableCell>
                       <span className={`px-2 py-1 rounded text-xs font-semibold 

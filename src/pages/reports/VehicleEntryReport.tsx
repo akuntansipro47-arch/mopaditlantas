@@ -33,6 +33,18 @@ export default function VehicleEntryReport() {
     fetchEntries();
   }, [dateFilter, statusFilter]);
 
+  const getVehicleGroupLabel = (entry: any) => {
+    const sg = String(entry.service_group || '').toUpperCase();
+    if (sg.includes('R2_KECIL') || sg.includes('R2 KECIL') || sg.includes('KECIL')) return 'R2 Kecil';
+    if (sg.includes('R4')) return 'R4';
+    if (sg.includes('R2')) return 'R2';
+    const vt = String(entry.vehicles?.vehicle_type || '').toUpperCase();
+    if (vt.includes('R2_KECIL') || vt.includes('R2 KECIL') || vt.includes('KECIL')) return 'R2 Kecil';
+    if (vt === 'R4' || vt.includes('R4') || vt.includes('MOBIL')) return 'R4';
+    if (vt === 'R2' || vt.includes('R2') || vt.includes('MOTOR')) return 'R2';
+    return '-';
+  };
+
   async function fetchEntries() {
     setLoading(true);
     try {
@@ -40,7 +52,7 @@ export default function VehicleEntryReport() {
         .from('vehicle_entries')
         .select(`
           *,
-          vehicles (license_plate, brand_type),
+          vehicles (license_plate, brand_type, vehicle_type),
           vehicle_entry_jobs (
             job_types (job_name, job_group),
             notes
@@ -109,6 +121,7 @@ export default function VehicleEntryReport() {
       'Tanggal': formatDate(item.entry_date),
       'Nopol': item.vehicles?.license_plate || '-',
       'Tipe Kendaraan': item.vehicles?.brand_type || '-',
+      'Group': getVehicleGroupLabel(item),
       'Nota Dinas': item.nota_dinas_number || '-',
       'Daftar Pekerjaan': item.vehicle_entry_jobs?.map((j: any) => j.job_types?.job_name).join(', ') || '-',
       'Status Entry': item.status,
@@ -210,6 +223,7 @@ export default function VehicleEntryReport() {
                 <TableHead>No. Entry</TableHead>
                 <TableHead>Tanggal</TableHead>
                 <TableHead>Kendaraan</TableHead>
+                <TableHead>Group</TableHead>
                 <TableHead>Nota Dinas</TableHead>
                 <TableHead className="w-[30%]">Pekerjaan / Keluhan</TableHead>
                 <TableHead>Status</TableHead>
@@ -217,7 +231,7 @@ export default function VehicleEntryReport() {
             </TableHeader>
             <TableBody>
               {filteredEntries.length === 0 ? (
-                <TableRow><TableCell colSpan={7} className="text-center h-24">Tidak ada data.</TableCell></TableRow>
+                <TableRow><TableCell colSpan={8} className="text-center h-24">Tidak ada data.</TableCell></TableRow>
               ) : (
                 filteredEntries.map((item, index) => (
                   <TableRow key={item.id} className="align-top">
@@ -234,6 +248,11 @@ export default function VehicleEntryReport() {
                         <span className="font-bold">{item.vehicles?.license_plate}</span>
                         <span className="text-xs text-muted-foreground">{item.vehicles?.brand_type}</span>
                       </div>
+                    </TableCell>
+                    <TableCell>
+                      <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-slate-100 text-slate-700">
+                        {getVehicleGroupLabel(item)}
+                      </span>
                     </TableCell>
                     <TableCell>{item.nota_dinas_number || '-'}</TableCell>
                     <TableCell>

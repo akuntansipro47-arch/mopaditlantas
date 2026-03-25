@@ -23,6 +23,18 @@ export default function EstimationVsRealizationReport() {
     fetchData();
   }, [dateFilter]);
 
+  const getVehicleGroupLabel = (entry: any) => {
+    const sg = String(entry.service_group || '').toUpperCase();
+    if (sg.includes('R2_KECIL') || sg.includes('R2 KECIL') || sg.includes('KECIL')) return 'R2 Kecil';
+    if (sg.includes('R4')) return 'R4';
+    if (sg.includes('R2')) return 'R2';
+    const vt = String(entry.vehicles?.vehicle_type || '').toUpperCase();
+    if (vt.includes('R2_KECIL') || vt.includes('R2 KECIL') || vt.includes('KECIL')) return 'R2 Kecil';
+    if (vt === 'R4' || vt.includes('R4') || vt.includes('MOBIL')) return 'R4';
+    if (vt === 'R2' || vt.includes('R2') || vt.includes('MOTOR')) return 'R2';
+    return '-';
+  };
+
   async function fetchData() {
     setLoading(true);
     try {
@@ -49,7 +61,7 @@ export default function EstimationVsRealizationReport() {
             qty,
             estimated_price
           ),
-          vehicles (license_plate, brand_type)
+          vehicles (license_plate, brand_type, vehicle_type)
         `)
         .gte('entry_date', dateFilter.startDate)
         .lte('entry_date', dateFilter.endDate)
@@ -101,6 +113,7 @@ export default function EstimationVsRealizationReport() {
             license_plate: entry.vehicles?.license_plate || '-',
             brand: entry.vehicles?.brand_type || '-',
             nota_dinas: entry.nota_dinas_number || '-',
+            group: getVehicleGroupLabel(entry),
             
             est_job: estJob,
             est_part: estPart,
@@ -136,6 +149,7 @@ export default function EstimationVsRealizationReport() {
       'No. WO': item.wo_number,
       'Status': item.status,
       'Nopol': item.license_plate,
+      'Group': item.group,
       'Nota Dinas': item.nota_dinas,
       'Est. Jasa': item.est_job,
       'Est. Part': item.est_part,
@@ -216,6 +230,7 @@ export default function EstimationVsRealizationReport() {
                                 <TableHead className="font-semibold text-slate-700">Tanggal</TableHead>
                                 <TableHead className="font-semibold text-slate-700">No. WO / Status</TableHead>
                                 <TableHead className="font-semibold text-slate-700">Kendaraan</TableHead>
+                                <TableHead className="font-semibold text-slate-700">Group</TableHead>
                                 <TableHead className="text-right font-semibold text-orange-700 bg-orange-50/50">Total Estimasi</TableHead>
                                 <TableHead className="text-right font-semibold text-green-700 bg-green-50/50">Total Realisasi</TableHead>
                                 <TableHead className="text-right font-semibold text-slate-700">Selisih</TableHead>
@@ -224,9 +239,9 @@ export default function EstimationVsRealizationReport() {
                         </TableHeader>
                         <TableBody>
                             {loading ? (
-                                <TableRow><TableCell colSpan={8} className="text-center h-24 text-muted-foreground">Memuat data...</TableCell></TableRow>
+                                <TableRow><TableCell colSpan={9} className="text-center h-24 text-muted-foreground">Memuat data...</TableCell></TableRow>
                             ) : filteredData.length === 0 ? (
-                                <TableRow><TableCell colSpan={8} className="text-center h-24 text-muted-foreground">Tidak ada data.</TableCell></TableRow>
+                                <TableRow><TableCell colSpan={9} className="text-center h-24 text-muted-foreground">Tidak ada data.</TableCell></TableRow>
                             ) : (
                                 filteredData.map((item, index) => (
                                     <TableRow key={item.id} className="hover:bg-slate-50/50 transition-colors">
@@ -251,6 +266,11 @@ export default function EstimationVsRealizationReport() {
                                                 <span className="text-xs text-muted-foreground">{item.brand}</span>
                                             </div>
                                         </TableCell>
+                                        <TableCell>
+                                            <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-slate-100 text-slate-700">
+                                                {item.group}
+                                            </span>
+                                        </TableCell>
                                         <TableCell className="text-right font-medium text-orange-700 bg-orange-50/30">
                                             {formatCurrency(item.total_est)}
                                         </TableCell>
@@ -270,7 +290,7 @@ export default function EstimationVsRealizationReport() {
                         {filteredData.length > 0 && (
                             <TableBody>
                                 <TableRow className="bg-slate-100 border-t-2 border-slate-300 font-bold sticky bottom-0 shadow-inner z-10">
-                                    <TableCell colSpan={4} className="text-right text-slate-700">GRAND TOTAL</TableCell>
+                                    <TableCell colSpan={5} className="text-right text-slate-700">GRAND TOTAL</TableCell>
                                     <TableCell className="text-right text-orange-800">{formatCurrency(grandTotal.est)}</TableCell>
                                     <TableCell className="text-right text-green-800">{formatCurrency(grandTotal.real)}</TableCell>
                                     <TableCell className={`text-right ${grandTotal.var >= 0 ? 'text-green-700' : 'text-red-700'}`}>{formatCurrency(grandTotal.var)}</TableCell>
