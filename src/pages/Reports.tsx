@@ -32,11 +32,16 @@ export default function Reports() {
     if (!user) return false;
     if (user.role === 'SUPER_ADMIN') return true;
     const allowed = Array.isArray(user.allowed_menus) ? user.allowed_menus : [];
-    if (allowed.includes('*')) return true;
-    return allowed.includes(reportKey);
+    const allowedLower = allowed.map((v) => String(v).trim().toLowerCase()).filter(Boolean);
+    if (allowedLower.includes('*')) return true;
+    return allowedLower.includes(String(reportKey).trim().toLowerCase());
   };
 
-  const canAccessIssueDetail = () => canAccess('report_issuedetail') || canAccess('report_issue');
+  const canAccessIssueDetail = () =>
+    canAccess('report_issuedetail') ||
+    canAccess('report_issue_detail') ||
+    canAccess('report_goods_issue_detail') ||
+    canAccess('report_issue');
 
   // Get the first allowed tab to set as default
   const getDefaultTab = () => {
@@ -45,8 +50,8 @@ export default function Reports() {
       if (canAccess('report_receipt')) return 'receipt';
       if (canAccess('report_stock')) return 'stock';
       if (canAccess('report_stock')) return 'inventory_value'; // Reuse stock permission
-      if (canAccess('report_issue')) return 'issue';
       if (canAccessIssueDetail()) return 'issuedetail';
+      if (canAccess('report_issue')) return 'issue';
       if (canAccess('report_wo')) return 'wo';
       if (canAccess('report_vehicle_entry')) return 'vehicle_entry';
       if (canAccess('report_profit')) return 'profit';
