@@ -21,11 +21,11 @@ export const AuthContext = createContext<AuthContextType | undefined>(undefined)
 
 function normalizeAllowedMenus(value: any): string[] {
   if (!value) return [];
-  if (Array.isArray(value)) return value.map(String);
+  if (Array.isArray(value)) return value.map((v) => String(v).trim()).filter(Boolean);
   if (typeof value === 'string') {
     try {
       const parsed = JSON.parse(value);
-      return Array.isArray(parsed) ? parsed.map(String) : [];
+      return Array.isArray(parsed) ? parsed.map((v) => String(v).trim()).filter(Boolean) : [];
     } catch {
       return [];
     }

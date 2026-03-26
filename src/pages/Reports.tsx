@@ -36,6 +36,8 @@ export default function Reports() {
     return allowed.includes(reportKey);
   };
 
+  const canAccessIssueDetail = () => canAccess('report_issuedetail') || canAccess('report_issue');
+
   // Get the first allowed tab to set as default
   const getDefaultTab = () => {
       if (canAccess('report_po')) return 'po';
@@ -44,7 +46,7 @@ export default function Reports() {
       if (canAccess('report_stock')) return 'stock';
       if (canAccess('report_stock')) return 'inventory_value'; // Reuse stock permission
       if (canAccess('report_issue')) return 'issue';
-      if (canAccess('report_issuedetail')) return 'issuedetail';
+      if (canAccessIssueDetail()) return 'issuedetail';
       if (canAccess('report_wo')) return 'wo';
       if (canAccess('report_vehicle_entry')) return 'vehicle_entry';
       if (canAccess('report_profit')) return 'profit';
@@ -125,7 +127,7 @@ export default function Reports() {
                   Rekap Keluar
                 </TabsTrigger>
               )}
-              {canAccess('report_issuedetail') && (
+              {canAccessIssueDetail() && (
                 <TabsTrigger value="issuedetail" className="data-[state=active]:bg-indigo-600 data-[state=active]:text-white data-[state=active]:shadow-md border border-slate-200 bg-white px-4 py-2.5 rounded-lg transition-all hover:border-indigo-300">
                   Detail Barang Keluar
                 </TabsTrigger>
@@ -188,7 +190,7 @@ export default function Reports() {
           {canAccess('report_stock') && <TabsContent value="stock"><StockReport /></TabsContent>}
           {canAccess('report_stock') && <TabsContent value="inventory_value"><InventoryValueReport /></TabsContent>}
           {canAccess('report_issue') && <TabsContent value="issue"><GoodsIssueReport /></TabsContent>}
-          {canAccess('report_issuedetail') && <TabsContent value="issuedetail"><GoodsIssueDetailReport /></TabsContent>}
+          {canAccessIssueDetail() && <TabsContent value="issuedetail"><GoodsIssueDetailReport /></TabsContent>}
           {canAccess('report_wo') && <TabsContent value="wo"><WorkOrderReport /></TabsContent>}
           {canAccess('report_wo') && <TabsContent value="wodetail"><WorkOrderDetailReport /></TabsContent>}
           {canAccess('report_vehicle_entry') && <TabsContent value="vehicle_entry"><VehicleEntryReport /></TabsContent>}
