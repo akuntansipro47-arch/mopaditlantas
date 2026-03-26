@@ -54,7 +54,6 @@ export default function GoodsIssueDetailReport() {
           goods_issues (
             issue_number,
             issue_date,
-            notes,
             work_orders (
               wo_number,
               vehicle_entries (
@@ -99,7 +98,7 @@ export default function GoodsIssueDetailReport() {
                 kode_barang: good?.item_code || '-',
                 qty: item.quantity,
                 satuan: good?.unit || '-',
-                keterangan: issue?.notes || '-' // Added notes to see source
+                keterangan: issue?.notes || issue?.issue_number || '-' // notes may not exist in schema
             };
         })
         .filter(item => {
