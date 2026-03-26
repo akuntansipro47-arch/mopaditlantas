@@ -657,6 +657,7 @@ export default function PurchasePayment() {
                               <TableRow>
                                   <TableHead>Tanggal Bayar</TableHead>
                                   <TableHead>No. Invoice</TableHead>
+                                  <TableHead>No. PO</TableHead>
                                   <TableHead>Supplier</TableHead>
                                   <TableHead>Akun Pembayar</TableHead>
                                   <TableHead>Jumlah Bayar</TableHead>
@@ -666,12 +667,13 @@ export default function PurchasePayment() {
                           </TableHeader>
                           <TableBody>
                               {filteredPaymentHistory.length === 0 ? (
-                                  <TableRow><TableCell colSpan={7} className="text-center py-8">Belum ada riwayat pembayaran.</TableCell></TableRow>
+                                  <TableRow><TableCell colSpan={8} className="text-center py-8">Belum ada riwayat pembayaran.</TableCell></TableRow>
                               ) : (
                                   filteredPaymentHistory.map(pay => (
                                       <TableRow key={pay.id}>
                                           <TableCell>{formatDate(pay.payment_date)}</TableCell>
                                           <TableCell className="font-mono">{pay.purchase_invoices?.invoice_number}</TableCell>
+                                          <TableCell className="font-mono text-slate-600">{pay.purchase_invoices?.purchase_orders?.po_number || '-'}</TableCell>
                                           <TableCell>{pay.purchase_invoices?.suppliers?.name}</TableCell>
                                           <TableCell>{pay.payment_account?.account_name || '-'}</TableCell>
                                           <TableCell className="font-bold">{formatCurrency(pay.amount)}</TableCell>
