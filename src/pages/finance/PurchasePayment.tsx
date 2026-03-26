@@ -25,6 +25,7 @@ export default function PurchasePayment() {
   const [paymentHistory, setPaymentHistory] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
+  const [historySearch, setHistorySearch] = useState('');
   const [isSyncing, setIsSyncing] = useState(false);
   
   // Filters
@@ -205,6 +206,7 @@ export default function PurchasePayment() {
                 *,
                 purchase_invoices (
                     invoice_number,
+                    purchase_orders (po_number),
                     suppliers (name)
                 ),
                 payment_account:chart_of_accounts (account_name)
@@ -457,6 +459,15 @@ export default function PurchasePayment() {
     return matchSearch && matchStatus && matchDate;
   });
 
+  const filteredPaymentHistory = paymentHistory.filter((pay) => {
+    const q = historySearch.trim().toLowerCase();
+    if (!q) return true;
+    const invoiceNo = String(pay.purchase_invoices?.invoice_number || '').toLowerCase();
+    const supplierName = String(pay.purchase_invoices?.suppliers?.name || '').toLowerCase();
+    const poNo = String(pay.purchase_invoices?.purchase_orders?.po_number || '').toLowerCase();
+    return invoiceNo.includes(q) || supplierName.includes(q) || poNo.includes(q);
+  });
+
   const [isAccountSelectOpen, setIsAccountSelectOpen] = useState(false); // For custom dialog
 
   const handleSelectAccount = (acc: any) => {
@@ -627,7 +638,18 @@ export default function PurchasePayment() {
           <TabsContent value="history">
               <Card>
                   <CardHeader>
-                      <CardTitle>Riwayat Pembayaran</CardTitle>
+                      <div className="flex justify-between">
+                          <CardTitle>Riwayat Pembayaran</CardTitle>
+                          <div className="relative w-72">
+                              <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+                              <Input
+                                placeholder="Cari Invoice / PO / Supplier..."
+                                className="pl-8"
+                                value={historySearch}
+                                onChange={e => setHistorySearch(e.target.value)}
+                              />
+                          </div>
+                      </div>
                   </CardHeader>
                   <CardContent>
                       <Table>
@@ -643,10 +665,10 @@ export default function PurchasePayment() {
                               </TableRow>
                           </TableHeader>
                           <TableBody>
-                              {paymentHistory.length === 0 ? (
+                              {filteredPaymentHistory.length === 0 ? (
                                   <TableRow><TableCell colSpan={7} className="text-center py-8">Belum ada riwayat pembayaran.</TableCell></TableRow>
                               ) : (
-                                  paymentHistory.map(pay => (
+                                  filteredPaymentHistory.map(pay => (
                                       <TableRow key={pay.id}>
                                           <TableCell>{formatDate(pay.payment_date)}</TableCell>
                                           <TableCell className="font-mono">{pay.purchase_invoices?.invoice_number}</TableCell>
