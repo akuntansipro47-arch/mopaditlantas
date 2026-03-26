@@ -411,7 +411,10 @@ export default function PurchaseOrder() {
                         type="button" 
                         variant="outline" 
                         className="w-full justify-between text-left font-normal border-lime-200 hover:border-lime-500"
-                        onClick={() => !isReadOnly && setSupplierSearchOpen(true)}
+                        onClick={(e) => {
+                          e.preventDefault();
+                          if (!isReadOnly) setSupplierSearchOpen(true);
+                        }}
                         disabled={isReadOnly}
                       >
                         {formData.supplier_id 
@@ -423,7 +426,7 @@ export default function PurchaseOrder() {
 
                     {/* Supplier Search Dialog */}
                     <Dialog open={supplierSearchOpen} onOpenChange={setSupplierSearchOpen}>
-                      <DialogContent className="sm:max-w-[500px]">
+                      <DialogContent className="sm:max-w-[500px]" style={{ zIndex: 9999 }}>
                         <DialogHeader>
                           <DialogTitle>Cari Supplier</DialogTitle>
                         </DialogHeader>
