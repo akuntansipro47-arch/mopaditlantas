@@ -833,16 +833,26 @@ export default function PurchaseOrderV2() {
         <div 
           className="fixed inset-0 z-[100000] bg-black/50 flex items-center justify-center p-4 pointer-events-auto"
           style={{ pointerEvents: 'auto' }}
+          onClick={(e) => {
+            e.stopPropagation();
+          }}
         >
           <div 
             className="bg-white rounded-lg shadow-xl w-full max-w-[500px] overflow-hidden flex flex-col pointer-events-auto"
             style={{ pointerEvents: 'auto' }}
+            onClick={(e) => e.stopPropagation()}
           >
             <div className="px-6 py-4 border-b flex justify-between items-center">
               <h2 className="text-lg font-semibold">Cari Supplier</h2>
               <button 
-                onClick={() => setSupplierSearchOpen(false)}
-                className="text-gray-500 hover:text-gray-700"
+                type="button"
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setSupplierSearchOpen(false);
+                }}
+                className="text-gray-500 hover:text-gray-700 pointer-events-auto"
+                style={{ pointerEvents: 'auto' }}
               >
                 ✕
               </button>
