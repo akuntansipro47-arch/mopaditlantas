@@ -52,9 +52,10 @@ export default function SupplierPayableReport() {
             .select(`
                 id, invoice_number, invoice_date, due_date, total_amount, status,
                 supplier:suppliers (id, name),
-                purchase_orders (po_number)
+                purchase_orders!inner (po_number, status)
             `)
             .lte('invoice_date', reportDate)
+            .in('purchase_orders.status', ['RECEIVED_FULL', 'RECEIVED_PART'])
             .order('invoice_date', { ascending: true });
         
         if (invError) throw invError;

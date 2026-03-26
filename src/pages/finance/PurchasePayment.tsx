@@ -123,11 +123,11 @@ export default function PurchasePayment() {
   async function handleSyncInvoices() {
     setIsSyncing(true);
     try {
-        // 1. Get all RECEIVED_FULL POs
+        // 1. Get all RECEIVED_FULL or RECEIVED_PART POs
         const { data: pos } = await supabase
             .from('purchase_orders')
             .select('id, po_number, supplier_id, total_amount, created_at')
-            .eq('status', 'RECEIVED_FULL');
+            .in('status', ['RECEIVED_FULL', 'RECEIVED_PART']);
         
         if (!pos || pos.length === 0) {
             toast.info("Tidak ada PO yang perlu disinkronisasi.");
@@ -186,6 +186,7 @@ export default function PurchasePayment() {
             status
           )
         `)
+        .in('purchase_orders.status', ['RECEIVED_FULL', 'RECEIVED_PART'])
         .order('created_at', { ascending: false });
 
       if (error) throw error;
