@@ -36,6 +36,7 @@ export default function Goods() {
     unit: '',
     item_type: 'PERSEDIAAN',
     selling_price: 0,
+    group_sparepart: '' as '' | 'R4' | 'R2' | 'R2_KECIL',
     is_active: true,
   });
 
@@ -74,8 +75,12 @@ export default function Goods() {
     setFormData(prev => ({ ...prev, item_type: value }));
   };
 
+  const handleGroupChange = (value: string) => {
+    setFormData(prev => ({ ...prev, group_sparepart: value as any }));
+  };
+
   const resetForm = () => {
-    setFormData({ name: '', unit: '', item_type: 'PERSEDIAAN', selling_price: 0, is_active: true });
+    setFormData({ name: '', unit: '', item_type: 'PERSEDIAAN', selling_price: 0, group_sparepart: '' as any, is_active: true });
     setIsEditing(false);
     setCurrentId(null);
   };
@@ -86,6 +91,7 @@ export default function Goods() {
       unit: item.unit,
       item_type: item.item_type,
       selling_price: item.selling_price || 0,
+      group_sparepart: (item.group_sparepart || '') as any,
       is_active: (item as any).is_active !== false, // Default to true if null
     });
     setIsEditing(true);
@@ -107,6 +113,12 @@ export default function Goods() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    if (!formData.name.trim()) return toast.error('Nama barang wajib diisi');
+    if (!formData.unit.trim()) return toast.error('Satuan wajib diisi');
+    if (!formData.item_type) return toast.error('Tipe wajib dipilih');
+    if (formData.selling_price === null || formData.selling_price === undefined) return toast.error('Harga jual wajib diisi');
+    if (!formData.group_sparepart) return toast.error('Group wajib dipilih (R2/R4/R2 Kecil)');
 
     setSaving(true);
     try {
@@ -173,15 +185,27 @@ export default function Goods() {
                   </Select>
                 </div>
                 <div className="grid grid-cols-4 items-center gap-4">
+                  <Label className="text-right">Group</Label>
+                  <Select value={formData.group_sparepart || ''} onValueChange={handleGroupChange}>
+                    <SelectTrigger className="col-span-3"><SelectValue placeholder="Pilih Group" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="R2">R2</SelectItem>
+                      <SelectItem value="R4">R4</SelectItem>
+                      <SelectItem value="R2_KECIL">R2 Kecil</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="grid grid-cols-4 items-center gap-4">
                   <Label className="text-right">Harga Jual (Rp)</Label>
                   <Input 
                     type="text" 
                     name="selling_price" 
-                    value={formData.selling_price || ''} 
+                    value={String(formData.selling_price ?? 0)} 
                     onChange={handleInputChange} 
                     className="col-span-3" 
                     placeholder="0" 
                     inputMode="numeric"
+                    required
                   />
                 </div>
                 <div className="grid grid-cols-4 items-center gap-4">
@@ -228,6 +252,7 @@ export default function Goods() {
                   <TableHead>Nama Barang</TableHead>
                   <TableHead>Satuan</TableHead>
                   <TableHead>Tipe</TableHead>
+                  <TableHead>Group</TableHead>
                   <TableHead>Harga Jual</TableHead>
                   <TableHead>Stok</TableHead>
                   <TableHead className="text-center">Status</TableHead>
@@ -236,7 +261,7 @@ export default function Goods() {
               </TableHeader>
               <TableBody>
                 {filteredGoods.length === 0 ? (
-                  <TableRow><TableCell colSpan={8} className="text-center h-24">Tidak ada data.</TableCell></TableRow>
+                  <TableRow><TableCell colSpan={9} className="text-center h-24">Tidak ada data.</TableCell></TableRow>
                 ) : (
                   filteredGoods.map((item) => (
                     <TableRow key={item.id} className={!(item as any).is_active ? 'bg-gray-50 opacity-60' : ''}>
@@ -250,6 +275,15 @@ export default function Goods() {
                         <span className={`px-2 py-1 rounded-full text-xs ${item.item_type === 'PERSEDIAAN' ? 'bg-blue-100 text-blue-800' : 'bg-gray-100 text-gray-800'}`}>
                           {item.item_type?.replace(/_/g, ' ')}
                         </span>
+                      </TableCell>
+                      <TableCell>
+                        {item.group_sparepart ? (
+                          <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-slate-100 text-slate-700">
+                            {item.group_sparepart === 'R2_KECIL' ? 'R2 Kecil' : item.group_sparepart}
+                          </span>
+                        ) : (
+                          <span className="text-xs text-red-600 font-semibold">Belum diisi</span>
+                        )}
                       </TableCell>
                       <TableCell>{formatCurrency(item.selling_price || 0)}</TableCell>
                       <TableCell>{item.current_stock}</TableCell>
