@@ -839,74 +839,43 @@ export default function PurchaseOrderV2() {
         </DialogContent>
       </Dialog>
 
-      {/* Supplier Search Dialog - Native Modal implementation to avoid Radix UI stacking/pointer-events lock issues in Incognito */}
-      {supplierSearchOpen && (
-        <div 
-          className="fixed inset-0 z-[100000] bg-black/50 flex items-center justify-center p-4 pointer-events-auto"
-          style={{ pointerEvents: 'auto' }}
-          onClick={(e) => {
-            e.stopPropagation();
-          }}
-        >
-          <div 
-            className="bg-white rounded-lg shadow-xl w-full max-w-[500px] overflow-hidden flex flex-col pointer-events-auto"
-            style={{ pointerEvents: 'auto' }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="px-6 py-4 border-b flex justify-between items-center">
-              <h2 className="text-lg font-semibold">Cari Supplier</h2>
-              <button 
-                type="button"
-                onClick={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  setSupplierSearchOpen(false);
-                }}
-                className="text-gray-500 hover:text-gray-700 pointer-events-auto"
-                style={{ pointerEvents: 'auto' }}
-              >
-                ✕
-              </button>
-            </div>
-            <div className="p-6 space-y-4 flex-1 overflow-hidden flex flex-col">
-              <Input 
-                placeholder="Cari nama supplier atau kontak person..." 
-                value={supplierSearchQuery} 
-                onChange={(e) => setSupplierSearchQuery(e.target.value)}
-                autoFocus
-                className="pointer-events-auto"
-                style={{ pointerEvents: 'auto' }}
-              />
-              <div className="max-h-[300px] overflow-y-auto border rounded-md">
-                {filteredSuppliers.length === 0 ? (
-                  <div className="p-4 text-center text-sm text-gray-500">Supplier tidak ditemukan.</div>
-                ) : (
-                  <Table>
-                    <TableBody>
-                      {filteredSuppliers.map((s) => (
-                        <TableRow 
-                          key={s.id} 
-                          className="cursor-pointer hover:bg-slate-50 pointer-events-auto"
-                          style={{ pointerEvents: 'auto' }}
-                          onClick={(e) => {
-                            e.preventDefault();
-                            e.stopPropagation();
-                            handleSupplierSelect(s);
-                          }}
-                        >
-                          <TableCell className="font-medium pointer-events-auto">{s.name}</TableCell>
-                          <TableCell className="pointer-events-auto">{(s as any).contact_person || '-'}</TableCell>
-                          <TableCell className="text-right text-xs text-gray-500 pointer-events-auto">{(s as any).city || '-'}</TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                )}
-              </div>
+      {/* Supplier Search Dialog - Radix Modal Sejajar dengan Form PO */}
+      <Dialog open={supplierSearchOpen} onOpenChange={setSupplierSearchOpen}>
+        <DialogContent className="sm:max-w-[500px]" style={{ zIndex: 100000 }}>
+          <DialogHeader>
+            <DialogTitle>Cari Supplier</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <Input 
+              placeholder="Cari nama supplier atau kontak person..." 
+              value={supplierSearchQuery} 
+              onChange={(e) => setSupplierSearchQuery(e.target.value)}
+              autoFocus
+            />
+            <div className="max-h-[300px] overflow-y-auto border rounded-md">
+              {filteredSuppliers.length === 0 ? (
+                <div className="p-4 text-center text-sm text-gray-500">Supplier tidak ditemukan.</div>
+              ) : (
+                <Table>
+                  <TableBody>
+                    {filteredSuppliers.map((s) => (
+                      <TableRow 
+                        key={s.id} 
+                        className="cursor-pointer hover:bg-slate-50"
+                        onClick={() => handleSupplierSelect(s)}
+                      >
+                        <TableCell className="font-medium">{s.name}</TableCell>
+                        <TableCell>{(s as any).contact_person || '-'}</TableCell>
+                        <TableCell className="text-right text-xs text-gray-500">{(s as any).city || '-'}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              )}
             </div>
           </div>
-        </div>
-      )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
