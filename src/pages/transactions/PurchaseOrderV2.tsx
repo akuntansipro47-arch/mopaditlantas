@@ -830,8 +830,14 @@ export default function PurchaseOrderV2() {
 
       {/* Supplier Search Dialog - Native Modal implementation to avoid Radix UI stacking/pointer-events lock issues in Incognito */}
       {supplierSearchOpen && (
-        <div className="fixed inset-0 z-[100000] bg-black/50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-lg shadow-xl w-full max-w-[500px] overflow-hidden flex flex-col">
+        <div 
+          className="fixed inset-0 z-[100000] bg-black/50 flex items-center justify-center p-4 pointer-events-auto"
+          style={{ pointerEvents: 'auto' }}
+        >
+          <div 
+            className="bg-white rounded-lg shadow-xl w-full max-w-[500px] overflow-hidden flex flex-col pointer-events-auto"
+            style={{ pointerEvents: 'auto' }}
+          >
             <div className="px-6 py-4 border-b flex justify-between items-center">
               <h2 className="text-lg font-semibold">Cari Supplier</h2>
               <button 
@@ -847,6 +853,8 @@ export default function PurchaseOrderV2() {
                 value={supplierSearchQuery} 
                 onChange={(e) => setSupplierSearchQuery(e.target.value)}
                 autoFocus
+                className="pointer-events-auto"
+                style={{ pointerEvents: 'auto' }}
               />
               <div className="max-h-[300px] overflow-y-auto border rounded-md">
                 {filteredSuppliers.length === 0 ? (
@@ -857,12 +865,17 @@ export default function PurchaseOrderV2() {
                       {filteredSuppliers.map((s) => (
                         <TableRow 
                           key={s.id} 
-                          className="cursor-pointer hover:bg-slate-50"
-                          onClick={() => handleSupplierSelect(s)}
+                          className="cursor-pointer hover:bg-slate-50 pointer-events-auto"
+                          style={{ pointerEvents: 'auto' }}
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            handleSupplierSelect(s);
+                          }}
                         >
-                          <TableCell className="font-medium">{s.name}</TableCell>
-                          <TableCell>{(s as any).contact_person || '-'}</TableCell>
-                          <TableCell className="text-right text-xs text-gray-500">{(s as any).city || '-'}</TableCell>
+                          <TableCell className="font-medium pointer-events-auto">{s.name}</TableCell>
+                          <TableCell className="pointer-events-auto">{(s as any).contact_person || '-'}</TableCell>
+                          <TableCell className="text-right text-xs text-gray-500 pointer-events-auto">{(s as any).city || '-'}</TableCell>
                         </TableRow>
                       ))}
                     </TableBody>
