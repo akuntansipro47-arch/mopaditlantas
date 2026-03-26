@@ -6,6 +6,7 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Search, Download, TrendingUp, DollarSign, Package } from 'lucide-react';
 import { formatCurrency, formatDate } from '@/lib/utils';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import * as XLSX from 'xlsx';
 import { toast } from 'sonner';
 
@@ -13,6 +14,7 @@ export default function InventoryValueReport() {
   const [data, setData] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
+  const [groupFilter, setGroupFilter] = useState('ALL');
 
   useEffect(() => {
     fetchData();
@@ -72,10 +74,18 @@ export default function InventoryValueReport() {
     }
   }
 
-  const filteredData = data.filter(item => 
-    item.name.toLowerCase().includes(search.toLowerCase()) ||
-    item.item_code.toLowerCase().includes(search.toLowerCase())
-  );
+  const filteredData = data.filter(item => {
+    const matchSearch =
+      item.name.toLowerCase().includes(search.toLowerCase()) ||
+      item.item_code.toLowerCase().includes(search.toLowerCase());
+    
+    let matchGroup = true;
+    if (groupFilter !== 'ALL') {
+      matchGroup = item.group_sparepart === groupFilter;
+    }
+
+    return matchSearch && matchGroup;
+  });
 
   const totalAssetValue = filteredData.reduce((sum, item) => sum + item.total_value, 0);
   const totalItems = filteredData.length;
@@ -86,6 +96,7 @@ export default function InventoryValueReport() {
       'Kode Barang': item.item_code,
       'Nama Barang': item.name,
       'Kategori': item.item_type,
+      'Group': item.group_sparepart || '-',
       'Stok Saat Ini': item.current_stock,
       'Satuan': item.unit,
       'Harga Beli Terakhir': item.cost_price,
@@ -150,14 +161,28 @@ export default function InventoryValueReport() {
         <CardHeader className="pb-3 border-b bg-slate-50/50">
           <div className="flex justify-between items-center">
             <CardTitle className="text-lg">Rincian Valuasi</CardTitle>
-            <div className="relative w-72">
-              <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
-              <Input 
-                placeholder="Cari Nama / Kode Barang..." 
-                className="pl-8 bg-white" 
-                value={search} 
-                onChange={e => setSearch(e.target.value)} 
-              />
+            <div className="flex items-center gap-3">
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-medium text-slate-500">Group:</span>
+                <Select value={groupFilter} onValueChange={setGroupFilter}>
+                  <SelectTrigger className="w-[140px] bg-white"><SelectValue placeholder="Semua" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="ALL">Semua</SelectItem>
+                    <SelectItem value="R2">R2</SelectItem>
+                    <SelectItem value="R4">R4</SelectItem>
+                    <SelectItem value="R2_KECIL">R2 Kecil</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="relative w-72">
+                <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+                <Input 
+                  placeholder="Cari Nama / Kode Barang..." 
+                  className="pl-8 bg-white" 
+                  value={search} 
+                  onChange={e => setSearch(e.target.value)} 
+                />
+              </div>
             </div>
           </div>
         </CardHeader>
@@ -168,6 +193,7 @@ export default function InventoryValueReport() {
                 <TableHead className="font-semibold text-slate-700">Kode</TableHead>
                 <TableHead className="font-semibold text-slate-700">Nama Barang</TableHead>
                 <TableHead className="font-semibold text-slate-700">Kategori</TableHead>
+                <TableHead className="font-semibold text-slate-700">Group</TableHead>
                 <TableHead className="text-center font-semibold text-slate-700">Stok Fisik</TableHead>
                 <TableHead className="text-right font-semibold text-slate-700">Harga Beli (Est)</TableHead>
                 <TableHead className="text-right font-semibold text-slate-700">Total Nilai</TableHead>
@@ -175,7 +201,7 @@ export default function InventoryValueReport() {
             </TableHeader>
             <TableBody>
               {filteredData.length === 0 ? (
-                <TableRow><TableCell colSpan={6} className="text-center py-12 text-muted-foreground">Tidak ada data ditemukan.</TableCell></TableRow>
+                <TableRow><TableCell colSpan={7} className="text-center py-12 text-muted-foreground">Tidak ada data ditemukan.</TableCell></TableRow>
               ) : (
                 filteredData.map((item) => (
                   <TableRow key={item.id} className="hover:bg-slate-50/80 transition-colors">
@@ -188,6 +214,13 @@ export default function InventoryValueReport() {
                       <Badge variant="outline" className="font-normal text-xs">
                         {item.item_type?.replace(/_/g, ' ')}
                       </Badge>
+                    </TableCell>
+                    <TableCell>
+                      {item.group_sparepart ? (
+                        <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-slate-100 text-slate-700">
+                          {item.group_sparepart === 'R2_KECIL' ? 'R2 Kecil' : item.group_sparepart}
+                        </span>
+                      ) : '-'}
                     </TableCell>
                     <TableCell className="text-center font-bold text-slate-700">{item.current_stock}</TableCell>
                     <TableCell className="text-right text-slate-600">
