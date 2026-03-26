@@ -78,6 +78,8 @@ const PERMISSION_GROUPS: Array<{ title: string; items: Array<{ key: string; labe
       { key: 'report_profit_loss', label: 'Laporan Laba Rugi' },
       { key: 'report_balance_sheet', label: 'Laporan Neraca' },
       { key: 'report_supplier_payable', label: 'Laporan Hutang Supplier' },
+      { key: 'report_payment_history_ap', label: 'Laporan Riwayat Pembayaran Hutang' },
+      { key: 'report_cash_bank_book', label: 'Laporan Buku Bank/Kas' },
       { key: 'report_estimation', label: 'Laporan Estimasi vs Realisasi' },
       { key: 'report_budget', label: 'Laporan Monitoring Pagu' },
     ],
