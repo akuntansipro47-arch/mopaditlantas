@@ -80,6 +80,9 @@ export default function PurchaseOrderV2() {
     fetchMasterData();
   }, [dateFilter]);
 
+  const [supplierSearchOpen, setSupplierSearchOpen] = useState(false);
+  const [supplierSearchQuery, setSupplierSearchQuery] = useState('');
+  
   const [woSearchOpen, setWoSearchOpen] = useState(false);
   const [woSearchQuery, setWoSearchQuery] = useState('');
 
@@ -389,6 +392,16 @@ export default function PurchaseOrderV2() {
     }
   };
 
+  const filteredSuppliers = suppliers.filter(s => 
+    s.name.toLowerCase().includes(supplierSearchQuery.toLowerCase()) || 
+    (s as any).contact_person?.toLowerCase().includes(supplierSearchQuery.toLowerCase())
+  );
+
+  const handleSupplierSelect = (supplier: any) => {
+    setFormData({ ...formData, supplier_id: supplier.id });
+    setSupplierSearchOpen(false);
+  };
+
   const filteredPOs = pos.filter(item => 
     item.po_number.toLowerCase().includes(search.toLowerCase()) ||
     item.suppliers?.name.toLowerCase().includes(search.toLowerCase())
@@ -454,14 +467,24 @@ export default function PurchaseOrderV2() {
 
                   <div className="space-y-2">
                     <Label>Supplier</Label>
-                    <Select value={formData.supplier_id} onValueChange={(v) => setFormData({...formData, supplier_id: v})} disabled={isReadOnly}>
-                      <SelectTrigger><SelectValue placeholder="Pilih Supplier" /></SelectTrigger>
-                      <SelectContent>
-                        {suppliers.map(s => (
-                          <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                    <div className="relative">
+                      <Button 
+                        type="button" 
+                        variant="outline" 
+                        className="w-full justify-between text-left font-normal border-lime-200 hover:border-lime-500"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          if (!isReadOnly) setSupplierSearchOpen(true);
+                        }}
+                        disabled={isReadOnly}
+                      >
+                        {formData.supplier_id 
+                          ? suppliers.find(s => s.id === formData.supplier_id)?.name || 'Pilih Supplier'
+                          : 'Pilih Supplier'}
+                        <Search className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                      </Button>
+                    </div>
                   </div>
                   
                 {/* WO Selection Popup */}
@@ -804,6 +827,52 @@ export default function PurchaseOrderV2() {
           </Command>
         </DialogContent>
       </Dialog>
+
+      {/* Supplier Search Dialog - Native Modal implementation to avoid Radix UI stacking/pointer-events lock issues in Incognito */}
+      {supplierSearchOpen && (
+        <div className="fixed inset-0 z-[100000] bg-black/50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-[500px] overflow-hidden flex flex-col">
+            <div className="px-6 py-4 border-b flex justify-between items-center">
+              <h2 className="text-lg font-semibold">Cari Supplier</h2>
+              <button 
+                onClick={() => setSupplierSearchOpen(false)}
+                className="text-gray-500 hover:text-gray-700"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="p-6 space-y-4 flex-1 overflow-hidden flex flex-col">
+              <Input 
+                placeholder="Cari nama supplier atau kontak person..." 
+                value={supplierSearchQuery} 
+                onChange={(e) => setSupplierSearchQuery(e.target.value)}
+                autoFocus
+              />
+              <div className="max-h-[300px] overflow-y-auto border rounded-md">
+                {filteredSuppliers.length === 0 ? (
+                  <div className="p-4 text-center text-sm text-gray-500">Supplier tidak ditemukan.</div>
+                ) : (
+                  <Table>
+                    <TableBody>
+                      {filteredSuppliers.map((s) => (
+                        <TableRow 
+                          key={s.id} 
+                          className="cursor-pointer hover:bg-slate-50"
+                          onClick={() => handleSupplierSelect(s)}
+                        >
+                          <TableCell className="font-medium">{s.name}</TableCell>
+                          <TableCell>{(s as any).contact_person || '-'}</TableCell>
+                          <TableCell className="text-right text-xs text-gray-500">{(s as any).city || '-'}</TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
