@@ -14,6 +14,7 @@ import InventoryValueReport from './reports/InventoryValueReport';
 import GrossProfitReport from './reports/GrossProfitReport';
 import ProfitLossReport from './reports/ProfitLossReport';
 import BalanceSheetReport from './reports/BalanceSheetReport';
+import SupplierPayableReport from './reports/SupplierPayableReport';
 import VehicleEntryReport from './reports/VehicleEntryReport';
 import EstimationVsRealizationReport from './reports/EstimationVsRealizationReport';
 import BudgetMonitoringReport from './reports/BudgetMonitoringReport';
@@ -57,6 +58,7 @@ export default function Reports() {
       if (canAccess('report_profit')) return 'profit';
       if (canAccess('report_profit_loss')) return 'profit_loss';
       if (canAccess('report_balance_sheet')) return 'balance_sheet';
+      if (canAccess('report_supplier_payable')) return 'supplier_payable';
       if (canAccess('report_estimation')) return 'estimation';
       if (canAccess('report_budget')) return 'budget';
       return '';
@@ -179,6 +181,11 @@ export default function Reports() {
                   Neraca
                 </TabsTrigger>
               )}
+              {canAccess('report_supplier_payable') && (
+                <TabsTrigger value="supplier_payable" className="data-[state=active]:bg-indigo-600 data-[state=active]:text-white data-[state=active]:shadow-md border border-slate-200 bg-white px-4 py-2.5 rounded-lg transition-all hover:border-indigo-300">
+                  Hutang Supplier
+                </TabsTrigger>
+              )}
               {canAccess('report_budget') && (
                 <TabsTrigger value="budget" className="data-[state=active]:bg-cyan-600 data-[state=active]:text-white data-[state=active]:shadow-md border border-slate-200 bg-white px-4 py-2.5 rounded-lg transition-all hover:border-cyan-300 font-medium">
                   Monitoring Pagu
@@ -202,6 +209,7 @@ export default function Reports() {
           {canAccess('report_profit') && <TabsContent value="profit"><GrossProfitReport /></TabsContent>}
           {canAccess('report_profit_loss') && <TabsContent value="profit_loss"><ProfitLossReport /></TabsContent>}
           {canAccess('report_balance_sheet') && <TabsContent value="balance_sheet"><BalanceSheetReport /></TabsContent>}
+          {canAccess('report_supplier_payable') && <TabsContent value="supplier_payable"><SupplierPayableReport /></TabsContent>}
           {canAccess('report_estimation') && <TabsContent value="estimation"><EstimationVsRealizationReport /></TabsContent>}
           {canAccess('report_budget') && <TabsContent value="budget"><BudgetMonitoringReport /></TabsContent>}
         </div>
