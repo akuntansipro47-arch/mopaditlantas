@@ -418,7 +418,18 @@ export default function PurchaseOrderV2() {
         </div>
         
         <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-          <DialogContent className="sm:max-w-[90vw] h-[90vh] flex flex-col">
+          <DialogContent
+            className="sm:max-w-[90vw] h-[90vh] flex flex-col"
+            onInteractOutside={(e) => {
+              if (supplierSearchOpen || itemSearchOpen || woSearchOpen) e.preventDefault();
+            }}
+            onPointerDownOutside={(e) => {
+              if (supplierSearchOpen || itemSearchOpen || woSearchOpen) e.preventDefault();
+            }}
+            onFocusOutside={(e) => {
+              if (supplierSearchOpen || itemSearchOpen || woSearchOpen) e.preventDefault();
+            }}
+          >
             <DialogHeader>
               <DialogTitle>{editingId ? (isReadOnly ? 'Detail Purchase Order' : 'Edit Purchase Order') : 'Buat Purchase Order'}</DialogTitle>
               <DialogDescription>{editingId ? (isReadOnly ? 'Lihat detail PO.' : 'Perbarui data Purchase Order.') : 'Pilih supplier dan daftar barang yang akan dibeli.'}</DialogDescription>
