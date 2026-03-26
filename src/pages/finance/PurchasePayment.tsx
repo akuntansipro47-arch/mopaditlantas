@@ -471,6 +471,42 @@ export default function PurchasePayment() {
 
   const [isAccountSelectOpen, setIsAccountSelectOpen] = useState(false); // For custom dialog
 
+  const handleDeleteInvoice = async (invoiceId: string) => {
+      const ok = window.confirm('Anda yakin ingin menghapus tagihan ini? Data pembayaran dan jurnal terkait (jika ada) juga akan terhapus.');
+      if (!ok) return;
+
+      setLoading(true);
+      try {
+          // 1. Check if there are payments
+          const { data: payments } = await supabase.from('purchase_payments').select('id, journal_entry_id').eq('invoice_id', invoiceId);
+          
+          if (payments && payments.length > 0) {
+              // Delete journals
+              const journalIds = payments.map(p => p.journal_entry_id).filter(Boolean);
+              if (journalIds.length > 0) {
+                  await supabase.from('journal_entry_items').delete().in('journal_entry_id', journalIds);
+                  await supabase.from('journal_entries').delete().in('id', journalIds);
+              }
+              // Delete payments
+              await supabase.from('purchase_payments').delete().eq('invoice_id', invoiceId);
+          }
+
+          // 2. Delete invoice items (if any, though in this app it might be empty/non-existent table)
+          try { await supabase.from('purchase_invoice_items').delete().eq('invoice_id', invoiceId); } catch(e) {}
+
+          // 3. Delete invoice
+          const { error } = await supabase.from('purchase_invoices').delete().eq('id', invoiceId);
+          if (error) throw error;
+
+          toast.success("Tagihan berhasil dihapus.");
+          fetchInvoices();
+      } catch (error: any) {
+          toast.error("Gagal menghapus tagihan: " + error.message);
+      } finally {
+          setLoading(false);
+      }
+  };
+
   const handleSelectAccount = (acc: any) => {
     setPaymentData({...paymentData, payment_account_id: acc.id});
     setIsAccountSelectOpen(false);
@@ -620,11 +656,16 @@ export default function PurchasePayment() {
                                                 </span>
                                             </TableCell>
                                             <TableCell className="text-right">
-                                                {inv.status !== 'PAID' && (
-                                                    <Button size="sm" onClick={() => handlePayClick(inv)}>
-                                                        <Wallet className="mr-2 h-4 w-4" /> Bayar
+                                                <div className="flex justify-end gap-2">
+                                                    {inv.status !== 'PAID' && (
+                                                        <Button size="sm" onClick={() => handlePayClick(inv)}>
+                                                            <Wallet className="mr-2 h-4 w-4" /> Bayar
+                                                        </Button>
+                                                    )}
+                                                    <Button variant="destructive" size="sm" onClick={() => handleDeleteInvoice(inv.id)}>
+                                                        <X className="h-4 w-4" />
                                                     </Button>
-                                                )}
+                                                </div>
                                             </TableCell>
                                         </TableRow>
                                     );
