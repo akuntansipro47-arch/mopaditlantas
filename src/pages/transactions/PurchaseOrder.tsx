@@ -425,42 +425,6 @@ export default function PurchaseOrder() {
                     </div>
 
                     {/* Supplier Search Dialog */}
-                    <Dialog open={supplierSearchOpen} onOpenChange={setSupplierSearchOpen}>
-                      <DialogContent className="sm:max-w-[500px]" style={{ zIndex: 9999 }}>
-                        <DialogHeader>
-                          <DialogTitle>Cari Supplier</DialogTitle>
-                        </DialogHeader>
-                        <div className="space-y-4">
-                          <Input 
-                            placeholder="Cari nama supplier..." 
-                            value={supplierSearchQuery} 
-                            onChange={(e) => setSupplierSearchQuery(e.target.value)}
-                            autoFocus
-                          />
-                          <div className="max-h-[300px] overflow-y-auto border rounded-md">
-                            {filteredSuppliers.length === 0 ? (
-                              <div className="p-4 text-center text-sm text-gray-500">Supplier tidak ditemukan.</div>
-                            ) : (
-                              <Table>
-                                <TableBody>
-                                  {filteredSuppliers.map((s) => (
-                                    <TableRow 
-                                      key={s.id} 
-                                      className="cursor-pointer hover:bg-slate-50"
-                                      onClick={() => handleSupplierSelect(s)}
-                                    >
-                                      <TableCell className="font-medium">{s.name}</TableCell>
-                                      <TableCell>{(s as any).contact_person}</TableCell>
-                                      <TableCell className="text-right text-xs text-gray-500">{(s as any).city}</TableCell>
-                                    </TableRow>
-                                  ))}
-                                </TableBody>
-                              </Table>
-                            )}
-                          </div>
-                        </div>
-                      </DialogContent>
-                    </Dialog>
                   </div>
                   
                   {poType === 'WO' && (
@@ -652,6 +616,44 @@ export default function PurchaseOrder() {
           </div>
         </CardContent>
       </Card>
+
+      {/* Supplier Search Dialog - Moved outside to prevent stacking issues */}
+      <Dialog open={supplierSearchOpen} onOpenChange={setSupplierSearchOpen}>
+        <DialogContent className="sm:max-w-[500px]" style={{ zIndex: 100000 }}>
+          <DialogHeader>
+            <DialogTitle>Cari Supplier</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <Input 
+              placeholder="Cari nama supplier..." 
+              value={supplierSearchQuery} 
+              onChange={(e) => setSupplierSearchQuery(e.target.value)}
+              autoFocus
+            />
+            <div className="max-h-[300px] overflow-y-auto border rounded-md">
+              {filteredSuppliers.length === 0 ? (
+                <div className="p-4 text-center text-sm text-gray-500">Supplier tidak ditemukan.</div>
+              ) : (
+                <Table>
+                  <TableBody>
+                    {filteredSuppliers.map((s) => (
+                      <TableRow 
+                        key={s.id} 
+                        className="cursor-pointer hover:bg-slate-50"
+                        onClick={() => handleSupplierSelect(s)}
+                      >
+                        <TableCell className="font-medium">{s.name}</TableCell>
+                        <TableCell>{(s as any).contact_person}</TableCell>
+                        <TableCell className="text-right text-xs text-gray-500">{(s as any).city}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              )}
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
