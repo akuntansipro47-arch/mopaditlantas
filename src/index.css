@@ -36,3 +36,49 @@
     text-wrap: balance;
   }
 }
+
+@media print {
+  @page {
+    size: A4;
+    margin: 12mm;
+  }
+
+  html,
+  body {
+    background: #ffffff !important;
+    color: #000000 !important;
+  }
+
+  body {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  .report-print-scope *,
+  .report-print-scope *::before,
+  .report-print-scope *::after {
+    box-shadow: none !important;
+    text-shadow: none !important;
+  }
+
+  .report-print-scope table {
+    width: 100% !important;
+    border-collapse: collapse !important;
+  }
+
+  .report-print-scope thead {
+    display: table-header-group;
+  }
+
+  .report-print-scope tr {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  .report-print-scope th,
+  .report-print-scope td {
+    border: 1px solid #d4d4d8 !important;
+    padding: 6px 8px !important;
+    vertical-align: top !important;
+  }
+}

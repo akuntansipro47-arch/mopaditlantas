@@ -159,8 +159,8 @@ export default function VehicleEntryReport() {
   });
 
   return (
-    <Card className="w-full">
-      <CardHeader>
+    <Card className="w-full print:shadow-none print:border-none">
+      <CardHeader className="print:hidden">
         <div className="flex justify-between items-center print:hidden">
           <div>
             <CardTitle>Laporan Penerimaan Unit Kendaraan</CardTitle>
@@ -242,6 +242,10 @@ export default function VehicleEntryReport() {
         </div>
       </CardHeader>
       <CardContent>
+        <div className="hidden print:block mb-6 text-center">
+          <h1 className="text-xl font-bold">LAPORAN PENERIMAAN UNIT KENDARAAN</h1>
+          <p className="text-sm text-gray-600">Periode: {formatDate(dateFilter.startDate)} s/d {formatDate(dateFilter.endDate)}</p>
+        </div>
         <div className="rounded-md border overflow-x-auto">
           <Table>
             <TableHeader>

@@ -187,7 +187,7 @@ export default function EstimationVsRealizationReport() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between print:hidden">
         <div>
           <h2 className="text-3xl font-bold tracking-tight">Laporan Estimasi vs Realisasi</h2>
           <p className="text-muted-foreground">Monitoring unit masuk dan perbandingan nilai estimasi vs realisasi.</p>
@@ -202,8 +202,8 @@ export default function EstimationVsRealizationReport() {
         </div>
       </div>
 
-      <Card>
-        <CardHeader className="pb-3">
+      <Card className="print:shadow-none print:border-none">
+        <CardHeader className="pb-3 print:hidden">
             <div className="flex flex-col md:flex-row justify-between gap-4">
                 <div className="flex items-center gap-2">
                     <span className="text-sm font-medium">Periode:</span>
@@ -247,6 +247,10 @@ export default function EstimationVsRealizationReport() {
             </div>
         </CardHeader>
         <CardContent>
+          <div className="hidden print:block mb-6 text-center">
+            <h1 className="text-xl font-bold">LAPORAN ESTIMASI VS REALISASI</h1>
+            <p className="text-sm text-gray-600">Periode: {formatDate(dateFilter.startDate)} s/d {formatDate(dateFilter.endDate)}</p>
+          </div>
             <div className="rounded-md border overflow-hidden">
                 <div className="max-h-[600px] overflow-auto">
                     <Table className="relative w-full">
