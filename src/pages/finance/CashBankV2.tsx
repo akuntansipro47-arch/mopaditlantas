@@ -447,9 +447,9 @@ export default function CashBankV2() {
   };
 
   const exportHistoryToExcel = () => {
-    if (history.length === 0) return toast.error('Tidak ada data untuk diekspor');
+    if (filteredHistory.length === 0) return toast.error('Tidak ada data untuk diekspor');
 
-    const rows = history.map(t => ({
+    const rows = filteredHistory.map(t => ({
       'Tanggal': formatDate(t.entry_date),
       'No. Voucher': t.voucher_no || '-',
       'Tipe': t.entry_type || '-',
@@ -529,6 +529,14 @@ export default function CashBankV2() {
         </DialogContent>
     </Dialog>
   );
+
+  const filteredHistory = history.filter(t => {
+    const search = historySearch.toLowerCase();
+    return (
+      (t.voucher_no?.toLowerCase() || '').includes(search) ||
+      (t.description?.toLowerCase() || '').includes(search)
+    );
+  });
 
   return (
     <div className="space-y-6">
@@ -850,21 +858,32 @@ export default function CashBankV2() {
                                 <Button variant="outline" size="sm" onClick={fetchHistory}><RefreshCw className="h-4 w-4 mr-2" /> Refresh</Button>
                             </div>
                         </div>
-                        <div className="flex items-center gap-2 bg-slate-50 p-2 rounded border">
-                            <CalendarIcon className="h-4 w-4 text-gray-500" />
-                            <Input 
-                                type="date" 
-                                className="w-auto h-8 bg-white" 
-                                value={historyFilter.startDate}
-                                onChange={e => setHistoryFilter({...historyFilter, startDate: e.target.value})}
-                            />
-                            <span className="text-gray-400">-</span>
-                            <Input 
-                                type="date" 
-                                className="w-auto h-8 bg-white" 
-                                value={historyFilter.endDate}
-                                onChange={e => setHistoryFilter({...historyFilter, endDate: e.target.value})}
-                            />
+                        <div className="flex flex-col md:flex-row gap-2">
+                            <div className="flex items-center gap-2 bg-slate-50 p-2 rounded border flex-1">
+                                <CalendarIcon className="h-4 w-4 text-gray-500" />
+                                <Input 
+                                    type="date" 
+                                    className="w-auto h-8 bg-white" 
+                                    value={historyFilter.startDate}
+                                    onChange={e => setHistoryFilter({...historyFilter, startDate: e.target.value})}
+                                />
+                                <span className="text-gray-400">-</span>
+                                <Input 
+                                    type="date" 
+                                    className="w-auto h-8 bg-white" 
+                                    value={historyFilter.endDate}
+                                    onChange={e => setHistoryFilter({...historyFilter, endDate: e.target.value})}
+                                />
+                            </div>
+                            <div className="relative flex-1">
+                                <Search className="absolute left-2 top-2 h-4 w-4 text-gray-400" />
+                                <Input
+                                    placeholder="Cari No. Voucher atau Keterangan..."
+                                    className="pl-8 h-12 bg-white"
+                                    value={historySearch}
+                                    onChange={(e) => setHistorySearch(e.target.value)}
+                                />
+                            </div>
                         </div>
                     </div>
                 </CardHeader>
@@ -882,10 +901,10 @@ export default function CashBankV2() {
                             </TableRow>
                         </TableHeader>
                         <TableBody>
-                            {history.length === 0 ? (
-                                <TableRow><TableCell colSpan={7} className="text-center py-8">Belum ada transaksi pada periode ini.</TableCell></TableRow>
+                            {filteredHistory.length === 0 ? (
+                                <TableRow><TableCell colSpan={7} className="text-center py-8">Tidak ada transaksi ditemukan.</TableCell></TableRow>
                             ) : (
-                                history.map(t => (
+                                filteredHistory.map(t => (
                                     <TableRow key={t.id}>
                                         <TableCell>{formatDate(t.entry_date)}</TableCell>
                                         <TableCell className="font-mono text-xs">{t.voucher_no}</TableCell>
