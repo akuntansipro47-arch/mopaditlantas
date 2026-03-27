@@ -62,6 +62,7 @@ export default function PurchaseOrderV2() {
     brand: string;
     quantity: number;
     unit_price: number;
+    estimated_name?: string;
   }[]>([{ goods_id: '', brand: '', quantity: 1, unit_price: 0 }]);
 
   const [itemSearchOpen, setItemSearchOpen] = useState(false);
@@ -91,7 +92,7 @@ export default function PurchaseOrderV2() {
     setSuppliers(s || []);
     const { data: g } = await supabase.from('goods').select('*').order('name', { ascending: true });
     setGoodsList(g || []);
-    // Fetch OPEN Work Orders with Vehicle info
+    // Fetch OPEN Work Orders with Vehicle info and estimations
     const { data: w } = await supabase
       .from('work_orders')
       .select(`
@@ -99,7 +100,8 @@ export default function PurchaseOrderV2() {
         vehicle_entries (
           id,
           entry_number,
-          vehicles (license_plate, brand_type)
+          vehicles (license_plate, brand_type),
+          vehicle_entry_spareparts (item_name, qty, estimated_price)
         )
       `)
       .in('status', ['OPEN', 'IN_PROGRESS']); // Fetch both OPEN and IN_PROGRESS
@@ -569,6 +571,25 @@ export default function PurchaseOrderV2() {
                             onSelect={() => {
                               setFormData({ ...formData, work_order_id: wo.id });
                               setWoSearchOpen(false);
+
+                              // Auto-populate PO Items from Estimasi
+                              const parts = wo.vehicle_entries?.vehicle_entry_spareparts || [];
+                              if (parts.length > 0) {
+                                const newItems = parts.map((p: any) => {
+                                  // Coba cari match di master data
+                                  const match = goodsList.find(g => g.name.toLowerCase() === p.item_name.toLowerCase());
+                                  return {
+                                    goods_id: match ? match.id : '',
+                                    brand: '',
+                                    quantity: p.qty || 1,
+                                    unit_price: p.estimated_price || 0,
+                                    estimated_name: p.item_name
+                                  };
+                                });
+                                setPoItems(newItems);
+                              } else {
+                                setPoItems([{ goods_id: '', brand: '', quantity: 1, unit_price: 0 }]);
+                              }
                             }}
                             className="cursor-pointer p-3 hover:bg-slate-100 border-b last:border-0 aria-selected:bg-slate-100"
                           >
@@ -617,8 +638,12 @@ export default function PurchaseOrderV2() {
                           <TableCell>
                             <Button 
                               type="button"
-                              variant="outline" 
-                              className={cn("w-full justify-between text-left font-normal", !item.goods_id && "text-muted-foreground")}
+                              variant={!item.goods_id && item.estimated_name ? "secondary" : "outline"}
+                              className={cn(
+                                "w-full justify-between text-left font-normal", 
+                                !item.goods_id && !item.estimated_name && "text-muted-foreground",
+                                !item.goods_id && item.estimated_name && "bg-amber-100 text-amber-800 border-amber-300 hover:bg-amber-200"
+                              )}
                               onClick={() => handleOpenSearch(index)}
                               disabled={isReadOnly}
                             >
@@ -628,7 +653,9 @@ export default function PurchaseOrderV2() {
                                       const g = goodsList.find(g => g.id === item.goods_id);
                                       return g ? `${g.name} (${g.unit})` : "Barang tidak ditemukan";
                                     })()
-                                  : "Klik untuk cari barang..."
+                                  : item.estimated_name 
+                                    ? `Pilih master untuk: ${item.estimated_name}`
+                                    : "Klik untuk cari barang..."
                                 }
                               </span>
                               <Search className="ml-2 h-4 w-4 opacity-50" />
