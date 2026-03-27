@@ -113,7 +113,16 @@ export default function PurchaseOrderV2() {
         .from('purchase_orders')
         .select(`
           *,
-          suppliers (*)
+          suppliers (*),
+          work_orders (
+            wo_number,
+            vehicle_entries (
+              vehicles (
+                license_plate,
+                vehicle_groups (name)
+              )
+            )
+          )
         `)
         .order('created_at', { ascending: false });
 
@@ -402,10 +411,16 @@ export default function PurchaseOrderV2() {
     setSupplierSearchOpen(false);
   };
 
-  const filteredPOs = pos.filter(item => 
-    item.po_number.toLowerCase().includes(search.toLowerCase()) ||
-    item.suppliers?.name.toLowerCase().includes(search.toLowerCase())
-  );
+  const filteredPOs = pos.filter((item: any) => {
+    const searchLower = search.toLowerCase();
+    const v = item.work_orders?.vehicle_entries?.vehicles;
+    const nopol = v?.license_plate?.toLowerCase() || '';
+    return (
+      item.po_number.toLowerCase().includes(searchLower) ||
+      item.suppliers?.name.toLowerCase().includes(searchLower) ||
+      nopol.includes(searchLower)
+    );
+  });
 
   return (
     <div className="space-y-6">
@@ -720,7 +735,7 @@ export default function PurchaseOrderV2() {
                 </div>
                 <div className="relative w-64 ml-4">
                   <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground pointer-events-none" />
-                  <Input placeholder="Cari No. PO..." className="pl-8 h-9" value={search} onChange={e => setSearch(e.target.value)} />
+                  <Input placeholder="Cari No. PO, Nopol..." className="pl-8 h-9" value={search} onChange={e => setSearch(e.target.value)} />
                 </div>
              </div>
           </div>
@@ -734,6 +749,7 @@ export default function PurchaseOrderV2() {
                   <TableHead>Tanggal PO</TableHead>
                   <TableHead>Supplier</TableHead>
                   <TableHead>Tipe Pengadaan (Project/Stok)</TableHead>
+                  <TableHead>Kendaraan</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Total Amount</TableHead>
                   <TableHead className="text-right">Aksi</TableHead>
@@ -741,47 +757,55 @@ export default function PurchaseOrderV2() {
               </TableHeader>
               <TableBody>
                 {filteredPOs.length === 0 ? (
-                  <TableRow><TableCell colSpan={7} className="text-center h-24">Tidak ada data PO.</TableCell></TableRow>
+                  <TableRow><TableCell colSpan={8} className="text-center h-24">Tidak ada data PO.</TableCell></TableRow>
                 ) : (
-                  filteredPOs.map((item) => (
-                    <TableRow key={item.id}>
-                      <TableCell className="font-medium">{item.po_number}</TableCell>
-                      <TableCell>{formatDate(item.po_date || item.created_at)}</TableCell>
-                      <TableCell>{item.suppliers?.name || '-'}</TableCell>
-                      <TableCell>
-                        <span className={`px-2 py-1 rounded-full text-xs font-semibold ${
-                          item.work_order_id ? 'bg-indigo-100 text-indigo-800' : 'bg-gray-100 text-gray-800'
-                        }`}>
-                          {item.work_order_id ? 'Project (WO)' : 'Stok Gudang'}
-                        </span>
-                      </TableCell>
-                      <TableCell>
-                        <span className={`px-2 py-1 rounded-full text-xs font-semibold ${
-                          item.status === 'ISSUED' ? 'bg-blue-100 text-blue-800' : 
-                          item.status === 'RECEIVED_FULL' ? 'bg-green-100 text-green-800' : 'bg-gray-100'
-                        }`}>
-                          {item.status.replace('_', ' ')}
-                        </span>
-                      </TableCell>
-                      <TableCell className="font-bold">{formatCurrency(item.total_amount)}</TableCell>
-                      <TableCell className="text-right">
-                        <div className="flex justify-end gap-2 items-center">
-                          <Button variant="outline" size="sm" onClick={() => handlePrint(item.id)} title="Cetak PO">
-                            <Printer className="h-4 w-4 mr-1" /> Cetak
-                          </Button>
-                          <Button variant="secondary" size="sm" onClick={() => handleEdit(item, true)} title="Lihat Detail">
-                            <Eye className="h-4 w-4 mr-1" /> Detail
-                          </Button>
-                          <Button variant="default" size="sm" className="bg-yellow-600 hover:bg-yellow-700 text-white" onClick={() => handleEdit(item, false)} title="Edit PO">
-                            <Pencil className="h-4 w-4 mr-1" /> Edit
-                          </Button>
-                          <Button variant="destructive" size="sm" onClick={() => handleDelete(item.id)} title="Hapus PO">
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  ))
+                    filteredPOs.map((item: any) => {
+                      const v = item.work_orders?.vehicle_entries?.vehicles;
+                      const nopol = v?.license_plate || '-';
+                    const vGroup = v?.vehicle_groups?.name || '';
+                    const vText = item.work_order_id ? (vGroup ? `${nopol} (${vGroup})` : nopol) : '-';
+
+                    return (
+                      <TableRow key={item.id}>
+                        <TableCell className="font-medium">{item.po_number}</TableCell>
+                        <TableCell>{formatDate(item.po_date || item.created_at)}</TableCell>
+                        <TableCell>{item.suppliers?.name || '-'}</TableCell>
+                        <TableCell>
+                          <span className={`px-2 py-1 rounded-full text-xs font-semibold ${
+                            item.work_order_id ? 'bg-indigo-100 text-indigo-800' : 'bg-gray-100 text-gray-800'
+                          }`}>
+                            {item.work_order_id ? 'Project (WO)' : 'Stok Gudang'}
+                          </span>
+                        </TableCell>
+                        <TableCell className="text-sm">{vText}</TableCell>
+                        <TableCell>
+                          <span className={`px-2 py-1 rounded-full text-xs font-semibold ${
+                            item.status === 'ISSUED' ? 'bg-blue-100 text-blue-800' : 
+                            item.status === 'RECEIVED_FULL' ? 'bg-green-100 text-green-800' : 'bg-gray-100'
+                          }`}>
+                            {item.status.replace('_', ' ')}
+                          </span>
+                        </TableCell>
+                        <TableCell className="font-bold">{formatCurrency(item.total_amount)}</TableCell>
+                        <TableCell className="text-right">
+                          <div className="flex justify-end gap-2 items-center">
+                            <Button variant="outline" size="sm" onClick={() => handlePrint(item.id)} title="Cetak PO">
+                              <Printer className="h-4 w-4 mr-1" /> Cetak
+                            </Button>
+                            <Button variant="secondary" size="sm" onClick={() => handleEdit(item, true)} title="Lihat Detail">
+                              <Eye className="h-4 w-4 mr-1" /> Detail
+                            </Button>
+                            <Button variant="default" size="sm" className="bg-yellow-600 hover:bg-yellow-700 text-white" onClick={() => handleEdit(item, false)} title="Edit PO">
+                              <Pencil className="h-4 w-4 mr-1" /> Edit
+                            </Button>
+                            <Button variant="destructive" size="sm" onClick={() => handleDelete(item.id)} title="Hapus PO">
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })
                 )}
               </TableBody>
             </Table>

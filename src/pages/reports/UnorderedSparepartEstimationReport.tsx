@@ -18,6 +18,7 @@ type Row = {
   wo_number: string;
   license_plate: string;
   vehicle_type: string;
+  vehicle_group: string;
   item_name: string;
   qty: number;
   estimated_price: number;
@@ -75,7 +76,7 @@ export default function UnorderedSparepartEstimationReport() {
           id,
           entry_number,
           entry_date,
-          vehicles (license_plate, brand_type, vehicle_type),
+          vehicles (license_plate, brand_type, vehicle_type, vehicle_groups(name)),
           work_orders (id, wo_number, status),
           vehicle_entry_spareparts (
             id,
@@ -141,6 +142,7 @@ export default function UnorderedSparepartEstimationReport() {
         const poStatus = poList.length > 0 ? summarizePoStatus(poList) : '-';
         const licensePlate = entry.vehicles?.license_plate || '-';
         const vehicleType = entry.vehicles?.brand_type || entry.vehicles?.vehicle_type || '-';
+        const vehicleGroup = entry.vehicles?.vehicle_groups?.name || '-';
 
         const estItems = Array.isArray(entry.vehicle_entry_spareparts) ? entry.vehicle_entry_spareparts : [];
         estItems.forEach((sp: any) => {
@@ -166,6 +168,7 @@ export default function UnorderedSparepartEstimationReport() {
             wo_number: wo?.wo_number || '-',
             license_plate: licensePlate,
             vehicle_type: vehicleType,
+            vehicle_group: vehicleGroup,
             item_name: estName,
             qty,
             estimated_price: estPrice,
@@ -197,6 +200,7 @@ export default function UnorderedSparepartEstimationReport() {
           r.wo_number,
           r.license_plate,
           r.vehicle_type,
+          r.vehicle_group,
           r.item_name,
           r.po_numbers,
           r.po_status,
@@ -221,6 +225,7 @@ export default function UnorderedSparepartEstimationReport() {
       'No. WO': r.wo_number,
       Nopol: r.license_plate,
       Kendaraan: r.vehicle_type,
+      Group: r.vehicle_group,
       'Item Estimasi': r.item_name,
       Qty: r.qty,
       'Est Harga': r.estimated_price,
@@ -321,8 +326,8 @@ export default function UnorderedSparepartEstimationReport() {
                   <TableHead className="w-[120px] font-semibold text-slate-700">Tanggal</TableHead>
                   <TableHead className="font-semibold text-slate-700">No. Entry</TableHead>
                   <TableHead className="font-semibold text-slate-700">No. WO</TableHead>
-                  <TableHead className="font-semibold text-slate-700">Nopol</TableHead>
-                  <TableHead className="font-semibold text-slate-700">Item</TableHead>
+                  <TableHead className="font-semibold text-slate-700">Kendaraan & Group</TableHead>
+                  <TableHead className="font-semibold text-slate-700">Estimasi Item</TableHead>
                   <TableHead className="text-right font-semibold text-slate-700">Qty</TableHead>
                   <TableHead className="text-right font-semibold text-slate-700">Est Harga</TableHead>
                   <TableHead className="text-right font-semibold text-slate-700">Total Est</TableHead>
@@ -353,6 +358,7 @@ export default function UnorderedSparepartEstimationReport() {
                         <div className="flex flex-col">
                           <span className="font-bold">{r.license_plate}</span>
                           <span className="text-xs text-muted-foreground">{r.vehicle_type}</span>
+                          <span className="text-[10px] text-slate-500">Grp: {r.vehicle_group}</span>
                         </div>
                       </TableCell>
                       <TableCell className="text-sm">{r.item_name}</TableCell>
