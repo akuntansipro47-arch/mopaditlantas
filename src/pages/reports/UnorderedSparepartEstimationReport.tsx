@@ -84,6 +84,12 @@ export default function UnorderedSparepartEstimationReport() {
             work_order_billings (
               quantity,
               goods (name)
+            ),
+            goods_issues (
+              goods_issue_items (
+                quantity,
+                goods (name)
+              )
             )
           ),
           vehicle_entry_spareparts (
@@ -161,12 +167,18 @@ export default function UnorderedSparepartEstimationReport() {
 
           let status: StatusLabel = 'BELUM_PO';
           
-          // Cek apakah item ini sudah direalisasikan/dikeluarkan via billing (seperti oli yang sudah diambil dari stok)
+          // Cek apakah item ini sudah direalisasikan/dikeluarkan via billing atau goods_issues (seperti oli yang sudah diambil dari stok)
           const billings = Array.isArray(wo?.work_order_billings) ? wo.work_order_billings : [];
           const isBilled = billings.some((b: any) => isNameMatch(estName, b.goods?.name || ''));
 
-          if (isBilled) {
-             // Jika sudah di-billing (dikeluarkan dari gudang), tidak perlu di-PO lagi.
+          const goodsIssues = Array.isArray(wo?.goods_issues) ? wo.goods_issues : [];
+          const isIssued = goodsIssues.some((gi: any) => {
+            const items = Array.isArray(gi.goods_issue_items) ? gi.goods_issue_items : [];
+            return items.some((item: any) => isNameMatch(estName, item.goods?.name || ''));
+          });
+
+          if (isBilled || isIssued) {
+             // Jika sudah di-billing atau dikeluarkan dari gudang (Goods Issue), tidak perlu di-PO lagi.
              // Kita skip memasukkan item ini ke laporan "Belum PO"
              return;
           }
