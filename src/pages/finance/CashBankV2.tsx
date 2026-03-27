@@ -8,13 +8,14 @@ import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { toast } from 'sonner';
 import { formatCurrency, formatDate } from '@/lib/utils';
-import { Search, Plus, Trash2, Save, RefreshCw, Calendar as CalendarIcon } from 'lucide-react';
+import { Search, Plus, Trash2, Save, RefreshCw, Calendar as CalendarIcon, Download } from 'lucide-react';
 import { Label } from "@/components/ui/label";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
+import * as XLSX from 'xlsx';
 
 import {
   Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle,
@@ -445,6 +446,29 @@ export default function CashBankV2() {
     setIsSearchOpen(true);
   };
 
+  const exportHistoryToExcel = () => {
+    if (history.length === 0) return toast.error('Tidak ada data untuk diekspor');
+
+    const rows = history.map(t => ({
+      'Tanggal': formatDate(t.entry_date),
+      'No. Voucher': t.voucher_no || '-',
+      'Tipe': t.entry_type || '-',
+      'Keterangan': t.description || '',
+      'Total Amount': t.total_amount || 0,
+      'Detail Akun': t.items?.map((i: any) => 
+        `${i.account?.account_code} - ${i.account?.account_name} (${formatCurrency(i.debit || i.credit)})`
+      ).join('; ') || '-'
+    }));
+
+    const ws = XLSX.utils.json_to_sheet(rows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Riwayat Jurnal');
+    XLSX.writeFile(
+      wb,
+      `Riwayat_Jurnal_Kas_Bank_${historyFilter.startDate}_sd_${historyFilter.endDate}.xlsx`
+    );
+  };
+
   const filteredAccounts = allAccounts.filter(acc => 
     acc.account_code.toLowerCase().includes(searchQuery.toLowerCase()) ||
     acc.account_name.toLowerCase().includes(searchQuery.toLowerCase())
@@ -819,7 +843,12 @@ export default function CashBankV2() {
                     <div className="flex flex-col gap-4">
                         <div className="flex justify-between items-center">
                             <CardTitle>Riwayat Jurnal Kas/Bank</CardTitle>
-                            <Button variant="outline" size="sm" onClick={fetchHistory}><RefreshCw className="h-4 w-4 mr-2" /> Refresh</Button>
+                            <div className="flex gap-2">
+                                <Button variant="outline" size="sm" onClick={exportHistoryToExcel} disabled={history.length === 0}>
+                                    <Download className="h-4 w-4 mr-2" /> Export Excel
+                                </Button>
+                                <Button variant="outline" size="sm" onClick={fetchHistory}><RefreshCw className="h-4 w-4 mr-2" /> Refresh</Button>
+                            </div>
                         </div>
                         <div className="flex items-center gap-2 bg-slate-50 p-2 rounded border">
                             <CalendarIcon className="h-4 w-4 text-gray-500" />
