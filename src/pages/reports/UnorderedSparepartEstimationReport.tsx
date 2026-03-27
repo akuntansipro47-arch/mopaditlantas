@@ -77,7 +77,15 @@ export default function UnorderedSparepartEstimationReport() {
           entry_number,
           entry_date,
           vehicles (license_plate, brand_type, vehicle_type),
-          work_orders (id, wo_number, status),
+          work_orders (
+            id, 
+            wo_number, 
+            status,
+            work_order_billings (
+              quantity,
+              goods (name)
+            )
+          ),
           vehicle_entry_spareparts (
             id,
             item_name,
@@ -152,6 +160,17 @@ export default function UnorderedSparepartEstimationReport() {
           const total = qty * estPrice;
 
           let status: StatusLabel = 'BELUM_PO';
+          
+          // Cek apakah item ini sudah direalisasikan/dikeluarkan via billing (seperti oli yang sudah diambil dari stok)
+          const billings = Array.isArray(wo?.work_order_billings) ? wo.work_order_billings : [];
+          const isBilled = billings.some((b: any) => isNameMatch(estName, b.goods?.name || ''));
+
+          if (isBilled) {
+             // Jika sudah di-billing (dikeluarkan dari gudang), tidak perlu di-PO lagi.
+             // Kita skip memasukkan item ini ke laporan "Belum PO"
+             return;
+          }
+
           if (!wo) status = 'BELUM_WO';
           else if (!poList || poList.length === 0) status = 'BELUM_PO';
           else {
