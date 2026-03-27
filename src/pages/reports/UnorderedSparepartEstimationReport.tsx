@@ -76,7 +76,7 @@ export default function UnorderedSparepartEstimationReport() {
           id,
           entry_number,
           entry_date,
-          vehicles (license_plate, brand_type, vehicle_type, vehicle_groups(name)),
+          vehicles (license_plate, brand_type, vehicle_type),
           work_orders (id, wo_number, status),
           vehicle_entry_spareparts (
             id,
@@ -142,7 +142,7 @@ export default function UnorderedSparepartEstimationReport() {
         const poStatus = poList.length > 0 ? summarizePoStatus(poList) : '-';
         const licensePlate = entry.vehicles?.license_plate || '-';
         const vehicleType = entry.vehicles?.brand_type || entry.vehicles?.vehicle_type || '-';
-        const vehicleGroup = entry.vehicles?.vehicle_groups?.name || '-';
+        const vehicleGroup = entry.vehicles?.vehicle_type || '-'; // Fallback to vehicle_type since vehicle_groups table doesn't exist
 
         const estItems = Array.isArray(entry.vehicle_entry_spareparts) ? entry.vehicle_entry_spareparts : [];
         estItems.forEach((sp: any) => {

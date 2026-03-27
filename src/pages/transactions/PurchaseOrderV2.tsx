@@ -119,7 +119,7 @@ export default function PurchaseOrderV2() {
             vehicle_entries (
               vehicles (
                 license_plate,
-                vehicle_groups (name)
+                vehicle_type
               )
             )
           )
@@ -762,8 +762,8 @@ export default function PurchaseOrderV2() {
                     filteredPOs.map((item: any) => {
                       const v = item.work_orders?.vehicle_entries?.vehicles;
                       const nopol = v?.license_plate || '-';
-                    const vGroup = v?.vehicle_groups?.name || '';
-                    const vText = item.work_order_id ? (vGroup ? `${nopol} (${vGroup})` : nopol) : '-';
+                      const vGroup = v?.vehicle_type || '';
+                      const vText = item.work_order_id ? (vGroup ? `${nopol} (${vGroup})` : nopol) : '-';
 
                     return (
                       <TableRow key={item.id}>
