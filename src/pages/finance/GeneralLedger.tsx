@@ -8,10 +8,11 @@ import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { toast } from 'sonner';
 import { formatCurrency, formatDate } from '@/lib/utils';
-import { Search, RefreshCw, Calendar as CalendarIcon, Printer } from 'lucide-react';
+import { Search, RefreshCw, Calendar as CalendarIcon, Printer, Download } from 'lucide-react';
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
+import * as XLSX from 'xlsx';
 
 export default function GeneralLedger() {
   const [loading, setLoading] = useState(false);
@@ -143,13 +144,57 @@ export default function GeneralLedger() {
 
   const currentAccount = accounts.find(a => a.id === selectedAccount);
 
+  const exportToExcel = () => {
+    if (!currentAccount) return;
+
+    const rows = [
+      {
+        'Tanggal': '',
+        'No. Bukti': '',
+        'Keterangan': `SALDO AWAL (${formatDate(startDate)})`,
+        'Debit': 0,
+        'Kredit': 0,
+        'Saldo': openingBalance,
+      },
+      ...transactions.map((t: any) => ({
+        'Tanggal': formatDate(t.date),
+        'No. Bukti': t.voucher_no || '-',
+        'Keterangan': t.description || '',
+        'Debit': t.debit || 0,
+        'Kredit': t.credit || 0,
+        'Saldo': t.balance || 0,
+      })),
+      {
+        'Tanggal': '',
+        'No. Bukti': '',
+        'Keterangan': 'TOTAL MUTASI & SALDO AKHIR',
+        'Debit': transactions.reduce((acc, curr) => acc + curr.debit, 0),
+        'Kredit': transactions.reduce((acc, curr) => acc + curr.credit, 0),
+        'Saldo': transactions.length > 0 ? transactions[transactions.length - 1].balance : openingBalance,
+      }
+    ];
+
+    const ws = XLSX.utils.json_to_sheet(rows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Buku Besar');
+    XLSX.writeFile(
+      wb,
+      `Laporan_Buku_Besar_${currentAccount.account_code}_${startDate}_sd_${endDate}.xlsx`
+    );
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h2 className="text-3xl font-bold tracking-tight">Buku Besar (General Ledger)</h2>
-        <Button variant="outline" onClick={() => window.print()} className="print:hidden">
-            <Printer className="mr-2 h-4 w-4" /> Cetak
-        </Button>
+        <div className="flex gap-2">
+            <Button variant="outline" onClick={exportToExcel} disabled={!currentAccount || loading} className="print:hidden">
+                <Download className="mr-2 h-4 w-4" /> Export Excel
+            </Button>
+            <Button variant="outline" onClick={() => window.print()} className="print:hidden">
+                <Printer className="mr-2 h-4 w-4" /> Cetak
+            </Button>
+        </div>
       </div>
 
       <Card className="print:shadow-none print:border-none">
