@@ -86,6 +86,8 @@ export default function UnorderedSparepartEstimationReport() {
               goods (name)
             ),
             goods_issues (
+              id,
+              issue_number,
               goods_issue_items (
                 quantity,
                 goods (name)
