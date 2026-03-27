@@ -10,6 +10,7 @@ import { toast } from 'sonner';
 import { formatCurrency, formatDate } from '@/lib/utils';
 import { Printer, Calendar as CalendarIcon, RefreshCw, Download } from 'lucide-react';
 import * as XLSX from 'xlsx';
+import ReportPrintHeader from '@/components/reports/ReportPrintHeader';
 
 export default function ProfitLossReport() {
   const [loading, setLoading] = useState(false);
@@ -187,7 +188,7 @@ export default function ProfitLossReport() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between print:hidden">
         <h2 className="text-3xl font-bold tracking-tight">Laporan Laba Rugi</h2>
         <div className="flex gap-2">
             <Button variant="outline" onClick={exportToExcel} className="print:hidden">
@@ -223,13 +224,7 @@ export default function ProfitLossReport() {
         </CardHeader>
         
         <CardContent>
-            {/* Header for Print */}
-            <div className="mb-6 text-center">
-                <h1 className="text-xl font-bold">LAPORAN LABA RUGI</h1>
-                <p className="text-sm text-gray-600">
-                    Periode: {formatDate(dateFilter.startDate)} s/d {formatDate(dateFilter.endDate)}
-                </p>
-            </div>
+            <ReportPrintHeader title="Laporan Laba Rugi" periodStart={dateFilter.startDate} periodEnd={dateFilter.endDate} />
 
             <div className="space-y-4 text-sm">
                 {/* REVENUE */}

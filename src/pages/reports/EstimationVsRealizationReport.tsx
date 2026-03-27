@@ -10,6 +10,7 @@ import * as XLSX from 'xlsx';
 
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import ReportPrintHeader from '@/components/reports/ReportPrintHeader';
 
 export default function EstimationVsRealizationReport() {
   const [data, setData] = useState<any[]>([]);
@@ -247,10 +248,7 @@ export default function EstimationVsRealizationReport() {
             </div>
         </CardHeader>
         <CardContent>
-          <div className="hidden print:block mb-6 text-center">
-            <h1 className="text-xl font-bold">LAPORAN ESTIMASI VS REALISASI</h1>
-            <p className="text-sm text-gray-600">Periode: {formatDate(dateFilter.startDate)} s/d {formatDate(dateFilter.endDate)}</p>
-          </div>
+          <ReportPrintHeader title="Laporan Estimasi vs Realisasi" periodStart={dateFilter.startDate} periodEnd={dateFilter.endDate} />
             <div className="rounded-md border overflow-hidden">
                 <div className="max-h-[600px] overflow-auto">
                     <Table className="relative w-full">

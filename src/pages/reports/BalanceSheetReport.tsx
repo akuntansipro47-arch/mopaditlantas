@@ -10,6 +10,7 @@ import { toast } from 'sonner';
 import { formatCurrency, formatDate } from '@/lib/utils';
 import { Printer, RefreshCw, Download } from 'lucide-react';
 import * as XLSX from 'xlsx';
+import ReportPrintHeader from '@/components/reports/ReportPrintHeader';
 
 export default function BalanceSheetReport() {
   const [loading, setLoading] = useState(false);
@@ -194,7 +195,7 @@ export default function BalanceSheetReport() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between print:hidden">
         <h2 className="text-3xl font-bold tracking-tight">Laporan Neraca (Balance Sheet)</h2>
         <div className="flex gap-2">
             <Button variant="outline" onClick={exportToExcel} className="print:hidden">
@@ -223,13 +224,7 @@ export default function BalanceSheetReport() {
         </CardHeader>
         
         <CardContent>
-            {/* Header for Print */}
-            <div className="mb-6 text-center">
-                <h1 className="text-xl font-bold">LAPORAN NERACA (BALANCE SHEET)</h1>
-                <p className="text-sm text-gray-600">
-                    Per Tanggal: {formatDate(reportDate)}
-                </p>
-            </div>
+            <ReportPrintHeader title="Laporan Neraca (Balance Sheet)" asOfDate={reportDate} />
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                 {/* LEFT SIDE: ASSETS (AKTIVA) */}

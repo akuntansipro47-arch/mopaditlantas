@@ -10,6 +10,7 @@ import { toast } from 'sonner';
 import { formatCurrency, formatDate } from '@/lib/utils';
 import { Printer, RefreshCw, Download, Search } from 'lucide-react';
 import * as XLSX from 'xlsx';
+import ReportPrintHeader from '@/components/reports/ReportPrintHeader';
 
 export default function SupplierPayableReport() {
   const [loading, setLoading] = useState(false);
@@ -205,7 +206,7 @@ export default function SupplierPayableReport() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between print:hidden">
         <h2 className="text-3xl font-bold tracking-tight">Hutang Supplier</h2>
         <div className="flex gap-2">
             <Button variant="outline" onClick={exportToExcel} className="print:hidden">
@@ -254,13 +255,7 @@ export default function SupplierPayableReport() {
         </CardHeader>
         
         <CardContent>
-            {/* Header for Print */}
-            <div className="mb-6 text-center">
-                <h1 className="text-xl font-bold">LAPORAN SISA HUTANG SUPPLIER</h1>
-                <p className="text-sm text-gray-600">
-                    Per Tanggal: {formatDate(reportDate)}
-                </p>
-            </div>
+            <ReportPrintHeader title="Laporan Sisa Hutang Supplier" asOfDate={reportDate} />
 
             <div className="space-y-6">
                 <div className="grid grid-cols-1 md:grid-cols-4 gap-3 print:hidden">
