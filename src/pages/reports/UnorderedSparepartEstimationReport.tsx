@@ -140,6 +140,29 @@ export default function UnorderedSparepartEstimationReport() {
         });
       }
 
+          // Fetch Goods Issues for these WOs to check if items were issued from stock
+          const woToGoodsIssues: Record<string, any[]> = {};
+          if (workOrderIds.length > 0) {
+            const { data: giData, error: giErr } = await supabase
+              .from('goods_issues')
+              .select(`
+                work_order_id,
+                goods_issue_items (
+                  goods (name)
+                )
+              `)
+              .in('work_order_id', workOrderIds);
+            
+            if (!giErr && giData) {
+              giData.forEach((gi: any) => {
+                const wId = String(gi.work_order_id || '');
+                if (!wId) return;
+                if (!woToGoodsIssues[wId]) woToGoodsIssues[wId] = [];
+                woToGoodsIssues[wId].push(gi);
+              });
+            }
+          }
+
       const flattened: Row[] = [];
 
       (entries || []).forEach((entry: any) => {
@@ -161,12 +184,18 @@ export default function UnorderedSparepartEstimationReport() {
 
           let status: StatusLabel = 'BELUM_PO';
           
-          // Cek apakah item ini sudah direalisasikan/dikeluarkan via billing (seperti oli yang sudah diambil dari stok)
+          // Cek apakah item ini sudah direalisasikan/dikeluarkan via billing atau goods_issue
           const billings = Array.isArray(wo?.work_order_billings) ? wo.work_order_billings : [];
           const isBilled = billings.some((b: any) => isNameMatch(estName, b.goods?.name || ''));
 
-          if (isBilled) {
-             // Jika sudah di-billing, tidak perlu di-PO lagi.
+          const giList = woId ? woToGoodsIssues[woId] || [] : [];
+          const isIssued = giList.some((gi: any) => {
+            const items = Array.isArray(gi.goods_issue_items) ? gi.goods_issue_items : [];
+            return items.some((item: any) => isNameMatch(estName, item.goods?.name || ''));
+          });
+
+          if (isBilled || isIssued) {
+             // Jika sudah di-billing atau dikeluarkan dari stok, tidak perlu di-PO lagi.
              return;
           }
 
