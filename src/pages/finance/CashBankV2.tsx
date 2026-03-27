@@ -157,6 +157,18 @@ export default function CashBankV2() {
   };
 
   const updateDepositItem = (id: string, field: keyof JournalEntryItem, value: any) => {
+    if (field === 'amount') {
+      if (typeof value === 'string') {
+        const normalizedValue = value.replace(/,/g, '.');
+        if (/^[0-9]*\.?[0-9]*$/.test(normalizedValue)) {
+          setDepositItems(depositItems.map(i => i.id === id ? { ...i, amount: normalizedValue as any } : i));
+          return;
+        } else if (value === '') {
+          setDepositItems(depositItems.map(i => i.id === id ? { ...i, amount: 0 } : i));
+          return;
+        }
+      }
+    }
     setDepositItems(depositItems.map(i => i.id === id ? { ...i, [field]: value } : i));
   };
 
@@ -269,6 +281,18 @@ export default function CashBankV2() {
   };
 
   const updatePaymentItem = (id: string, field: keyof JournalEntryItem, value: any) => {
+    if (field === 'amount') {
+      if (typeof value === 'string') {
+        const normalizedValue = value.replace(/,/g, '.');
+        if (/^[0-9]*\.?[0-9]*$/.test(normalizedValue)) {
+          setPaymentItems(paymentItems.map(i => i.id === id ? { ...i, amount: normalizedValue as any } : i));
+          return;
+        } else if (value === '') {
+          setPaymentItems(paymentItems.map(i => i.id === id ? { ...i, amount: 0 } : i));
+          return;
+        }
+      }
+    }
     setPaymentItems(paymentItems.map(i => i.id === id ? { ...i, [field]: value } : i));
   };
 
@@ -659,12 +683,8 @@ export default function CashBankV2() {
                                     <TableCell>
                                         <Input 
                                             type="text" 
-                                            inputMode="numeric"
                                             value={item.amount || ''} 
-                                            onChange={e => {
-                                                const val = e.target.value.replace(/[^0-9]/g, '');
-                                                updateDepositItem(item.id, 'amount', val ? parseFloat(val) : 0);
-                                            }}
+                                            onChange={e => updateDepositItem(item.id, 'amount', e.target.value)}
                                             className="h-9 text-right"
                                             placeholder="0"
                                         />
@@ -799,12 +819,8 @@ export default function CashBankV2() {
                                     <TableCell>
                                         <Input 
                                             type="text" 
-                                            inputMode="numeric"
                                             value={item.amount || ''} 
-                                            onChange={e => {
-                                                const val = e.target.value.replace(/[^0-9]/g, '');
-                                                updatePaymentItem(item.id, 'amount', val ? parseFloat(val) : 0);
-                                            }}
+                                            onChange={e => updatePaymentItem(item.id, 'amount', e.target.value)}
                                             className="h-9 text-right"
                                             placeholder="0"
                                         />

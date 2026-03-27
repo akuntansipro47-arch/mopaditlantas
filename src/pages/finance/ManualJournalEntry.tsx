@@ -74,11 +74,31 @@ export default function ManualJournalEntry() {
 
   const updateLine = (index: number, field: string, value: any) => {
       const newLines = [...lines];
-      newLines[index] = { ...newLines[index], [field]: value };
+      
+      if (field === 'debit' || field === 'credit') {
+          // Handle string input for decimal/separator support
+          if (typeof value === 'string') {
+              // Replace comma with dot for internal calculation
+              const normalizedValue = value.replace(/,/g, '.');
+              // Allow only numbers and one dot
+              if (/^[0-9]*\.?[0-9]*$/.test(normalizedValue)) {
+                  newLines[index] = { ...newLines[index], [field]: normalizedValue };
+              } else if (value === '') {
+                  newLines[index] = { ...newLines[index], [field]: 0 };
+              }
+          } else {
+              newLines[index] = { ...newLines[index], [field]: value };
+          }
+      } else {
+          newLines[index] = { ...newLines[index], [field]: value };
+      }
       
       // Auto-clear opposite field (Debit/Credit exclusive)
-      if (field === 'debit' && value > 0) newLines[index].credit = 0;
-      if (field === 'credit' && value > 0) newLines[index].debit = 0;
+      const currentDebit = Number(newLines[index].debit) || 0;
+      const currentCredit = Number(newLines[index].credit) || 0;
+      
+      if (field === 'debit' && currentDebit > 0) newLines[index].credit = 0;
+      if (field === 'credit' && currentCredit > 0) newLines[index].debit = 0;
       
       setLines(newLines);
   };
@@ -242,12 +262,8 @@ export default function ManualJournalEntry() {
                                 <TableCell>
                                     <Input 
                                         type="text"
-                                        inputMode="numeric"
                                         value={line.debit || ''} 
-                                        onChange={e => {
-                                            const val = e.target.value.replace(/[^0-9]/g, '');
-                                            updateLine(index, 'debit', val ? parseFloat(val) : 0);
-                                        }}
+                                        onChange={e => updateLine(index, 'debit', e.target.value)}
                                         className="text-right"
                                         placeholder="0"
                                     />
@@ -255,12 +271,8 @@ export default function ManualJournalEntry() {
                                 <TableCell>
                                     <Input 
                                         type="text"
-                                        inputMode="numeric"
                                         value={line.credit || ''} 
-                                        onChange={e => {
-                                            const val = e.target.value.replace(/[^0-9]/g, '');
-                                            updateLine(index, 'credit', val ? parseFloat(val) : 0);
-                                        }}
+                                        onChange={e => updateLine(index, 'credit', e.target.value)}
                                         className="text-right"
                                         placeholder="0"
                                     />
