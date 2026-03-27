@@ -165,6 +165,7 @@ export default function UnorderedSparepartEstimationReport() {
               .from('work_order_billings')
               .select(`
                 work_order_id,
+                qty,
                 goods (name)
               `)
               .in('work_order_id', workOrderIds);
