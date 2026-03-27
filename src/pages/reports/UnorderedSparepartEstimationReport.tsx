@@ -80,11 +80,7 @@ export default function UnorderedSparepartEstimationReport() {
           work_orders (
             id, 
             wo_number, 
-            status,
-            work_order_billings (
-              quantity,
-              goods (name)
-            )
+            status
           ),
           vehicle_entry_spareparts (
             id,
@@ -142,7 +138,9 @@ export default function UnorderedSparepartEstimationReport() {
 
           // Fetch Goods Issues for these WOs to check if items were issued from stock
           const woToGoodsIssues: Record<string, any[]> = {};
+          const woToBillings: Record<string, any[]> = {};
           if (workOrderIds.length > 0) {
+            // 1. Fetch Goods Issues
             const { data: giData, error: giErr } = await supabase
               .from('goods_issues')
               .select(`
@@ -159,6 +157,24 @@ export default function UnorderedSparepartEstimationReport() {
                 if (!wId) return;
                 if (!woToGoodsIssues[wId]) woToGoodsIssues[wId] = [];
                 woToGoodsIssues[wId].push(gi);
+              });
+            }
+
+            // 2. Fetch Billings
+            const { data: billData, error: billErr } = await supabase
+              .from('work_order_billings')
+              .select(`
+                work_order_id,
+                goods (name)
+              `)
+              .in('work_order_id', workOrderIds);
+            
+            if (!billErr && billData) {
+              billData.forEach((bill: any) => {
+                const wId = String(bill.work_order_id || '');
+                if (!wId) return;
+                if (!woToBillings[wId]) woToBillings[wId] = [];
+                woToBillings[wId].push(bill);
               });
             }
           }
@@ -185,7 +201,7 @@ export default function UnorderedSparepartEstimationReport() {
           let status: StatusLabel = 'BELUM_PO';
           
           // Cek apakah item ini sudah direalisasikan/dikeluarkan via billing atau goods_issue
-          const billings = Array.isArray(wo?.work_order_billings) ? wo.work_order_billings : [];
+          const billings = woId ? woToBillings[woId] || [] : [];
           const isBilled = billings.some((b: any) => isNameMatch(estName, b.goods?.name || ''));
 
           const giList = woId ? woToGoodsIssues[woId] || [] : [];
