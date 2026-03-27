@@ -20,6 +20,7 @@ import PurchasePaymentHistoryReport from './reports/PurchasePaymentHistoryReport
 import CashBankBookReport from './reports/CashBankBookReport';
 import VehicleEntryReport from './reports/VehicleEntryReport';
 import EstimationVsRealizationReport from './reports/EstimationVsRealizationReport';
+import UnorderedSparepartEstimationReport from './reports/UnorderedSparepartEstimationReport';
 import BudgetMonitoringReport from './reports/BudgetMonitoringReport';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Card } from '@/components/ui/card';
@@ -150,6 +151,11 @@ export default function Reports() {
                   Estimasi vs Realisasi
                 </TabsTrigger>
               )}
+              {canAccess('report_estimation') && (
+                <TabsTrigger value="estimation_unpo" className="data-[state=active]:bg-orange-600 data-[state=active]:text-white data-[state=active]:shadow-md border border-slate-200 bg-white px-4 py-2.5 rounded-lg transition-all hover:border-orange-300 font-medium">
+                  Estimasi Part Belum PO
+                </TabsTrigger>
+              )}
             </TabsList>
           </div>
 
@@ -235,6 +241,7 @@ export default function Reports() {
           {canAccess('report_payment_history_ap') && <TabsContent value="payment_history_ap"><PurchasePaymentHistoryReport /></TabsContent>}
           {canAccess('report_cash_bank_book') && <TabsContent value="cash_bank_book"><CashBankBookReport /></TabsContent>}
           {canAccess('report_estimation') && <TabsContent value="estimation"><EstimationVsRealizationReport /></TabsContent>}
+          {canAccess('report_estimation') && <TabsContent value="estimation_unpo"><UnorderedSparepartEstimationReport /></TabsContent>}
           {canAccess('report_budget') && <TabsContent value="budget"><BudgetMonitoringReport /></TabsContent>}
         </div>
       </Tabs>
