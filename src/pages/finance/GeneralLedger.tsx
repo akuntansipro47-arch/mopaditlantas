@@ -143,6 +143,9 @@ export default function GeneralLedger() {
   }
 
   const currentAccount = accounts.find(a => a.id === selectedAccount);
+  const totalDebit = transactions.reduce((acc, curr) => acc + (Number(curr.debit) || 0), 0);
+  const totalCredit = transactions.reduce((acc, curr) => acc + (Number(curr.credit) || 0), 0);
+  const endingBalance = transactions.length > 0 ? transactions[transactions.length - 1].balance : openingBalance;
 
   const exportToExcel = () => {
     if (!currentAccount) return;
@@ -195,6 +198,45 @@ export default function GeneralLedger() {
                 <Printer className="mr-2 h-4 w-4" /> Cetak
             </Button>
         </div>
+      </div>
+
+      <div className="grid gap-4 md:grid-cols-4 print:hidden">
+        <Card className="bg-white shadow-sm border-slate-200">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium text-slate-600">Saldo Awal</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-xl font-bold text-slate-900">{formatCurrency(openingBalance)}</div>
+            <p className="text-xs text-slate-500">Sebelum {formatDate(startDate)}</p>
+          </CardContent>
+        </Card>
+        <Card className="bg-white shadow-sm border-slate-200">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium text-slate-600">Total Debit</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-xl font-bold text-emerald-700">{formatCurrency(totalDebit)}</div>
+            <p className="text-xs text-slate-500">Periode</p>
+          </CardContent>
+        </Card>
+        <Card className="bg-white shadow-sm border-slate-200">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium text-slate-600">Total Kredit</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-xl font-bold text-red-700">{formatCurrency(totalCredit)}</div>
+            <p className="text-xs text-slate-500">Periode</p>
+          </CardContent>
+        </Card>
+        <Card className="bg-white shadow-sm border-slate-200">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium text-slate-600">Saldo Akhir</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-xl font-bold text-blue-700">{formatCurrency(endingBalance)}</div>
+            <p className="text-xs text-slate-500">Sampai {formatDate(endDate)}</p>
+          </CardContent>
+        </Card>
       </div>
 
       <Card className="print:shadow-none print:border-none">
