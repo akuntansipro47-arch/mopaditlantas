@@ -118,7 +118,11 @@ export default function Goods() {
     if (!formData.unit.trim()) return toast.error('Satuan wajib diisi');
     if (!formData.item_type) return toast.error('Tipe wajib dipilih');
     if (formData.selling_price === null || formData.selling_price === undefined) return toast.error('Harga jual wajib diisi');
-    if (!formData.group_sparepart) return toast.error('Group wajib dipilih (R2/R4/R2 Kecil)');
+    
+    // Perubahan Rule: Group hanya wajib jika tipenya "PERSEDIAAN"
+    if (formData.item_type === 'PERSEDIAAN' && !formData.group_sparepart) {
+      return toast.error('Group wajib dipilih untuk tipe Persediaan (R2/R4/R2 Kecil)');
+    }
 
     setSaving(true);
     try {
@@ -187,7 +191,9 @@ export default function Goods() {
                 <div className="grid grid-cols-4 items-center gap-4">
                   <Label className="text-right">Group</Label>
                   <Select value={formData.group_sparepart || ''} onValueChange={handleGroupChange}>
-                    <SelectTrigger className="col-span-3"><SelectValue placeholder="Pilih Group" /></SelectTrigger>
+                    <SelectTrigger className="col-span-3">
+                      <SelectValue placeholder={formData.item_type === 'PERSEDIAAN' ? "Pilih Group (Wajib)" : "Pilih Group (Opsional)"} />
+                    </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="R2">R2</SelectItem>
                       <SelectItem value="R4">R4</SelectItem>
@@ -282,7 +288,7 @@ export default function Goods() {
                             {item.group_sparepart === 'R2_KECIL' ? 'R2 Kecil' : item.group_sparepart}
                           </span>
                         ) : (
-                          <span className="text-xs text-red-600 font-semibold">Belum diisi</span>
+                          <span className="text-xs text-slate-400 italic">Tidak ada group</span>
                         )}
                       </TableCell>
                       <TableCell>{formatCurrency(item.selling_price || 0)}</TableCell>
