@@ -67,6 +67,7 @@ export default function Reports() {
       if (canAccess('report_payment_history_ap')) return 'payment_history_ap';
       if (canAccess('report_cash_bank_book')) return 'cash_bank_book';
       if (canAccess('report_estimation')) return 'estimation';
+      if (canAccess('report_unordered_parts')) return 'estimation_unpo';
       if (canAccess('report_budget')) return 'budget';
       return '';
   };
@@ -151,7 +152,7 @@ export default function Reports() {
                   Estimasi vs Realisasi
                 </TabsTrigger>
               )}
-              {canAccess('report_estimation') && (
+              {canAccess('report_unordered_parts') && (
                 <TabsTrigger value="estimation_unpo" className="data-[state=active]:bg-orange-600 data-[state=active]:text-white data-[state=active]:shadow-md border border-slate-200 bg-white px-4 py-2.5 rounded-lg transition-all hover:border-orange-300 font-medium">
                   Estimasi Part Belum PO
                 </TabsTrigger>
@@ -241,7 +242,7 @@ export default function Reports() {
           {canAccess('report_payment_history_ap') && <TabsContent value="payment_history_ap"><PurchasePaymentHistoryReport /></TabsContent>}
           {canAccess('report_cash_bank_book') && <TabsContent value="cash_bank_book"><CashBankBookReport /></TabsContent>}
           {canAccess('report_estimation') && <TabsContent value="estimation"><EstimationVsRealizationReport /></TabsContent>}
-          {canAccess('report_estimation') && <TabsContent value="estimation_unpo"><UnorderedSparepartEstimationReport /></TabsContent>}
+          {canAccess('report_unordered_parts') && <TabsContent value="estimation_unpo"><UnorderedSparepartEstimationReport /></TabsContent>}
           {canAccess('report_budget') && <TabsContent value="budget"><BudgetMonitoringReport /></TabsContent>}
         </div>
       </Tabs>
