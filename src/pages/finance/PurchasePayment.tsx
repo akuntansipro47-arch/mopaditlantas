@@ -44,6 +44,8 @@ export default function PurchasePayment() {
 
   const [paymentData, setPaymentData] = useState({
     amount: 0,
+    transfer_fee: 0,
+    fee_account_id: '',
     payment_date: new Date().toISOString().split('T')[0],
     payment_method: 'TRANSFER',
     payment_account_id: '', 
@@ -51,11 +53,13 @@ export default function PurchasePayment() {
   });
 
   const [cashBankAccounts, setCashBankAccounts] = useState<any[]>([]);
+  const [expenseAccounts, setExpenseAccounts] = useState<any[]>([]);
   const [apAccount, setApAccount] = useState<any>(null); // Accounts Payable (Hutang Usaha)
 
   useEffect(() => {
     fetchInvoices();
     fetchCashBankAccounts();
+    fetchExpenseAccounts();
     fetchApAccount();
   }, []);
 
@@ -117,6 +121,27 @@ export default function PurchasePayment() {
         setCashBankAccounts(filtered);
     } catch (error) {
         console.error("Error fetching accounts:", error);
+    }
+  }
+
+  async function fetchExpenseAccounts() {
+    try {
+      const { data } = await supabase
+        .from('chart_of_accounts')
+        .select('id, account_code, account_name, category, sub_category')
+        .eq('account_type', 'DETAIL')
+        .order('account_code');
+
+      const filtered =
+        data?.filter((a) => {
+          const cat = String(a.category || '').toUpperCase();
+          const name = String(a.account_name || '').toLowerCase();
+          return cat.includes('BEBAN') || cat.includes('BIAYA') || name.includes('beban') || name.includes('biaya') || name.includes('admin') || name.includes('transfer') || name.includes('bank');
+        }) || [];
+
+      setExpenseAccounts(filtered);
+    } catch (error) {
+      console.error('Error fetching expense accounts:', error);
     }
   }
 
@@ -232,6 +257,8 @@ export default function PurchasePayment() {
     setOriginalPaymentAmount(0);
     setPaymentData({
       amount: invoice.total_amount - (invoice.paid_amount || 0), // Default full pay
+      transfer_fee: 0,
+      fee_account_id: '',
       payment_date: new Date().toISOString().split('T')[0],
       payment_method: 'TRANSFER',
       payment_account_id: '',
@@ -247,6 +274,8 @@ export default function PurchasePayment() {
       setOriginalPaymentAmount(payment.amount);
       setPaymentData({
           amount: payment.amount,
+          transfer_fee: Number(payment.transfer_fee || 0),
+          fee_account_id: payment.fee_account_id || '',
           payment_date: payment.payment_date,
           payment_method: payment.payment_method,
           payment_account_id: payment.payment_account_id || '',
@@ -317,6 +346,7 @@ export default function PurchasePayment() {
     setLoading(true);
     try {
       const amount = Number(paymentData.amount);
+      const transferFee = Math.max(0, Number(paymentData.transfer_fee || 0));
       if (amount <= 0) {
         toast.error("Jumlah pembayaran harus lebih dari 0");
         return;
@@ -339,6 +369,11 @@ export default function PurchasePayment() {
           return;
       }
 
+      if (transferFee > 0 && !paymentData.fee_account_id) {
+        toast.error("Mohon pilih Akun Biaya Admin/Transfer");
+        return;
+      }
+
       let paymentId = editingPaymentId;
 
       if (editingPaymentId) {
@@ -347,6 +382,8 @@ export default function PurchasePayment() {
             .from('purchase_payments')
             .update({
                 amount: amount,
+                transfer_fee: transferFee,
+                fee_account_id: paymentData.fee_account_id || null,
                 payment_date: paymentData.payment_date,
                 payment_method: paymentData.payment_method,
                 payment_account_id: paymentData.payment_account_id,
@@ -377,6 +414,8 @@ export default function PurchasePayment() {
                 invoice_id: selectedInvoice.id,
                 payment_date: paymentData.payment_date,
                 amount: amount,
+                transfer_fee: transferFee,
+                fee_account_id: paymentData.fee_account_id || null,
                 payment_method: paymentData.payment_method,
                 payment_account_id: paymentData.payment_account_id,
                 notes: paymentData.notes
@@ -398,8 +437,10 @@ export default function PurchasePayment() {
 
       // --- CREATE JOURNAL ENTRY (GL) ---
       // Dr: Hutang Usaha
+      // Dr: Biaya Admin/Transfer (jika ada)
       // Cr: Kas/Bank
       if (apAccount && paymentData.payment_account_id && paymentId) {
+          const cashOut = amount + transferFee;
           const { data: entry, error: entryError } = await supabase
             .from('journal_entries')
             .insert([{
@@ -407,14 +448,14 @@ export default function PurchasePayment() {
                 voucher_no: `PAY-${selectedInvoice.invoice_number}-${Date.now().toString().slice(-4)}`,
                 description: `Pembayaran Hutang ${selectedInvoice.invoice_number} (${selectedInvoice.suppliers?.name || ''}) - ${paymentData.notes}`,
                 entry_type: 'PAYMENT',
-                total_amount: amount,
+                total_amount: cashOut,
                 reference: paymentId // Link to payment
             }])
             .select()
             .single();
         
          if (!entryError && entry) {
-             await supabase.from('journal_entry_items').insert([
+             const itemsPayload: any[] = [
                  {
                      journal_entry_id: entry.id,
                      account_id: apAccount.id, // Hutang Usaha
@@ -422,14 +463,27 @@ export default function PurchasePayment() {
                      credit: 0,
                      description: 'Pelunasan Hutang'
                  },
-                 {
-                     journal_entry_id: entry.id,
-                     account_id: paymentData.payment_account_id, // Kas/Bank
-                     debit: 0,
-                     credit: amount,
-                     description: 'Pengeluaran Kas/Bank'
-                 }
-             ]);
+             ];
+
+             if (transferFee > 0 && paymentData.fee_account_id) {
+               itemsPayload.push({
+                 journal_entry_id: entry.id,
+                 account_id: paymentData.fee_account_id,
+                 debit: transferFee,
+                 credit: 0,
+                 description: 'Biaya Admin/Transfer'
+               });
+             }
+
+             itemsPayload.push({
+               journal_entry_id: entry.id,
+               account_id: paymentData.payment_account_id, // Kas/Bank
+               debit: 0,
+               credit: cashOut,
+               description: 'Pengeluaran Kas/Bank'
+             });
+
+             await supabase.from('journal_entry_items').insert(itemsPayload);
          }
       }
 
@@ -470,6 +524,8 @@ export default function PurchasePayment() {
   });
 
   const [isAccountSelectOpen, setIsAccountSelectOpen] = useState(false); // For custom dialog
+  const [isFeeAccountSelectOpen, setIsFeeAccountSelectOpen] = useState(false);
+  const [feeAccountSearch, setFeeAccountSearch] = useState('');
 
   const handleDeleteInvoice = async (invoiceId: string) => {
       const ok = window.confirm('Anda yakin ingin menghapus tagihan ini? Data pembayaran dan jurnal terkait (jika ada) juga akan terhapus.');
@@ -510,6 +566,12 @@ export default function PurchasePayment() {
   const handleSelectAccount = (acc: any) => {
     setPaymentData({...paymentData, payment_account_id: acc.id});
     setIsAccountSelectOpen(false);
+  };
+
+  const handleSelectFeeAccount = (acc: any) => {
+    setPaymentData({ ...paymentData, fee_account_id: acc.id });
+    setIsFeeAccountSelectOpen(false);
+    setFeeAccountSearch('');
   };
   
   // Custom Table Selector for Account
@@ -558,9 +620,74 @@ export default function PurchasePayment() {
       </Dialog>
   );
 
+  const filteredExpenseAccounts = expenseAccounts.filter((a) => {
+    const q = feeAccountSearch.toLowerCase().trim();
+    if (!q) return true;
+    return (
+      String(a.account_code || '').toLowerCase().includes(q) ||
+      String(a.account_name || '').toLowerCase().includes(q)
+    );
+  });
+
+  const FeeAccountSelector = () => (
+    <Dialog open={isFeeAccountSelectOpen} onOpenChange={setIsFeeAccountSelectOpen}>
+      <DialogContent className="max-w-3xl">
+        <DialogHeader>
+          <DialogTitle>Pilih Akun Biaya Admin/Transfer</DialogTitle>
+          <DialogDescription>
+            Pilih akun beban untuk mencatat biaya admin/transfer bank.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="relative">
+          <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+          <Input
+            placeholder="Cari kode atau nama akun..."
+            className="pl-8"
+            value={feeAccountSearch}
+            onChange={(e) => setFeeAccountSearch(e.target.value)}
+            autoFocus
+          />
+        </div>
+        <div className="max-h-[400px] overflow-auto border rounded-md">
+          <Table>
+            <TableHeader className="bg-slate-100 sticky top-0">
+              <TableRow>
+                <TableHead className="w-[120px] font-bold text-black">Kode Akun</TableHead>
+                <TableHead className="font-bold text-black">Nama Akun</TableHead>
+                <TableHead className="w-[150px] font-bold text-black">Kategori</TableHead>
+                <TableHead className="w-[80px]"></TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {filteredExpenseAccounts.length === 0 ? (
+                <TableRow><TableCell colSpan={4} className="text-center py-8">Tidak ada akun ditemukan.</TableCell></TableRow>
+              ) : (
+                filteredExpenseAccounts.map((acc) => (
+                  <TableRow key={acc.id} className="cursor-pointer hover:bg-blue-50 transition-colors" onClick={() => handleSelectFeeAccount(acc)}>
+                    <TableCell className="font-mono font-bold text-blue-700">{acc.account_code}</TableCell>
+                    <TableCell className="font-medium">{acc.account_name}</TableCell>
+                    <TableCell className="text-xs text-gray-500">
+                      <span className="bg-slate-100 px-2 py-1 rounded border">
+                        {String(acc.category || '').toUpperCase()} {acc.sub_category ? `- ${String(acc.sub_category).replace('_', ' ')}` : ''}
+                      </span>
+                    </TableCell>
+                    <TableCell>
+                      <Button size="sm" variant="ghost" className="text-blue-600 hover:text-blue-800">Pilih</Button>
+                    </TableCell>
+                  </TableRow>
+                ))
+              )}
+            </TableBody>
+          </Table>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+
   return (
     <div className="space-y-6">
         {AccountSelector()}
+        {FeeAccountSelector()}
       <div className="flex items-center justify-between">
         <h2 className="text-3xl font-bold tracking-tight">Pembayaran Pembelian & Hutang</h2>
         <Button variant="outline" onClick={handleSyncInvoices} disabled={isSyncing}>
@@ -703,13 +830,14 @@ export default function PurchasePayment() {
                                   <TableHead>Supplier</TableHead>
                                   <TableHead>Akun Pembayar</TableHead>
                                   <TableHead>Jumlah Bayar</TableHead>
+                                  <TableHead>Biaya Admin</TableHead>
                                   <TableHead>Catatan</TableHead>
                                   <TableHead className="text-right">Aksi</TableHead>
                               </TableRow>
                           </TableHeader>
                           <TableBody>
                               {filteredPaymentHistory.length === 0 ? (
-                                  <TableRow><TableCell colSpan={8} className="text-center py-8">Belum ada riwayat pembayaran.</TableCell></TableRow>
+                                  <TableRow><TableCell colSpan={9} className="text-center py-8">Belum ada riwayat pembayaran.</TableCell></TableRow>
                               ) : (
                                   filteredPaymentHistory.map(pay => (
                                       <TableRow key={pay.id}>
@@ -719,6 +847,7 @@ export default function PurchasePayment() {
                                           <TableCell>{pay.purchase_invoices?.suppliers?.name}</TableCell>
                                           <TableCell>{pay.payment_account?.account_name || '-'}</TableCell>
                                           <TableCell className="font-bold">{formatCurrency(pay.amount)}</TableCell>
+                                          <TableCell className="font-semibold text-slate-600">{formatCurrency(pay.transfer_fee || 0)}</TableCell>
                                           <TableCell>{pay.notes}</TableCell>
                                           <TableCell className="text-right">
                                               <div className="flex justify-end gap-2">
@@ -766,6 +895,17 @@ export default function PurchasePayment() {
                     </p>
                 </div>
                 <div className="space-y-2">
+                    <Label>Biaya Admin / Transfer (Opsional)</Label>
+                    <Input
+                        type="number"
+                        value={paymentData.transfer_fee}
+                        onChange={e => setPaymentData({...paymentData, transfer_fee: Number(e.target.value)})}
+                    />
+                    <p className="text-xs text-gray-500">
+                      Total Keluar Kas/Bank: {formatCurrency(Number(paymentData.amount || 0) + Number(paymentData.transfer_fee || 0))}
+                    </p>
+                </div>
+                <div className="space-y-2">
                     <Label>Tanggal Bayar</Label>
                     <Input type="date" value={paymentData.payment_date} onChange={e => setPaymentData({...paymentData, payment_date: e.target.value})} />
                 </div>
@@ -793,6 +933,27 @@ export default function PurchasePayment() {
                         </p>
                     )}
                 </div>
+                {Number(paymentData.transfer_fee || 0) > 0 && (
+                  <div className="space-y-2">
+                      <Label>Akun Biaya Admin/Transfer</Label>
+                      <div className="flex gap-2">
+                          <Input 
+                              readOnly 
+                              value={expenseAccounts.find(a => a.id === paymentData.fee_account_id)?.account_code || ''} 
+                              placeholder="Kode Akun"
+                              className="w-[120px] bg-gray-50 font-mono font-bold"
+                          />
+                          <Input 
+                              readOnly 
+                              value={expenseAccounts.find(a => a.id === paymentData.fee_account_id)?.account_name || ''} 
+                              placeholder="Nama Akun (Klik Pilih)"
+                              className="flex-1 bg-gray-50 cursor-pointer"
+                              onClick={() => setIsFeeAccountSelectOpen(true)}
+                          />
+                          <Button variant="outline" onClick={() => setIsFeeAccountSelectOpen(true)}>Pilih</Button>
+                      </div>
+                  </div>
+                )}
                 <div className="space-y-2">
                     <Label>Catatan</Label>
                     <Input value={paymentData.notes} onChange={e => setPaymentData({...paymentData, notes: e.target.value})} placeholder="Ref Transfer, dll..." />
