@@ -8,15 +8,18 @@ import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { toast } from 'sonner';
 import { formatCurrency } from '@/lib/utils';
-import { Plus, Trash2, Save, Search, RefreshCw } from 'lucide-react';
+import { Plus, Trash2, Save, Search, RefreshCw, Pencil } from 'lucide-react';
 import {
   Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 export default function ManualJournalEntry() {
   const [loading, setLoading] = useState(false);
   const [accounts, setAccounts] = useState<any[]>([]);
+  const [activeTab, setActiveTab] = useState<'entry' | 'history'>('entry');
+  const [editingId, setEditingId] = useState<string | null>(null);
   
   // Form State
   const [entryDate, setEntryDate] = useState(new Date().toISOString().split('T')[0]);
@@ -33,10 +36,22 @@ export default function ManualJournalEntry() {
   const [activeLineIndex, setActiveLineIndex] = useState<number | null>(null);
   const [accountSearch, setAccountSearch] = useState('');
 
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [history, setHistory] = useState<any[]>([]);
+  const [historySearch, setHistorySearch] = useState('');
+  const [historyFilter, setHistoryFilter] = useState({
+    startDate: new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0],
+    endDate: new Date().toISOString().split('T')[0],
+  });
+
   useEffect(() => {
     fetchAccounts();
     generateVoucherNo();
   }, []);
+
+  useEffect(() => {
+    fetchHistory();
+  }, [historyFilter.startDate, historyFilter.endDate]);
 
   async function fetchAccounts() {
     try {
@@ -55,6 +70,38 @@ export default function ManualJournalEntry() {
       const dateStr = new Date().toISOString().slice(0,10).replace(/-/g, '');
       const random = Math.floor(Math.random() * 1000).toString().padStart(3, '0');
       setVoucherNo(`JV-${dateStr}-${random}`);
+  }
+
+  async function fetchHistory() {
+    setHistoryLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from('journal_entries')
+        .select(`
+          *,
+          items:journal_entry_items (
+            id,
+            debit,
+            credit,
+            account_id,
+            description,
+            account:chart_of_accounts (id, account_name, account_code)
+          )
+        `)
+        .eq('entry_type', 'GENERAL')
+        .gte('entry_date', historyFilter.startDate)
+        .lte('entry_date', historyFilter.endDate)
+        .order('entry_date', { ascending: false })
+        .order('voucher_no', { ascending: false });
+
+      if (error) throw error;
+      setHistory(data || []);
+    } catch (error: any) {
+      toast.error('Gagal memuat riwayat jurnal umum: ' + error.message);
+      setHistory([]);
+    } finally {
+      setHistoryLoading(false);
+    }
   }
 
   // Line Operations
@@ -131,36 +178,116 @@ export default function ManualJournalEntry() {
   const totalCredit = lines.reduce((sum, line) => sum + (Number(line.credit) || 0), 0);
   const balance = totalDebit - totalCredit;
 
+  const resetForm = () => {
+    setEntryDate(new Date().toISOString().split('T')[0]);
+    generateVoucherNo();
+    setHeaderDesc('');
+    setLines([
+      { account_id: '', debit: 0, credit: 0, description: '' },
+      { account_id: '', debit: 0, credit: 0, description: '' }
+    ]);
+    setEditingId(null);
+  };
+
+  const handleCancelEdit = () => {
+    resetForm();
+    setActiveTab('history');
+  };
+
+  const handleEditEntry = (entry: any) => {
+    setEditingId(entry.id);
+    setEntryDate(entry.entry_date);
+    setVoucherNo(entry.voucher_no);
+    setHeaderDesc(entry.description || '');
+    const mapped = (entry.items || []).map((it: any) => ({
+      account_id: it.account_id,
+      debit: it.debit || 0,
+      credit: it.credit || 0,
+      description: it.description || ''
+    }));
+    const normalizedLines = mapped.length >= 2 ? mapped : [...mapped, ...Array.from({ length: 2 - mapped.length }).map(() => ({ account_id: '', debit: 0, credit: 0, description: '' }))];
+    setLines(normalizedLines);
+    setActiveTab('entry');
+  };
+
+  const handleDeleteEntry = async (id: string) => {
+    if (!confirm('Hapus jurnal umum ini?')) return;
+    setHistoryLoading(true);
+    try {
+      const { error: delItemsErr } = await supabase
+        .from('journal_entry_items')
+        .delete()
+        .eq('journal_entry_id', id);
+      if (delItemsErr) throw delItemsErr;
+
+      const { error: delEntryErr } = await supabase
+        .from('journal_entries')
+        .delete()
+        .eq('id', id);
+      if (delEntryErr) throw delEntryErr;
+
+      toast.success('Jurnal umum berhasil dihapus');
+      if (editingId === id) handleCancelEdit();
+      fetchHistory();
+    } catch (error: any) {
+      toast.error('Gagal menghapus: ' + error.message);
+    } finally {
+      setHistoryLoading(false);
+    }
+  };
+
   const handleSave = async () => {
       // Validations
       if (!voucherNo) return toast.error("Nomor Voucher harus diisi");
       if (!headerDesc) return toast.error("Keterangan harus diisi");
       if (Math.abs(balance) > 0.01) return toast.error(`Jurnal tidak seimbang! Selisih: ${formatCurrency(balance)}`);
       
-      const validLines = lines.filter(l => l.account_id && (l.debit > 0 || l.credit > 0));
+      const validLines = lines.filter(l => l.account_id && ((Number(l.debit) || 0) > 0 || (Number(l.credit) || 0) > 0));
       if (validLines.length < 2) return toast.error("Minimal 2 akun yang valid (Debit & Kredit)");
 
       setLoading(true);
       try {
-          // 1. Create Journal Entry Header
-          const { data: entry, error: entryError } = await supabase
-            .from('journal_entries')
-            .insert([{
+          let entryId = editingId;
+
+          if (editingId) {
+            const { error: entryError } = await supabase
+              .from('journal_entries')
+              .update({
                 entry_date: entryDate,
                 voucher_no: voucherNo,
                 description: headerDesc,
-                entry_type: 'GENERAL', // General Journal
+                entry_type: 'GENERAL',
                 total_amount: totalDebit,
-                reference: null // Manual entry has no ref
-            }])
-            .select()
-            .single();
+                updated_at: new Date().toISOString()
+              })
+              .eq('id', editingId);
+            if (entryError) throw entryError;
 
-          if (entryError) throw entryError;
+            const { error: deleteError } = await supabase
+              .from('journal_entry_items')
+              .delete()
+              .eq('journal_entry_id', editingId);
+            if (deleteError) throw deleteError;
+          } else {
+            const { data: entry, error: entryError } = await supabase
+              .from('journal_entries')
+              .insert([{
+                  entry_date: entryDate,
+                  voucher_no: voucherNo,
+                  description: headerDesc,
+                  entry_type: 'GENERAL',
+                  total_amount: totalDebit,
+                  reference: null
+              }])
+              .select()
+              .single();
+            if (entryError) throw entryError;
+            entryId = entry.id;
+          }
 
           // 2. Create Journal Items
           const itemsToInsert = validLines.map(line => ({
-              journal_entry_id: entry.id,
+              journal_entry_id: entryId,
               account_id: line.account_id,
               debit: Number(line.debit) || 0,
               credit: Number(line.credit) || 0,
@@ -173,15 +300,10 @@ export default function ManualJournalEntry() {
 
           if (itemsError) throw itemsError;
 
-          toast.success("Jurnal Umum berhasil disimpan");
-          
-          // Reset Form
-          generateVoucherNo();
-          setHeaderDesc('');
-          setLines([
-              { account_id: '', debit: 0, credit: 0, description: '' },
-              { account_id: '', debit: 0, credit: 0, description: '' }
-          ]);
+          toast.success(editingId ? 'Jurnal Umum berhasil diperbarui' : 'Jurnal Umum berhasil disimpan');
+          resetForm();
+          fetchHistory();
+          setActiveTab('history');
 
       } catch (error: any) {
           toast.error("Gagal menyimpan: " + error.message);
@@ -195,20 +317,43 @@ export default function ManualJournalEntry() {
       (acc.account_name || '').toLowerCase().includes(accountSearch.toLowerCase())
   );
 
+  const filteredHistory = history.filter(t => {
+    const q = historySearch.toLowerCase();
+    return (
+      (t.voucher_no?.toLowerCase() || '').includes(q) ||
+      (t.description?.toLowerCase() || '').includes(q)
+    );
+  });
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h2 className="text-3xl font-bold tracking-tight">Jurnal Umum (General Journal)</h2>
-        <Button variant="outline" onClick={generateVoucherNo}>
-            <RefreshCw className="mr-2 h-4 w-4" /> Reset Voucher No
-        </Button>
+        <div className="flex gap-2">
+          {editingId && (
+            <div className="bg-yellow-100 border border-yellow-400 text-yellow-800 px-4 py-2 rounded flex items-center gap-3">
+              <span>Sedang mengedit jurnal...</span>
+              <Button size="sm" variant="destructive" onClick={handleCancelEdit}>Batal Edit</Button>
+            </div>
+          )}
+          <Button variant="outline" onClick={generateVoucherNo} disabled={activeTab !== 'entry' || !!editingId}>
+              <RefreshCw className="mr-2 h-4 w-4" /> Reset Voucher No
+          </Button>
+        </div>
       </div>
 
-      <Card className="flex flex-col h-[calc(100vh-120px)]">
-        <CardHeader className="flex-none">
-            <CardTitle>Entri Jurnal Manual</CardTitle>
-        </CardHeader>
-        <CardContent className="flex flex-col flex-1 gap-4 overflow-hidden">
+      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as any)} className="w-full">
+        <TabsList className="grid w-full grid-cols-2">
+          <TabsTrigger value="entry">Entri Jurnal</TabsTrigger>
+          <TabsTrigger value="history">Riwayat Jurnal Umum</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="entry" className="mt-4">
+          <Card className="flex flex-col h-[calc(100vh-180px)]">
+            <CardHeader className="flex-none">
+                <CardTitle>Entri Jurnal Manual</CardTitle>
+            </CardHeader>
+            <CardContent className="flex flex-col flex-1 gap-4 overflow-hidden">
             {/* Header Inputs - Fixed */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 flex-none">
                 <div className="space-y-2">
@@ -324,8 +469,105 @@ export default function ManualJournalEntry() {
                     </Button>
                 </div>
             </div>
-        </CardContent>
-      </Card>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="history" className="mt-4 space-y-4">
+          <Card>
+            <CardHeader className="pb-3">
+              <div className="flex flex-col gap-4">
+                <div className="flex justify-between items-center">
+                  <CardTitle>Riwayat Jurnal Umum</CardTitle>
+                  <Button variant="outline" size="sm" onClick={fetchHistory} disabled={historyLoading}>
+                    <RefreshCw className={`h-4 w-4 mr-2 ${historyLoading ? 'animate-spin' : ''}`} /> Refresh
+                  </Button>
+                </div>
+                <div className="flex flex-col md:flex-row gap-2">
+                  <div className="flex items-center gap-2 bg-slate-50 p-2 rounded border flex-1">
+                    <Input
+                      type="date"
+                      className="w-auto h-8 bg-white"
+                      value={historyFilter.startDate}
+                      onChange={(e) => setHistoryFilter({ ...historyFilter, startDate: e.target.value })}
+                    />
+                    <span className="text-gray-400">-</span>
+                    <Input
+                      type="date"
+                      className="w-auto h-8 bg-white"
+                      value={historyFilter.endDate}
+                      onChange={(e) => setHistoryFilter({ ...historyFilter, endDate: e.target.value })}
+                    />
+                  </div>
+                  <div className="relative flex-1">
+                    <Search className="absolute left-2 top-2 h-4 w-4 text-gray-400" />
+                    <Input
+                      placeholder="Cari No. Voucher atau Keterangan..."
+                      className="pl-8 h-12 bg-white"
+                      value={historySearch}
+                      onChange={(e) => setHistorySearch(e.target.value)}
+                    />
+                  </div>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <div className="rounded-md border overflow-hidden">
+                <div className="max-h-[600px] overflow-auto">
+                  <Table>
+                    <TableHeader className="bg-slate-100 sticky top-0 z-10">
+                      <TableRow>
+                        <TableHead>Tanggal</TableHead>
+                        <TableHead>No. Voucher</TableHead>
+                        <TableHead>Keterangan</TableHead>
+                        <TableHead className="text-right">Total Debit</TableHead>
+                        <TableHead>Detail Akun</TableHead>
+                        <TableHead className="w-[120px] text-right">Aksi</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {historyLoading ? (
+                        <TableRow><TableCell colSpan={6} className="text-center py-10 text-muted-foreground">Memuat...</TableCell></TableRow>
+                      ) : filteredHistory.length === 0 ? (
+                        <TableRow><TableCell colSpan={6} className="text-center py-10 text-muted-foreground">Tidak ada data.</TableCell></TableRow>
+                      ) : (
+                        filteredHistory.map((t) => (
+                          <TableRow key={t.id}>
+                            <TableCell>{t.entry_date}</TableCell>
+                            <TableCell className="font-mono text-xs">{t.voucher_no}</TableCell>
+                            <TableCell className="max-w-[420px]">
+                              <div className="whitespace-pre-wrap text-sm">{t.description}</div>
+                            </TableCell>
+                            <TableCell className="text-right font-bold">{formatCurrency(t.total_amount || 0)}</TableCell>
+                            <TableCell className="text-xs text-gray-500">
+                              {t.items?.slice(0, 2).map((i: any, idx: number) => (
+                                <div key={idx}>
+                                  {i.account?.account_code} - {i.account?.account_name} ({formatCurrency(i.debit || i.credit)})
+                                </div>
+                              ))}
+                              {t.items?.length > 2 && <div>...</div>}
+                            </TableCell>
+                            <TableCell className="text-right">
+                              <div className="flex justify-end gap-2">
+                                <Button variant="outline" size="sm" onClick={() => handleEditEntry(t)}>
+                                  <Pencil className="h-4 w-4" />
+                                </Button>
+                                <Button variant="destructive" size="sm" onClick={() => handleDeleteEntry(t.id)}>
+                                  <Trash2 className="h-4 w-4" />
+                                </Button>
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        ))
+                      )}
+                    </TableBody>
+                  </Table>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
 
       {/* Account Selector Dialog */}
       <Dialog open={isAccountSelectOpen} onOpenChange={setIsAccountSelectOpen}>
