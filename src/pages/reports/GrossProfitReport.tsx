@@ -21,6 +21,14 @@ export default function GrossProfitReport() {
   const [isSyncing, setIsSyncing] = useState(false);
   const [missingHppColumn, setMissingHppColumn] = useState(false);
   const [missingPoHistory, setMissingPoHistory] = useState(false);
+  
+  const vehicleGroupLabel = (vehicleType?: string | null) => {
+    const vt = String(vehicleType || '').toUpperCase();
+    if (vt.includes('R2_KECIL') || vt.includes('R2 KECIL') || vt.includes('KECIL')) return 'R2 Kecil';
+    if (vt === 'R4' || vt.includes('R4') || vt.includes('MOBIL')) return 'R4';
+    if (vt === 'R2' || vt.includes('R2') || vt.includes('MOTOR')) return 'R2';
+    return '-';
+  };
 
   useEffect(() => {
     checkDatabaseSchema();
@@ -164,7 +172,7 @@ export default function GrossProfitReport() {
           vehicle_entries (
             nota_dinas_number,
             service_group,
-            vehicles (license_plate, brand_type)
+            vehicles (license_plate, brand_type, vehicle_type)
           ),
           billings:work_order_billings (
             item_type,
@@ -289,6 +297,7 @@ export default function GrossProfitReport() {
                 tgl: wo.work_date, 
                 nopol: wo.vehicle_entries?.vehicles?.license_plate || '-',
                 merk_type: wo.vehicle_entries?.vehicles?.brand_type || '-',
+                group_kendaraan: vehicleGroupLabel(wo.vehicle_entries?.vehicles?.vehicle_type),
                 nota_dinas: wo.vehicle_entries?.nota_dinas_number || '-',
                 group: woFinalGroup, // Gunakan Group Final WO
                 klasifikasi: woFinalGroup, 
@@ -326,6 +335,7 @@ export default function GrossProfitReport() {
     const ws = XLSX.utils.json_to_sheet(filteredData.map(item => ({
       'Tgl': formatDate(item.tgl),
       'No.Pol': item.nopol,
+      'Group Kendaraan': item.group_kendaraan,
       'Merk/Type': item.merk_type,
       'No. Nota Dinas': item.nota_dinas,
       'Group': item.group,
@@ -439,6 +449,7 @@ export default function GrossProfitReport() {
                 <TableRow>
                     <TableHead>Tgl</TableHead>
                     <TableHead>No.Pol</TableHead>
+                    <TableHead>Group Kendaraan</TableHead>
                     <TableHead>Merk/Tipe</TableHead>
                     <TableHead>No. Nota</TableHead>
                     <TableHead>Group</TableHead>
@@ -456,12 +467,17 @@ export default function GrossProfitReport() {
                 </TableHeader>
                 <TableBody>
                 {filteredData.length === 0 ? (
-                    <TableRow><TableCell colSpan={15} className="text-center py-8">Tidak ada data.</TableCell></TableRow>
+                    <TableRow><TableCell colSpan={16} className="text-center py-8">Tidak ada data.</TableCell></TableRow>
                 ) : (
                     filteredData.map((item, idx) => (
                     <TableRow key={idx}>
                         <TableCell>{formatDate(item.tgl)}</TableCell>
                         <TableCell className="font-medium">{item.nopol}</TableCell>
+                        <TableCell>
+                            <span className="text-xs bg-slate-100 px-2 py-1 rounded">
+                                {item.group_kendaraan}
+                            </span>
+                        </TableCell>
                         <TableCell>{item.merk_type}</TableCell>
                         <TableCell>{item.nota_dinas}</TableCell>
                         <TableCell>
