@@ -111,11 +111,16 @@ export default function ManualJournalEntry() {
 
   const selectAccount = (account: any) => {
       if (activeLineIndex !== null) {
-          updateLine(activeLineIndex, 'account_id', account.id);
-          // Auto fill description if empty
-          if (!lines[activeLineIndex].description) {
-              updateLine(activeLineIndex, 'description', headerDesc);
-          }
+          setLines((prev) => {
+              const next = [...prev];
+              const current = next[activeLineIndex] || { account_id: '', debit: 0, credit: 0, description: '' };
+              next[activeLineIndex] = {
+                  ...current,
+                  account_id: account.id,
+                  description: current.description || headerDesc
+              };
+              return next;
+          });
       }
       setIsAccountSelectOpen(false);
       setActiveLineIndex(null);
