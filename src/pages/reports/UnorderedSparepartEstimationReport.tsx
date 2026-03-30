@@ -9,8 +9,14 @@ import { formatCurrency, formatDate } from '@/lib/utils';
 import { Download, Printer, RefreshCw, Search } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import ReportPrintHeader from '@/components/reports/ReportPrintHeader';
+import { Checkbox } from '@/components/ui/checkbox';
 
-type StatusLabel = 'BELUM_WO' | 'BELUM_PO' | 'BELUM_PO_ITEM' | 'SUDAH_PO';
+type StatusLabel =
+  | 'BELUM_WO'
+  | 'BELUM_PO_DAN_BELUM_KELUAR'
+  | 'SUDAH_PO_BELUM_KELUAR'
+  | 'KELUAR_SEBAGIAN'
+  | 'SUDAH_KELUAR';
 
 type Row = {
   entry_date: string;
@@ -21,6 +27,9 @@ type Row = {
   vehicle_group: string;
   item_name: string;
   qty: number;
+  po_qty: number;
+  issued_qty: number;
+  remaining_qty: number;
   estimated_price: number;
   total_estimated: number;
   status: StatusLabel;
@@ -56,7 +65,7 @@ export default function UnorderedSparepartEstimationReport() {
   const [loading, setLoading] = useState(true);
   const [rows, setRows] = useState<Row[]>([]);
   const [search, setSearch] = useState('');
-  const [onlyUnordered, setOnlyUnordered] = useState(true);
+  const [onlyPending, setOnlyPending] = useState(true);
   const [dateFilter, setDateFilter] = useState({
     startDate: new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0],
     endDate: new Date().toISOString().split('T')[0],
@@ -136,49 +145,28 @@ export default function UnorderedSparepartEstimationReport() {
         });
       }
 
-          // Fetch Goods Issues for these WOs to check if items were issued from stock
-          const woToGoodsIssues: Record<string, any[]> = {};
-          const woToBillings: Record<string, any[]> = {};
-          if (workOrderIds.length > 0) {
-            // 1. Fetch Goods Issues
-            const { data: giData, error: giErr } = await supabase
-              .from('goods_issues')
-              .select(`
-                work_order_id,
-                goods_issue_items (
-                  goods (name)
-                )
-              `)
-              .in('work_order_id', workOrderIds);
-            
-            if (!giErr && giData) {
-              giData.forEach((gi: any) => {
-                const wId = String(gi.work_order_id || '');
-                if (!wId) return;
-                if (!woToGoodsIssues[wId]) woToGoodsIssues[wId] = [];
-                woToGoodsIssues[wId].push(gi);
-              });
-            }
+      const woToGoodsIssues: Record<string, any[]> = {};
+      if (workOrderIds.length > 0) {
+        const { data: giData, error: giErr } = await supabase
+          .from('goods_issues')
+          .select(`
+            work_order_id,
+            goods_issue_items (
+              quantity,
+              goods (name)
+            )
+          `)
+          .in('work_order_id', workOrderIds);
 
-            // 2. Fetch Billings
-            const { data: billData, error: billErr } = await supabase
-              .from('work_order_billings')
-              .select(`
-                work_order_id,
-                qty,
-                goods (name)
-              `)
-              .in('work_order_id', workOrderIds);
-            
-            if (!billErr && billData) {
-              billData.forEach((bill: any) => {
-                const wId = String(bill.work_order_id || '');
-                if (!wId) return;
-                if (!woToBillings[wId]) woToBillings[wId] = [];
-                woToBillings[wId].push(bill);
-              });
-            }
-          }
+        if (giErr) throw giErr;
+
+        (giData || []).forEach((gi: any) => {
+          const wId = String(gi.work_order_id || '');
+          if (!wId) return;
+          if (!woToGoodsIssues[wId]) woToGoodsIssues[wId] = [];
+          woToGoodsIssues[wId].push(gi);
+        });
+      }
 
       const flattened: Row[] = [];
 
@@ -199,32 +187,33 @@ export default function UnorderedSparepartEstimationReport() {
           const estPrice = Number(sp.estimated_price || 0);
           const total = qty * estPrice;
 
-          let status: StatusLabel = 'BELUM_PO';
-          
-          // Cek apakah item ini sudah direalisasikan/dikeluarkan via billing atau goods_issue
-          const billings = woId ? woToBillings[woId] || [] : [];
-          const isBilled = billings.some((b: any) => isNameMatch(estName, b.goods?.name || ''));
+          const poQty = (poList || []).reduce((acc: number, po: any) => {
+            const items = Array.isArray(po.purchase_order_items) ? po.purchase_order_items : [];
+            const matchQty = items.reduce((sum: number, it: any) => {
+              const ok = isNameMatch(estName, it.goods?.name || '');
+              return sum + (ok ? Number(it.quantity || 0) : 0);
+            }, 0);
+            return acc + matchQty;
+          }, 0);
 
           const giList = woId ? woToGoodsIssues[woId] || [] : [];
-          const isIssued = giList.some((gi: any) => {
+          const issuedQty = giList.reduce((acc: number, gi: any) => {
             const items = Array.isArray(gi.goods_issue_items) ? gi.goods_issue_items : [];
-            return items.some((item: any) => isNameMatch(estName, item.goods?.name || ''));
-          });
+            const matchQty = items.reduce((sum: number, it: any) => {
+              const ok = isNameMatch(estName, it.goods?.name || '');
+              return sum + (ok ? Number(it.quantity || 0) : 0);
+            }, 0);
+            return acc + matchQty;
+          }, 0);
 
-          if (isBilled || isIssued) {
-             // Jika sudah di-billing atau dikeluarkan dari stok, tidak perlu di-PO lagi.
-             return;
-          }
+          const remainingQty = Math.max(0, qty - issuedQty);
 
+          let status: StatusLabel = 'BELUM_PO_DAN_BELUM_KELUAR';
           if (!wo) status = 'BELUM_WO';
-          else if (!poList || poList.length === 0) status = 'BELUM_PO';
-          else {
-            const anyMatch = (poList || []).some((po: any) => {
-              const items = Array.isArray(po.purchase_order_items) ? po.purchase_order_items : [];
-              return items.some((it: any) => isNameMatch(estName, it.goods?.name || ''));
-            });
-            status = anyMatch ? 'SUDAH_PO' : 'BELUM_PO_ITEM';
-          }
+          else if (issuedQty >= qty && qty > 0) status = 'SUDAH_KELUAR';
+          else if (issuedQty > 0) status = 'KELUAR_SEBAGIAN';
+          else if (poQty > 0) status = 'SUDAH_PO_BELUM_KELUAR';
+          else status = 'BELUM_PO_DAN_BELUM_KELUAR';
 
           flattened.push({
             entry_date: entry.entry_date,
@@ -235,6 +224,9 @@ export default function UnorderedSparepartEstimationReport() {
             vehicle_group: vehicleGroup,
             item_name: estName,
             qty,
+            po_qty: poQty,
+            issued_qty: issuedQty,
+            remaining_qty: remainingQty,
             estimated_price: estPrice,
             total_estimated: total,
             status,
@@ -255,7 +247,7 @@ export default function UnorderedSparepartEstimationReport() {
 
   const filteredRows = useMemo(() => {
     const q = normalizeText(search);
-    const base = onlyUnordered ? rows.filter((r) => r.status !== 'SUDAH_PO') : rows;
+    const base = onlyPending ? rows.filter((r) => r.remaining_qty > 0) : rows;
     if (!q) return base;
     return base.filter((r) => {
       const hay = normalizeText(
@@ -273,7 +265,7 @@ export default function UnorderedSparepartEstimationReport() {
       );
       return hay.includes(q);
     });
-  }, [rows, search, onlyUnordered]);
+  }, [rows, search, onlyPending]);
 
   const totals = useMemo(() => {
     const totalEst = filteredRows.reduce((sum, r) => sum + (Number(r.total_estimated) || 0), 0);
@@ -291,7 +283,10 @@ export default function UnorderedSparepartEstimationReport() {
       Kendaraan: r.vehicle_type,
       Group: r.vehicle_group,
       'Item Estimasi': r.item_name,
-      Qty: r.qty,
+      'Qty Est': r.qty,
+      'Qty PO': r.po_qty,
+      'Qty Keluar': r.issued_qty,
+      'Sisa Keluar': r.remaining_qty,
       'Est Harga': r.estimated_price,
       'Total Est': r.total_estimated,
       Status: r.status,
@@ -301,23 +296,24 @@ export default function UnorderedSparepartEstimationReport() {
 
     const ws = XLSX.utils.json_to_sheet(exportData);
     const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'Belum PO');
-    XLSX.writeFile(wb, `Laporan_Estimasi_Sparepart_Belum_PO_${dateFilter.startDate}_sd_${dateFilter.endDate}.xlsx`);
+    XLSX.utils.book_append_sheet(wb, ws, 'Monitoring Estimasi Part');
+    XLSX.writeFile(wb, `Monitoring_Estimasi_Part_${dateFilter.startDate}_sd_${dateFilter.endDate}.xlsx`);
   };
 
   const statusBadge = (s: StatusLabel) => {
-    if (s === 'SUDAH_PO') return <span className="text-xs font-semibold px-2 py-1 rounded bg-green-100 text-green-800">Sudah PO</span>;
-    if (s === 'BELUM_PO_ITEM') return <span className="text-xs font-semibold px-2 py-1 rounded bg-amber-100 text-amber-800">PO Ada, Item Belum</span>;
     if (s === 'BELUM_WO') return <span className="text-xs font-semibold px-2 py-1 rounded bg-slate-100 text-slate-800">Belum WO</span>;
-    return <span className="text-xs font-semibold px-2 py-1 rounded bg-red-100 text-red-800">Belum PO</span>;
+    if (s === 'SUDAH_KELUAR') return <span className="text-xs font-semibold px-2 py-1 rounded bg-emerald-100 text-emerald-800">Sudah Keluar</span>;
+    if (s === 'KELUAR_SEBAGIAN') return <span className="text-xs font-semibold px-2 py-1 rounded bg-amber-100 text-amber-800">Keluar Sebagian</span>;
+    if (s === 'SUDAH_PO_BELUM_KELUAR') return <span className="text-xs font-semibold px-2 py-1 rounded bg-blue-100 text-blue-800">Sudah PO, Belum Keluar</span>;
+    return <span className="text-xs font-semibold px-2 py-1 rounded bg-red-100 text-red-800">Belum PO & Belum Keluar</span>;
   };
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between print:hidden">
         <div>
-          <h2 className="text-3xl font-bold tracking-tight">Estimasi Sparepart Belum PO</h2>
-          <p className="text-muted-foreground">Daftar estimasi sparepart yang belum dibuat PO atau belum terdeteksi di PO.</p>
+          <h2 className="text-3xl font-bold tracking-tight">Monitoring Estimasi Part</h2>
+          <p className="text-muted-foreground">Monitoring estimasi part: belum dibuat PO atau belum dicatat sebagai barang keluar.</p>
         </div>
         <div className="flex gap-2">
           <Button variant="outline" onClick={exportToExcel} disabled={filteredRows.length === 0}>
@@ -352,10 +348,10 @@ export default function UnorderedSparepartEstimationReport() {
                   onChange={(e) => setDateFilter({ ...dateFilter, endDate: e.target.value })}
                 />
               </div>
-              <label className="flex items-center gap-2 text-sm">
-                <input type="checkbox" checked={onlyUnordered} onChange={(e) => setOnlyUnordered(e.target.checked)} />
-                Hanya yang belum PO
-              </label>
+              <div className="flex items-center gap-2 text-sm">
+                <Checkbox checked={onlyPending} onCheckedChange={(v) => setOnlyPending(Boolean(v))} />
+                <span>Hanya yang belum keluar (masih ada sisa)</span>
+              </div>
               <div className="relative w-72">
                 <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
                 <Input
@@ -370,7 +366,7 @@ export default function UnorderedSparepartEstimationReport() {
         </CardHeader>
         <CardContent className="p-0">
           <div className="p-6">
-            <ReportPrintHeader title="Laporan Estimasi Sparepart Belum PO" periodStart={dateFilter.startDate} periodEnd={dateFilter.endDate} />
+            <ReportPrintHeader title="Monitoring Estimasi Part" periodStart={dateFilter.startDate} periodEnd={dateFilter.endDate} />
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-4 print:hidden">
               <div className="p-3 rounded-md border bg-white">
                 <div className="text-xs text-slate-500">Total Item</div>
@@ -392,7 +388,10 @@ export default function UnorderedSparepartEstimationReport() {
                   <TableHead className="font-semibold text-slate-700">No. WO</TableHead>
                   <TableHead className="font-semibold text-slate-700">Kendaraan & Group</TableHead>
                   <TableHead className="font-semibold text-slate-700">Estimasi Item</TableHead>
-                  <TableHead className="text-right font-semibold text-slate-700">Qty</TableHead>
+                  <TableHead className="text-right font-semibold text-slate-700">Qty Est</TableHead>
+                  <TableHead className="text-right font-semibold text-slate-700">Qty PO</TableHead>
+                  <TableHead className="text-right font-semibold text-slate-700">Qty Keluar</TableHead>
+                  <TableHead className="text-right font-semibold text-slate-700">Sisa</TableHead>
                   <TableHead className="text-right font-semibold text-slate-700">Est Harga</TableHead>
                   <TableHead className="text-right font-semibold text-slate-700">Total Est</TableHead>
                   <TableHead className="font-semibold text-slate-700">Status</TableHead>
@@ -402,13 +401,13 @@ export default function UnorderedSparepartEstimationReport() {
               <TableBody>
                 {loading ? (
                   <TableRow>
-                    <TableCell colSpan={10} className="text-center py-12 text-muted-foreground">
+                    <TableCell colSpan={13} className="text-center py-12 text-muted-foreground">
                       Memuat data...
                     </TableCell>
                   </TableRow>
                 ) : filteredRows.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={10} className="text-center py-12 text-muted-foreground">
+                    <TableCell colSpan={13} className="text-center py-12 text-muted-foreground">
                       Tidak ada data ditemukan.
                     </TableCell>
                   </TableRow>
@@ -427,6 +426,9 @@ export default function UnorderedSparepartEstimationReport() {
                       </TableCell>
                       <TableCell className="text-sm">{r.item_name}</TableCell>
                       <TableCell className="text-right font-semibold">{r.qty}</TableCell>
+                      <TableCell className="text-right font-semibold text-slate-700">{r.po_qty}</TableCell>
+                      <TableCell className="text-right font-semibold text-emerald-700">{r.issued_qty}</TableCell>
+                      <TableCell className="text-right font-bold text-red-700">{r.remaining_qty}</TableCell>
                       <TableCell className="text-right">{formatCurrency(r.estimated_price)}</TableCell>
                       <TableCell className="text-right font-bold">{formatCurrency(r.total_estimated)}</TableCell>
                       <TableCell>{statusBadge(r.status)}</TableCell>
@@ -447,4 +449,3 @@ export default function UnorderedSparepartEstimationReport() {
     </div>
   );
 }
-
