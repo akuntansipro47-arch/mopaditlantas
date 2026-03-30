@@ -602,140 +602,6 @@ export default function WorkOrderV2() {
 
         if (billingError) throw billingError;
 
-        // 2. ROBUST STOCK SYNC LOGIC
-        // Ensure all billed parts are reflected in Goods Issues and Stock is deducted.
-        
-        // A. Fetch existing Goods Issues for this WO
-        const { data: existingIssues } = await supabase
-            .from('goods_issues')
-            .select('*, items:goods_issue_items(*)')
-            .eq('work_order_id', activeWO.id);
-
-        // B. Find or Create "Auto-generated" Issue Header
-        let targetIssueId: string;
-        // Fix: 'notes' column does not exist. Use 'issue_number' pattern to identify auto-generated issues.
-        const autoIssue = existingIssues?.find(i => i.issue_number?.includes('GI-WO-AUTO-'));
-        
-        if (autoIssue) {
-            targetIssueId = autoIssue.id;
-        } else {
-            // Create new header if we have parts to process
-            const hasParts = billingItems.some(i => i.goods_id);
-            if (hasParts) {
-                const { data: newIssue, error: createError } = await supabase
-                    .from('goods_issues')
-                    .insert([{
-                        issue_number: `GI-WO-AUTO-${Date.now()}-${Math.floor(Math.random()*1000)}`,
-                        work_order_id: activeWO.id,
-                        issue_date: new Date().toISOString().split('T')[0]
-                        // Removed 'notes' field as it doesn't exist in DB schema
-                    }])
-                    .select()
-                    .single();
-                
-                if (createError) throw createError;
-                targetIssueId = newIssue.id;
-            } else {
-                targetIssueId = ''; // No parts, no issue needed
-            }
-        }
-
-        // C. Map existing issued items for quick lookup: goods_id -> quantity
-        const issuedMap = new Map<string, number>();
-        if (existingIssues) {
-            existingIssues.forEach(issue => {
-                if (issue.items) {
-                    issue.items.forEach((item: any) => {
-                        if (item.goods_id) {
-                            const current = issuedMap.get(item.goods_id) || 0;
-                            issuedMap.set(item.goods_id, current + item.quantity);
-                        }
-                    });
-                }
-            });
-        }
-
-        // D. Sync Billing Items to Stock
-        if (targetIssueId) {
-            for (const item of billingItems) {
-                // STRICTLY FOLLOW RULE: Only "Service Ringan" items trigger auto-stock deduction in WO.
-                // "Perbaikan" items are assumed to be handled in Goods Issue module manually (Informational only here).
-                if (!isServiceRingan(item.job_group)) continue;
-
-                if (item.goods_id) {
-                    // Only process items that are meant to be auto-deducted (usually from WO interface)
-                    // But to be safe, we check if it's NOT already covered by a manual Goods Issue.
-                    // If the item came from 'GOODS_ISSUE' source (loaded in handleFinishWO), we assume it's already done.
-                    // BUT, `issuedMap` includes ALL issues.
-                    
-                    const billedQty = item.qty;
-                    const alreadyIssuedQty = issuedMap.get(item.goods_id) || 0;
-                    
-                    // Logic:
-                    // If source is 'GOODS_ISSUE', it means it was loaded from existing issues. We shouldn't double deduct.
-                    // If source is 'WO_INTERFACE', we need to ensure it's issued.
-                    
-                    // Simplified: Calculate 'Needed' vs 'Issued'.
-                    // CAUTION: 'issuedMap' contains ALL issues (Manual + Auto).
-                    // If we have 1 Manual Issue (Qty 1) and Billing says Qty 1.
-                    // Then alreadyIssuedQty = 1. billedQty = 1. Diff = 0. No action. Correct.
-                    
-                    // If we have 0 Issued. Billing says Qty 1.
-                    // Diff = 1. We need to issue 1 more.
-                    
-                    // If we have 1 Manual Issue. Billing says Qty 2 (User increased it).
-                    // Diff = 1. We need to issue 1 more.
-                    
-                    const diff = billedQty - alreadyIssuedQty;
-
-                    if (diff > 0) { // Only handle POSITIVE diff (Deduction). Do not handle returns here to be safe.
-                        // 1. Adjust Stock
-                        const { data: currentGood } = await supabase
-                            .from('goods')
-                            .select('current_stock')
-                            .eq('id', item.goods_id)
-                            .single();
-
-                        if (currentGood) {
-                             await supabase
-                                .from('goods')
-                                .update({ current_stock: (currentGood.current_stock || 0) - diff })
-                                .eq('id', item.goods_id);
-                        }
-
-                        // 2. Add/Update Goods Issue Item
-                        // We append the difference to the targetIssueId (Auto-generated).
-                        // Check if this good already exists in the TARGET issue (to update) or insert new.
-                        
-                        // Need to check specifically in targetIssueId
-                        const { data: existingTargetItem } = await supabase
-                            .from('goods_issue_items')
-                            .select('*')
-                            .eq('issue_id', targetIssueId)
-                            .eq('goods_id', item.goods_id)
-                            .single();
-
-                        if (existingTargetItem) {
-                            // Update existing auto-item
-                            await supabase
-                                .from('goods_issue_items')
-                                .update({ quantity: existingTargetItem.quantity + diff })
-                                .eq('id', existingTargetItem.id);
-                        } else {
-                            // Insert new item
-                             await supabase
-                                 .from('goods_issue_items')
-                                 .insert({
-                                     issue_id: targetIssueId,
-                                     goods_id: item.goods_id,
-                                     quantity: diff
-                                 });
-                        }
-                    }
-                }
-            }
-        }
-
         // 3. Update WO Status to COMPLETED
         await supabase
             .from('work_orders')
@@ -750,7 +616,7 @@ export default function WorkOrderV2() {
                 .eq('id', activeWO.vehicle_entry_id);
         }
         
-        toast.success("WO Selesai & Tagihan Disimpan (Stok Terupdate)");
+        toast.success("WO Selesai & Tagihan Disimpan");
         setIsBillingOpen(false);
         fetchWOs();
         return true;
