@@ -4,7 +4,7 @@ import { Database } from '@/types/supabase';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Plus, Search, Pencil, Trash2, Printer, Check } from 'lucide-react';
+import { Plus, Search, Pencil, Trash2, Printer, Check, Eye } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { toast } from 'sonner';
 import {
@@ -871,7 +871,7 @@ export default function VehicleEntryPage() {
               </TableHeader>
               <TableBody>
                 {filteredEntries.length === 0 ? (
-                  <TableRow><TableCell colSpan={7} className="text-center h-24">Tidak ada data entry.</TableCell></TableRow>
+                  <TableRow><TableCell colSpan={9} className="text-center h-24">Tidak ada data entry.</TableCell></TableRow>
                 ) : (
                   filteredEntries.map((item) => (
                     <TableRow key={item.id} className="align-top">
@@ -929,27 +929,51 @@ export default function VehicleEntryPage() {
                           </span>
                           
                           {/* WO Status */}
-                          {item.work_orders && item.work_orders.length > 0 ? (
-                            <span className={`px-2 py-1 rounded-full text-xs font-semibold w-fit ${
-                              item.work_orders[0].status === 'COMPLETED' 
-                                ? 'bg-purple-100 text-purple-800' 
-                                : 'bg-orange-100 text-orange-800'
-                            }`}>
-                              {item.work_orders[0].status === 'COMPLETED' ? 'Sudah WO (Selesai)' : 'WO Proses'}
-                            </span>
-                          ) : (
+                          {item.work_orders && item.work_orders.length > 0 ? (() => {
+                            const wo = item.work_orders[0];
+                            const woStatus = String(wo.status || '').toUpperCase();
+                            const woNumber = wo.wo_number || '-';
+                            const isLocked = woStatus === 'COMPLETED' || woStatus === 'CLOSED';
+                            const label = woStatus === 'COMPLETED'
+                              ? `WO ${woNumber} (Selesai)`
+                              : woStatus === 'CLOSED'
+                                ? `WO ${woNumber} (Close)`
+                                : `WO ${woNumber} (Proses)`;
+                            return (
+                              <span className={`px-2 py-1 rounded-full text-xs font-semibold w-fit ${
+                                isLocked ? 'bg-purple-100 text-purple-800' : 'bg-orange-100 text-orange-800'
+                              }`}>
+                                {label}
+                              </span>
+                            );
+                          })() : (
                             <span className="text-xs text-muted-foreground italic pl-1">Belum WO</span>
                           )}
                         </div>
                       </TableCell>
                       <TableCell className="text-right pr-6">
-                        <div className="flex justify-end gap-3">
-                          <Button variant="ghost" size="icon" onClick={() => handlePrintEntry(item.id)} title="Cetak SPK Awal">
-                              <Printer className="h-4 w-4" />
-                          </Button>
-                          <Button variant="ghost" size="icon" onClick={() => handleEdit(item)}><Pencil className="h-4 w-4" /></Button>
-                          <Button variant="ghost" size="icon" className="text-red-500" onClick={() => handleDelete(item.id)}><Trash2 className="h-4 w-4" /></Button>
-                        </div>
+                        {(() => {
+                          const wo = item.work_orders?.[0];
+                          const woStatus = String(wo?.status || '').toUpperCase();
+                          const isLocked = woStatus === 'COMPLETED' || woStatus === 'CLOSED';
+                          return (
+                            <div className="flex justify-end gap-3">
+                              <Button variant="ghost" size="icon" onClick={() => handlePrintEntry(item.id)} title={isLocked ? "View" : "Cetak SPK Awal"}>
+                                {isLocked ? <Eye className="h-4 w-4" /> : <Printer className="h-4 w-4" />}
+                              </Button>
+                              {!isLocked && (
+                                <>
+                                  <Button variant="ghost" size="icon" onClick={() => handleEdit(item)} title="Edit">
+                                    <Pencil className="h-4 w-4" />
+                                  </Button>
+                                  <Button variant="ghost" size="icon" className="text-red-500" onClick={() => handleDelete(item.id)} title="Hapus">
+                                    <Trash2 className="h-4 w-4" />
+                                  </Button>
+                                </>
+                              )}
+                            </div>
+                          );
+                        })()}
                       </TableCell>
                     </TableRow>
                   ))
