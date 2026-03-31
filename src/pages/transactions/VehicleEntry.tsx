@@ -645,6 +645,7 @@ export default function VehicleEntryPage() {
                         <div className="col-span-6 space-y-1">
                           <Label className="text-xs">Jenis Pekerjaan {index + 1}</Label>
                           <Button
+                            type="button"
                             variant="outline"
                             role="combobox"
                             className={cn(
