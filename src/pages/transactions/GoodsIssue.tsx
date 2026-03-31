@@ -174,11 +174,11 @@ export default function GoodsIssuePage() {
       const suggestions: IssueItemForm[] = [];
 
       const vehicleEntryId = (wo as any).vehicle_entry_id || '';
-      const estItemsAgg = new Map<string, { name: string; qty: number }>();
+      const estItemsAgg = new Map<string, { name: string; qty: number; good_id: string }>();
       if (vehicleEntryId) {
         const { data: estData, error: estErr } = await supabase
           .from('vehicle_entry_spareparts')
-          .select('item_name, qty')
+          .select('item_name, qty, item_id')
           .eq('vehicle_entry_id', vehicleEntryId);
         if (estErr) throw estErr;
 
@@ -189,7 +189,7 @@ export default function GoodsIssuePage() {
           const prev = estItemsAgg.get(key);
           const qty = Number(it.qty || 0);
           if (prev) prev.qty += qty;
-          else estItemsAgg.set(key, { name, qty });
+          else estItemsAgg.set(key, { name, qty, good_id: it.item_id });
         });
       }
 
@@ -234,7 +234,7 @@ export default function GoodsIssuePage() {
         const match = poMatches[0];
         if (match) matchedPoKeys.add(normalizeText(match.name));
 
-        let goodsId = match?.goods_id || '';
+        let goodsId = match?.goods_id || est.good_id || '';
         const matchedGood =
           goodsId
             ? goodsList.find((g) => g.id === goodsId)
@@ -294,7 +294,7 @@ export default function GoodsIssuePage() {
       if (suggestions.length > 0) {
         setIssueItems(suggestions);
         const mismatchCount = suggestions.filter((s) => s.mismatch).length;
-        if (mismatchCount > 0) toast.error(`Ada ${mismatchCount} item yang tidak sesuai (Estimasi vs PO)`);
+        if (mismatchCount > 0) toast.warning(`Ada ${mismatchCount} item yang tidak sesuai (Estimasi vs PO)`);
         else toast.success(`${suggestions.length} item dimuat (Estimasi + PO diterima)`);
       } else {
         setIssueItems([{ goods_id: '', quantity: 1, source: 'MANUAL', mismatch: false, hint: '' }]);
