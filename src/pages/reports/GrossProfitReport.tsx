@@ -179,38 +179,79 @@ export default function GrossProfitReport() {
   async function fetchData() {
     setLoading(true);
     try {
-      // 1. Fetch Work Orders with Billings and Vehicle Info
-      const { data: wos, error: woError } = await supabase
-        .from('work_orders')
-        .select(`
-          *,
-          vehicle_entries (
-            nota_dinas_number,
-            service_group,
-            vehicles (license_plate, brand_type, vehicle_type),
-            vehicle_entry_spareparts (
+      let wos: any[] | null = null;
+      {
+        const { data, error } = await supabase
+          .from('work_orders')
+          .select(`
+            *,
+            vehicle_entries (
+              nota_dinas_number,
+              service_group,
+              vehicles (license_plate, brand_type, vehicle_type),
+              vehicle_entry_spareparts (
+                item_name,
+                value_only
+              ),
+              vehicle_entry_jobs (
+                job_type_id,
+                value_only
+              )
+            ),
+            billings:work_order_billings (
+              item_type,
               item_name,
-              value_only
+              qty,
+              unit_price,
+              total_price,
+              goods_id,
+              job_type_id,
+              job_group,
+              goods (name, unit, item_code)
             )
-          ),
-          billings:work_order_billings (
-            item_type,
-            item_name,
-            qty,
-            unit_price,
-            total_price,
-            goods_id,
-            job_type_id,
-            job_group,
-            goods (name, unit, item_code)
-          )
-        `)
-        .in('status', ['COMPLETED', 'CLOSED'])
-        .gte('work_date', dateRange.start) 
-        .lte('work_date', dateRange.end)
-        .order('work_date', { ascending: false });
+          `)
+          .in('status', ['COMPLETED', 'CLOSED'])
+          .gte('work_date', dateRange.start)
+          .lte('work_date', dateRange.end)
+          .order('work_date', { ascending: false });
 
-      if (woError) throw woError;
+        if (!error) wos = (data as any[]) || [];
+        else {
+          const { data: fallback, error: fallbackErr } = await supabase
+            .from('work_orders')
+            .select(`
+              *,
+              vehicle_entries (
+                nota_dinas_number,
+                service_group,
+                vehicles (license_plate, brand_type, vehicle_type),
+                vehicle_entry_spareparts (
+                  item_name
+                ),
+                vehicle_entry_jobs (
+                  job_type_id
+                )
+              ),
+              billings:work_order_billings (
+                item_type,
+                item_name,
+                qty,
+                unit_price,
+                total_price,
+                goods_id,
+                job_type_id,
+                job_group,
+                goods (name, unit, item_code)
+              )
+            `)
+            .in('status', ['COMPLETED', 'CLOSED'])
+            .gte('work_date', dateRange.start)
+            .lte('work_date', dateRange.end)
+            .order('work_date', { ascending: false });
+          if (fallbackErr) throw fallbackErr;
+          wos = (fallback as any[]) || [];
+        }
+      }
 
       // 2. Prepare Maps for HPP
       const goodsIds = new Set<string>();
@@ -297,7 +338,11 @@ export default function GrossProfitReport() {
         }
 
         const valueOnlyParts = Array.isArray(wo.vehicle_entries?.vehicle_entry_spareparts)
-          ? wo.vehicle_entries.vehicle_entry_spareparts.filter((p: any) => Boolean(p.value_only) && String(p.item_name || '').trim())
+          ? wo.vehicle_entries.vehicle_entry_spareparts.filter((p: any) => Boolean((p as any).value_only) && String(p.item_name || '').trim())
+          : [];
+
+        const valueOnlyJobs = Array.isArray(wo.vehicle_entries?.vehicle_entry_jobs)
+          ? wo.vehicle_entries.vehicle_entry_jobs.filter((j: any) => Boolean((j as any).value_only) && j.job_type_id)
           : [];
 
         wo.billings.forEach((bill: any) => {
@@ -314,8 +359,14 @@ export default function GrossProfitReport() {
                 hppSource = partHppMap[bill.goods_id] !== undefined ? 'PO Terakhir' : 'Tidak Ada PO';
                 }
             } else if (bill.item_type === 'JOB' && bill.job_type_id) {
-                hppSatuan = jobHppMap[bill.job_type_id] || 0;
-                hppSource = 'Master Jasa';
+                const isValueOnlyJob = valueOnlyJobs.some((j: any) => String(j.job_type_id) === String(bill.job_type_id));
+                if (isValueOnlyJob) {
+                  hppSatuan = 0;
+                  hppSource = 'N/A';
+                } else {
+                  hppSatuan = jobHppMap[bill.job_type_id] || 0;
+                  hppSource = 'Master Jasa';
+                }
             }
 
             const hppTotal = hppSatuan * (bill.qty || 0);

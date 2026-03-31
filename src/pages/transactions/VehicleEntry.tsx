@@ -74,7 +74,7 @@ export default function VehicleEntryPage() {
   });
 
   // Multiple Jobs State
-  const [entryJobs, setEntryJobs] = useState<{ group: string, job_id: string; job_name?: string; notes: string; spareparts?: SparepartDraft[] }[]>([]);
+  const [entryJobs, setEntryJobs] = useState<{ group: string, job_id: string; job_name?: string; notes: string; value_only: boolean; spareparts?: SparepartDraft[] }[]>([]);
   
   // Sparepart Dialog State
   const [isSparepartDialogOpen, setIsSparepartDialogOpen] = useState(false);
@@ -248,6 +248,7 @@ export default function VehicleEntryPage() {
         job_id: jobTypeId,
         job_name: jobName,
         notes: j.notes || '',
+        value_only: Boolean((j as any).value_only),
         spareparts: parts,
       };
     });
@@ -271,6 +272,7 @@ export default function VehicleEntryPage() {
           job_id: '',
           job_name: 'Suku Cadang Tambahan',
           notes: 'Suku Cadang Tambahan',
+          value_only: false,
           spareparts: partsToAdd,
         });
       } else {
@@ -279,6 +281,7 @@ export default function VehicleEntryPage() {
           job_id: '',
           job_name: 'Suku Cadang Tambahan',
           notes: 'Suku Cadang Tambahan',
+          value_only: false,
           spareparts: partsToAdd,
         });
       }
@@ -292,6 +295,7 @@ export default function VehicleEntryPage() {
             job_id: '',
             job_name: 'Suku Cadang Tambahan',
             notes: 'Suku Cadang Tambahan',
+            value_only: false,
             spareparts: existingParts.map(p => ({
               name: p.item_name,
               qty: p.qty,
@@ -301,7 +305,7 @@ export default function VehicleEntryPage() {
           },
         ]);
       } else {
-        setEntryJobs([{ group: item.service_group as string, job_id: '', job_name: '', notes: '', spareparts: [] }]);
+        setEntryJobs([{ group: item.service_group as string, job_id: '', job_name: '', notes: '', value_only: false, spareparts: [] }]);
       }
     } else {
       setEntryJobs(mappedJobs);
@@ -313,7 +317,7 @@ export default function VehicleEntryPage() {
   };
 
   const handleAddJob = () => {
-    setEntryJobs([...entryJobs, { group: 'PERBAIKAN', job_id: '', job_name: '', notes: '', spareparts: [] }]);
+    setEntryJobs([...entryJobs, { group: 'PERBAIKAN', job_id: '', job_name: '', notes: '', value_only: false, spareparts: [] }]);
   };
 
   const handleRemoveJob = (index: number) => {
@@ -326,12 +330,19 @@ export default function VehicleEntryPage() {
       newJobs[index].group = value;
       newJobs[index].job_id = ''; // Reset job when group changes
       newJobs[index].job_name = '';
+      newJobs[index].value_only = false;
     } else if (field === 'job_id') {
       newJobs[index].job_id = value;
       newJobs[index].job_name = jobs.find(j => j.id === value)?.job_name || '';
     } else {
       newJobs[index].notes = value;
     }
+    setEntryJobs(newJobs);
+  };
+
+  const handleJobValueOnlyChange = (index: number, v: boolean) => {
+    const newJobs = [...entryJobs];
+    newJobs[index].value_only = v;
     setEntryJobs(newJobs);
   };
 
@@ -388,10 +399,21 @@ export default function VehicleEntryPage() {
         
       if (targetId && entryJobs.length > 0) {
           // Insert Jobs
+          if (entryJobs.some((j) => Boolean(j.value_only))) {
+            const { error: colErr } = await supabase
+              .from('vehicle_entry_jobs')
+              .select('value_only')
+              .limit(1);
+            if (colErr) {
+              toast.error("DB belum siap: kolom 'value_only' (pekerjaan) belum ada. Jalankan migration 20260331_add_value_only_to_vehicle_entry_jobs.sql di Supabase.");
+              return;
+            }
+          }
           const jobsPayload = entryJobs.map(j => ({
             vehicle_entry_id: targetId,
             job_type_id: j.job_id,
-            notes: j.notes
+            notes: j.notes,
+            value_only: Boolean(j.value_only),
           }));
           const { error: jobsError } = await supabase.from('vehicle_entry_jobs').insert(jobsPayload);
           if (jobsError) throw jobsError;
@@ -577,7 +599,7 @@ export default function VehicleEntryPage() {
                             </SelectContent>
                           </Select>
                         </div>
-                        <div className="col-span-7 space-y-1">
+                        <div className="col-span-6 space-y-1">
                           <Label className="text-xs">Jenis Pekerjaan {index + 1}</Label>
                           <Select value={job.job_id} onValueChange={(v) => handleJobChange(index, 'job_id', v)}>
                             <SelectTrigger className="h-9"><SelectValue placeholder="Pilih Pekerjaan" /></SelectTrigger>
@@ -590,6 +612,15 @@ export default function VehicleEntryPage() {
                               }
                             </SelectContent>
                           </Select>
+                        </div>
+                        <div className="col-span-1 space-y-1">
+                          <Label className="text-xs">Nilai Saja</Label>
+                          <div className="flex items-center justify-center h-9 border rounded-md bg-white">
+                            <Checkbox
+                              checked={Boolean(job.value_only)}
+                              onCheckedChange={(v) => handleJobValueOnlyChange(index, Boolean(v))}
+                            />
+                          </div>
                         </div>
                         <div className="col-span-1">
                           <Button type="button" variant="ghost" size="icon" className="h-9 w-9 text-red-500" onClick={() => handleRemoveJob(index)}>

@@ -1,0 +1,2 @@
+ALTER TABLE public.vehicle_entry_jobs
+ADD COLUMN IF NOT EXISTS value_only BOOLEAN NOT NULL DEFAULT FALSE;
