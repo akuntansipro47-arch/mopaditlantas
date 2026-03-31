@@ -35,6 +35,14 @@ type EntryWithDetails = VehicleEntry & {
   work_orders: { status: string; wo_number: string }[];
 };
 
+type SparepartDraft = {
+  name: string;
+  qty: number;
+  price: number;
+  item_id: string;
+  value_only: boolean;
+};
+
 export default function VehicleEntryPage() {
   const [entries, setEntries] = useState<EntryWithDetails[]>([]);
   const [loading, setLoading] = useState(true);
@@ -67,12 +75,12 @@ export default function VehicleEntryPage() {
   });
 
   // Multiple Jobs State
-  const [entryJobs, setEntryJobs] = useState<{ group: string, job_id: string; job_name?: string; notes: string; spareparts?: { name: string, qty: number, price: number }[] }[]>([]);
+  const [entryJobs, setEntryJobs] = useState<{ group: string, job_id: string; job_name?: string; notes: string; spareparts?: SparepartDraft[] }[]>([]);
   
   // Sparepart Dialog State
   const [isSparepartDialogOpen, setIsSparepartDialogOpen] = useState(false);
   const [activeJobIndex, setActiveJobIndex] = useState<number | null>(null);
-  const [tempSpareparts, setTempSpareparts] = useState<{ name: string, qty: number, price: number }[]>([]);
+  const [tempSpareparts, setTempSpareparts] = useState<SparepartDraft[]>([]);
   const [goodsList, setGoodsList] = useState<any[]>([]); // For price lookup
 
   useEffect(() => {
@@ -135,7 +143,7 @@ export default function VehicleEntryPage() {
   };
 
   const handleAddTempSparepart = () => {
-    setTempSpareparts([...tempSpareparts, { name: '', qty: 1, price: 0 }]);
+    setTempSpareparts([...tempSpareparts, { name: '', qty: 1, price: 0, item_id: '', value_only: false }]);
   };
 
   const handleRemoveTempSparepart = (idx: number) => {
@@ -153,6 +161,7 @@ export default function VehicleEntryPage() {
           const newParts = [...tempSpareparts];
           newParts[activePartIndex].name = good.name;
           newParts[activePartIndex].price = good.selling_price || 0;
+          newParts[activePartIndex].item_id = good.id;
           setTempSpareparts(newParts);
           setIsPartSearchOpen(false);
           setPartSearchQuery('');
@@ -233,6 +242,8 @@ export default function VehicleEntryPage() {
           name: p.item_name,
           qty: p.qty,
           price: p.estimated_price,
+          item_id: (p as any).item_id || '',
+          value_only: Boolean((p as any).value_only),
         }));
 
       return {
@@ -251,6 +262,8 @@ export default function VehicleEntryPage() {
         name: p.item_name,
         qty: p.qty,
         price: p.estimated_price,
+        item_id: (p as any).item_id || '',
+        value_only: Boolean((p as any).value_only),
       }));
 
       const gantiJobIdx = mappedJobs.findIndex(j => needsSparepartDetail(j));
@@ -283,7 +296,13 @@ export default function VehicleEntryPage() {
             job_id: '',
             job_name: 'Suku Cadang Tambahan',
             notes: 'Suku Cadang Tambahan',
-            spareparts: existingParts.map(p => ({ name: p.item_name, qty: p.qty, price: p.estimated_price })),
+            spareparts: existingParts.map(p => ({
+              name: p.item_name,
+              qty: p.qty,
+              price: p.estimated_price,
+              item_id: (p as any).item_id || '',
+              value_only: Boolean((p as any).value_only),
+            })),
           },
         ]);
       } else {
@@ -390,9 +409,11 @@ export default function VehicleEntryPage() {
                       allSpareparts.push({
                           vehicle_entry_id: targetId,
                           job_type_id: job.job_id,
+                          item_id: part.item_id || null,
                           item_name: part.name,
                           qty: part.qty,
-                          estimated_price: part.price
+                          estimated_price: part.price,
+                          value_only: Boolean(part.value_only),
                       });
                   });
               }
@@ -681,6 +702,15 @@ export default function VehicleEntryPage() {
                                         onChange={(e) => handleTempSparepartChange(idx, 'qty', parseInt(e.target.value) || 0)} 
                                         className="h-8 text-center"
                                     />
+                                </div>
+                                <div className="w-24 space-y-1">
+                                    <Label className="text-xs">Nilai Saja</Label>
+                                    <div className="flex items-center justify-center h-8 border rounded-md bg-white">
+                                      <Checkbox
+                                        checked={Boolean(part.value_only)}
+                                        onCheckedChange={(v) => handleTempSparepartChange(idx, 'value_only', Boolean(v))}
+                                      />
+                                    </div>
                                 </div>
                                 <div className="w-28 space-y-1">
                                     <Label className="text-xs">Harga Pagu</Label>

@@ -1,0 +1,5 @@
+ALTER TABLE public.vehicle_entry_spareparts
+ADD COLUMN IF NOT EXISTS value_only BOOLEAN NOT NULL DEFAULT FALSE;
+
+ALTER TABLE public.goods_issue_items
+ADD COLUMN IF NOT EXISTS value_only BOOLEAN NOT NULL DEFAULT FALSE;

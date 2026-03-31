@@ -38,6 +38,7 @@ type IssueItemForm = {
   source: IssueItemSource;
   mismatch: boolean;
   hint: string;
+  value_only: boolean;
 };
 
 type GoodsIssueWithDetails = GoodsIssue & {
@@ -88,7 +89,7 @@ export default function GoodsIssuePage() {
 
   // Items State (Dynamic Form)
   const [issueItems, setIssueItems] = useState<IssueItemForm[]>([
-    { goods_id: '', quantity: 1, source: 'MANUAL', mismatch: false, hint: '' },
+    { goods_id: '', quantity: 1, source: 'MANUAL', mismatch: false, hint: '', value_only: false },
   ]);
 
   // Filter State
@@ -149,7 +150,7 @@ export default function GoodsIssuePage() {
   }
 
   const handleAddItem = () => {
-    setIssueItems([...issueItems, { goods_id: '', quantity: 1, source: 'MANUAL', mismatch: false, hint: '' }]);
+    setIssueItems([...issueItems, { goods_id: '', quantity: 1, source: 'MANUAL', mismatch: false, hint: '', value_only: false }]);
   };
 
   const handleRemoveItem = (index: number) => {
@@ -174,11 +175,11 @@ export default function GoodsIssuePage() {
       const suggestions: IssueItemForm[] = [];
 
       const vehicleEntryId = (wo as any).vehicle_entry_id || '';
-      const estItemsAgg = new Map<string, { name: string; qty: number; good_id: string }>();
+      const estItemsAgg = new Map<string, { name: string; qty: number; good_id: string; value_only: boolean }>();
       if (vehicleEntryId) {
         const { data: estData, error: estErr } = await supabase
           .from('vehicle_entry_spareparts')
-          .select('item_name, qty, item_id')
+          .select('item_name, qty, item_id, value_only')
           .eq('vehicle_entry_id', vehicleEntryId);
         if (estErr) throw estErr;
 
@@ -188,8 +189,14 @@ export default function GoodsIssuePage() {
           if (!key) return;
           const prev = estItemsAgg.get(key);
           const qty = Number(it.qty || 0);
-          if (prev) prev.qty += qty;
-          else estItemsAgg.set(key, { name, qty, good_id: it.item_id });
+          const vo = Boolean(it.value_only);
+          if (prev) {
+            prev.qty += qty;
+            prev.value_only = prev.value_only || vo;
+            if (!prev.good_id && it.item_id) prev.good_id = it.item_id;
+          } else {
+            estItemsAgg.set(key, { name, qty, good_id: it.item_id, value_only: vo });
+          }
         });
       }
 
@@ -250,6 +257,18 @@ export default function GoodsIssuePage() {
         let hint = '';
         let source: IssueItemSource = 'ESTIMASI';
 
+        if (est.value_only) {
+          suggestions.push({
+            goods_id: goodsId,
+            quantity: estQty,
+            source: 'ESTIMASI',
+            mismatch: false,
+            hint: 'Nilai saja (tidak mengurangi stok)',
+            value_only: true,
+          });
+          return;
+        }
+
         if (poMatches.length === 0) {
           if (matchedGood?.id && isInventory && stock > 0) {
             source = 'STOK';
@@ -275,6 +294,7 @@ export default function GoodsIssuePage() {
           source,
           mismatch,
           hint,
+          value_only: false,
         });
       });
 
@@ -288,6 +308,7 @@ export default function GoodsIssuePage() {
           source: 'PO',
           mismatch: true,
           hint: 'Ada di PO yang sudah diterima, tidak ada di estimasi',
+          value_only: false,
         });
       });
 
@@ -297,7 +318,7 @@ export default function GoodsIssuePage() {
         if (mismatchCount > 0) toast.warning(`Ada ${mismatchCount} item yang tidak sesuai (Estimasi vs PO)`);
         else toast.success(`${suggestions.length} item dimuat (Estimasi + PO diterima)`);
       } else {
-        setIssueItems([{ goods_id: '', quantity: 1, source: 'MANUAL', mismatch: false, hint: '' }]);
+        setIssueItems([{ goods_id: '', quantity: 1, source: 'MANUAL', mismatch: false, hint: '', value_only: false }]);
         toast.info('Tidak ada item estimasi/PO diterima untuk WO ini.');
       }
     } catch (e: any) {
@@ -320,6 +341,7 @@ export default function GoodsIssuePage() {
         source: 'MANUAL',
         mismatch: false,
         hint: '',
+        value_only: Boolean((i as any).value_only),
       }))
     );
     setIsDialogOpen(true);
@@ -341,7 +363,7 @@ export default function GoodsIssuePage() {
       
       if (items) {
         for (const item of items) {
-          if (item.goods_id) {
+          if (item.goods_id && !Boolean((item as any).value_only)) {
             const { data: currentGood } = await supabase
               .from('goods')
               .select('current_stock')
@@ -398,7 +420,7 @@ export default function GoodsIssuePage() {
 
         if (oldItems) {
            for (const item of oldItems) {
-             if (item.goods_id) {
+             if (item.goods_id && !Boolean((item as any).value_only)) {
                const { data: g } = await supabase.from('goods').select('current_stock').eq('id', item.goods_id).single();
                if (g) {
                  await supabase.from('goods').update({ current_stock: (g.current_stock || 0) + item.quantity }).eq('id', item.goods_id);
@@ -443,6 +465,7 @@ export default function GoodsIssuePage() {
           issue_id: targetIssueId,
           goods_id: item.goods_id,
           quantity: Number(item.quantity || 0),
+          value_only: Boolean(item.value_only),
         }));
 
         const { error: itemsError } = await supabase
@@ -453,7 +476,7 @@ export default function GoodsIssuePage() {
 
         // Deduct Stock
         for (const item of issueItems) {
-          if (item.goods_id) {
+          if (item.goods_id && !item.value_only) {
              const { data: currentGood } = await supabase
                .from('goods')
                .select('current_stock')
@@ -473,7 +496,7 @@ export default function GoodsIssuePage() {
       toast.success(editingId ? 'Data berhasil diperbarui' : 'Pengeluaran barang berhasil dicatat');
       setIsDialogOpen(false);
       setFormData({ issue_date: new Date().toISOString().split('T')[0], work_order_id: '' });
-      setIssueItems([{ goods_id: '', quantity: 1, source: 'MANUAL', mismatch: false, hint: '' }]);
+      setIssueItems([{ goods_id: '', quantity: 1, source: 'MANUAL', mismatch: false, hint: '', value_only: false }]);
       setEditingId(null);
       fetchIssues();
       fetchMasterData();
@@ -494,7 +517,7 @@ export default function GoodsIssuePage() {
 
   const resetForm = () => {
     setFormData({ issue_date: new Date().toISOString().split('T')[0], work_order_id: '' });
-    setIssueItems([{ goods_id: '', quantity: 1, source: 'MANUAL', mismatch: false, hint: '' }]);
+    setIssueItems([{ goods_id: '', quantity: 1, source: 'MANUAL', mismatch: false, hint: '', value_only: false }]);
     setEditingId(null);
   };
 
@@ -620,6 +643,11 @@ export default function GoodsIssuePage() {
                             >
                               {item.source === 'ESTIMASI' ? 'Estimasi' : item.source === 'PO' ? 'PO' : item.source === 'STOK' ? 'Stok' : 'Manual'}
                             </span>
+                            {item.value_only && (
+                              <span className="text-[10px] px-2 py-0.5 rounded-full bg-yellow-100 text-yellow-800 border border-yellow-200">
+                                Nilai saja
+                              </span>
+                            )}
                             {item.mismatch && (
                               <span className="text-[10px] px-2 py-0.5 rounded-full bg-red-100 text-red-800 border border-red-200">
                                 Tidak sesuai
