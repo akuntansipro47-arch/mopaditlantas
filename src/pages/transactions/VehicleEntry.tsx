@@ -54,6 +54,11 @@ export default function VehicleEntryPage() {
   const [isVehicleSearchOpen, setIsVehicleSearchOpen] = useState(false);
   const [vehicleSearchQuery, setVehicleSearchQuery] = useState('');
 
+  // Job Search State
+  const [isJobSearchOpen, setIsJobSearchOpen] = useState(false);
+  const [activeJobSearchIndex, setActiveJobSearchIndex] = useState<number | null>(null);
+  const [jobSearchQuery, setJobSearchQuery] = useState('');
+
   // Dropdown Data
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [jobs, setJobs] = useState<Job[]>([]);
@@ -340,6 +345,14 @@ export default function VehicleEntryPage() {
     setEntryJobs(newJobs);
   };
 
+  const handleSelectJob = (jobId: string) => {
+    if (activeJobSearchIndex !== null) {
+      handleJobChange(activeJobSearchIndex, 'job_id', jobId);
+      setIsJobSearchOpen(false);
+      setJobSearchQuery('');
+    }
+  };
+
   const handleJobValueOnlyChange = (index: number, v: boolean) => {
     const newJobs = [...entryJobs];
     newJobs[index].value_only = v;
@@ -574,6 +587,36 @@ export default function VehicleEntryPage() {
                     </DialogContent>
                   </Dialog>
 
+                  {/* Job Search Dialog */}
+                  <Dialog open={isJobSearchOpen} onOpenChange={setIsJobSearchOpen}>
+                    <DialogContent className="sm:max-w-[500px] p-0">
+                      <Command>
+                        <CommandInput 
+                          placeholder="Cari jenis pekerjaan..." 
+                          value={jobSearchQuery} 
+                          onChange={(e) => setJobSearchQuery(e.target.value)} 
+                        />
+                        <CommandList>
+                          <CommandEmpty>Pekerjaan tidak ditemukan.</CommandEmpty>
+                          <CommandGroup heading="Daftar Pekerjaan">
+                            {activeJobSearchIndex !== null && jobs
+                              .filter(j => j.job_group === entryJobs[activeJobSearchIndex].group)
+                              .filter(j => j.job_name.toLowerCase().includes(jobSearchQuery.toLowerCase()))
+                              .map(j => (
+                                <CommandItem
+                                  key={j.id}
+                                  onSelect={() => handleSelectJob(j.id)}
+                                >
+                                  {j.job_name}
+                                  {entryJobs[activeJobSearchIndex]?.job_id === j.id && <Check className="ml-auto h-4 w-4" />}
+                                </CommandItem>
+                              ))}
+                          </CommandGroup>
+                        </CommandList>
+                      </Command>
+                    </DialogContent>
+                  </Dialog>
+
                   {/* Multiple Jobs Selection */}
                   <div className="space-y-3 border p-3 rounded-md bg-slate-50">
                     <div className="flex justify-between items-center">
@@ -601,17 +644,26 @@ export default function VehicleEntryPage() {
                         </div>
                         <div className="col-span-6 space-y-1">
                           <Label className="text-xs">Jenis Pekerjaan {index + 1}</Label>
-                          <Select value={job.job_id} onValueChange={(v) => handleJobChange(index, 'job_id', v)}>
-                            <SelectTrigger className="h-9"><SelectValue placeholder="Pilih Pekerjaan" /></SelectTrigger>
-                            <SelectContent>
-                              {jobs
-                                .filter(j => j.job_group === job.group)
-                                .map(j => (
-                                  <SelectItem key={j.id} value={j.id}>{j.job_name}</SelectItem>
-                                ))
-                              }
-                            </SelectContent>
-                          </Select>
+                          <Button
+                            variant="outline"
+                            role="combobox"
+                            className={cn(
+                              "w-full justify-between font-normal h-9 px-3",
+                              !job.job_id && "text-muted-foreground"
+                            )}
+                            onClick={(e) => {
+                              e.preventDefault();
+                              setActiveJobSearchIndex(index);
+                              setIsJobSearchOpen(true);
+                            }}
+                          >
+                            <span className="truncate">
+                              {job.job_id
+                                ? jobs.find(j => j.id === job.job_id)?.job_name
+                                : "Pilih Pekerjaan..."}
+                            </span>
+                            <Search className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                          </Button>
                         </div>
                         <div className="col-span-1 space-y-1">
                           <Label className="text-xs">Nilai Saja</Label>
