@@ -177,11 +177,22 @@ export default function GoodsIssuePage() {
       const vehicleEntryId = (wo as any).vehicle_entry_id || '';
       const estItemsAgg = new Map<string, { name: string; qty: number; value_only: boolean }>();
       if (vehicleEntryId) {
-        const { data: estData, error: estErr } = await supabase
-          .from('vehicle_entry_spareparts')
-          .select('item_name, qty, value_only')
-          .eq('vehicle_entry_id', vehicleEntryId);
-        if (estErr) throw estErr;
+        let estData: any[] | null = null;
+        {
+          const { data, error } = await supabase
+            .from('vehicle_entry_spareparts')
+            .select('item_name, qty, value_only')
+            .eq('vehicle_entry_id', vehicleEntryId);
+          if (!error) estData = (data as any[]) || [];
+          else {
+            const { data: fallback, error: fallbackErr } = await supabase
+              .from('vehicle_entry_spareparts')
+              .select('item_name, qty')
+              .eq('vehicle_entry_id', vehicleEntryId);
+            if (fallbackErr) throw fallbackErr;
+            estData = (fallback as any[]) || [];
+          }
+        }
 
         (estData || []).forEach((it: any) => {
           const name = String(it.item_name || '').trim();
@@ -189,7 +200,7 @@ export default function GoodsIssuePage() {
           if (!key) return;
           const prev = estItemsAgg.get(key);
           const qty = Number(it.qty || 0);
-          const vo = Boolean(it.value_only);
+          const vo = Boolean((it as any).value_only);
           if (prev) {
             prev.qty += qty;
             prev.value_only = prev.value_only || vo;
@@ -400,6 +411,17 @@ export default function GoodsIssuePage() {
     setLoading(true);
 
     try {
+      if (issueItems.some((it) => it.value_only)) {
+        const { error: colErr } = await supabase
+          .from('goods_issue_items')
+          .select('value_only')
+          .limit(1);
+        if (colErr) {
+          toast.error("DB belum siap: kolom 'value_only' belum ada. Jalankan migration 20260331_add_value_only_flags.sql di Supabase.");
+          return null;
+        }
+      }
+
       const invalid = issueItems.some((it) => !it.goods_id || Number(it.quantity || 0) <= 0);
       if (invalid) {
         toast.error('Pastikan semua item sudah dipilih dan qty > 0');

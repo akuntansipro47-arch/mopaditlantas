@@ -414,6 +414,17 @@ export default function VehicleEntryPage() {
           });
 
           if (allSpareparts.length > 0) {
+               const hasValueOnly = allSpareparts.some((p) => Boolean((p as any).value_only));
+               if (hasValueOnly) {
+                 const { error: colErr } = await supabase
+                   .from('vehicle_entry_spareparts')
+                   .select('value_only')
+                   .limit(1);
+                 if (colErr) {
+                   toast.error("DB belum siap: kolom 'value_only' belum ada. Jalankan migration 20260331_add_value_only_flags.sql di Supabase.");
+                   return;
+                 }
+               }
                const { error: spError } = await supabase.from('vehicle_entry_spareparts').insert(allSpareparts);
                if (spError) throw spError;
           }
