@@ -30,11 +30,36 @@ type VehicleEntry = Database['public']['Tables']['vehicle_entries']['Row'];
 type Vehicle = Database['public']['Tables']['vehicles']['Row'];
 type Goods = Database['public']['Tables']['goods']['Row'];
 
+type IssueItemSource = 'ESTIMASI' | 'PO' | 'MANUAL';
+
+type IssueItemForm = {
+  goods_id: string;
+  quantity: number;
+  source: IssueItemSource;
+  mismatch: boolean;
+  hint: string;
+};
+
 type GoodsIssueWithDetails = GoodsIssue & {
   work_orders: (WO & {
     vehicle_entries: (VehicleEntry & { vehicles: Vehicle | null }) | null
   }) | null;
   items: (GoodsIssueItem & { goods: Goods | null })[];
+};
+
+const normalizeText = (v: string) =>
+  String(v || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim()
+    .replace(/\s+/g, ' ');
+
+const isNameMatch = (a: string, b: string) => {
+  const aa = normalizeText(a);
+  const bb = normalizeText(b);
+  if (!aa || !bb) return false;
+  if (aa === bb) return true;
+  return aa.includes(bb) || bb.includes(aa);
 };
 
 export default function GoodsIssuePage() {
@@ -62,10 +87,9 @@ export default function GoodsIssuePage() {
   });
 
   // Items State (Dynamic Form)
-  const [issueItems, setIssueItems] = useState<{
-    goods_id: string;
-    quantity: number;
-  }[]>([{ goods_id: '', quantity: 1 }]);
+  const [issueItems, setIssueItems] = useState<IssueItemForm[]>([
+    { goods_id: '', quantity: 1, source: 'MANUAL', mismatch: false, hint: '' },
+  ]);
 
   // Filter State
   const [dateFilter, setDateFilter] = useState({
@@ -125,7 +149,7 @@ export default function GoodsIssuePage() {
   }
 
   const handleAddItem = () => {
-    setIssueItems([...issueItems, { goods_id: '', quantity: 1 }]);
+    setIssueItems([...issueItems, { goods_id: '', quantity: 1, source: 'MANUAL', mismatch: false, hint: '' }]);
   };
 
   const handleRemoveItem = (index: number) => {
@@ -144,16 +168,142 @@ export default function GoodsIssuePage() {
     setIssueItems(newItems);
   };
 
+  const loadSuggestedItemsForWO = async (wo: WO) => {
+    setLoading(true);
+    try {
+      const suggestions: IssueItemForm[] = [];
+
+      const vehicleEntryId = (wo as any).vehicle_entry_id || '';
+      const estItemsAgg = new Map<string, { name: string; qty: number }>();
+      if (vehicleEntryId) {
+        const { data: estData, error: estErr } = await supabase
+          .from('vehicle_entry_spareparts')
+          .select('item_name, qty')
+          .eq('vehicle_entry_id', vehicleEntryId);
+        if (estErr) throw estErr;
+
+        (estData || []).forEach((it: any) => {
+          const name = String(it.item_name || '').trim();
+          const key = normalizeText(name);
+          if (!key) return;
+          const prev = estItemsAgg.get(key);
+          const qty = Number(it.qty || 0);
+          if (prev) prev.qty += qty;
+          else estItemsAgg.set(key, { name, qty });
+        });
+      }
+
+      const { data: poData, error: poErr } = await supabase
+        .from('purchase_orders')
+        .select(
+          `
+          id,
+          po_number,
+          status,
+          purchase_order_items (
+            quantity,
+            goods (id, name)
+          )
+        `
+        )
+        .eq('work_order_id', wo.id)
+        .in('status', ['RECEIVED_PART', 'RECEIVED_FULL']);
+      if (poErr) throw poErr;
+
+      const poItemsAggByName = new Map<string, { goods_id: string; name: string; qty: number }>();
+      (poData || []).forEach((po: any) => {
+        const items = Array.isArray(po.purchase_order_items) ? po.purchase_order_items : [];
+        items.forEach((it: any) => {
+          const g = it.goods;
+          const name = String(g?.name || '').trim();
+          const goods_id = String(g?.id || '');
+          const qty = Number(it.quantity || 0);
+          const key = normalizeText(name);
+          if (!key || !goods_id) return;
+          const prev = poItemsAggByName.get(key);
+          if (prev) prev.qty += qty;
+          else poItemsAggByName.set(key, { goods_id, name, qty });
+        });
+      });
+
+      const matchedPoKeys = new Set<string>();
+
+      Array.from(estItemsAgg.values()).forEach((est) => {
+        const poMatches = Array.from(poItemsAggByName.values()).filter((p) => isNameMatch(est.name, p.name));
+        const poQty = poMatches.reduce((sum, p) => sum + (Number(p.qty) || 0), 0);
+        const match = poMatches[0];
+        if (match) matchedPoKeys.add(normalizeText(match.name));
+
+        let goodsId = match?.goods_id || '';
+        if (!goodsId) {
+          const found = goodsList.find((g) => isNameMatch(est.name, g.name));
+          goodsId = found?.id || '';
+        }
+
+        const mismatch =
+          poMatches.length === 0 ||
+          (poQty > 0 && Number(est.qty || 0) !== Number(poQty || 0));
+
+        const hint =
+          poMatches.length === 0
+            ? 'Estimasi tidak ditemukan pada PO yang sudah diterima'
+            : Number(est.qty || 0) !== Number(poQty || 0)
+              ? `Qty Estimasi (${est.qty}) ≠ Qty PO Diterima (${poQty})`
+              : '';
+
+        suggestions.push({
+          goods_id: goodsId,
+          quantity: Number(est.qty || 0),
+          source: 'ESTIMASI',
+          mismatch,
+          hint,
+        });
+      });
+
+      Array.from(poItemsAggByName.values()).forEach((po) => {
+        const isMatched = Array.from(estItemsAgg.values()).some((e) => isNameMatch(e.name, po.name));
+        if (isMatched) return;
+
+        suggestions.push({
+          goods_id: po.goods_id,
+          quantity: Number(po.qty || 0),
+          source: 'PO',
+          mismatch: true,
+          hint: 'Ada di PO yang sudah diterima, tidak ada di estimasi',
+        });
+      });
+
+      if (suggestions.length > 0) {
+        setIssueItems(suggestions);
+        const mismatchCount = suggestions.filter((s) => s.mismatch).length;
+        if (mismatchCount > 0) toast.error(`Ada ${mismatchCount} item yang tidak sesuai (Estimasi vs PO)`);
+        else toast.success(`${suggestions.length} item dimuat (Estimasi + PO diterima)`);
+      } else {
+        setIssueItems([{ goods_id: '', quantity: 1, source: 'MANUAL', mismatch: false, hint: '' }]);
+        toast.info('Tidak ada item estimasi/PO diterima untuk WO ini.');
+      }
+    } catch (e: any) {
+      toast.error('Gagal memuat item dari estimasi/PO: ' + (e?.message || 'Unknown error'));
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleEdit = (issue: GoodsIssueWithDetails) => {
     setEditingId(issue.id);
     setFormData({
       issue_date: issue.issue_date,
       work_order_id: issue.work_order_id || '',
     });
-    setIssueItems(issue.items.map(i => ({
-      goods_id: i.goods_id || '',
-      quantity: i.quantity,
-    })));
+    setIssueItems(
+      issue.items.map((i) => ({
+        goods_id: i.goods_id || '',
+        quantity: i.quantity,
+        source: 'MANUAL',
+        mismatch: false,
+        hint: '',
+      }))
+    );
     setIsDialogOpen(true);
   };
 
@@ -211,6 +361,12 @@ export default function GoodsIssuePage() {
     setLoading(true);
 
     try {
+      const invalid = issueItems.some((it) => !it.goods_id || Number(it.quantity || 0) <= 0);
+      if (invalid) {
+        toast.error('Pastikan semua item sudah dipilih dan qty > 0');
+        return null;
+      }
+
       let targetIssueId = editingId;
 
       if (editingId) {
@@ -265,10 +421,10 @@ export default function GoodsIssuePage() {
 
       // 4. Insert New Items & Deduct Stock (Common for both)
       if (targetIssueId) {
-        const itemsPayload = issueItems.map(item => ({
+        const itemsPayload = issueItems.map((item) => ({
           issue_id: targetIssueId,
           goods_id: item.goods_id,
-          quantity: item.quantity,
+          quantity: Number(item.quantity || 0),
         }));
 
         const { error: itemsError } = await supabase
@@ -289,7 +445,7 @@ export default function GoodsIssuePage() {
              if (currentGood) {
                await supabase
                  .from('goods')
-                 .update({ current_stock: (currentGood.current_stock || 0) - item.quantity })
+                  .update({ current_stock: (currentGood.current_stock || 0) - Number(item.quantity || 0) })
                  .eq('id', item.goods_id);
              }
           }
@@ -299,7 +455,7 @@ export default function GoodsIssuePage() {
       toast.success(editingId ? 'Data berhasil diperbarui' : 'Pengeluaran barang berhasil dicatat');
       setIsDialogOpen(false);
       setFormData({ issue_date: new Date().toISOString().split('T')[0], work_order_id: '' });
-      setIssueItems([{ goods_id: '', quantity: 1 }]);
+      setIssueItems([{ goods_id: '', quantity: 1, source: 'MANUAL', mismatch: false, hint: '' }]);
       setEditingId(null);
       fetchIssues();
       fetchMasterData();
@@ -320,7 +476,7 @@ export default function GoodsIssuePage() {
 
   const resetForm = () => {
     setFormData({ issue_date: new Date().toISOString().split('T')[0], work_order_id: '' });
-    setIssueItems([{ goods_id: '', quantity: 1 }]);
+    setIssueItems([{ goods_id: '', quantity: 1, source: 'MANUAL', mismatch: false, hint: '' }]);
     setEditingId(null);
   };
 
@@ -392,31 +548,8 @@ export default function GoodsIssuePage() {
                                 onSelect={async () => {
                                   setFormData({...formData, work_order_id: w.id});
                                   setIsWOSearchOpen(false);
-                                  
-                                  // Auto-fetch items from WO Billing
-                                  setLoading(true);
-                                  try {
-                                      const { data: billings } = await supabase
-                                        .from('work_order_billings')
-                                        .select('*')
-                                        .eq('work_order_id', w.id)
-                                        .not('goods_id', 'is', null);
-                                      
-                                      if (billings && billings.length > 0) {
-                                          const mappedItems = billings.map(b => ({
-                                              goods_id: b.goods_id!,
-                                              quantity: b.qty
-                                          }));
-                                          setIssueItems(mappedItems);
-                                          toast.success(`${mappedItems.length} item dimuat dari WO.`);
-                                      } else {
-                                          toast.info("Tidak ada item sparepart di WO ini.");
-                                      }
-                                  } catch (e) {
-                                      console.error("Error loading items", e);
-                                  } finally {
-                                      setLoading(false);
-                                  }
+
+                                  await loadSuggestedItemsForWO(w);
                                 }}
                               >
                                 <div className="flex flex-col w-full">
@@ -445,11 +578,36 @@ export default function GoodsIssuePage() {
                     <Label className="text-base font-semibold">Daftar Sparepart</Label>
                     <Button type="button" variant="outline" size="sm" onClick={handleAddItem}>+ Tambah Item</Button>
                   </div>
+
+                  {issueItems.some((it) => it.mismatch) && (
+                    <div className="rounded-md border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-800">
+                      Ada item yang tidak sesuai antara Estimasi dan PO (yang sudah diterima). Item tersebut ditandai merah.
+                    </div>
+                  )}
                   
                   {issueItems.map((item, index) => (
                     <div key={index} className="grid grid-cols-12 gap-2 items-end">
                       <div className="col-span-8 space-y-1">
-                        <Label className="text-xs">Barang</Label>
+                        <div className="flex items-center justify-between">
+                          <Label className="text-xs">Barang</Label>
+                          <div className="flex items-center gap-2">
+                            <span
+                              className={cn(
+                                'text-[10px] px-2 py-0.5 rounded-full border',
+                                item.source === 'ESTIMASI' && 'bg-slate-100 text-slate-700 border-slate-200',
+                                item.source === 'PO' && 'bg-blue-100 text-blue-800 border-blue-200',
+                                item.source === 'MANUAL' && 'bg-gray-100 text-gray-700 border-gray-200'
+                              )}
+                            >
+                              {item.source === 'ESTIMASI' ? 'Estimasi' : item.source === 'PO' ? 'PO' : 'Manual'}
+                            </span>
+                            {item.mismatch && (
+                              <span className="text-[10px] px-2 py-0.5 rounded-full bg-red-100 text-red-800 border border-red-200">
+                                Tidak sesuai
+                              </span>
+                            )}
+                          </div>
+                        </div>
                         <Button
                           type="button"
                           variant="outline"
@@ -466,6 +624,11 @@ export default function GoodsIssuePage() {
                           </span>
                           <Search className="ml-2 h-3 w-3 opacity-50" />
                         </Button>
+                        {item.hint && (
+                          <div className={cn('text-[11px]', item.mismatch ? 'text-red-600' : 'text-slate-500')}>
+                            {item.hint}
+                          </div>
+                        )}
                       </div>
                       <div className="col-span-3 space-y-1">
                         <Label className="text-xs">Qty</Label>
