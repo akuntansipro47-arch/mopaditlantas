@@ -30,6 +30,21 @@ export default function GrossProfitReport() {
     return '-';
   };
 
+  const normalizeText = (v: string) =>
+    String(v || '')
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, ' ')
+      .trim()
+      .replace(/\s+/g, ' ');
+
+  const isNameMatch = (a: string, b: string) => {
+    const aa = normalizeText(a);
+    const bb = normalizeText(b);
+    if (!aa || !bb) return false;
+    if (aa === bb) return true;
+    return aa.includes(bb) || bb.includes(aa);
+  };
+
   useEffect(() => {
     checkDatabaseSchema();
   }, []);
@@ -172,7 +187,11 @@ export default function GrossProfitReport() {
           vehicle_entries (
             nota_dinas_number,
             service_group,
-            vehicles (license_plate, brand_type, vehicle_type)
+            vehicles (license_plate, brand_type, vehicle_type),
+            vehicle_entry_spareparts (
+              item_name,
+              value_only
+            )
           ),
           billings:work_order_billings (
             item_type,
@@ -277,13 +296,23 @@ export default function GrossProfitReport() {
             }
         }
 
+        const valueOnlyParts = Array.isArray(wo.vehicle_entries?.vehicle_entry_spareparts)
+          ? wo.vehicle_entries.vehicle_entry_spareparts.filter((p: any) => Boolean(p.value_only) && String(p.item_name || '').trim())
+          : [];
+
         wo.billings.forEach((bill: any) => {
             let hppSatuan = 0;
             let hppSource = '-';
             
             if (bill.item_type === 'PART' && bill.goods_id) {
+                const isValueOnly = valueOnlyParts.some((p: any) => isNameMatch(p.item_name, bill.goods?.name || bill.item_name || ''));
+                if (isValueOnly) {
+                  hppSatuan = 0;
+                  hppSource = 'N/A';
+                } else {
                 hppSatuan = partHppMap[bill.goods_id] || 0;
                 hppSource = partHppMap[bill.goods_id] !== undefined ? 'PO Terakhir' : 'Tidak Ada PO';
+                }
             } else if (bill.item_type === 'JOB' && bill.job_type_id) {
                 hppSatuan = jobHppMap[bill.job_type_id] || 0;
                 hppSource = 'Master Jasa';
@@ -348,6 +377,7 @@ export default function GrossProfitReport() {
       'Total Harga': item.total_harga,
       'HPP Satuan': item.hpp_satuan,
       'HPP Total': item.hpp_total,
+      'Sumber HPP': item.hpp_source,
       'Margin': item.margin,
       'Dalam %': `${item.margin_percent.toFixed(2)}%`
     })));
