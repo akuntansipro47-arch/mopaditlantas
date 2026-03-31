@@ -920,41 +920,73 @@ export default function VehicleEntryPage() {
                       </TableCell>
                       <TableCell>
                         <div className="flex flex-col gap-1">
+                          {(() => {
+                            const statusWeight = (s?: string | null) => {
+                              const v = String(s || '').toUpperCase();
+                              if (v === 'CLOSED') return 4;
+                              if (v === 'COMPLETED') return 3;
+                              if (v === 'IN_PROGRESS') return 2;
+                              if (v === 'OPEN') return 1;
+                              return 0;
+                            };
+                            const woList = Array.isArray(item.work_orders) ? item.work_orders : [];
+                            const woBest = woList.reduce((best: any, cur: any) => {
+                              if (!best) return cur;
+                              return statusWeight(cur?.status) > statusWeight(best?.status) ? cur : best;
+                            }, null as any);
+
+                            const woStatus = String(woBest?.status || '').toUpperCase();
+                            const woNumber = woBest?.wo_number || '-';
+                            const isLocked = woStatus === 'COMPLETED' || woStatus === 'CLOSED';
+
+                            const entryDisplayStatus = isLocked ? 'CLOSED' : woBest ? 'PROCESSED' : 'OPEN';
+
+                            return (
+                              <>
                           {/* Entry Status */}
                           <span className={`px-2 py-1 rounded-full text-xs font-semibold w-fit ${
-                            item.status === 'OPEN' ? 'bg-green-100 text-green-800' : 
-                            item.status === 'CLOSED' ? 'bg-gray-100 text-gray-800' : 'bg-blue-100 text-blue-800'
+                            entryDisplayStatus === 'OPEN' ? 'bg-green-100 text-green-800' : 
+                            entryDisplayStatus === 'CLOSED' ? 'bg-gray-100 text-gray-800' : 'bg-blue-100 text-blue-800'
                           }`}>
-                            {item.status}
+                            {entryDisplayStatus}
                           </span>
                           
                           {/* WO Status */}
-                          {item.work_orders && item.work_orders.length > 0 ? (() => {
-                            const wo = item.work_orders[0];
-                            const woStatus = String(wo.status || '').toUpperCase();
-                            const woNumber = wo.wo_number || '-';
-                            const isLocked = woStatus === 'COMPLETED' || woStatus === 'CLOSED';
-                            const label = woStatus === 'COMPLETED'
-                              ? `WO ${woNumber} (Selesai)`
-                              : woStatus === 'CLOSED'
-                                ? `WO ${woNumber} (Close)`
-                                : `WO ${woNumber} (Proses)`;
-                            return (
-                              <span className={`px-2 py-1 rounded-full text-xs font-semibold w-fit ${
-                                isLocked ? 'bg-purple-100 text-purple-800' : 'bg-orange-100 text-orange-800'
-                              }`}>
-                                {label}
-                              </span>
-                            );
-                          })() : (
+                          {woBest ? (
+                            <span className={`px-2 py-1 rounded-full text-xs font-semibold w-fit ${
+                              isLocked ? 'bg-purple-100 text-purple-800' : 'bg-orange-100 text-orange-800'
+                            }`}>
+                              {woStatus === 'COMPLETED'
+                                ? `WO ${woNumber} (Selesai)`
+                                : woStatus === 'CLOSED'
+                                  ? `WO ${woNumber} (Close)`
+                                  : `WO ${woNumber} (Proses)`}
+                            </span>
+                          ) : (
                             <span className="text-xs text-muted-foreground italic pl-1">Belum WO</span>
                           )}
+                              </>
+                            );
+                          })()}
                         </div>
                       </TableCell>
                       <TableCell className="text-right pr-6">
                         {(() => {
-                          const wo = item.work_orders?.[0];
-                          const woStatus = String(wo?.status || '').toUpperCase();
+                          const statusWeight = (s?: string | null) => {
+                            const v = String(s || '').toUpperCase();
+                            if (v === 'CLOSED') return 4;
+                            if (v === 'COMPLETED') return 3;
+                            if (v === 'IN_PROGRESS') return 2;
+                            if (v === 'OPEN') return 1;
+                            return 0;
+                          };
+                          const woList = Array.isArray(item.work_orders) ? item.work_orders : [];
+                          const woBest = woList.reduce((best: any, cur: any) => {
+                            if (!best) return cur;
+                            return statusWeight(cur?.status) > statusWeight(best?.status) ? cur : best;
+                          }, null as any);
+
+                          const woStatus = String(woBest?.status || '').toUpperCase();
                           const isLocked = woStatus === 'COMPLETED' || woStatus === 'CLOSED';
                           return (
                             <div className="flex justify-end gap-3">
