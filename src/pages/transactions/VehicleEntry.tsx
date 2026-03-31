@@ -39,7 +39,6 @@ type SparepartDraft = {
   name: string;
   qty: number;
   price: number;
-  item_id: string;
   value_only: boolean;
 };
 
@@ -143,7 +142,7 @@ export default function VehicleEntryPage() {
   };
 
   const handleAddTempSparepart = () => {
-    setTempSpareparts([...tempSpareparts, { name: '', qty: 1, price: 0, item_id: '', value_only: false }]);
+    setTempSpareparts([...tempSpareparts, { name: '', qty: 1, price: 0, value_only: false }]);
   };
 
   const handleRemoveTempSparepart = (idx: number) => {
@@ -161,7 +160,6 @@ export default function VehicleEntryPage() {
           const newParts = [...tempSpareparts];
           newParts[activePartIndex].name = good.name;
           newParts[activePartIndex].price = good.selling_price || 0;
-          newParts[activePartIndex].item_id = good.id;
           setTempSpareparts(newParts);
           setIsPartSearchOpen(false);
           setPartSearchQuery('');
@@ -242,7 +240,6 @@ export default function VehicleEntryPage() {
           name: p.item_name,
           qty: p.qty,
           price: p.estimated_price,
-          item_id: (p as any).item_id || '',
           value_only: Boolean((p as any).value_only),
         }));
 
@@ -262,7 +259,6 @@ export default function VehicleEntryPage() {
         name: p.item_name,
         qty: p.qty,
         price: p.estimated_price,
-        item_id: (p as any).item_id || '',
         value_only: Boolean((p as any).value_only),
       }));
 
@@ -300,7 +296,6 @@ export default function VehicleEntryPage() {
               name: p.item_name,
               qty: p.qty,
               price: p.estimated_price,
-              item_id: (p as any).item_id || '',
               value_only: Boolean((p as any).value_only),
             })),
           },
@@ -409,7 +404,6 @@ export default function VehicleEntryPage() {
                       allSpareparts.push({
                           vehicle_entry_id: targetId,
                           job_type_id: job.job_id,
-                          item_id: part.item_id || null,
                           item_name: part.name,
                           qty: part.qty,
                           estimated_price: part.price,

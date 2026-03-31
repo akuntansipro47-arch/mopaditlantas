@@ -175,11 +175,11 @@ export default function GoodsIssuePage() {
       const suggestions: IssueItemForm[] = [];
 
       const vehicleEntryId = (wo as any).vehicle_entry_id || '';
-      const estItemsAgg = new Map<string, { name: string; qty: number; good_id: string; value_only: boolean }>();
+      const estItemsAgg = new Map<string, { name: string; qty: number; value_only: boolean }>();
       if (vehicleEntryId) {
         const { data: estData, error: estErr } = await supabase
           .from('vehicle_entry_spareparts')
-          .select('item_name, qty, item_id, value_only')
+          .select('item_name, qty, value_only')
           .eq('vehicle_entry_id', vehicleEntryId);
         if (estErr) throw estErr;
 
@@ -193,9 +193,8 @@ export default function GoodsIssuePage() {
           if (prev) {
             prev.qty += qty;
             prev.value_only = prev.value_only || vo;
-            if (!prev.good_id && it.item_id) prev.good_id = it.item_id;
           } else {
-            estItemsAgg.set(key, { name, qty, good_id: it.item_id, value_only: vo });
+            estItemsAgg.set(key, { name, qty, value_only: vo });
           }
         });
       }
@@ -241,7 +240,7 @@ export default function GoodsIssuePage() {
         const match = poMatches[0];
         if (match) matchedPoKeys.add(normalizeText(match.name));
 
-        let goodsId = match?.goods_id || est.good_id || '';
+        let goodsId = match?.goods_id || '';
         const matchedGood =
           goodsId
             ? goodsList.find((g) => g.id === goodsId)
