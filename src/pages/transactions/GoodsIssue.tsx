@@ -30,7 +30,7 @@ type VehicleEntry = Database['public']['Tables']['vehicle_entries']['Row'];
 type Vehicle = Database['public']['Tables']['vehicles']['Row'];
 type Goods = Database['public']['Tables']['goods']['Row'];
 
-type IssueItemSource = 'ESTIMASI' | 'PO' | 'MANUAL';
+type IssueItemSource = 'ESTIMASI' | 'PO' | 'STOK' | 'MANUAL';
 
 type IssueItemForm = {
   goods_id: string;
@@ -235,26 +235,44 @@ export default function GoodsIssuePage() {
         if (match) matchedPoKeys.add(normalizeText(match.name));
 
         let goodsId = match?.goods_id || '';
-        if (!goodsId) {
-          const found = goodsList.find((g) => isNameMatch(est.name, g.name));
-          goodsId = found?.id || '';
+        const matchedGood =
+          goodsId
+            ? goodsList.find((g) => g.id === goodsId)
+            : goodsList.find((g) => isNameMatch(est.name, g.name));
+
+        if (!goodsId && matchedGood?.id) goodsId = matchedGood.id;
+
+        const estQty = Number(est.qty || 0);
+        const stock = Number(matchedGood?.current_stock || 0);
+        const isInventory = String(matchedGood?.item_type || '').toUpperCase() === 'PERSEDIAAN';
+
+        let mismatch = false;
+        let hint = '';
+        let source: IssueItemSource = 'ESTIMASI';
+
+        if (poMatches.length === 0) {
+          if (matchedGood?.id && isInventory && stock > 0) {
+            source = 'STOK';
+            if (stock >= estQty) {
+              mismatch = false;
+              hint = 'Menggunakan stok tersedia (tanpa PO)';
+            } else {
+              mismatch = true;
+              hint = `Stok tersedia (${stock}) < Qty Estimasi (${estQty})`;
+            }
+          } else {
+            mismatch = true;
+            hint = 'Belum ada PO diterima dan stok persediaan tidak tersedia';
+          }
+        } else if (poQty > 0 && estQty !== Number(poQty || 0)) {
+          mismatch = true;
+          hint = `Qty Estimasi (${estQty}) ≠ Qty PO Diterima (${poQty})`;
         }
-
-        const mismatch =
-          poMatches.length === 0 ||
-          (poQty > 0 && Number(est.qty || 0) !== Number(poQty || 0));
-
-        const hint =
-          poMatches.length === 0
-            ? 'Estimasi tidak ditemukan pada PO yang sudah diterima'
-            : Number(est.qty || 0) !== Number(poQty || 0)
-              ? `Qty Estimasi (${est.qty}) ≠ Qty PO Diterima (${poQty})`
-              : '';
 
         suggestions.push({
           goods_id: goodsId,
-          quantity: Number(est.qty || 0),
-          source: 'ESTIMASI',
+          quantity: estQty,
+          source,
           mismatch,
           hint,
         });
@@ -596,10 +614,11 @@ export default function GoodsIssuePage() {
                                 'text-[10px] px-2 py-0.5 rounded-full border',
                                 item.source === 'ESTIMASI' && 'bg-slate-100 text-slate-700 border-slate-200',
                                 item.source === 'PO' && 'bg-blue-100 text-blue-800 border-blue-200',
+                                item.source === 'STOK' && 'bg-emerald-100 text-emerald-800 border-emerald-200',
                                 item.source === 'MANUAL' && 'bg-gray-100 text-gray-700 border-gray-200'
                               )}
                             >
-                              {item.source === 'ESTIMASI' ? 'Estimasi' : item.source === 'PO' ? 'PO' : 'Manual'}
+                              {item.source === 'ESTIMASI' ? 'Estimasi' : item.source === 'PO' ? 'PO' : item.source === 'STOK' ? 'Stok' : 'Manual'}
                             </span>
                             {item.mismatch && (
                               <span className="text-[10px] px-2 py-0.5 rounded-full bg-red-100 text-red-800 border border-red-200">
