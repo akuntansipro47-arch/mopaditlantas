@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { useRealtimeRefetch } from '@/hooks/useRealtimeRefetch';
 
 export default function ManualJournalEntry() {
   const [loading, setLoading] = useState(false);
@@ -48,6 +49,17 @@ export default function ManualJournalEntry() {
     fetchAccounts();
     generateVoucherNo();
   }, []);
+
+  useEffect(() => {
+    const onFocus = () => fetchAccounts();
+    window.addEventListener('focus', onFocus);
+    return () => window.removeEventListener('focus', onFocus);
+  }, []);
+
+  useRealtimeRefetch({
+    tables: ['chart_of_accounts'],
+    onRefetch: fetchAccounts,
+  });
 
   useEffect(() => {
     fetchHistory();

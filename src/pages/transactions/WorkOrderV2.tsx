@@ -22,6 +22,7 @@ import {
   Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList
 } from "@/components/ui/command";
 import { useAuth } from '@/context/AuthContext';
+import { useRealtimeRefetch } from '@/hooks/useRealtimeRefetch';
 
 type WO = Database['public']['Tables']['work_orders']['Row'];
 type VehicleEntry = Database['public']['Tables']['vehicle_entries']['Row'];
@@ -247,6 +248,35 @@ export default function WorkOrderV2() {
     fetchMasterData();
     fetchGoods();
   }, [dateRange]);
+
+  useEffect(() => {
+    if (isDialogOpen) {
+      fetchMasterData();
+      fetchGoods();
+    }
+  }, [isDialogOpen]);
+
+  useEffect(() => {
+    if (!isDialogOpen) return;
+    const onFocus = () => {
+      fetchMasterData();
+      fetchGoods();
+    };
+    window.addEventListener('focus', onFocus);
+    return () => window.removeEventListener('focus', onFocus);
+  }, [isDialogOpen]);
+
+  useRealtimeRefetch({
+    tables: ['goods'],
+    enabled: isDialogOpen,
+    onRefetch: fetchGoods,
+  });
+
+  useRealtimeRefetch({
+    tables: ['vehicle_entries', 'vehicle_entry_jobs', 'job_types', 'vehicles', 'mechanics'],
+    enabled: isDialogOpen,
+    onRefetch: fetchMasterData,
+  });
 
   useEffect(() => {
     if (formData.vehicle_entry_id && entries.length > 0) {

@@ -17,6 +17,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { useRealtimeRefetch } from '@/hooks/useRealtimeRefetch';
 
 export default function PurchasePayment() {
   // Trigger deployment update
@@ -62,6 +63,32 @@ export default function PurchasePayment() {
     fetchExpenseAccounts();
     fetchApAccount();
   }, []);
+
+  useEffect(() => {
+    if (!isPayOpen) return;
+    fetchCashBankAccounts();
+    fetchExpenseAccounts();
+    fetchApAccount();
+  }, [isPayOpen]);
+
+  useEffect(() => {
+    const onFocus = () => {
+      fetchCashBankAccounts();
+      fetchExpenseAccounts();
+      fetchApAccount();
+    };
+    window.addEventListener('focus', onFocus);
+    return () => window.removeEventListener('focus', onFocus);
+  }, []);
+
+  useRealtimeRefetch({
+    tables: ['chart_of_accounts'],
+    onRefetch: () => {
+      fetchCashBankAccounts();
+      fetchExpenseAccounts();
+      fetchApAccount();
+    },
+  });
 
   useEffect(() => {
     if (activeTab === 'history') {

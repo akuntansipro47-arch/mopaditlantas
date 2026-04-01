@@ -16,6 +16,7 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import * as XLSX from 'xlsx';
+import { useRealtimeRefetch } from '@/hooks/useRealtimeRefetch';
 
 import {
   Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle,
@@ -85,6 +86,17 @@ export default function CashBankV2() {
     fetchAccounts();
     fetchHistory();
   }, []); // Initial load
+
+  useEffect(() => {
+    const onFocus = () => fetchAccounts();
+    window.addEventListener('focus', onFocus);
+    return () => window.removeEventListener('focus', onFocus);
+  }, []);
+
+  useRealtimeRefetch({
+    tables: ['chart_of_accounts'],
+    onRefetch: fetchAccounts,
+  });
 
   useEffect(() => {
     fetchHistory();

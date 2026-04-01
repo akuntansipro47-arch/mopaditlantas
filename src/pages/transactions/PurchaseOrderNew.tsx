@@ -18,6 +18,7 @@ import {
 } from "@/components/ui/select";
 import { formatCurrency, formatDate } from '@/lib/utils';
 import { Checkbox } from "@/components/ui/checkbox";
+import { useRealtimeRefetch } from '@/hooks/useRealtimeRefetch';
 
 type PO = Database['public']['Tables']['purchase_orders']['Row'];
 type POItem = Database['public']['Tables']['purchase_order_items']['Row'];
@@ -65,6 +66,23 @@ export default function PurchaseOrderNew() {
     fetchPOs();
     fetchMasterData();
   }, []);
+
+  useEffect(() => {
+    if (isDialogOpen) fetchMasterData();
+  }, [isDialogOpen]);
+
+  useEffect(() => {
+    if (!isDialogOpen) return;
+    const onFocus = () => fetchMasterData();
+    window.addEventListener('focus', onFocus);
+    return () => window.removeEventListener('focus', onFocus);
+  }, [isDialogOpen]);
+
+  useRealtimeRefetch({
+    tables: ['suppliers', 'goods', 'work_orders'],
+    enabled: isDialogOpen,
+    onRefetch: fetchMasterData,
+  });
 
   async function fetchMasterData() {
     const { data: s } = await supabase.from('suppliers').select('*');

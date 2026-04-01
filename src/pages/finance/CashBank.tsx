@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
+import { useRealtimeRefetch } from '@/hooks/useRealtimeRefetch';
 
 // Types
 type COA = {
@@ -68,6 +69,17 @@ export default function CashBank() {
     fetchAccounts();
     fetchHistory();
   }, []);
+
+  useEffect(() => {
+    const onFocus = () => fetchAccounts();
+    window.addEventListener('focus', onFocus);
+    return () => window.removeEventListener('focus', onFocus);
+  }, []);
+
+  useRealtimeRefetch({
+    tables: ['chart_of_accounts'],
+    onRefetch: fetchAccounts,
+  });
 
   async function fetchAccounts() {
     try {

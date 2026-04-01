@@ -22,6 +22,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { formatCurrency, formatDate, generateTransactionNumber } from '@/lib/utils';
+import { useRealtimeRefetch } from '@/hooks/useRealtimeRefetch';
 
 type PO = Database['public']['Tables']['purchase_orders']['Row'];
 type POItem = Database['public']['Tables']['purchase_order_items']['Row'];
@@ -80,6 +81,23 @@ export default function PurchaseOrderV2() {
     fetchPOs();
     fetchMasterData();
   }, [dateFilter]);
+
+  useEffect(() => {
+    if (isDialogOpen) fetchMasterData();
+  }, [isDialogOpen]);
+
+  useEffect(() => {
+    if (!isDialogOpen) return;
+    const onFocus = () => fetchMasterData();
+    window.addEventListener('focus', onFocus);
+    return () => window.removeEventListener('focus', onFocus);
+  }, [isDialogOpen]);
+
+  useRealtimeRefetch({
+    tables: ['suppliers', 'goods', 'work_orders', 'vehicle_entries', 'vehicles', 'vehicle_entry_spareparts'],
+    enabled: isDialogOpen,
+    onRefetch: fetchMasterData,
+  });
 
   const [supplierSearchOpen, setSupplierSearchOpen] = useState(false);
   const [supplierSearchQuery, setSupplierSearchQuery] = useState('');

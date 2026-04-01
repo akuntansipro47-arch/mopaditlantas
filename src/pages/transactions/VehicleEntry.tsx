@@ -19,6 +19,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import {
   Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList
 } from "@/components/ui/command";
+import { useRealtimeRefetch } from '@/hooks/useRealtimeRefetch';
 
 type VehicleEntry = Database['public']['Tables']['vehicle_entries']['Row'];
 type Vehicle = Database['public']['Tables']['vehicles']['Row'];
@@ -91,6 +92,23 @@ export default function VehicleEntryPage() {
     fetchEntries();
     fetchMasterData();
   }, [dateFilter]); // Refetch when date filter changes
+
+  useEffect(() => {
+    if (isDialogOpen) fetchMasterData();
+  }, [isDialogOpen]);
+
+  useEffect(() => {
+    if (!isDialogOpen) return;
+    const onFocus = () => fetchMasterData();
+    window.addEventListener('focus', onFocus);
+    return () => window.removeEventListener('focus', onFocus);
+  }, [isDialogOpen]);
+
+  useRealtimeRefetch({
+    tables: ['vehicles', 'job_types', 'goods'],
+    enabled: isDialogOpen,
+    onRefetch: fetchMasterData,
+  });
 
   async function fetchMasterData() {
     const { data: v } = await supabase.from('vehicles').select('*');
@@ -492,10 +510,12 @@ export default function VehicleEntryPage() {
     return total;
   };
 
-  const filteredEntries = entries.filter(e =>  
-    e.entry_number.toLowerCase().includes(search.toLowerCase()) ||
-    e.vehicles?.license_plate.toLowerCase().includes(search.toLowerCase())
-  );
+  const searchLower = search.toLowerCase();
+  const filteredEntries = entries.filter((e) => {
+    const entryNumber = String((e as any).entry_number || '').toLowerCase();
+    const plate = String(e.vehicles?.license_plate || '').toLowerCase();
+    return entryNumber.includes(searchLower) || plate.includes(searchLower);
+  });
 
   const classifyVehicleType = (vehicleType?: string | null) => {
     const vt = String(vehicleType || '').toUpperCase();

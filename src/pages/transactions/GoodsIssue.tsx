@@ -22,6 +22,7 @@ import {
 } from "@/components/ui/command";
 import { cn } from "@/lib/utils";
 import { Check } from 'lucide-react';
+import { useRealtimeRefetch } from '@/hooks/useRealtimeRefetch';
 
 type GoodsIssue = Database['public']['Tables']['goods_issues']['Row'];
 type GoodsIssueItem = Database['public']['Tables']['goods_issue_items']['Row'];
@@ -102,6 +103,23 @@ export default function GoodsIssuePage() {
     fetchIssues();
     fetchMasterData();
   }, [dateFilter]);
+
+  useEffect(() => {
+    if (isDialogOpen) fetchMasterData();
+  }, [isDialogOpen]);
+
+  useEffect(() => {
+    if (!isDialogOpen) return;
+    const onFocus = () => fetchMasterData();
+    window.addEventListener('focus', onFocus);
+    return () => window.removeEventListener('focus', onFocus);
+  }, [isDialogOpen]);
+
+  useRealtimeRefetch({
+    tables: ['goods', 'work_orders', 'vehicle_entries', 'vehicles'],
+    enabled: isDialogOpen,
+    onRefetch: fetchMasterData,
+  });
 
   async function fetchMasterData() {
     // Fetch WOs (include COMPLETED so users can issue parts even after WO is closed)
