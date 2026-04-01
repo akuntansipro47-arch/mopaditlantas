@@ -223,19 +223,20 @@ export default function PurchaseOrderPrintDotMatrix({ id }: POPrintProps) {
   if (!po) return <div>Data PO tidak ditemukan.</div>;
 
   return (
-    <div className="min-h-screen bg-white p-2">
+    <div className="min-h-screen bg-white p-0">
       <pre className="po-dotmatrix">{content}</pre>
       <style>{`
         .po-dotmatrix {
           font-family: "Courier New", Courier, monospace;
-          font-size: 10pt;
-          line-height: 1.2;
+          font-size: 9pt;
+          line-height: 1.15;
           white-space: pre;
           margin: 0;
+          padding: 0;
         }
         @media print {
-          @page { size: auto; margin: 6mm; }
-          body { margin: 0; -webkit-print-color-adjust: exact; }
+          @page { size: 241mm 140mm; margin: 4mm; }
+          html, body { margin: 0; padding: 0; -webkit-print-color-adjust: exact; }
         }
       `}</style>
     </div>
