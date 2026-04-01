@@ -234,7 +234,7 @@ export default function PurchaseOrderPrintDotMatrix({ id }: POPrintProps) {
           letter-spacing: 0.1px;
           white-space: pre;
           margin: 0;
-          padding: 3mm 0 0 0;
+          padding: 3mm 0 0 3mm;
         }
         @media print {
           @page { size: 241mm 140mm; margin: 8mm 1mm 4mm 2mm; }
