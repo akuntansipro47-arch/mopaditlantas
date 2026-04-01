@@ -50,6 +50,7 @@ type WOBillingItem = {
 
 export default function WorkOrderV2() {
   const { user } = useAuth();
+  const canAdjustBillingPrice = user?.role === 'SUPER_ADMIN';
   const [wos, setWos] = useState<WOWithDetails[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -1265,9 +1266,13 @@ export default function WorkOrderV2() {
                                 <TableCell>
                                     <Input 
                                         type="number" 
-                                        className="h-8 text-right bg-gray-50"
+                                        className={cn("h-8 text-right", canAdjustBillingPrice ? "bg-white" : "bg-gray-50")}
                                         value={item.unit_price} 
-                                        readOnly={true} // Always Read-only (Price from Master)
+                                        readOnly={!canAdjustBillingPrice}
+                                        onChange={(e) => {
+                                          if (!canAdjustBillingPrice) return;
+                                          handleBillingItemChange(index, 'unit_price', Number(e.target.value) || 0);
+                                        }}
                                     />
                                 </TableCell>
                                 <TableCell>
