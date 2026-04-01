@@ -20,6 +20,7 @@ import {
   Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList
 } from "@/components/ui/command";
 import { useRealtimeRefetch } from '@/hooks/useRealtimeRefetch';
+import { useAuth } from '@/context/AuthContext';
 
 type VehicleEntry = Database['public']['Tables']['vehicle_entries']['Row'];
 type Vehicle = Database['public']['Tables']['vehicles']['Row'];
@@ -44,6 +45,8 @@ type SparepartDraft = {
 };
 
 export default function VehicleEntryPage() {
+  const { user } = useAuth();
+  const canAdjustEstimationPrice = String(user?.role || '').toUpperCase().includes('ADMIN');
   const [entries, setEntries] = useState<EntryWithDetails[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -80,7 +83,7 @@ export default function VehicleEntryPage() {
   });
 
   // Multiple Jobs State
-  const [entryJobs, setEntryJobs] = useState<{ group: string, job_id: string; job_name?: string; notes: string; value_only: boolean; spareparts?: SparepartDraft[] }[]>([]);
+  const [entryJobs, setEntryJobs] = useState<{ group: string, job_id: string; job_name?: string; notes: string; value_only: boolean; estimated_price: number; spareparts?: SparepartDraft[] }[]>([]);
   
   // Sparepart Dialog State
   const [isSparepartDialogOpen, setIsSparepartDialogOpen] = useState(false);
@@ -224,7 +227,7 @@ export default function VehicleEntryPage() {
 
   const calculateFormEstimation = () => {
     return entryJobs.reduce((sum, j) => {
-      const jobPagu = getJobPagu(j.job_id);
+      const jobPagu = Number(j.estimated_price || 0);
       const partsPagu = calculateTotalPagu(j.spareparts || []);
       return sum + jobPagu + partsPagu;
     }, 0);
@@ -295,6 +298,7 @@ export default function VehicleEntryPage() {
       const jobTypeId = j.job_type_id || '';
       const groupStr = (j.job_types?.job_group || item.service_group) as string;
       const jobName = j.job_types?.job_name || jobs.find(x => x.id === jobTypeId)?.job_name || '';
+      const jobEstimated = Number((j as any).estimated_price ?? (j.job_types as any)?.selling_price ?? 0);
 
       const parts = existingParts
         .filter(p => p.job_type_id === jobTypeId)
@@ -311,6 +315,7 @@ export default function VehicleEntryPage() {
         job_name: jobName,
         notes: j.notes || '',
         value_only: Boolean((j as any).value_only),
+        estimated_price: jobEstimated,
         spareparts: parts,
       };
     });
@@ -335,6 +340,7 @@ export default function VehicleEntryPage() {
           job_name: 'Suku Cadang Tambahan',
           notes: 'Suku Cadang Tambahan',
           value_only: false,
+          estimated_price: 0,
           spareparts: partsToAdd,
         });
       } else {
@@ -344,6 +350,7 @@ export default function VehicleEntryPage() {
           job_name: 'Suku Cadang Tambahan',
           notes: 'Suku Cadang Tambahan',
           value_only: false,
+          estimated_price: 0,
           spareparts: partsToAdd,
         });
       }
@@ -358,6 +365,7 @@ export default function VehicleEntryPage() {
             job_name: 'Suku Cadang Tambahan',
             notes: 'Suku Cadang Tambahan',
             value_only: false,
+            estimated_price: 0,
             spareparts: existingParts.map(p => ({
               name: p.item_name,
               qty: p.qty,
@@ -367,7 +375,7 @@ export default function VehicleEntryPage() {
           },
         ]);
       } else {
-        setEntryJobs([{ group: item.service_group as string, job_id: '', job_name: '', notes: '', value_only: false, spareparts: [] }]);
+        setEntryJobs([{ group: item.service_group as string, job_id: '', job_name: '', notes: '', value_only: false, estimated_price: 0, spareparts: [] }]);
       }
     } else {
       setEntryJobs(mappedJobs);
@@ -379,7 +387,7 @@ export default function VehicleEntryPage() {
   };
 
   const handleAddJob = () => {
-    setEntryJobs([...entryJobs, { group: 'PERBAIKAN', job_id: '', job_name: '', notes: '', value_only: false, spareparts: [] }]);
+    setEntryJobs([...entryJobs, { group: 'PERBAIKAN', job_id: '', job_name: '', notes: '', value_only: false, estimated_price: 0, spareparts: [] }]);
   };
 
   const handleRemoveJob = (index: number) => {
@@ -393,9 +401,12 @@ export default function VehicleEntryPage() {
       newJobs[index].job_id = ''; // Reset job when group changes
       newJobs[index].job_name = '';
       newJobs[index].value_only = false;
+      newJobs[index].estimated_price = 0;
     } else if (field === 'job_id') {
       newJobs[index].job_id = value;
-      newJobs[index].job_name = jobs.find(j => j.id === value)?.job_name || '';
+      const job = jobs.find(j => j.id === value);
+      newJobs[index].job_name = job?.job_name || '';
+      newJobs[index].estimated_price = Number((job as any)?.selling_price || 0);
     } else {
       newJobs[index].notes = value;
     }
@@ -413,6 +424,12 @@ export default function VehicleEntryPage() {
   const handleJobValueOnlyChange = (index: number, v: boolean) => {
     const newJobs = [...entryJobs];
     newJobs[index].value_only = v;
+    setEntryJobs(newJobs);
+  };
+
+  const handleJobEstimatedPriceChange = (index: number, v: number) => {
+    const newJobs = [...entryJobs];
+    newJobs[index].estimated_price = Math.max(0, Number(v) || 0);
     setEntryJobs(newJobs);
   };
 
@@ -469,6 +486,16 @@ export default function VehicleEntryPage() {
         
       if (targetId && entryJobs.length > 0) {
           // Insert Jobs
+          {
+            const { error: colErr } = await supabase
+              .from('vehicle_entry_jobs')
+              .select('estimated_price')
+              .limit(1);
+            if (colErr) {
+              toast.error("DB belum siap: kolom 'estimated_price' (pekerjaan) belum ada. Jalankan migration 20240309_schema_update_v3.sql di Supabase.");
+              return;
+            }
+          }
           if (entryJobs.some((j) => Boolean(j.value_only))) {
             const { error: colErr } = await supabase
               .from('vehicle_entry_jobs')
@@ -484,6 +511,7 @@ export default function VehicleEntryPage() {
             job_type_id: j.job_id,
             notes: j.notes,
             value_only: Boolean(j.value_only),
+            estimated_price: Number(j.estimated_price || 0),
           }));
           const { error: jobsError } = await supabase.from('vehicle_entry_jobs').insert(jobsPayload);
           if (jobsError) throw jobsError;
@@ -538,9 +566,8 @@ export default function VehicleEntryPage() {
     let total = 0;
     // Job Estimation
     entry.vehicle_entry_jobs?.forEach(job => {
-        if (job.job_types?.selling_price) {
-            total += job.job_types.selling_price;
-        }
+        const jobPrice = Number((job as any).estimated_price ?? (job.job_types as any)?.selling_price ?? 0);
+        total += jobPrice;
     });
     // Part Estimation
     entry.vehicle_entry_spareparts?.forEach(part => {
@@ -759,8 +786,21 @@ export default function VehicleEntryPage() {
                                     <TableCell className="py-1">
                                       {jobs.find((j) => j.id === job.job_id)?.job_name || job.job_name || '-'}
                                     </TableCell>
-                                    <TableCell className="py-1 text-right">{getJobPagu(job.job_id).toLocaleString('id-ID')}</TableCell>
-                                    <TableCell className="py-1 text-right font-medium">{getJobPagu(job.job_id).toLocaleString('id-ID')}</TableCell>
+                                    <TableCell className="py-1 text-right">
+                                      {canAdjustEstimationPrice ? (
+                                        <Input
+                                          type="number"
+                                          value={Number(job.estimated_price || 0)}
+                                          onChange={(e) => handleJobEstimatedPriceChange(index, Number(e.target.value))}
+                                          className="h-7 text-right"
+                                        />
+                                      ) : (
+                                        Number(job.estimated_price || 0).toLocaleString('id-ID')
+                                      )}
+                                    </TableCell>
+                                    <TableCell className="py-1 text-right font-medium">
+                                      {Number(job.estimated_price || 0).toLocaleString('id-ID')}
+                                    </TableCell>
                                   </TableRow>
                                 </TableBody>
                               </Table>
@@ -900,8 +940,15 @@ export default function VehicleEntryPage() {
                                     <Input 
                                         type="number" 
                                         value={part.price} 
-                                        readOnly
-                                        className="h-8 text-right bg-gray-100 text-gray-500"
+                                        readOnly={!canAdjustEstimationPrice}
+                                        onChange={(e) => {
+                                          if (!canAdjustEstimationPrice) return;
+                                          handleTempSparepartChange(idx, 'price', Number(e.target.value) || 0);
+                                        }}
+                                        className={cn(
+                                          "h-8 text-right",
+                                          canAdjustEstimationPrice ? "bg-white" : "bg-gray-100 text-gray-500"
+                                        )}
                                     />
                                 </div>
                                 <div className="w-28 space-y-1">
