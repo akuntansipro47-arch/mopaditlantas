@@ -48,7 +48,13 @@ export default function PurchaseDetailReport() {
             po_number,
             po_date,
             status,
-            suppliers (name, id)
+            suppliers (name, id),
+            work_orders (
+              wo_number,
+              vehicle_entries (
+                vehicles (license_plate, brand_type)
+              )
+            )
           )
         `)
         // Filter by PO Date via the relationship
@@ -91,7 +97,9 @@ export default function PurchaseDetailReport() {
   const filteredData = data.filter(item => 
     item.goods?.name.toLowerCase().includes(search.toLowerCase()) ||
     item.purchase_orders?.po_number.toLowerCase().includes(search.toLowerCase()) ||
-    item.purchase_orders?.suppliers?.name.toLowerCase().includes(search.toLowerCase())
+    item.purchase_orders?.suppliers?.name.toLowerCase().includes(search.toLowerCase()) ||
+    (item.purchase_orders?.work_orders?.vehicle_entries?.vehicles?.license_plate || '').toLowerCase().includes(search.toLowerCase()) ||
+    (item.purchase_orders?.work_orders?.vehicle_entries?.vehicles?.brand_type || '').toLowerCase().includes(search.toLowerCase())
   );
 
   const totalAmount = filteredData.reduce((sum, item) => sum + (item.total_price || 0), 0);
@@ -101,6 +109,8 @@ export default function PurchaseDetailReport() {
       'No. PO': item.purchase_orders?.po_number,
       'Tanggal': formatDate(item.purchase_orders?.po_date),
       'Supplier': item.purchase_orders?.suppliers?.name,
+      'Nopol': item.purchase_orders?.work_orders?.vehicle_entries?.vehicles?.license_plate || '-',
+      'Nama Kendaraan': item.purchase_orders?.work_orders?.vehicle_entries?.vehicles?.brand_type || '-',
       'Kode Barang': item.goods?.item_code,
       'Nama Barang': item.goods?.name,
       'Qty': item.quantity,
@@ -169,6 +179,7 @@ export default function PurchaseDetailReport() {
                 <TableHead>Tanggal</TableHead>
                 <TableHead>No. PO</TableHead>
                 <TableHead>Supplier</TableHead>
+                <TableHead>Kendaraan</TableHead>
                 <TableHead>Nama Barang</TableHead>
                 <TableHead className="text-center">Qty</TableHead>
                 <TableHead className="text-right">Harga Satuan</TableHead>
@@ -177,13 +188,17 @@ export default function PurchaseDetailReport() {
             </TableHeader>
             <TableBody>
               {filteredData.length === 0 ? (
-                <TableRow><TableCell colSpan={7} className="text-center py-8">Tidak ada data.</TableCell></TableRow>
+                <TableRow><TableCell colSpan={8} className="text-center py-8">Tidak ada data.</TableCell></TableRow>
               ) : (
                 filteredData.map((item, idx) => (
                   <TableRow key={idx}>
                     <TableCell>{formatDate(item.purchase_orders?.po_date)}</TableCell>
                     <TableCell className="font-medium">{item.purchase_orders?.po_number}</TableCell>
                     <TableCell>{item.purchase_orders?.suppliers?.name}</TableCell>
+                    <TableCell>
+                      <div className="font-medium">{item.purchase_orders?.work_orders?.vehicle_entries?.vehicles?.license_plate || '-'}</div>
+                      <div className="text-xs text-gray-500">{item.purchase_orders?.work_orders?.vehicle_entries?.vehicles?.brand_type || '-'}</div>
+                    </TableCell>
                     <TableCell>
                       <div className="font-medium">{item.goods?.name}</div>
                       <div className="text-xs text-gray-500">{item.goods?.item_code}</div>
