@@ -202,6 +202,26 @@ export default function VehicleEntryPage() {
       return parts.reduce((sum: number, p: any) => sum + (p.qty * p.price), 0);
   };
 
+  const getBaseJobGroup = (group: string) => {
+    const g = String(group || '').toUpperCase();
+    if (g.includes('SERVICE')) return 'SERVICE_RINGAN';
+    return 'PERBAIKAN';
+  };
+
+  const getJobPagu = (jobId: string) => {
+    if (!jobId) return 0;
+    const job = jobs.find((j) => j.id === jobId);
+    return Number((job as any)?.selling_price || 0);
+  };
+
+  const calculateFormEstimation = () => {
+    return entryJobs.reduce((sum, j) => {
+      const jobPagu = getJobPagu(j.job_id);
+      const partsPagu = calculateTotalPagu(j.spareparts || []);
+      return sum + jobPagu + partsPagu;
+    }, 0);
+  };
+
   // Helper to check if job needs sparepart detail
   const needsSparepartDetail = (job: { group: string, job_id: string; job_name?: string }) => {
       const selectedJob = jobs.find(j => j.id === job.job_id);
@@ -232,6 +252,17 @@ export default function VehicleEntryPage() {
       notes: '',
     });
     setEntryJobs([]);
+    setIsVehicleSearchOpen(false);
+    setVehicleSearchQuery('');
+    setIsJobSearchOpen(false);
+    setActiveJobSearchIndex(null);
+    setJobSearchQuery('');
+    setIsSparepartDialogOpen(false);
+    setActiveJobIndex(null);
+    setTempSpareparts([]);
+    setIsPartSearchOpen(false);
+    setActivePartIndex(null);
+    setPartSearchQuery('');
     setIsEditing(false);
     setCurrentId(null);
   };
@@ -619,8 +650,8 @@ export default function VehicleEntryPage() {
                         <CommandList>
                           <CommandEmpty>Pekerjaan tidak ditemukan.</CommandEmpty>
                           <CommandGroup heading="Daftar Pekerjaan">
-                            {activeJobSearchIndex !== null && jobs
-                              .filter(j => j.job_group === entryJobs[activeJobSearchIndex].group)
+                            {activeJobSearchIndex !== null && entryJobs[activeJobSearchIndex] && jobs
+                              .filter(j => j.job_group === getBaseJobGroup(entryJobs[activeJobSearchIndex].group))
                               .filter(j => j.job_name.toLowerCase().includes(jobSearchQuery.toLowerCase()))
                               .map(j => (
                                 <CommandItem
@@ -700,6 +731,34 @@ export default function VehicleEntryPage() {
                             <Trash2 className="h-4 w-4" />
                           </Button>
                         </div>
+
+                        {job.job_id && (
+                          <div className="col-span-12 mt-2 pl-4 border-l-2 border-slate-200">
+                            <div className="bg-white p-2 rounded-md">
+                              <div className="flex justify-between items-center mb-2">
+                                <Label className="text-xs font-bold text-slate-700">Rincian Pekerjaan (Estimasi)</Label>
+                              </div>
+                              <Table className="bg-white rounded-md border text-xs">
+                                <TableHeader>
+                                  <TableRow className="h-8 hover:bg-transparent">
+                                    <TableHead className="h-8 py-1">Nama Pekerjaan</TableHead>
+                                    <TableHead className="h-8 py-1 text-right">Harga Pagu</TableHead>
+                                    <TableHead className="h-8 py-1 text-right">Total</TableHead>
+                                  </TableRow>
+                                </TableHeader>
+                                <TableBody>
+                                  <TableRow className="h-8 hover:bg-transparent border-b">
+                                    <TableCell className="py-1">
+                                      {jobs.find((j) => j.id === job.job_id)?.job_name || job.job_name || '-'}
+                                    </TableCell>
+                                    <TableCell className="py-1 text-right">{getJobPagu(job.job_id).toLocaleString('id-ID')}</TableCell>
+                                    <TableCell className="py-1 text-right font-medium">{getJobPagu(job.job_id).toLocaleString('id-ID')}</TableCell>
+                                  </TableRow>
+                                </TableBody>
+                              </Table>
+                            </div>
+                          </div>
+                        )}
                         
                         {/* Sub-column for Sparepart Detail (Conditional) */}
                         {(needsSparepartDetail(job) || (job.spareparts && job.spareparts.length > 0)) && (
@@ -749,6 +808,13 @@ export default function VehicleEntryPage() {
                       <div className="text-center py-4">
                         <p className="text-sm text-muted-foreground italic mb-2">Belum ada pekerjaan dipilih.</p>
                         <Button type="button" variant="secondary" size="sm" onClick={handleAddJob}>+ Tambah Pekerjaan Pertama</Button>
+                      </div>
+                    )}
+                    {entryJobs.length > 0 && (
+                      <div className="flex justify-end pt-2">
+                        <div className="text-sm font-semibold">
+                          Total Estimasi: {calculateFormEstimation().toLocaleString('id-ID')}
+                        </div>
                       </div>
                     )}
                   </div>
