@@ -225,6 +225,16 @@ export default function VehicleEntryPage() {
     return Number((job as any)?.selling_price || 0);
   };
 
+  const getJobEstimationFromRow = (row: any) => {
+    const epRaw = row?.estimated_price;
+    const ep = Number(epRaw);
+    const sp = Number(row?.job_types?.selling_price || 0);
+    if (Number.isFinite(ep) && ep > 0) return ep;
+    if ((!Number.isFinite(ep) || epRaw === null || epRaw === undefined) && sp > 0) return sp;
+    if (Number.isFinite(ep) && ep === 0 && sp > 0) return sp;
+    return Number.isFinite(ep) ? ep : 0;
+  };
+
   const calculateFormEstimation = () => {
     return entryJobs.reduce((sum, j) => {
       const jobPagu = Number(j.estimated_price || 0);
@@ -298,7 +308,7 @@ export default function VehicleEntryPage() {
       const jobTypeId = j.job_type_id || '';
       const groupStr = (j.job_types?.job_group || item.service_group) as string;
       const jobName = j.job_types?.job_name || jobs.find(x => x.id === jobTypeId)?.job_name || '';
-      const jobEstimated = Number((j as any).estimated_price ?? (j.job_types as any)?.selling_price ?? 0);
+      const jobEstimated = getJobEstimationFromRow(j);
 
       const parts = existingParts
         .filter(p => p.job_type_id === jobTypeId)
@@ -566,8 +576,7 @@ export default function VehicleEntryPage() {
     let total = 0;
     // Job Estimation
     entry.vehicle_entry_jobs?.forEach(job => {
-        const jobPrice = Number((job as any).estimated_price ?? (job.job_types as any)?.selling_price ?? 0);
-        total += jobPrice;
+        total += getJobEstimationFromRow(job);
     });
     // Part Estimation
     entry.vehicle_entry_spareparts?.forEach(part => {

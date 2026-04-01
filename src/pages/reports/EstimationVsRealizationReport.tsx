@@ -38,6 +38,16 @@ export default function EstimationVsRealizationReport() {
     return '-';
   };
 
+  const getJobEstimation = (j: any) => {
+    const epRaw = (j as any)?.estimated_price;
+    const ep = Number(epRaw);
+    const sp = Number(j?.job_types?.selling_price || 0);
+    if (Number.isFinite(ep) && ep > 0) return ep;
+    if ((!Number.isFinite(ep) || epRaw === null || epRaw === undefined) && sp > 0) return sp;
+    if (Number.isFinite(ep) && ep === 0 && sp > 0) return sp;
+    return Number.isFinite(ep) ? ep : 0;
+  };
+
   async function fetchData() {
     setLoading(true);
     try {
@@ -79,7 +89,7 @@ export default function EstimationVsRealizationReport() {
         let estPart = 0;
         
         entry.vehicle_entry_jobs?.forEach((j: any) => {
-             estJob += j.job_types?.selling_price || 0;
+             estJob += getJobEstimation(j);
         });
         
         entry.vehicle_entry_spareparts?.forEach((p: any) => {
