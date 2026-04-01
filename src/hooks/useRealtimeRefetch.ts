@@ -22,6 +22,7 @@ export function useRealtimeRefetch({
 }: UseRealtimeRefetchParams) {
   const onRefetchRef = useRef(onRefetch);
   const timerRef = useRef<number | null>(null);
+  const tablesKey = Array.isArray(tables) ? tables.join('|') : '';
 
   useEffect(() => {
     onRefetchRef.current = onRefetch;
@@ -53,6 +54,5 @@ export function useRealtimeRefetch({
         supabase.removeChannel(ch);
       });
     };
-  }, [debounceMs, enabled, event, schema, tables]);
+  }, [debounceMs, enabled, event, schema, tablesKey]);
 }
-

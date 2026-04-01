@@ -208,6 +208,14 @@ export default function VehicleEntryPage() {
     return 'PERBAIKAN';
   };
 
+  const isJobGroupMatch = (jobGroup: string, selectedGroup: string) => {
+    const a = String(jobGroup || '');
+    const b = String(selectedGroup || '');
+    if (!a || !b) return false;
+    if (a === b) return true;
+    return a === getBaseJobGroup(b);
+  };
+
   const getJobPagu = (jobId: string) => {
     if (!jobId) return 0;
     const job = jobs.find((j) => j.id === jobId);
@@ -651,7 +659,7 @@ export default function VehicleEntryPage() {
                           <CommandEmpty>Pekerjaan tidak ditemukan.</CommandEmpty>
                           <CommandGroup heading="Daftar Pekerjaan">
                             {activeJobSearchIndex !== null && entryJobs[activeJobSearchIndex] && jobs
-                              .filter(j => j.job_group === getBaseJobGroup(entryJobs[activeJobSearchIndex].group))
+                              .filter(j => isJobGroupMatch((j as any).job_group, entryJobs[activeJobSearchIndex].group))
                               .filter(j => j.job_name.toLowerCase().includes(jobSearchQuery.toLowerCase()))
                               .map(j => (
                                 <CommandItem
