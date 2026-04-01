@@ -288,6 +288,11 @@ export default function PurchaseOrderV2() {
     toast.success('Mencetak PO...');
   };
 
+  const handlePrintDotMatrix = (poId: string) => {
+    window.open(`/print/po-dot/${poId}`, '_blank');
+    toast.success('Mencetak PO (Dot Matrix)...');
+  };
+
   const handleSubmit = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     
@@ -737,6 +742,11 @@ export default function PurchaseOrderV2() {
                       <Printer className="mr-2 h-4 w-4" /> Cetak PO
                     </Button>
                   )}
+                  {isReadOnly && editingId && (
+                    <Button type="button" variant="outline" onClick={() => handlePrintDotMatrix(editingId)}>
+                      <Printer className="mr-2 h-4 w-4" /> Dot Matrix
+                    </Button>
+                  )}
                 </div>
                 <div className="flex gap-2">
                   {!isReadOnly && (
@@ -841,6 +851,9 @@ export default function PurchaseOrderV2() {
                           <div className="flex justify-end gap-2 items-center">
                             <Button variant="outline" size="sm" onClick={() => handlePrint(item.id)} title="Cetak PO">
                               <Printer className="h-4 w-4 mr-1" /> Cetak
+                            </Button>
+                            <Button variant="outline" size="sm" onClick={() => handlePrintDotMatrix(item.id)} title="Cetak Dot Matrix (LX-310)">
+                              <Printer className="h-4 w-4 mr-1" /> Dot
                             </Button>
                             <Button variant="secondary" size="sm" onClick={() => handleEdit(item, true)} title="Lihat Detail">
                               <Eye className="h-4 w-4 mr-1" /> Detail

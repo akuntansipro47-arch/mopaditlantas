@@ -22,6 +22,7 @@ import Reports from "@/pages/Reports";
 import ItemHistoryReport from "@/pages/reports/ItemHistoryReport"; // New Import
 import ProfitLossReport from "@/pages/reports/ProfitLossReport"; // Import P&L Report
 import PrintPO from "@/pages/print/PrintPO";
+import PrintPODotMatrix from "@/pages/print/PrintPODotMatrix";
 import PrintSuratJalan from "@/pages/print/PrintSuratJalan";
 import PrintVehicleEntry from "@/pages/print/PrintVehicleEntry";
 import PrintGoodsIssue from "@/pages/print/PrintGoodsIssue";
@@ -56,6 +57,7 @@ export default function App() {
             
             {/* Dedicated Print Routes (No Layout) */}
             <Route path="/print/po/:id" element={<PrintPO />} />
+            <Route path="/print/po-dot/:id" element={<PrintPODotMatrix />} />
             <Route path="/print/surat-jalan/:id" element={<PrintSuratJalan />} />
             <Route path="/print/entry/:id" element={<PrintVehicleEntry />} />
             <Route path="/print/issue/:id" element={<PrintGoodsIssue />} />
