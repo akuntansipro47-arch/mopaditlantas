@@ -189,6 +189,14 @@ export default function GrossProfitReport() {
           .from('work_orders')
           .select(`
             *,
+            goods_issues (
+              goods_issue_items (
+                quantity,
+                is_info_only,
+                value_only,
+                goods (id, name, selling_price, unit, item_code)
+              )
+            ),
             vehicle_entries (
               nota_dinas_number,
               service_group,
@@ -233,6 +241,14 @@ export default function GrossProfitReport() {
             .from('work_orders')
             .select(`
               *,
+              goods_issues (
+                goods_issue_items (
+                  quantity,
+                  is_info_only,
+                  value_only,
+                  goods (id, name, selling_price, unit, item_code)
+                )
+              ),
               vehicle_entries (
                 nota_dinas_number,
                 service_group,
@@ -370,6 +386,26 @@ export default function GrossProfitReport() {
         const billingJobs = new Set<string>();
         const billingPartNames: string[] = [];
 
+        const issueItems =
+          (wo.goods_issues || [])
+            .flatMap((gi: any) => gi?.goods_issue_items || [])
+            .filter((it: any) => !it?.is_info_only && !it?.value_only && it?.goods?.id);
+
+        const issuedByGoodsId = new Map<string, { qty: number; unit: number; name: string; item_code: string; unitLabel: string }>();
+        issueItems.forEach((it: any) => {
+          const gid = String(it.goods.id);
+          const qty = Number(it.quantity || 0);
+          const unit = Number(it.goods?.selling_price || 0);
+          const prev = issuedByGoodsId.get(gid);
+          issuedByGoodsId.set(gid, {
+            qty: (prev?.qty || 0) + qty,
+            unit: unit,
+            name: String(it.goods?.name || ''),
+            item_code: String(it.goods?.item_code || ''),
+            unitLabel: String(it.goods?.unit || ''),
+          });
+        });
+
         wo.billings.forEach((bill: any) => {
             const billQty = Number(bill.qty || 0);
             const billUnit = Number(bill.unit_price || 0);
@@ -381,6 +417,7 @@ export default function GrossProfitReport() {
             let hppSource = '-';
             
             if (bill.item_type === 'PART' && bill.goods_id) {
+                issuedByGoodsId.delete(String(bill.goods_id));
                 const isValueOnly = valueOnlyParts.some((p: any) => isNameMatch(p.item_name, bill.goods?.name || bill.item_name || ''));
                 billingPartNames.push(String(bill.goods?.name || bill.item_name || ''));
                 if (isValueOnly) {
@@ -441,6 +478,39 @@ export default function GrossProfitReport() {
                 margin: margin,
                 margin_percent: marginPercent
             });
+        });
+
+        issuedByGoodsId.forEach((v, gid) => {
+          const billQty = Number(v.qty || 0);
+          const hargaPagu = Number(v.unit || 0);
+          const totalHarga = hargaPagu * billQty;
+
+          const hppSatuan = partHppMap[gid] || 0;
+          const hppSource = partHppMap[gid] !== undefined ? 'PO Terakhir' : 'Tidak Ada PO';
+          const hppTotal = hppSatuan * billQty;
+          const margin = totalHarga - hppTotal;
+          const marginPercent = totalHarga ? (margin / totalHarga) * 100 : 0;
+
+          reportRows.push({
+            tgl: wo.work_date,
+            nopol: wo.vehicle_entries?.vehicles?.license_plate || '-',
+            merk_type: wo.vehicle_entries?.vehicles?.brand_type || '-',
+            group_kendaraan: vehicleGroupLabel(wo.vehicle_entries?.vehicles?.vehicle_type),
+            nota_dinas: wo.vehicle_entries?.nota_dinas_number || '-',
+            group: woFinalGroup,
+            klasifikasi: woFinalGroup,
+            sku: v.item_code || '-',
+            item: `Penggantian ${v.name || 'Sparepart'}`,
+            qty: billQty,
+            satuan: v.unitLabel || '-',
+            harga_pagu: hargaPagu,
+            total_harga: totalHarga,
+            hpp_satuan: hppSatuan,
+            hpp_total: hppTotal,
+            hpp_source: hppSource,
+            margin,
+            margin_percent: marginPercent,
+          });
         });
 
         valueOnlyJobs.forEach((j: any) => {

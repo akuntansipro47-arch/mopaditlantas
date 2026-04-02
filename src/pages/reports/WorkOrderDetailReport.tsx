@@ -46,6 +46,14 @@ export default function WorkOrderDetailReport() {
         .from('work_orders')
         .select(`
           *,
+          goods_issues (
+            goods_issue_items (
+              quantity,
+              is_info_only,
+              value_only,
+              goods (id, name, selling_price)
+            )
+          ),
           vehicle_entries (
             nota_dinas_number,
             service_group,
@@ -70,7 +78,8 @@ export default function WorkOrderDetailReport() {
             qty,
             unit_price,
             total_price,
-            job_group
+            job_group,
+            goods_id
           )
         `)
         .order('work_date', { ascending: false });
@@ -99,6 +108,11 @@ export default function WorkOrderDetailReport() {
       // Process WOs to map billings or fallback to estimates
       const processedWOs = wos?.map(wo => {
           let mergedBillings = wo.work_order_billings || [];
+          const goodsIdInBilling = new Set<string>(
+            (mergedBillings || [])
+              .filter((b: any) => b?.item_type === 'PART' && b?.goods_id)
+              .map((b: any) => String(b.goods_id))
+          );
           
           // If no billings yet (e.g. status OPEN/IN_PROGRESS), use estimation data from entry
           if (mergedBillings.length === 0 && wo.vehicle_entries) {
@@ -126,6 +140,31 @@ export default function WorkOrderDetailReport() {
               }));
               
               mergedBillings = [...estimatedJobs, ...estimatedParts];
+          }
+
+          const issueItems =
+            (wo.goods_issues || [])
+              .flatMap((gi: any) => gi?.goods_issue_items || [])
+              .filter((it: any) => !it?.is_info_only && !it?.value_only && it?.goods?.id);
+
+          if (issueItems.length > 0) {
+            const injected = issueItems
+              .filter((it: any) => !goodsIdInBilling.has(String(it.goods.id)))
+              .map((it: any) => {
+                const qty = Number(it.quantity || 0);
+                const unit = Number(it.goods?.selling_price || 0);
+                return {
+                  item_type: 'PART',
+                  item_name: `Penggantian ${it.goods?.name || 'Sparepart'}`,
+                  qty,
+                  unit_price: unit,
+                  total_price: unit * qty,
+                  job_group: 'PERBAIKAN',
+                  goods_id: it.goods.id,
+                  source: 'GOODS_ISSUE'
+                };
+              });
+            mergedBillings = [...mergedBillings, ...injected];
           }
           
           return {
