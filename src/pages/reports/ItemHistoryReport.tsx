@@ -5,7 +5,7 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Download, Calendar, Search, Check } from 'lucide-react';
-import { formatDate } from '@/lib/utils';
+import { formatCurrency, formatDate } from '@/lib/utils';
 import * as XLSX from 'xlsx';
 import {
     Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList
@@ -23,6 +23,10 @@ type Transaction = {
     qty_in: number;
     qty_out: number;
     balance: number;
+    hpp: number;
+    value_in: number;
+    value_out: number;
+    value_balance: number;
     description: string;
     is_info_only?: boolean;
 };
@@ -43,6 +47,11 @@ export default function ItemHistoryReport() {
         end: new Date().toISOString().split('T')[0]
     });
     const [showAllHistory, setShowAllHistory] = useState(false); // New toggle
+
+    const totalValueIn = transactions.reduce((sum, t) => sum + (t.description === 'Saldo Awal' ? 0 : (t.value_in || 0)), 0);
+    const totalValueOut = transactions.reduce((sum, t) => sum + (t.description === 'Saldo Awal' ? 0 : (t.value_out || 0)), 0);
+    const endingBalanceQty = transactions.length > 0 ? transactions[transactions.length - 1].balance : 0;
+    const endingBalanceValue = transactions.length > 0 ? transactions[transactions.length - 1].value_balance : 0;
 
     // Add Debug State
     // const [debugInfo, setDebugInfo] = useState<{incoming: number, outgoing: number, error?: string} | null>(null);
@@ -133,6 +142,57 @@ export default function ItemHistoryReport() {
                 throw outError;
             }
 
+            const { data: poItems } = await supabase
+              .from('purchase_order_items')
+              .select(
+                `
+                quantity,
+                unit_price,
+                purchase_orders (
+                  po_number,
+                  po_date
+                )
+              `
+              )
+              .eq('goods_id', selectedGood.id);
+
+            const poCostByNumber = new Map<string, { date: string; cost: number }>();
+            const poAgg = new Map<string, { qty: number; total: number; date: string }>();
+
+            poItems?.forEach((it: any) => {
+              const poNumber = String(it.purchase_orders?.po_number || '');
+              const poDate = String(it.purchase_orders?.po_date || '');
+              if (!poNumber) return;
+              const qty = Number(it.quantity || 0);
+              const price = Number(it.unit_price || 0);
+              const prev = poAgg.get(poNumber) || { qty: 0, total: 0, date: poDate };
+              poAgg.set(poNumber, {
+                qty: prev.qty + qty,
+                total: prev.total + qty * price,
+                date: prev.date || poDate,
+              });
+            });
+
+            poAgg.forEach((v, k) => {
+              const cost = v.qty > 0 ? v.total / v.qty : 0;
+              poCostByNumber.set(k, { date: v.date, cost: Number.isFinite(cost) ? cost : 0 });
+            });
+
+            const costTimeline = Array.from(poCostByNumber.values())
+              .filter((x) => x.date)
+              .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+
+            const getCostAt = (date: string) => {
+              const t = new Date(date).getTime();
+              let last = 0;
+              for (const x of costTimeline) {
+                const xt = new Date(x.date).getTime();
+                if (xt <= t) last = x.cost;
+                else break;
+              }
+              return last;
+            };
+
             // setDebugInfo({ incoming: incoming?.length || 0, outgoing: outgoing?.length || 0 });
 
             // 3. Calculate Initial Balance (Saldo Awal)
@@ -210,6 +270,9 @@ export default function ItemHistoryReport() {
                 }
             });
 
+            const openingHpp = getCostAt(dateRange.start);
+            const openingValue = openingBalance * openingHpp;
+
             // 4. Map & Combine Transactions
             let combined: Transaction[] = [];
 
@@ -219,15 +282,24 @@ export default function ItemHistoryReport() {
                  const inRange = d >= new Date(dateRange.start) && d <= new Date(dateRange.end);
                  
                  if (showAllHistory || inRange) {
+                    const poNumber = String(item.goods_receipts?.purchase_orders?.po_number || '');
+                    const direct = poNumber ? poCostByNumber.get(poNumber)?.cost : 0;
+                    const hpp = Number.isFinite(Number(direct)) && Number(direct) > 0 ? Number(direct) : getCostAt(item.goods_receipts?.receipt_date);
+                    const qtyIn = Number(item.quantity || 0);
+                    const valueIn = qtyIn * (Number(hpp) || 0);
                     combined.push({
                         date: item.goods_receipts?.receipt_date,
                         type: 'IN',
                         ref_number: item.goods_receipts?.purchase_orders?.po_number || item.goods_receipts?.receipt_number || '-',
                         secondary_ref: item.goods_receipts?.purchase_orders?.suppliers?.name || 'Supplier Umum',
                         tertiary_ref: '-',
-                        qty_in: item.quantity,
+                        qty_in: qtyIn,
                         qty_out: 0,
                         balance: 0, 
+                        hpp: Number(hpp) || 0,
+                        value_in: valueIn,
+                        value_out: 0,
+                        value_balance: 0,
                         description: 'Pembelian / Masuk'
                     });
                  }
@@ -239,6 +311,9 @@ export default function ItemHistoryReport() {
                  const inRange = d >= new Date(dateRange.start) && d <= new Date(dateRange.end);
                  
                  if (showAllHistory || inRange) {
+                    const qtyOut = item.is_info_only ? 0 : Number(item.quantity || 0);
+                    const hpp = getCostAt(item.goods_issues?.issue_date);
+                    const valueOut = qtyOut * (Number(hpp) || 0);
                     combined.push({
                         date: item.goods_issues?.issue_date,
                         type: 'OUT',
@@ -246,8 +321,12 @@ export default function ItemHistoryReport() {
                         secondary_ref: '-',
                         tertiary_ref: item.goods_issues?.work_orders?.vehicle_entries?.vehicles?.license_plate || '-',
                         qty_in: 0,
-                        qty_out: item.is_info_only ? 0 : item.quantity,
+                        qty_out: qtyOut,
                         balance: 0,
+                        hpp: Number(hpp) || 0,
+                        value_in: 0,
+                        value_out: valueOut,
+                        value_balance: 0,
                         description: item.is_info_only ? 'Part Luar (Pemakaian)' : 'Pemakaian / Keluar',
                         is_info_only: item.is_info_only
                     });
@@ -259,6 +338,7 @@ export default function ItemHistoryReport() {
 
             // Calculate Running Balance
             let currentBalance = openingBalance;
+            let currentValueBalance = openingValue;
             
             // Add Opening Balance Row
             const finalData = [
@@ -271,11 +351,16 @@ export default function ItemHistoryReport() {
                     qty_in: 0,
                     qty_out: 0,
                     balance: openingBalance,
+                    hpp: openingHpp,
+                    value_in: 0,
+                    value_out: 0,
+                    value_balance: openingValue,
                     description: 'Saldo Awal'
                 },
                 ...combined.map(t => {
                     currentBalance = currentBalance + t.qty_in - t.qty_out;
-                    return { ...t, balance: currentBalance };
+                    currentValueBalance = currentValueBalance + t.value_in - t.value_out;
+                    return { ...t, balance: currentBalance, value_balance: currentValueBalance };
                 })
             ];
 
@@ -299,6 +384,11 @@ export default function ItemHistoryReport() {
             'Masuk': item.qty_in,
             'Keluar': item.is_info_only ? `(${item.qty_out})*` : item.qty_out,
             'Saldo': item.balance
+            ,
+            'HPP (Harga Beli)': item.hpp,
+            'Nilai Masuk': item.value_in,
+            'Nilai Keluar': item.value_out,
+            'Nilai Saldo': item.value_balance
         })));
 
         const wb = XLSX.utils.book_new();
@@ -364,6 +454,26 @@ export default function ItemHistoryReport() {
                     <CardTitle className="text-base font-medium">Rincian Transaksi</CardTitle>
                 </CardHeader>
                 <CardContent className="p-0">
+                    {selectedGood && transactions.length > 0 && (
+                        <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 p-4 border-b bg-white">
+                            <div className="rounded-md border p-3">
+                                <div className="text-xs text-gray-500">Saldo Akhir (Qty)</div>
+                                <div className="text-lg font-bold">{endingBalanceQty.toLocaleString('id-ID')}</div>
+                            </div>
+                            <div className="rounded-md border p-3">
+                                <div className="text-xs text-gray-500">Nilai Saldo Akhir</div>
+                                <div className="text-lg font-bold">{formatCurrency(endingBalanceValue)}</div>
+                            </div>
+                            <div className="rounded-md border p-3">
+                                <div className="text-xs text-gray-500">Total Nilai Masuk</div>
+                                <div className="text-lg font-bold text-green-700">{formatCurrency(totalValueIn)}</div>
+                            </div>
+                            <div className="rounded-md border p-3">
+                                <div className="text-xs text-gray-500">Total Nilai Keluar</div>
+                                <div className="text-lg font-bold text-red-700">{formatCurrency(totalValueOut)}</div>
+                            </div>
+                        </div>
+                    )}
                     <div className="overflow-x-auto">
                         <Table>
                             <TableHeader>
@@ -376,13 +486,15 @@ export default function ItemHistoryReport() {
                                     <TableHead className="text-right w-[100px] text-green-600">Masuk (Debit)</TableHead>
                                     <TableHead className="text-right w-[100px] text-red-600">Keluar (Kredit)</TableHead>
                                     <TableHead className="text-right w-[120px] font-bold">Saldo</TableHead>
+                                    <TableHead className="text-right w-[140px]">HPP (Harga Beli)</TableHead>
+                                    <TableHead className="text-right w-[140px]">Total Nilai</TableHead>
                                 </TableRow>
                             </TableHeader>
                             <TableBody>
                                 {loading ? (
-                                    <TableRow><TableCell colSpan={8} className="text-center h-24">Memuat data...</TableCell></TableRow>
+                                    <TableRow><TableCell colSpan={10} className="text-center h-24">Memuat data...</TableCell></TableRow>
                                 ) : transactions.length === 0 ? (
-                                    <TableRow><TableCell colSpan={8} className="text-center h-24 text-gray-500">{selectedGood ? 'Tidak ada transaksi pada periode ini.' : 'Silakan pilih barang terlebih dahulu.'}</TableCell></TableRow>
+                                    <TableRow><TableCell colSpan={10} className="text-center h-24 text-gray-500">{selectedGood ? 'Tidak ada transaksi pada periode ini.' : 'Silakan pilih barang terlebih dahulu.'}</TableCell></TableRow>
                                 ) : (
                                     transactions.map((t, i) => (
                                         <TableRow key={i} className={t.description === 'Saldo Awal' ? 'bg-gray-100 font-medium' : ''}>
@@ -406,6 +518,16 @@ export default function ItemHistoryReport() {
                                                 ) : '-'}
                                             </TableCell>
                                             <TableCell className="text-right font-bold bg-slate-50">{t.balance}</TableCell>
+                                            <TableCell className="text-right">{t.hpp ? formatCurrency(t.hpp) : '-'}</TableCell>
+                                            <TableCell className="text-right">
+                                                {t.value_in > 0 ? (
+                                                    <span className="text-green-700 font-medium">{formatCurrency(t.value_in)}</span>
+                                                ) : t.value_out > 0 ? (
+                                                    <span className="text-red-700 font-medium">-{formatCurrency(t.value_out)}</span>
+                                                ) : (
+                                                    '-'
+                                                )}
+                                            </TableCell>
                                         </TableRow>
                                     ))
                                 )}
