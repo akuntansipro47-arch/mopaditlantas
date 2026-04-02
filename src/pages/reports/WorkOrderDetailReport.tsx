@@ -163,7 +163,7 @@ export default function WorkOrderDetailReport() {
           }
 
           const issueItems = (issuesByWoId.get(String(wo.id)) || [])
-            .filter((it: any) => !it?.is_info_only && !it?.value_only && it?.goods?.id);
+            .filter((it: any) => it?.goods?.id);
 
           if (issueItems.length > 0) {
             const injected = issueItems

@@ -481,6 +481,7 @@ export default function WorkOrderV2() {
         .eq('work_order_id', wo.id);
 
       let items: WOBillingItem[] = [];
+      const existingPerbaikanPriceByGoodsId = new Map<string, number>();
 
       if (existingBillings && existingBillings.length > 0) {
         // Use existing billings but REFRESH "Perbaikan" parts from Goods Issue
@@ -496,6 +497,13 @@ export default function WorkOrderV2() {
           job_group: b.job_group,
           source: 'WO_INTERFACE' // Default
         }));
+
+        existingBillings.forEach((b: any) => {
+          if (b?.item_type === 'PART' && String(b?.job_group || '').toUpperCase() === 'PERBAIKAN' && b?.goods_id) {
+            const unit = Number(b.unit_price || 0);
+            existingPerbaikanPriceByGoodsId.set(String(b.goods_id), unit);
+          }
+        });
 
         // Remove old Perbaikan parts (source: GOODS_ISSUE) from saved billing to avoid stale data
         // We will re-inject them from fresh issueData below.
@@ -553,6 +561,8 @@ export default function WorkOrderV2() {
                 
                 const exists = items.find(i => i.goods_id === item.goods.id && isServiceRingan(i.job_group));
                 if (!exists) {
+                     const overrideUnit = existingPerbaikanPriceByGoodsId.get(String(item.goods.id));
+                     const unitPrice = overrideUnit !== undefined ? overrideUnit : (item.goods.selling_price || 0);
                      items.push({
                         item_type: 'PART',
                         job_type_id: null,
@@ -560,8 +570,8 @@ export default function WorkOrderV2() {
                         item_name: `Penggantian ${item.goods.name}`,
                         job_group: 'PERBAIKAN',
                         qty: item.quantity,
-                        unit_price: item.goods.selling_price || 0,
-                        total_price: (item.goods.selling_price || 0) * item.quantity,
+                        unit_price: unitPrice,
+                        total_price: unitPrice * item.quantity,
                         source: 'GOODS_ISSUE' // Flag as from Goods Issue
                     });
                 }

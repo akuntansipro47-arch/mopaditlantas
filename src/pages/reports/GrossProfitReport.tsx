@@ -369,7 +369,15 @@ export default function GrossProfitReport() {
       // 5. Build Report Rows
       const reportRows: any[] = [];
       wos?.forEach(wo => {
-        if (!wo.billings || wo.billings.length === 0) return;
+        const hasBillings = Array.isArray(wo.billings) && wo.billings.length > 0;
+        const hasIssues = (issuesByWoId.get(String(wo.id)) || []).some((it: any) => it?.goods?.id);
+        const hasValueOnly =
+          (Array.isArray(wo.vehicle_entries?.vehicle_entry_spareparts) &&
+            wo.vehicle_entries.vehicle_entry_spareparts.some((p: any) => Boolean((p as any).value_only))) ||
+          (Array.isArray(wo.vehicle_entries?.vehicle_entry_jobs) &&
+            wo.vehicle_entries.vehicle_entry_jobs.some((j: any) => Boolean((j as any).value_only)));
+
+        if (!hasBillings && !hasIssues && !hasValueOnly) return;
 
         // --- NEW LOGIC: MURNI GROUP WO (Dengan Fallback Cerdas) ---
         
@@ -406,7 +414,7 @@ export default function GrossProfitReport() {
         const billingPartNames: string[] = [];
 
         const issueItems = (issuesByWoId.get(String(wo.id)) || [])
-          .filter((it: any) => !it?.is_info_only && !it?.value_only && it?.goods?.id);
+          .filter((it: any) => it?.goods?.id);
 
         const issuedByGoodsId = new Map<string, { qty: number; unit: number; name: string; item_code: string; unitLabel: string }>();
         issueItems.forEach((it: any) => {
@@ -423,7 +431,7 @@ export default function GrossProfitReport() {
           });
         });
 
-        wo.billings.forEach((bill: any) => {
+        (wo.billings || []).forEach((bill: any) => {
             const billQty = Number(bill.qty || 0);
             const billUnit = Number(bill.unit_price || 0);
             let totalHarga = Number(bill.total_price ?? billUnit * billQty);
