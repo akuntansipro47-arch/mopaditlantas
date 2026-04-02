@@ -1,36 +1,42 @@
-/* eslint-disable */
-// import { useRegisterSW } from 'virtual:pwa-register/react'
-import { useEffect } from 'react'
-// import { toast } from 'sonner'
-// import { Button } from '@/components/ui/button'
+import { useEffect, useRef } from 'react'
+import { useRegisterSW } from 'virtual:pwa-register/react'
+import { toast } from 'sonner'
 
 export default function ReloadPrompt() {
-  /*
   const {
-    offlineReady: [offlineReady, setOfflineReady],
-    needRefresh: [needRefresh, setNeedRefresh],
+    offlineReady: [offlineReady],
+    needRefresh: [needRefresh],
     updateServiceWorker,
   } = useRegisterSW({
     onRegistered(r) {
-      console.log('SW Registered: ' + r)
+      console.log('SW Registered:', r)
     },
     onRegisterError(error) {
       console.log('SW registration error', error)
     },
   })
 
+  const shownRef = useRef(false)
+
   useEffect(() => {
-    if (needRefresh) {
-      toast("Update Tersedia", {
-        description: "Versi baru aplikasi tersedia. Silakan update.",
-        action: {
-          label: "Update Sekarang",
-          onClick: () => updateServiceWorker(true),
-        },
-        duration: Infinity,
-      })
-    }
+    if (!needRefresh || shownRef.current) return
+    shownRef.current = true
+    toast('Update tersedia', {
+      description: 'Versi terbaru aplikasi sudah tersedia. Klik untuk update.',
+      action: {
+        label: 'Update',
+        onClick: () => updateServiceWorker(true),
+      },
+      duration: Infinity,
+    })
   }, [needRefresh, updateServiceWorker])
-  */
+
+  useEffect(() => {
+    if (!offlineReady) return
+    toast('Mode offline siap', {
+      description: 'Aplikasi bisa dibuka walau koneksi tidak stabil.',
+      duration: 4000,
+    })
+  }, [offlineReady])
   return null
 }

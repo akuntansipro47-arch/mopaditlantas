@@ -38,7 +38,7 @@ import EmployeeData from "@/pages/hr/EmployeeData"; // Import HR
 
 
 // ReportsUpdated to V2
-// import ReloadPrompt from "@/components/ReloadPrompt";
+import ReloadPrompt from "@/components/ReloadPrompt";
 import DebugDashboard from "@/pages/DebugDashboard";
 import DebugSync from "@/pages/DebugSync"; // EMERGENCY DEBUG SYNC
 
@@ -47,7 +47,7 @@ export default function App() {
   return (
     <AuthProvider>
       <Router>
-        {/* <ReloadPrompt /> */}
+        <ReloadPrompt />
         <Routes>
           <Route path="/login" element={<Login />} />
           
