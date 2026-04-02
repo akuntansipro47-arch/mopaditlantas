@@ -7,6 +7,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Download, Calendar, Search, Check } from 'lucide-react';
 import { formatCurrency, formatDate } from '@/lib/utils';
 import * as XLSX from 'xlsx';
+import { useAuth } from '@/context/AuthContext';
+import { toast } from 'sonner';
 import {
     Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList
 } from "@/components/ui/command";
@@ -29,9 +31,12 @@ type Transaction = {
     value_balance: number;
     description: string;
     is_info_only?: boolean;
+    value_only?: boolean;
 };
 
 export default function ItemHistoryReport() {
+    const { user } = useAuth();
+    const canSyncStock = String(user?.role || '').toUpperCase().includes('SUPER');
     const [transactions, setTransactions] = useState<Transaction[]>([]);
     const [loading, setLoading] = useState(false);
     
@@ -52,6 +57,7 @@ export default function ItemHistoryReport() {
     const totalValueOut = transactions.reduce((sum, t) => sum + (t.description === 'Saldo Awal' ? 0 : (t.value_out || 0)), 0);
     const endingBalanceQty = transactions.length > 0 ? transactions[transactions.length - 1].balance : 0;
     const endingBalanceValue = transactions.length > 0 ? transactions[transactions.length - 1].value_balance : 0;
+    const [computedStock, setComputedStock] = useState<number | null>(null);
 
     // Add Debug State
     // const [debugInfo, setDebugInfo] = useState<{incoming: number, outgoing: number, error?: string} | null>(null);
@@ -121,6 +127,7 @@ export default function ItemHistoryReport() {
                     quantity,
                     created_at,
                     is_info_only,
+                    value_only,
                     goods_issues (
                         issue_date,
                         issue_number,
@@ -247,6 +254,7 @@ export default function ItemHistoryReport() {
                 .select(`
                     quantity,
                     is_info_only,
+                    value_only,
                     goods_issues (issue_date)
                 `)
                 .eq('goods_id', selectedGood.id);
@@ -265,13 +273,21 @@ export default function ItemHistoryReport() {
             allOutgoing?.forEach((item: any) => {
                 const d = new Date(item.goods_issues?.issue_date);
                 // Info Only does NOT reduce stock
-                if (d < start && !item.is_info_only) {
+                if (d < start && !item.is_info_only && !item.value_only) {
                     openingBalance -= item.quantity;
                 }
             });
 
             const openingHpp = getCostAt(dateRange.start);
             const openingValue = openingBalance * openingHpp;
+
+            const computedNow =
+              (allIncoming?.reduce((s: number, it: any) => s + Number(it.quantity || 0), 0) || 0) -
+              (allOutgoing?.reduce((s: number, it: any) => {
+                if (it.is_info_only || it.value_only) return s;
+                return s + Number(it.quantity || 0);
+              }, 0) || 0);
+            setComputedStock(computedNow);
 
             // 4. Map & Combine Transactions
             let combined: Transaction[] = [];
@@ -311,7 +327,7 @@ export default function ItemHistoryReport() {
                  const inRange = d >= new Date(dateRange.start) && d <= new Date(dateRange.end);
                  
                  if (showAllHistory || inRange) {
-                    const qtyOut = item.is_info_only ? 0 : Number(item.quantity || 0);
+                    const qtyOut = item.is_info_only || item.value_only ? 0 : Number(item.quantity || 0);
                     const hpp = getCostAt(item.goods_issues?.issue_date);
                     const valueOut = qtyOut * (Number(hpp) || 0);
                     combined.push({
@@ -327,8 +343,13 @@ export default function ItemHistoryReport() {
                         value_in: 0,
                         value_out: valueOut,
                         value_balance: 0,
-                        description: item.is_info_only ? 'Part Luar (Pemakaian)' : 'Pemakaian / Keluar',
-                        is_info_only: item.is_info_only
+                        description: item.is_info_only
+                          ? 'Part Luar (Pemakaian)'
+                          : item.value_only
+                          ? 'Nilai Saja (Tidak Kurangi Stok)'
+                          : 'Pemakaian / Keluar',
+                        is_info_only: item.is_info_only,
+                        value_only: item.value_only
                     });
                  }
             });
@@ -372,6 +393,26 @@ export default function ItemHistoryReport() {
             setLoading(false);
         }
     }
+
+    const handleSyncStock = async () => {
+      if (!selectedGood) return;
+      if (computedStock === null) {
+        toast.error('Tidak bisa sinkron: data mutasi belum dihitung.');
+        return;
+      }
+      if (!confirm(`Sinkronkan stok "${selectedGood.name}"? Ini akan mengubah stok saat ini menjadi ${computedStock}.`)) return;
+      try {
+        const { error } = await supabase
+          .from('goods')
+          .update({ current_stock: computedStock } as any)
+          .eq('id', selectedGood.id);
+        if (error) throw error;
+        toast.success('Stok berhasil disinkronkan.');
+        setSelectedGood({ ...selectedGood, current_stock: computedStock });
+      } catch (e: any) {
+        toast.error('Gagal sinkron stok: ' + e.message);
+      }
+    };
 
     const exportToExcel = () => {
         if (!selectedGood) return;
@@ -471,6 +512,24 @@ export default function ItemHistoryReport() {
                             <div className="rounded-md border p-3">
                                 <div className="text-xs text-gray-500">Total Nilai Keluar</div>
                                 <div className="text-lg font-bold text-red-700">{formatCurrency(totalValueOut)}</div>
+                            </div>
+                            <div className="rounded-md border p-3 sm:col-span-4">
+                                <div className="flex flex-wrap items-center justify-between gap-2">
+                                  <div className="text-xs text-gray-500">
+                                    Stok Saat Ini: <span className="font-semibold text-gray-900">{Number(selectedGood.current_stock || 0).toLocaleString('id-ID')}</span>
+                                    {computedStock !== null && (
+                                      <>
+                                        {' '}| Stok dari Mutasi: <span className="font-semibold text-gray-900">{Number(computedStock).toLocaleString('id-ID')}</span>
+                                        {' '}| Selisih: <span className="font-semibold text-gray-900">{Number((selectedGood.current_stock || 0) - computedStock).toLocaleString('id-ID')}</span>
+                                      </>
+                                    )}
+                                  </div>
+                                  {canSyncStock && computedStock !== null && Number((selectedGood.current_stock || 0) - computedStock) !== 0 && (
+                                    <Button variant="outline" size="sm" onClick={handleSyncStock}>
+                                      Sinkronkan Stok
+                                    </Button>
+                                  )}
+                                </div>
                             </div>
                         </div>
                     )}
