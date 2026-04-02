@@ -103,26 +103,46 @@ export default function WorkOrderDetailReport() {
       if (woIds.length > 0) {
         const { data: issues, error: issueErr } = await supabase
           .from('goods_issues')
-          .select(`
-            work_order_id,
-            goods_issue_items (
-              quantity,
-              is_info_only,
-              value_only,
-              goods (id, name, selling_price)
-            )
-          `)
+          .select('id, work_order_id')
           .in('work_order_id', woIds);
+
         if (issueErr) {
-          console.error('Supabase Error fetching goods issues for Detail WO:', issueErr);
+          console.error('Supabase Error fetching goods issues headers for Detail WO:', issueErr);
         } else {
+          const issueIdToWoId = new Map<string, string>();
+          const issueIds: string[] = [];
           (issues || []).forEach((gi: any) => {
+            const issueId = String(gi.id || '');
             const woId = String(gi.work_order_id || '');
-            if (!woId) return;
-            const items = Array.isArray(gi.goods_issue_items) ? gi.goods_issue_items : [];
-            const prev = issuesByWoId.get(woId) || [];
-            issuesByWoId.set(woId, [...prev, ...items]);
+            if (!issueId || !woId) return;
+            issueIdToWoId.set(issueId, woId);
+            issueIds.push(issueId);
           });
+
+          if (issueIds.length > 0) {
+            const { data: issueItems, error: itemsErr } = await supabase
+              .from('goods_issue_items')
+              .select(`
+                issue_id,
+                quantity,
+                is_info_only,
+                value_only,
+                goods (id, name, selling_price)
+              `)
+              .in('issue_id', issueIds);
+
+            if (itemsErr) {
+              console.error('Supabase Error fetching goods issue items for Detail WO:', itemsErr);
+            } else {
+              (issueItems || []).forEach((it: any) => {
+                const issueId = String(it.issue_id || '');
+                const woId = issueIdToWoId.get(issueId);
+                if (!woId) return;
+                const prev = issuesByWoId.get(woId) || [];
+                issuesByWoId.set(woId, [...prev, it]);
+              });
+            }
+          }
         }
       }
 
@@ -247,9 +267,109 @@ export default function WorkOrderDetailReport() {
 
       if (error) throw error;
 
+      const woIds = (wos || []).map((wo: any) => wo.id).filter(Boolean);
+      const issuesByWoId = new Map<string, any[]>();
+      if (woIds.length > 0) {
+        const { data: issues } = await supabase
+          .from('goods_issues')
+          .select('id, work_order_id')
+          .in('work_order_id', woIds);
+
+        const issueIdToWoId = new Map<string, string>();
+        const issueIds: string[] = [];
+        (issues || []).forEach((gi: any) => {
+          const issueId = String(gi.id || '');
+          const woId = String(gi.work_order_id || '');
+          if (!issueId || !woId) return;
+          issueIdToWoId.set(issueId, woId);
+          issueIds.push(issueId);
+        });
+
+        if (issueIds.length > 0) {
+          const { data: issueItems } = await supabase
+            .from('goods_issue_items')
+            .select(`
+              issue_id,
+              quantity,
+              is_info_only,
+              value_only,
+              goods (id, name, selling_price)
+            `)
+            .in('issue_id', issueIds);
+
+          (issueItems || []).forEach((it: any) => {
+            const issueId = String(it.issue_id || '');
+            const woId = issueIdToWoId.get(issueId);
+            if (!woId) return;
+            const prev = issuesByWoId.get(woId) || [];
+            issuesByWoId.set(woId, [...prev, it]);
+          });
+        }
+      }
+
+      const processed = (wos || []).map((wo: any) => {
+        let mergedBillings = wo.work_order_billings || [];
+        const goodsIdInBilling = new Set<string>(
+          (mergedBillings || [])
+            .filter((b: any) => b?.item_type === 'PART' && b?.goods_id)
+            .map((b: any) => String(b.goods_id))
+        );
+
+        if (mergedBillings.length === 0 && wo.vehicle_entries) {
+          const entryJobs = wo.vehicle_entries.vehicle_entry_jobs || [];
+          const entryParts = wo.vehicle_entries.vehicle_entry_spareparts || [];
+
+          const estimatedJobs = entryJobs.map((ej: any) => ({
+            item_type: 'JOB',
+            item_name: ej.job_types?.job_name || 'Pekerjaan',
+            qty: 1,
+            unit_price: ej.job_types?.selling_price || 0,
+            total_price: ej.job_types?.selling_price || 0,
+            job_group: ej.job_types?.job_group || 'Umum',
+            is_estimation: true,
+          }));
+
+          const estimatedParts = entryParts.map((ep: any) => ({
+            item_type: 'PART',
+            item_name: ep.item_name || 'Sparepart',
+            qty: ep.qty || 1,
+            unit_price: ep.estimated_price || 0,
+            total_price: (ep.qty || 1) * (ep.estimated_price || 0),
+            job_group: 'Sparepart',
+            is_estimation: true,
+          }));
+
+          mergedBillings = [...estimatedJobs, ...estimatedParts];
+        }
+
+        const issueItems = (issuesByWoId.get(String(wo.id)) || []).filter((it: any) => it?.goods?.id);
+
+        if (issueItems.length > 0) {
+          const injected = issueItems
+            .filter((it: any) => !goodsIdInBilling.has(String(it.goods.id)))
+            .map((it: any) => {
+              const qty = Number(it.quantity || 0);
+              const unit = Number(it.goods?.selling_price || 0);
+              return {
+                item_type: 'PART',
+                item_name: `Penggantian ${it.goods?.name || 'Sparepart'}`,
+                qty,
+                unit_price: unit,
+                total_price: unit * qty,
+                job_group: 'PERBAIKAN',
+                goods_id: it.goods.id,
+                source: 'GOODS_ISSUE',
+              };
+            });
+          mergedBillings = [...mergedBillings, ...injected];
+        }
+
+        return { ...wo, merged_billings: mergedBillings };
+      });
+
       const existingIds = new Set((data || []).map((x: any) => String(x.id)));
       const merged = [...(data || [])];
-      (wos || []).forEach((wo: any) => {
+      processed.forEach((wo: any) => {
         const id = String(wo.id);
         if (!existingIds.has(id)) merged.unshift(wo);
       });

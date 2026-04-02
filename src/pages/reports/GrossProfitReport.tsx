@@ -334,26 +334,44 @@ export default function GrossProfitReport() {
       if (woIds.length > 0) {
         const { data: issues, error: issueErr } = await supabase
           .from('goods_issues')
-          .select(`
-            work_order_id,
-            goods_issue_items (
-              quantity,
-              is_info_only,
-              value_only,
-              goods (id, name, selling_price, unit, item_code)
-            )
-          `)
+          .select('id, work_order_id')
           .in('work_order_id', woIds);
         if (issueErr) {
-          console.warn('Could not fetch goods issues for gross profit report:', issueErr.message);
+          console.warn('Could not fetch goods issues headers for gross profit report:', issueErr.message);
         } else {
+          const issueIdToWoId = new Map<string, string>();
+          const issueIds: string[] = [];
           (issues || []).forEach((gi: any) => {
+            const issueId = String(gi.id || '');
             const woId = String(gi.work_order_id || '');
-            if (!woId) return;
-            const items = Array.isArray(gi.goods_issue_items) ? gi.goods_issue_items : [];
-            const prev = issuesByWoId.get(woId) || [];
-            issuesByWoId.set(woId, [...prev, ...items]);
+            if (!issueId || !woId) return;
+            issueIdToWoId.set(issueId, woId);
+            issueIds.push(issueId);
           });
+
+          if (issueIds.length > 0) {
+            const { data: issueItems, error: itemsErr } = await supabase
+              .from('goods_issue_items')
+              .select(`
+                issue_id,
+                quantity,
+                is_info_only,
+                value_only,
+                goods (id, name, selling_price, unit, item_code)
+              `)
+              .in('issue_id', issueIds);
+            if (itemsErr) {
+              console.warn('Could not fetch goods issue items for gross profit report:', itemsErr.message);
+            } else {
+              (issueItems || []).forEach((it: any) => {
+                const issueId = String(it.issue_id || '');
+                const woId = issueIdToWoId.get(issueId);
+                if (!woId) return;
+                const prev = issuesByWoId.get(woId) || [];
+                issuesByWoId.set(woId, [...prev, it]);
+              });
+            }
+          }
         }
       }
 
