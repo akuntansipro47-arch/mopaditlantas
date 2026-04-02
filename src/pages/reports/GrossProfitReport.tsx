@@ -13,6 +13,7 @@ export default function GrossProfitReport() {
   const [data, setData] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
+  const [woServerSearch, setWoServerSearch] = useState('');
   const [dateRange, setDateRange] = useState({
     start: new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0], // Default current month
     end: new Date().toISOString().split('T')[0]
@@ -272,6 +273,59 @@ export default function GrossProfitReport() {
             .order('work_date', { ascending: false });
           if (fallbackErr) throw fallbackErr;
           wos = (fallback as any[]) || [];
+        }
+      }
+
+      const q = woServerSearch.trim();
+      if (q) {
+        const { data: extra, error: extraErr } = await supabase
+          .from('work_orders')
+          .select(`
+            *,
+            vehicle_entries (
+              nota_dinas_number,
+              service_group,
+              vehicles (license_plate, brand_type, vehicle_type),
+              vehicle_entry_spareparts (
+                item_name,
+                qty,
+                estimated_price,
+                value_only
+              ),
+              vehicle_entry_jobs (
+                job_type_id,
+                estimated_price,
+                value_only,
+                job_types (
+                  job_name,
+                  job_group,
+                  selling_price
+                )
+              )
+            ),
+            billings:work_order_billings (
+              item_type,
+              item_name,
+              qty,
+              unit_price,
+              total_price,
+              goods_id,
+              job_type_id,
+              job_group,
+              goods (name, unit, item_code)
+            )
+          `)
+          .ilike('wo_number', `%${q}%`)
+          .order('work_date', { ascending: false })
+          .limit(20);
+        if (extraErr) throw extraErr;
+
+        if (extra && extra.length > 0) {
+          const base = Array.isArray(wos) ? wos : [];
+          const byId = new Map<string, any>();
+          base.forEach((x: any) => byId.set(String(x.id), x));
+          extra.forEach((x: any) => byId.set(String(x.id), x));
+          wos = Array.from(byId.values());
         }
       }
 
@@ -649,6 +703,17 @@ export default function GrossProfitReport() {
       <div className="flex flex-col sm:flex-row justify-between gap-4">
         <h2 className="text-2xl font-bold">Laporan Laba Kotor</h2>
         <div className="flex flex-wrap gap-2">
+           <div className="flex items-center gap-2 bg-white border border-gray-300 p-1.5 rounded-md shadow-sm">
+              <Input
+                value={woServerSearch}
+                onChange={e => setWoServerSearch(e.target.value)}
+                placeholder="Cari WO (server)..."
+                className="border-0 h-9 w-44 focus-visible:ring-0"
+              />
+              <Button variant="outline" size="sm" onClick={fetchData} disabled={loading || !woServerSearch.trim()}>
+                Cari
+              </Button>
+           </div>
            <div className="flex items-center gap-2 bg-white border border-gray-300 p-1.5 rounded-md shadow-sm">
               <Calendar className="h-4 w-4 text-gray-500 ml-2" />
               <Input type="date" className="border-0 h-9 w-36 focus-visible:ring-0 cursor-pointer" value={dateRange.start} onChange={e => setDateRange({...dateRange, start: e.target.value})} />

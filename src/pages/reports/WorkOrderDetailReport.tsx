@@ -14,6 +14,7 @@ export default function WorkOrderDetailReport() {
   const [loading, setLoading] = useState(false);
   const [data, setData] = useState<any[]>([]);
   const [search, setSearch] = useState('');
+  const [serverSearch, setServerSearch] = useState('');
   
   // Filters
   // Fix timezone issue by manually adjusting date
@@ -202,6 +203,64 @@ export default function WorkOrderDetailReport() {
     }
   }
 
+  const fetchByWoNumber = async () => {
+    const q = serverSearch.trim();
+    if (!q) return;
+    setLoading(true);
+    setErrorMsg('');
+    try {
+      const { data: wos, error } = await supabase
+        .from('work_orders')
+        .select(`
+          *,
+          vehicle_entries (
+            nota_dinas_number,
+            service_group,
+            vehicles (license_plate, brand_type, vehicle_type),
+            vehicle_entry_jobs (
+                job_types (
+                    job_name,
+                    job_group,
+                    selling_price
+                )
+            ),
+            vehicle_entry_spareparts (
+                item_name,
+                qty,
+                estimated_price
+            )
+          ),
+          mechanics (name),
+          work_order_billings (
+            item_type,
+            item_name,
+            qty,
+            unit_price,
+            total_price,
+            job_group,
+            goods_id
+          )
+        `)
+        .ilike('wo_number', `%${q}%`)
+        .order('work_date', { ascending: false })
+        .limit(20);
+
+      if (error) throw error;
+
+      const existingIds = new Set((data || []).map((x: any) => String(x.id)));
+      const merged = [...(data || [])];
+      (wos || []).forEach((wo: any) => {
+        const id = String(wo.id);
+        if (!existingIds.has(id)) merged.unshift(wo);
+      });
+      setData(merged);
+    } catch (e: any) {
+      setErrorMsg(e.message || 'Gagal mencari WO.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const getVehicleGroupLabel = (wo: any) => {
       const sg = String(wo.vehicle_entries?.service_group || '').toUpperCase();
       if (sg.includes('R2_KECIL') || sg.includes('R2 KECIL') || sg.includes('KECIL')) return 'R2 Kecil';
@@ -338,6 +397,18 @@ export default function WorkOrderDetailReport() {
                         placeholder="No WO / Nopol / Nota Dinas / Item..."
                         className="w-[260px] bg-white"
                     />
+                </div>
+                <div className="flex items-center gap-2">
+                    <span className="font-medium text-sm text-gray-500">Cari WO (server):</span>
+                    <Input
+                        value={serverSearch}
+                        onChange={e => setServerSearch(e.target.value)}
+                        placeholder="WO-2026..."
+                        className="w-[220px] bg-white"
+                    />
+                    <Button variant="outline" size="sm" onClick={fetchByWoNumber} disabled={loading || !serverSearch.trim()}>
+                        Cari
+                    </Button>
                 </div>
                 <div className="flex items-center gap-2">
                     <span className="font-medium text-sm text-gray-500"><Filter className="h-4 w-4 inline mr-1"/> Filter:</span>
