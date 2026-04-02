@@ -26,6 +26,41 @@ export default function EstimationVsRealizationReport() {
     fetchData();
   }, [dateFilter]);
 
+  const normalizeText = (v: string) =>
+    String(v || '')
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, ' ')
+      .trim()
+      .replace(/\s+/g, ' ');
+
+  const isNameMatch = (a: string, b: string) => {
+    const aa = normalizeText(a);
+    const bb = normalizeText(b);
+    if (!aa || !bb) return false;
+    if (aa === bb) return true;
+    return aa.includes(bb) || bb.includes(aa);
+  };
+
+  const pickWorkOrder = (workOrders: any[] | null | undefined) => {
+    const arr = Array.isArray(workOrders) ? workOrders : [];
+    if (arr.length === 0) return null;
+    const statusRank = (s: any) => {
+      const v = String(s || '').toUpperCase();
+      if (v === 'CLOSED') return 3;
+      if (v === 'COMPLETED') return 2;
+      if (v === 'IN_PROGRESS') return 1;
+      if (v === 'OPEN') return 0;
+      return -1;
+    };
+    return [...arr].sort((a, b) => {
+      const sr = statusRank(b.status) - statusRank(a.status);
+      if (sr !== 0) return sr;
+      const ta = new Date(a.work_date || a.created_at || 0).getTime();
+      const tb = new Date(b.work_date || b.created_at || 0).getTime();
+      return tb - ta;
+    })[0];
+  };
+
   const getVehicleGroupLabel = (entry: any) => {
     const sg = String(entry.service_group || '').toUpperCase();
     if (sg.includes('R2_KECIL') || sg.includes('R2 KECIL') || sg.includes('KECIL')) return 'R2 Kecil';
@@ -60,9 +95,13 @@ export default function EstimationVsRealizationReport() {
             id,
             wo_number,
             status,
+            work_date,
             created_at,
             work_order_billings (
               item_type,
+              item_name,
+              qty,
+              unit_price,
               total_price
             )
           ),
@@ -71,6 +110,7 @@ export default function EstimationVsRealizationReport() {
             job_types (selling_price)
           ),
           vehicle_entry_spareparts (
+            item_name,
             qty,
             estimated_price
           ),
@@ -104,14 +144,44 @@ export default function EstimationVsRealizationReport() {
         let woInfo: any = null;
 
         if (entry.work_orders && entry.work_orders.length > 0) {
-            woInfo = entry.work_orders[0]; // Assume 1 WO per Entry for now
-            woInfo.work_order_billings?.forEach((b: any) => {
-                if (b.item_type === 'JOB') {
-                    realJob += b.total_price || 0;
-                } else {
-                    realPart += b.total_price || 0;
-                }
-            });
+          woInfo = pickWorkOrder(entry.work_orders);
+          const bills = Array.isArray(woInfo?.work_order_billings) ? woInfo.work_order_billings : [];
+          const entryParts = Array.isArray(entry.vehicle_entry_spareparts) ? entry.vehicle_entry_spareparts : [];
+
+          bills.forEach((b: any) => {
+            const total = Number(b.total_price || 0);
+            const qty = Number(b.qty || 0);
+            const unit = Number(b.unit_price || 0);
+            const type = String(b.item_type || '').toUpperCase();
+
+            if (type === 'JOB') {
+              realJob += total;
+              return;
+            }
+
+            if (type === 'PART') {
+              if (total > 0) {
+                realPart += total;
+                return;
+              }
+
+              if (unit > 0 && qty > 0) {
+                realPart += unit * qty;
+                return;
+              }
+
+              const billName = String(b.item_name || '').replace(/^Penggantian\s+/i, '').trim();
+              const matched = entryParts.find((p: any) => isNameMatch(String(p.item_name || ''), billName));
+              const ep = Number(matched?.estimated_price || 0);
+              const q = Number(matched?.qty || qty || 0);
+              if (ep > 0 && q > 0) {
+                realPart += ep * q;
+                return;
+              }
+
+              realPart += 0;
+            }
+          });
         }
         
         const totalReal = realJob + realPart;
