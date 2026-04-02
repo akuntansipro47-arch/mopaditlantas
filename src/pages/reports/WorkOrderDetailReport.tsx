@@ -46,14 +46,6 @@ export default function WorkOrderDetailReport() {
         .from('work_orders')
         .select(`
           *,
-          goods_issues (
-            goods_issue_items (
-              quantity,
-              is_info_only,
-              value_only,
-              goods (id, name, selling_price)
-            )
-          ),
           vehicle_entries (
             nota_dinas_number,
             service_group,
@@ -105,8 +97,36 @@ export default function WorkOrderDetailReport() {
           throw error;
       }
       
+      const woIds = (wos || []).map((wo: any) => wo.id).filter(Boolean);
+      const issuesByWoId = new Map<string, any[]>();
+      if (woIds.length > 0) {
+        const { data: issues, error: issueErr } = await supabase
+          .from('goods_issues')
+          .select(`
+            work_order_id,
+            goods_issue_items (
+              quantity,
+              is_info_only,
+              value_only,
+              goods (id, name, selling_price)
+            )
+          `)
+          .in('work_order_id', woIds);
+        if (issueErr) {
+          console.error('Supabase Error fetching goods issues for Detail WO:', issueErr);
+        } else {
+          (issues || []).forEach((gi: any) => {
+            const woId = String(gi.work_order_id || '');
+            if (!woId) return;
+            const items = Array.isArray(gi.goods_issue_items) ? gi.goods_issue_items : [];
+            const prev = issuesByWoId.get(woId) || [];
+            issuesByWoId.set(woId, [...prev, ...items]);
+          });
+        }
+      }
+
       // Process WOs to map billings or fallback to estimates
-      const processedWOs = wos?.map(wo => {
+      const processedWOs = wos?.map((wo: any) => {
           let mergedBillings = wo.work_order_billings || [];
           const goodsIdInBilling = new Set<string>(
             (mergedBillings || [])
@@ -142,10 +162,8 @@ export default function WorkOrderDetailReport() {
               mergedBillings = [...estimatedJobs, ...estimatedParts];
           }
 
-          const issueItems =
-            (wo.goods_issues || [])
-              .flatMap((gi: any) => gi?.goods_issue_items || [])
-              .filter((it: any) => !it?.is_info_only && !it?.value_only && it?.goods?.id);
+          const issueItems = (issuesByWoId.get(String(wo.id)) || [])
+            .filter((it: any) => !it?.is_info_only && !it?.value_only && it?.goods?.id);
 
           if (issueItems.length > 0) {
             const injected = issueItems

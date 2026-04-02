@@ -189,14 +189,6 @@ export default function GrossProfitReport() {
           .from('work_orders')
           .select(`
             *,
-            goods_issues (
-              goods_issue_items (
-                quantity,
-                is_info_only,
-                value_only,
-                goods (id, name, selling_price, unit, item_code)
-              )
-            ),
             vehicle_entries (
               nota_dinas_number,
               service_group,
@@ -241,14 +233,6 @@ export default function GrossProfitReport() {
             .from('work_orders')
             .select(`
               *,
-              goods_issues (
-                goods_issue_items (
-                  quantity,
-                  is_info_only,
-                  value_only,
-                  goods (id, name, selling_price, unit, item_code)
-                )
-              ),
               vehicle_entries (
                 nota_dinas_number,
                 service_group,
@@ -291,6 +275,34 @@ export default function GrossProfitReport() {
         }
       }
 
+      const woIds = (wos || []).map((wo: any) => wo.id).filter(Boolean);
+      const issuesByWoId = new Map<string, any[]>();
+      if (woIds.length > 0) {
+        const { data: issues, error: issueErr } = await supabase
+          .from('goods_issues')
+          .select(`
+            work_order_id,
+            goods_issue_items (
+              quantity,
+              is_info_only,
+              value_only,
+              goods (id, name, selling_price, unit, item_code)
+            )
+          `)
+          .in('work_order_id', woIds);
+        if (issueErr) {
+          console.warn('Could not fetch goods issues for gross profit report:', issueErr.message);
+        } else {
+          (issues || []).forEach((gi: any) => {
+            const woId = String(gi.work_order_id || '');
+            if (!woId) return;
+            const items = Array.isArray(gi.goods_issue_items) ? gi.goods_issue_items : [];
+            const prev = issuesByWoId.get(woId) || [];
+            issuesByWoId.set(woId, [...prev, ...items]);
+          });
+        }
+      }
+
       // 2. Prepare Maps for HPP
       const goodsIds = new Set<string>();
       const jobTypeIds = new Set<string>();
@@ -299,6 +311,13 @@ export default function GrossProfitReport() {
         wo.billings?.forEach((bill: any) => {
           if (bill.goods_id) goodsIds.add(bill.goods_id);
           if (bill.job_type_id) jobTypeIds.add(bill.job_type_id);
+        });
+      });
+
+      issuesByWoId.forEach((items) => {
+        items.forEach((it: any) => {
+          const gid = it?.goods?.id;
+          if (gid) goodsIds.add(String(gid));
         });
       });
 
@@ -386,10 +405,8 @@ export default function GrossProfitReport() {
         const billingJobs = new Set<string>();
         const billingPartNames: string[] = [];
 
-        const issueItems =
-          (wo.goods_issues || [])
-            .flatMap((gi: any) => gi?.goods_issue_items || [])
-            .filter((it: any) => !it?.is_info_only && !it?.value_only && it?.goods?.id);
+        const issueItems = (issuesByWoId.get(String(wo.id)) || [])
+          .filter((it: any) => !it?.is_info_only && !it?.value_only && it?.goods?.id);
 
         const issuedByGoodsId = new Map<string, { qty: number; unit: number; name: string; item_code: string; unitLabel: string }>();
         issueItems.forEach((it: any) => {
