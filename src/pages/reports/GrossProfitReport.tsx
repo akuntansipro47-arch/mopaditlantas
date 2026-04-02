@@ -191,11 +191,19 @@ export default function GrossProfitReport() {
               vehicles (license_plate, brand_type, vehicle_type),
               vehicle_entry_spareparts (
                 item_name,
+                qty,
+                estimated_price,
                 value_only
               ),
               vehicle_entry_jobs (
                 job_type_id,
-                value_only
+                estimated_price,
+                value_only,
+                job_types (
+                  job_name,
+                  job_group,
+                  selling_price
+                )
               )
             ),
             billings:work_order_billings (
@@ -226,10 +234,20 @@ export default function GrossProfitReport() {
                 service_group,
                 vehicles (license_plate, brand_type, vehicle_type),
                 vehicle_entry_spareparts (
-                  item_name
+                  item_name,
+                  qty,
+                  estimated_price,
+                  value_only
                 ),
                 vehicle_entry_jobs (
-                  job_type_id
+                  job_type_id,
+                  estimated_price,
+                  value_only,
+                  job_types (
+                    job_name,
+                    job_group,
+                    selling_price
+                  )
                 )
               ),
               billings:work_order_billings (
@@ -345,33 +363,59 @@ export default function GrossProfitReport() {
           ? wo.vehicle_entries.vehicle_entry_jobs.filter((j: any) => Boolean((j as any).value_only) && j.job_type_id)
           : [];
 
+        const billingJobs = new Set<string>();
+        const billingPartNames: string[] = [];
+
         wo.billings.forEach((bill: any) => {
+            const billQty = Number(bill.qty || 0);
+            const billUnit = Number(bill.unit_price || 0);
+            let totalHarga = Number(bill.total_price ?? billUnit * billQty);
+            if (!Number.isFinite(totalHarga)) totalHarga = 0;
+            let hargaPagu = billUnit;
+
             let hppSatuan = 0;
             let hppSource = '-';
             
             if (bill.item_type === 'PART' && bill.goods_id) {
                 const isValueOnly = valueOnlyParts.some((p: any) => isNameMatch(p.item_name, bill.goods?.name || bill.item_name || ''));
+                billingPartNames.push(String(bill.goods?.name || bill.item_name || ''));
                 if (isValueOnly) {
                   hppSatuan = 0;
                   hppSource = 'N/A';
+                  const matched = valueOnlyParts.find((p: any) => isNameMatch(p.item_name, bill.goods?.name || bill.item_name || ''));
+                  const ep = Number(matched?.estimated_price || 0);
+                  const q = Number(matched?.qty || billQty || 0);
+                  if (ep > 0) {
+                    hargaPagu = ep;
+                    totalHarga = ep * (q || 0);
+                  }
                 } else {
                 hppSatuan = partHppMap[bill.goods_id] || 0;
                 hppSource = partHppMap[bill.goods_id] !== undefined ? 'PO Terakhir' : 'Tidak Ada PO';
                 }
             } else if (bill.item_type === 'JOB' && bill.job_type_id) {
                 const isValueOnlyJob = valueOnlyJobs.some((j: any) => String(j.job_type_id) === String(bill.job_type_id));
+                billingJobs.add(String(bill.job_type_id));
                 if (isValueOnlyJob) {
                   hppSatuan = 0;
                   hppSource = 'N/A';
+                  const matchedJob = valueOnlyJobs.find((j: any) => String(j.job_type_id) === String(bill.job_type_id));
+                  const ep = Number(matchedJob?.estimated_price || 0);
+                  if (ep > 0) {
+                    hargaPagu = ep;
+                    totalHarga = ep * (billQty || 1);
+                  }
                 } else {
                   hppSatuan = jobHppMap[bill.job_type_id] || 0;
                   hppSource = 'Master Jasa';
                 }
             }
 
-            const hppTotal = hppSatuan * (bill.qty || 0);
-            const margin = (bill.total_price || 0) - hppTotal;
-            const marginPercent = bill.total_price ? (margin / bill.total_price) * 100 : 0;
+            if (totalHarga === 0 && billQty > 0 && hargaPagu > 0) totalHarga = hargaPagu * billQty;
+
+            const hppTotal = hppSatuan * (billQty || 0);
+            const margin = (totalHarga || 0) - hppTotal;
+            const marginPercent = totalHarga ? (margin / totalHarga) * 100 : 0;
 
             reportRows.push({
                 tgl: wo.work_date, 
@@ -383,16 +427,74 @@ export default function GrossProfitReport() {
                 klasifikasi: woFinalGroup, 
                 sku: bill.goods?.item_code || '-',
                 item: bill.item_name,
-                qty: bill.qty,
+                qty: billQty,
                 satuan: bill.goods?.unit || 'Jasa',
-                harga_pagu: bill.unit_price,
-                total_harga: bill.total_price,
+                harga_pagu: hargaPagu,
+                total_harga: totalHarga,
                 hpp_satuan: hppSatuan,
                 hpp_total: hppTotal,
                 hpp_source: hppSource,
                 margin: margin,
                 margin_percent: marginPercent
             });
+        });
+
+        valueOnlyJobs.forEach((j: any) => {
+          const id = String(j.job_type_id || '');
+          if (!id || billingJobs.has(id)) return;
+          const ep = Number(j.estimated_price || (j.job_types as any)?.selling_price || 0);
+          const qty = 1;
+          const totalHarga = ep * qty;
+          reportRows.push({
+            tgl: wo.work_date,
+            nopol: wo.vehicle_entries?.vehicles?.license_plate || '-',
+            merk_type: wo.vehicle_entries?.vehicles?.brand_type || '-',
+            group_kendaraan: vehicleGroupLabel(wo.vehicle_entries?.vehicles?.vehicle_type),
+            nota_dinas: wo.vehicle_entries?.nota_dinas_number || '-',
+            group: woFinalGroup,
+            klasifikasi: woFinalGroup,
+            sku: '-',
+            item: (j.job_types as any)?.job_name || 'Pekerjaan (Nilai Saja)',
+            qty,
+            satuan: 'Jasa',
+            harga_pagu: ep,
+            total_harga: totalHarga,
+            hpp_satuan: 0,
+            hpp_total: 0,
+            hpp_source: 'N/A',
+            margin: totalHarga,
+            margin_percent: totalHarga ? 100 : 0,
+          });
+        });
+
+        valueOnlyParts.forEach((p: any) => {
+          const name = String(p.item_name || '').trim();
+          if (!name) return;
+          const exists = billingPartNames.some((b) => isNameMatch(name, b));
+          if (exists) return;
+          const ep = Number(p.estimated_price || 0);
+          const qty = Number(p.qty || 0);
+          const totalHarga = ep * qty;
+          reportRows.push({
+            tgl: wo.work_date,
+            nopol: wo.vehicle_entries?.vehicles?.license_plate || '-',
+            merk_type: wo.vehicle_entries?.vehicles?.brand_type || '-',
+            group_kendaraan: vehicleGroupLabel(wo.vehicle_entries?.vehicles?.vehicle_type),
+            nota_dinas: wo.vehicle_entries?.nota_dinas_number || '-',
+            group: woFinalGroup,
+            klasifikasi: woFinalGroup,
+            sku: '-',
+            item: name,
+            qty,
+            satuan: '-',
+            harga_pagu: ep,
+            total_harga: totalHarga,
+            hpp_satuan: 0,
+            hpp_total: 0,
+            hpp_source: 'N/A',
+            margin: totalHarga,
+            margin_percent: totalHarga ? 100 : 0,
+          });
         });
       });
 
