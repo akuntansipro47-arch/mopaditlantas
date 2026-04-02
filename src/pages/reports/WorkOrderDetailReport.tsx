@@ -13,6 +13,7 @@ import * as XLSX from 'xlsx';
 export default function WorkOrderDetailReport() {
   const [loading, setLoading] = useState(false);
   const [data, setData] = useState<any[]>([]);
+  const [search, setSearch] = useState('');
   
   // Filters
   // Fix timezone issue by manually adjusting date
@@ -171,7 +172,20 @@ export default function WorkOrderDetailReport() {
       return '';
   };
 
-  const filteredWos = data.filter(wo => (groupFilter === 'ALL' ? true : getVehicleGroupKey(wo) === groupFilter));
+  const filteredWos = data.filter(wo => {
+      if (!(groupFilter === 'ALL' ? true : getVehicleGroupKey(wo) === groupFilter)) return false;
+      const s = search.trim().toLowerCase();
+      if (!s) return true;
+      const woNumber = String(wo.wo_number || '').toLowerCase();
+      const nopol = String(wo.vehicle_entries?.vehicles?.license_plate || '').toLowerCase();
+      const nota = String(wo.vehicle_entries?.nota_dinas_number || '').toLowerCase();
+      const merk = String(wo.vehicle_entries?.vehicles?.brand_type || '').toLowerCase();
+      const itemText = (wo.merged_billings || wo.work_order_billings || [])
+        .map((b: any) => String(b?.item_name || ''))
+        .join(' ')
+        .toLowerCase();
+      return woNumber.includes(s) || nopol.includes(s) || nota.includes(s) || merk.includes(s) || itemText.includes(s);
+  });
 
   const exportToExcel = () => {
     // Flatten data for Excel
@@ -259,6 +273,15 @@ export default function WorkOrderDetailReport() {
       <Card>
         <CardHeader className="pb-3">
             <div className="flex flex-wrap items-center gap-4 bg-slate-50 p-4 rounded-md border">
+                <div className="flex items-center gap-2">
+                    <span className="font-medium text-sm text-gray-500">Cari:</span>
+                    <Input
+                        value={search}
+                        onChange={e => setSearch(e.target.value)}
+                        placeholder="No WO / Nopol / Nota Dinas / Item..."
+                        className="w-[260px] bg-white"
+                    />
+                </div>
                 <div className="flex items-center gap-2">
                     <span className="font-medium text-sm text-gray-500"><Filter className="h-4 w-4 inline mr-1"/> Filter:</span>
                     <Input 
