@@ -57,8 +57,18 @@ export default function VehicleEntryPrint({ id }: VehicleEntryPrintProps) {
 
   if (!entry) return <div>Data Entry tidak ditemukan.</div>;
 
+  const getJobEstimation = (job: any) => {
+    const epRaw = job?.estimated_price;
+    const ep = Number(epRaw);
+    const sp = Number(job?.job_types?.selling_price || 0);
+    if (Number.isFinite(ep) && ep > 0) return ep;
+    if ((!Number.isFinite(ep) || epRaw === null || epRaw === undefined) && sp > 0) return sp;
+    if (Number.isFinite(ep) && ep === 0 && sp > 0) return sp;
+    return Number.isFinite(ep) ? ep : 0;
+  };
+
   const totalJobEstimation = entry.vehicle_entry_jobs?.reduce((sum: number, job: any) => {
-    return sum + (job.job_types?.selling_price || 0);
+    return sum + getJobEstimation(job);
   }, 0) || 0;
 
   const totalPartEstimation = entry.vehicle_entry_spareparts?.reduce((sum: number, part: any) => {
@@ -159,7 +169,7 @@ export default function VehicleEntryPrint({ id }: VehicleEntryPrintProps) {
                     </td>
                     <td className="border-x border-gray-300 p-2 text-slate-600 italic align-top">{job.notes || '-'}</td>
                     <td className="border-x border-gray-300 p-2 text-right font-medium align-top">
-                        {job.job_types?.selling_price ? formatCurrency(job.job_types.selling_price) : '-'}
+                        {getJobEstimation(job) ? formatCurrency(getJobEstimation(job)) : '-'}
                     </td>
                   </tr>
                 ))

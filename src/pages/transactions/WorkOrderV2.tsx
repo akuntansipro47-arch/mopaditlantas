@@ -507,6 +507,7 @@ export default function WorkOrderV2() {
             .from('vehicle_entries')
             .select(`
             vehicle_entry_jobs (
+                estimated_price,
                 job_types (*)
             )
             `)
@@ -516,6 +517,9 @@ export default function WorkOrderV2() {
         if (entryData?.vehicle_entry_jobs) {
             entryData.vehicle_entry_jobs.forEach((j: any) => {
             if (j.job_types) {
+                const est = Number(j.estimated_price || 0);
+                const sp = Number(j.job_types.selling_price || 0);
+                const unit = est > 0 ? est : sp;
                 items.push({
                 item_type: 'JOB',
                 job_type_id: j.job_types.id,
@@ -523,8 +527,8 @@ export default function WorkOrderV2() {
                 item_name: j.job_types.job_name,
                 job_group: j.job_types.job_group,
                 qty: 1,
-                unit_price: j.job_types.selling_price || 0,
-                total_price: j.job_types.selling_price || 0,
+                unit_price: unit,
+                total_price: unit,
                 source: 'WO_INTERFACE'
                 });
             }

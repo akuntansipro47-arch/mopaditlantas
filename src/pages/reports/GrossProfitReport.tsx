@@ -95,6 +95,7 @@ export default function GrossProfitReport() {
                 .from('vehicle_entries')
                 .select(`
                 vehicle_entry_jobs (
+                    estimated_price,
                     job_types (*)
                 )
                 `)
@@ -118,6 +119,9 @@ export default function GrossProfitReport() {
             if (entryData?.vehicle_entry_jobs) {
                 entryData.vehicle_entry_jobs.forEach((j: any) => {
                 if (j.job_types) {
+                    const est = Number(j.estimated_price || 0);
+                    const sp = Number(j.job_types.selling_price || 0);
+                    const unit = est > 0 ? est : sp;
                     items.push({
                         work_order_id: wo.id,
                         item_type: 'JOB',
@@ -126,8 +130,8 @@ export default function GrossProfitReport() {
                         item_name: j.job_types.job_name,
                         job_group: j.job_types.job_group,
                         qty: 1,
-                        unit_price: j.job_types.selling_price || 0,
-                        total_price: j.job_types.selling_price || 0
+                        unit_price: unit,
+                        total_price: unit
                     });
                 }
                 });

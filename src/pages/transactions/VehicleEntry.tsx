@@ -47,6 +47,7 @@ type SparepartDraft = {
 export default function VehicleEntryPage() {
   const { user } = useAuth();
   const canAdjustEstimationPrice = String(user?.role || '').toUpperCase().includes('ADMIN');
+  const isSuperAdmin = user?.role === 'SUPER_ADMIN';
   const [entries, setEntries] = useState<EntryWithDetails[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -1191,19 +1192,22 @@ export default function VehicleEntryPage() {
 
                           const woStatus = String(woBest?.status || '').toUpperCase();
                           const isLocked = woStatus === 'COMPLETED' || woStatus === 'CLOSED';
+                          const canEditThis = !isLocked || isSuperAdmin;
                           return (
                             <div className="flex justify-end gap-3">
                               <Button variant="ghost" size="icon" onClick={() => handlePrintEntry(item.id)} title={isLocked ? "View" : "Cetak SPK Awal"}>
                                 {isLocked ? <Eye className="h-4 w-4" /> : <Printer className="h-4 w-4" />}
                               </Button>
-                              {!isLocked && (
+                              {canEditThis && (
                                 <>
                                   <Button variant="ghost" size="icon" onClick={() => handleEdit(item)} title="Edit">
                                     <Pencil className="h-4 w-4" />
                                   </Button>
-                                  <Button variant="ghost" size="icon" className="text-red-500" onClick={() => handleDelete(item.id)} title="Hapus">
-                                    <Trash2 className="h-4 w-4" />
-                                  </Button>
+                                  {!isLocked && (
+                                    <Button variant="ghost" size="icon" className="text-red-500" onClick={() => handleDelete(item.id)} title="Hapus">
+                                      <Trash2 className="h-4 w-4" />
+                                    </Button>
+                                  )}
                                 </>
                               )}
                             </div>
