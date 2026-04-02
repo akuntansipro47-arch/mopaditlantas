@@ -15,6 +15,21 @@ export default function WorkOrderDetailReport() {
   const [data, setData] = useState<any[]>([]);
   const [search, setSearch] = useState('');
   const [serverSearch, setServerSearch] = useState('');
+
+  const normalizeText = (v: string) =>
+    String(v || '')
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, ' ')
+      .trim()
+      .replace(/\s+/g, ' ');
+
+  const isNameMatch = (a: string, b: string) => {
+    const aa = normalizeText(a);
+    const bb = normalizeText(b);
+    if (!aa || !bb) return false;
+    if (aa === bb) return true;
+    return aa.includes(bb) || bb.includes(aa);
+  };
   
   // Filters
   // Fix timezone issue by manually adjusting date
@@ -191,7 +206,13 @@ export default function WorkOrderDetailReport() {
               .filter((it: any) => !goodsIdInBilling.has(String(it.goods.id)))
               .map((it: any) => {
                 const qty = Number(it.quantity || 0);
-                const unit = Number(it.goods?.selling_price || 0);
+                let unit = Number(it.goods?.selling_price || 0);
+                if (!unit) {
+                  const entryParts = wo.vehicle_entries?.vehicle_entry_spareparts || [];
+                  const matched = entryParts.find((ep: any) => isNameMatch(ep?.item_name || '', it.goods?.name || ''));
+                  const ep = Number(matched?.estimated_price || 0);
+                  if (ep > 0) unit = ep;
+                }
                 return {
                   item_type: 'PART',
                   item_name: `Penggantian ${it.goods?.name || 'Sparepart'}`,
@@ -349,7 +370,13 @@ export default function WorkOrderDetailReport() {
             .filter((it: any) => !goodsIdInBilling.has(String(it.goods.id)))
             .map((it: any) => {
               const qty = Number(it.quantity || 0);
-              const unit = Number(it.goods?.selling_price || 0);
+              let unit = Number(it.goods?.selling_price || 0);
+              if (!unit) {
+                const entryParts = wo.vehicle_entries?.vehicle_entry_spareparts || [];
+                const matched = entryParts.find((ep: any) => isNameMatch(ep?.item_name || '', it.goods?.name || ''));
+                const ep = Number(matched?.estimated_price || 0);
+                if (ep > 0) unit = ep;
+              }
               return {
                 item_type: 'PART',
                 item_name: `Penggantian ${it.goods?.name || 'Sparepart'}`,

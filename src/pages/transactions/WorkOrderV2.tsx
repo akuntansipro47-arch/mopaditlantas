@@ -463,6 +463,21 @@ export default function WorkOrderV2() {
     setLoading(true);
     
     try {
+      const normalizeText = (v: string) =>
+        String(v || '')
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, ' ')
+          .trim()
+          .replace(/\s+/g, ' ');
+
+      const isNameMatch = (a: string, b: string) => {
+        const aa = normalizeText(a);
+        const bb = normalizeText(b);
+        if (!aa || !bb) return false;
+        if (aa === bb) return true;
+        return aa.includes(bb) || bb.includes(aa);
+      };
+
       // 0. Fetch existing Goods Issues (The Source of Truth for Perbaikan Parts)
       const { data: issueData } = await supabase
         .from('goods_issues')
@@ -473,6 +488,18 @@ export default function WorkOrderV2() {
           )
         `)
         .eq('work_order_id', wo.id);
+
+      const { data: entryPartsData } = await supabase
+        .from('vehicle_entries')
+        .select(`
+          vehicle_entry_spareparts (
+            item_name,
+            estimated_price
+          )
+        `)
+        .eq('id', wo.vehicle_entry_id || '')
+        .single();
+      const entryParts = entryPartsData?.vehicle_entry_spareparts || [];
 
       // 1. Try to fetch existing saved billings
       const { data: existingBillings } = await supabase
@@ -562,7 +589,12 @@ export default function WorkOrderV2() {
                 const exists = items.find(i => i.goods_id === item.goods.id && isServiceRingan(i.job_group));
                 if (!exists) {
                      const overrideUnit = existingPerbaikanPriceByGoodsId.get(String(item.goods.id));
-                     const unitPrice = overrideUnit !== undefined ? overrideUnit : (item.goods.selling_price || 0);
+                     let unitPrice = overrideUnit !== undefined ? overrideUnit : (item.goods.selling_price || 0);
+                     if (!unitPrice && entryParts.length > 0) {
+                       const matched = entryParts.find((ep: any) => isNameMatch(ep?.item_name || '', item.goods?.name || ''));
+                       const ep = Number(matched?.estimated_price || 0);
+                       if (ep > 0) unitPrice = ep;
+                     }
                      items.push({
                         item_type: 'PART',
                         job_type_id: null,

@@ -489,10 +489,18 @@ export default function GrossProfitReport() {
           .filter((it: any) => it?.goods?.id);
 
         const issuedByGoodsId = new Map<string, { qty: number; unit: number; name: string; item_code: string; unitLabel: string }>();
+        const entryPartsForPrice = Array.isArray(wo.vehicle_entries?.vehicle_entry_spareparts)
+          ? wo.vehicle_entries.vehicle_entry_spareparts
+          : [];
         issueItems.forEach((it: any) => {
           const gid = String(it.goods.id);
           const qty = Number(it.quantity || 0);
-          const unit = Number(it.goods?.selling_price || 0);
+          let unit = Number(it.goods?.selling_price || 0);
+          if (!unit && entryPartsForPrice.length > 0) {
+            const matched = entryPartsForPrice.find((ep: any) => isNameMatch(ep?.item_name || '', it.goods?.name || ''));
+            const ep = Number(matched?.estimated_price || 0);
+            if (ep > 0) unit = ep;
+          }
           const prev = issuedByGoodsId.get(gid);
           issuedByGoodsId.set(gid, {
             qty: (prev?.qty || 0) + qty,
