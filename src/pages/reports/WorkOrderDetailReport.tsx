@@ -15,6 +15,8 @@ export default function WorkOrderDetailReport() {
   const [data, setData] = useState<any[]>([]);
   const [search, setSearch] = useState('');
   const [serverSearch, setServerSearch] = useState('');
+  const [partHppMap, setPartHppMap] = useState<Record<string, number>>({});
+  const [jobHppMap, setJobHppMap] = useState<Record<string, number>>({});
 
   const normalizeText = (v: string) =>
     String(v || '')
@@ -54,6 +56,52 @@ export default function WorkOrderDetailReport() {
     fetchData();
   }, [dateRange, statusFilter]);
 
+  const loadHppMaps = async (wos: any[]) => {
+    const goodsIds = new Set<string>();
+    const jobTypeIds = new Set<string>();
+
+    (wos || []).forEach((wo: any) => {
+      const bills = wo.merged_billings || wo.work_order_billings || [];
+      bills.forEach((b: any) => {
+        if (b?.item_type === 'PART' && b?.goods_id) goodsIds.add(String(b.goods_id));
+        if (b?.item_type === 'JOB' && b?.job_type_id) jobTypeIds.add(String(b.job_type_id));
+      });
+    });
+
+    const goodsToFetch = Array.from(goodsIds).filter((id) => partHppMap[id] === undefined);
+    if (goodsToFetch.length > 0) {
+      const nextPartMap: Record<string, number> = {};
+      const { data: poItems } = await supabase
+        .from('purchase_order_items')
+        .select('goods_id, unit_price, created_at')
+        .in('goods_id', goodsToFetch)
+        .order('created_at', { ascending: false });
+      if (poItems) {
+        poItems.forEach((it: any) => {
+          const gid = String(it.goods_id || '');
+          if (gid && nextPartMap[gid] === undefined) nextPartMap[gid] = Number(it.unit_price || 0);
+        });
+      }
+      setPartHppMap((prev) => ({ ...prev, ...nextPartMap }));
+    }
+
+    const jobsToFetch = Array.from(jobTypeIds).filter((id) => jobHppMap[id] === undefined);
+    if (jobsToFetch.length > 0) {
+      try {
+        const nextJobMap: Record<string, number> = {};
+        const { data: jobs } = await supabase.from('job_types').select('id, hpp').in('id', jobsToFetch);
+        if (jobs) {
+          jobs.forEach((j: any) => {
+            nextJobMap[String(j.id)] = Number(j.hpp || 0);
+          });
+        }
+        setJobHppMap((prev) => ({ ...prev, ...nextJobMap }));
+      } catch {
+        setJobHppMap((prev) => prev);
+      }
+    }
+  };
+
   async function fetchData() {
     setLoading(true);
     setErrorMsg('');
@@ -67,6 +115,7 @@ export default function WorkOrderDetailReport() {
             service_group,
             vehicles (license_plate, brand_type, vehicle_type),
             vehicle_entry_jobs (
+                job_type_id,
                 job_types (
                     job_name,
                     job_group,
@@ -87,7 +136,8 @@ export default function WorkOrderDetailReport() {
             unit_price,
             total_price,
             job_group,
-            goods_id
+            goods_id,
+            job_type_id
           )
         `)
         .order('work_date', { ascending: false });
@@ -177,6 +227,7 @@ export default function WorkOrderDetailReport() {
               
               const estimatedJobs = entryJobs.map((ej: any) => ({
                   item_type: 'JOB',
+                  job_type_id: ej.job_type_id,
                   item_name: ej.job_types?.job_name || 'Pekerjaan',
                   qty: 1,
                   unit_price: ej.job_types?.selling_price || 0,
@@ -234,6 +285,7 @@ export default function WorkOrderDetailReport() {
       });
 
       console.log("Fetched WOs for Detail Report:", processedWOs?.length, "Range:", dateRange);
+      await loadHppMaps((processedWOs as any[]) || []);
       setData(processedWOs || []);
 
     } catch (error: any) {
@@ -259,6 +311,7 @@ export default function WorkOrderDetailReport() {
             service_group,
             vehicles (license_plate, brand_type, vehicle_type),
             vehicle_entry_jobs (
+                job_type_id,
                 job_types (
                     job_name,
                     job_group,
@@ -279,7 +332,8 @@ export default function WorkOrderDetailReport() {
             unit_price,
             total_price,
             job_group,
-            goods_id
+            goods_id,
+            job_type_id
           )
         `)
         .ilike('wo_number', `%${q}%`)
@@ -342,6 +396,7 @@ export default function WorkOrderDetailReport() {
 
           const estimatedJobs = entryJobs.map((ej: any) => ({
             item_type: 'JOB',
+            job_type_id: ej.job_type_id,
             item_name: ej.job_types?.job_name || 'Pekerjaan',
             qty: 1,
             unit_price: ej.job_types?.selling_price || 0,
@@ -400,6 +455,7 @@ export default function WorkOrderDetailReport() {
         const id = String(wo.id);
         if (!existingIds.has(id)) merged.unshift(wo);
       });
+      await loadHppMaps(processed);
       setData(merged);
     } catch (e: any) {
       setErrorMsg(e.message || 'Gagal mencari WO.');
@@ -477,6 +533,15 @@ export default function WorkOrderDetailReport() {
             });
         } else {
             billingsToExport.forEach((bill: any) => {
+                const qty = Number(bill.qty || 0);
+                let hppSatuan = 0;
+                if (bill.item_type === 'PART' && bill.goods_id) {
+                    hppSatuan = partHppMap[String(bill.goods_id)] || 0;
+                } else if (bill.item_type === 'JOB' && bill.job_type_id) {
+                    hppSatuan = jobHppMap[String(bill.job_type_id)] || 0;
+                }
+                const realisasi = hppSatuan * qty;
+                const total = Number(bill.total_price || 0);
                 rows.push({
                     'No. WO': wo.wo_number,
                     'Tanggal': formatDate(wo.work_date),
@@ -490,7 +555,9 @@ export default function WorkOrderDetailReport() {
                     'Tipe Item': bill.item_type,
                     'Qty': bill.qty,
                     'Harga Satuan': bill.unit_price,
-                    'Total Harga': bill.total_price
+                    'Total Harga': bill.total_price,
+                    'Realisasi': realisasi,
+                    'Selisih': total - realisasi
                 });
             });
         }
@@ -622,13 +689,15 @@ export default function WorkOrderDetailReport() {
                             <TableHead className="text-center">Qty</TableHead>
                             <TableHead className="text-right">Harga</TableHead>
                             <TableHead className="text-right">Total</TableHead>
+                            <TableHead className="text-right bg-gray-50">Realisasi</TableHead>
+                            <TableHead className="text-right bg-green-50">Selisih</TableHead>
                         </TableRow>
                     </TableHeader>
                     <TableBody>
                         {loading ? (
-                            <TableRow><TableCell colSpan={9} className="text-center h-32">Memuat data...</TableCell></TableRow>
+                            <TableRow><TableCell colSpan={11} className="text-center h-32">Memuat data...</TableCell></TableRow>
                         ) : filteredWos.length === 0 ? (
-                            <TableRow><TableCell colSpan={9} className="text-center h-32 text-muted-foreground">Tidak ada data ditemukan.</TableCell></TableRow>
+                            <TableRow><TableCell colSpan={11} className="text-center h-32 text-muted-foreground">Tidak ada data ditemukan.</TableCell></TableRow>
                         ) : (
                             filteredWos.map((wo) => {
                                 const billings = wo.merged_billings || wo.work_order_billings || [];
@@ -672,6 +741,32 @@ export default function WorkOrderDetailReport() {
                                                 <TableCell className="text-center py-2">{bill.qty}</TableCell>
                                                 <TableCell className="text-right py-2 text-gray-500">{formatCurrency(bill.unit_price)}</TableCell>
                                                 <TableCell className="text-right py-2 font-medium">{formatCurrency(bill.total_price)}</TableCell>
+                                                <TableCell className="text-right py-2 bg-gray-50">
+                                                    {(() => {
+                                                        const qty = Number(bill.qty || 0);
+                                                        let hppSatuan = 0;
+                                                        if (bill.item_type === 'PART' && bill.goods_id) {
+                                                            hppSatuan = partHppMap[String(bill.goods_id)] || 0;
+                                                        } else if (bill.item_type === 'JOB' && bill.job_type_id) {
+                                                            hppSatuan = jobHppMap[String(bill.job_type_id)] || 0;
+                                                        }
+                                                        return formatCurrency(hppSatuan * qty);
+                                                    })()}
+                                                </TableCell>
+                                                <TableCell className="text-right py-2 bg-green-50 font-medium">
+                                                    {(() => {
+                                                        const qty = Number(bill.qty || 0);
+                                                        let hppSatuan = 0;
+                                                        if (bill.item_type === 'PART' && bill.goods_id) {
+                                                            hppSatuan = partHppMap[String(bill.goods_id)] || 0;
+                                                        } else if (bill.item_type === 'JOB' && bill.job_type_id) {
+                                                            hppSatuan = jobHppMap[String(bill.job_type_id)] || 0;
+                                                        }
+                                                        const realisasi = hppSatuan * qty;
+                                                        const total = Number(bill.total_price || 0);
+                                                        return formatCurrency(total - realisasi);
+                                                    })()}
+                                                </TableCell>
                                             </TableRow>
                                         ))
                                     ) : (
@@ -688,7 +783,7 @@ export default function WorkOrderDetailReport() {
                                                     {getVehicleGroupLabel(wo)}
                                                 </span>
                                             </TableCell>
-                                            <TableCell colSpan={4} className="text-center text-gray-400 italic">Belum ada rincian biaya</TableCell>
+                                            <TableCell colSpan={6} className="text-center text-gray-400 italic">Belum ada rincian biaya</TableCell>
                                         </TableRow>
                                     )}
                                     
