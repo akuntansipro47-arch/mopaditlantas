@@ -31,7 +31,15 @@ type POWithDetails = PO & {
 };
 
 type GoodsReceiptWithDetails = GoodsReceiptRow & {
-    purchase_orders: (PO & { suppliers: { name: string } | null }) | null;
+    purchase_orders: (PO & {
+      suppliers: { name: string } | null;
+      work_orders: {
+        wo_number: string | null;
+        vehicle_entries: {
+          vehicles: { license_plate: string | null; brand_type: string | null } | null;
+        } | null;
+      } | null;
+    }) | null;
     items: (Database['public']['Tables']['goods_receipt_items']['Row'] & { goods: Goods | null })[];
 };
 
@@ -104,7 +112,13 @@ export default function GoodsReceipt() {
                 *,
                 purchase_orders (
                     po_number,
-                    suppliers (name)
+                    suppliers (name),
+                    work_orders (
+                      wo_number,
+                      vehicle_entries (
+                        vehicles (license_plate, brand_type)
+                      )
+                    )
                 ),
                 items:goods_receipt_items (
                     *,
@@ -343,7 +357,10 @@ export default function GoodsReceipt() {
   const filteredReceipts = receipts.filter(r => 
     r.receipt_number.toLowerCase().includes(historySearch.toLowerCase()) ||
     r.purchase_orders?.po_number.toLowerCase().includes(historySearch.toLowerCase()) ||
-    r.purchase_orders?.suppliers?.name.toLowerCase().includes(historySearch.toLowerCase())
+    r.purchase_orders?.suppliers?.name.toLowerCase().includes(historySearch.toLowerCase()) ||
+    (r.purchase_orders?.work_orders?.wo_number || '').toLowerCase().includes(historySearch.toLowerCase()) ||
+    (r.purchase_orders?.work_orders?.vehicle_entries?.vehicles?.license_plate || '').toLowerCase().includes(historySearch.toLowerCase()) ||
+    (r.purchase_orders?.work_orders?.vehicle_entries?.vehicles?.brand_type || '').toLowerCase().includes(historySearch.toLowerCase())
   );
 
   return (
@@ -448,6 +465,8 @@ export default function GoodsReceipt() {
                   <TableHead>Tanggal Terima</TableHead>
                   <TableHead>No. PO</TableHead>
                   <TableHead>Supplier</TableHead>
+                  <TableHead>No. WO</TableHead>
+                  <TableHead>Kendaraan</TableHead>
                   <TableHead>Item Diterima</TableHead>
                   <TableHead>Catatan</TableHead>
                   {/* <TableHead className="text-right">Aksi</TableHead> */}
@@ -455,7 +474,7 @@ export default function GoodsReceipt() {
               </TableHeader>
               <TableBody>
                 {filteredReceipts.length === 0 ? (
-                  <TableRow><TableCell colSpan={6} className="text-center h-24">Tidak ada riwayat penerimaan pada periode ini.</TableCell></TableRow>
+                  <TableRow><TableCell colSpan={8} className="text-center h-24">Tidak ada riwayat penerimaan pada periode ini.</TableCell></TableRow>
                 ) : (
                   filteredReceipts.map((item) => (
                     <TableRow key={item.id}>
@@ -463,6 +482,11 @@ export default function GoodsReceipt() {
                       <TableCell>{formatDate(item.receipt_date)}</TableCell>
                       <TableCell>{item.purchase_orders?.po_number}</TableCell>
                       <TableCell>{item.purchase_orders?.suppliers?.name}</TableCell>
+                      <TableCell>{item.purchase_orders?.work_orders?.wo_number || '-'}</TableCell>
+                      <TableCell>
+                        <div className="font-medium">{item.purchase_orders?.work_orders?.vehicle_entries?.vehicles?.license_plate || '-'}</div>
+                        <div className="text-xs text-gray-500">{item.purchase_orders?.work_orders?.vehicle_entries?.vehicles?.brand_type || '-'}</div>
+                      </TableCell>
                       <TableCell>{item.items.length} Item</TableCell>
                       <TableCell>{item.notes || '-'}</TableCell>
                       {/* <TableCell className="text-right">
