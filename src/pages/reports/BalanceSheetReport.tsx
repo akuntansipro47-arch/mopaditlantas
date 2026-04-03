@@ -14,6 +14,7 @@ import ReportPrintHeader from '@/components/reports/ReportPrintHeader';
 
 export default function BalanceSheetReport() {
   const [loading, setLoading] = useState(false);
+  const [posting, setPosting] = useState(false);
   const [reportData, setReportData] = useState<any>({
       assets: [],
       liabilities: [],
@@ -26,6 +27,227 @@ export default function BalanceSheetReport() {
   useEffect(() => {
     fetchReport();
   }, [reportDate]);
+
+  const fetchApAccount = async () => {
+    const { data } = await supabase
+      .from('chart_of_accounts')
+      .select('id, account_code, account_name')
+      .eq('account_type', 'DETAIL')
+      .or('account_name.ilike.%hutang usaha%,account_name.ilike.%hutang dagang%')
+      .limit(1)
+      .maybeSingle();
+    if (data) return data;
+    const { data: data2 } = await supabase
+      .from('chart_of_accounts')
+      .select('id, account_code, account_name')
+      .eq('sub_category', 'HUTANG')
+      .eq('account_type', 'DETAIL')
+      .limit(1)
+      .maybeSingle();
+    return data2 || null;
+  };
+
+  const fetchPersediaanAccount = async () => {
+    const { data } = await supabase
+      .from('chart_of_accounts')
+      .select('id, account_code, account_name')
+      .eq('account_type', 'DETAIL')
+      .ilike('account_name', '%persediaan%')
+      .order('account_code', { ascending: true })
+      .limit(1)
+      .maybeSingle();
+    return data || null;
+  };
+
+  const fetchAccountByCodePrefix = async (prefix: string) => {
+    const { data } = await supabase
+      .from('chart_of_accounts')
+      .select('id, account_code, account_name')
+      .eq('account_type', 'DETAIL')
+      .ilike('account_code', `${prefix}%`)
+      .order('account_code', { ascending: true })
+      .limit(1)
+      .maybeSingle();
+    return data || null;
+  };
+
+  const fetchAccountByName = async (nameLike: string) => {
+    const { data } = await supabase
+      .from('chart_of_accounts')
+      .select('id, account_code, account_name')
+      .eq('account_type', 'DETAIL')
+      .ilike('account_name', `%${nameLike}%`)
+      .order('account_code', { ascending: true })
+      .limit(1)
+      .maybeSingle();
+    return data || null;
+  };
+
+  const accountCodeByGoodsType = (t: string) => {
+    const type = String(t || '').toUpperCase();
+    if (type === 'PERALATAN_WORKSHOP') return '1400101';
+    if (type === 'INVENTARIS_KANTOR') return '1400102';
+    if (type === 'FURNITURE') return '1400103';
+    if (type === 'PERLENGKAPAN') return '1400104';
+    return null;
+  };
+
+  const syncJurnalPenerimaan = async () => {
+    if (!confirm(`Sinkronisasi jurnal dari Penerimaan Barang sampai tanggal ${formatDate(reportDate)}? Jurnal penerimaan yang sudah ada akan dibuat ulang.`)) return;
+    setPosting(true);
+    try {
+      const apAcc = await fetchApAccount();
+      if (!apAcc) throw new Error('Akun Hutang Usaha tidak ditemukan di COA.');
+      const persAcc = await fetchPersediaanAccount();
+
+      const { data: receipts, error: rErr } = await supabase
+        .from('goods_receipts')
+        .select(`
+          id,
+          receipt_number,
+          receipt_date,
+          po_id,
+          items:goods_receipt_items (
+            goods_id,
+            quantity_received,
+            goods (item_type)
+          )
+        `)
+        .lte('receipt_date', reportDate);
+      if (rErr) throw rErr;
+
+      const receiptList = receipts || [];
+      if (receiptList.length === 0) {
+        toast.info('Tidak ada data penerimaan sampai tanggal ini.');
+        return;
+      }
+
+      const poIds = Array.from(new Set(receiptList.map((r: any) => String(r.po_id || '')).filter(Boolean)));
+      const unitPriceByPoGoods: Record<string, number> = {};
+      if (poIds.length > 0) {
+        const { data: poItems, error: pErr } = await supabase
+          .from('purchase_order_items')
+          .select('po_id, goods_id, unit_price, created_at')
+          .in('po_id', poIds)
+          .order('created_at', { ascending: false });
+        if (pErr) throw pErr;
+        (poItems || []).forEach((it: any) => {
+          const key = `${String(it.po_id)}:${String(it.goods_id)}`;
+          if (unitPriceByPoGoods[key] !== undefined) return;
+          unitPriceByPoGoods[key] = Number(it.unit_price || 0);
+        });
+      }
+
+      let rebuilt = 0;
+      let skipped = 0;
+
+      const accountCache = new Map<string, any>();
+      const resolveDebitAccount = async (itemTypeRaw: string) => {
+        const itemType = String(itemTypeRaw || '').toUpperCase();
+        if (accountCache.has(itemType)) return accountCache.get(itemType) || null;
+
+        let acc: any = null;
+        if (itemType === 'PERSEDIAAN') {
+          acc = persAcc;
+        } else {
+          const code = accountCodeByGoodsType(itemType);
+          if (code) acc = await fetchAccountByCodePrefix(code);
+          if (!acc) {
+            const fallbackName =
+              itemType === 'PERALATAN_WORKSHOP'
+                ? 'peralatan workshop'
+                : itemType === 'INVENTARIS_KANTOR'
+                  ? 'inventaris kantor'
+                  : itemType === 'FURNITURE'
+                    ? 'furniture'
+                    : itemType === 'PERLENGKAPAN'
+                      ? 'perlengkapan'
+                      : '';
+            acc = fallbackName ? await fetchAccountByName(fallbackName) : null;
+          }
+        }
+
+        accountCache.set(itemType, acc || null);
+        return acc || null;
+      };
+
+      for (const r of receiptList) {
+        const rid = String(r.id || '');
+        if (!rid) continue;
+        const items = Array.isArray(r.items) ? r.items : [];
+        const debitByAccountId: Record<string, number> = {};
+        let total = 0;
+
+        for (const it of items) {
+          const gid = String(it?.goods_id || '');
+          const qty = Number(it?.quantity_received || 0);
+          if (!gid || qty <= 0) continue;
+          const poId = String(r.po_id || '');
+          const unit = unitPriceByPoGoods[`${poId}:${gid}`] || 0;
+          const amt = qty * unit;
+          if (!amt) continue;
+
+          const g: any = (it as any)?.goods;
+          const itemType = String((Array.isArray(g) ? g[0]?.item_type : g?.item_type) || '');
+          const acc = await resolveDebitAccount(itemType);
+          if (!acc) continue;
+
+          const aid = String(acc.id);
+          debitByAccountId[aid] = (debitByAccountId[aid] || 0) + amt;
+          total += amt;
+        }
+
+        const debitLines = Object.entries(debitByAccountId).filter(([, v]) => Number(v || 0) !== 0);
+        if (debitLines.length === 0 || total <= 0) {
+          skipped++;
+          continue;
+        }
+
+        await supabase.from('journal_entries').delete().eq('reference', rid);
+
+        const receiptNo = String(r.receipt_number || '').trim();
+        const { data: entry, error: eErr } = await supabase
+          .from('journal_entries')
+          .insert([{
+            entry_date: String(r.receipt_date),
+            voucher_no: `GR-${receiptNo}`,
+            description: `Penerimaan Barang ${receiptNo}`,
+            entry_type: 'JOURNAL',
+            total_amount: total,
+            reference: rid,
+          }])
+          .select()
+          .single();
+        if (eErr) throw eErr;
+
+        const itemsPayload: any[] = debitLines.map(([accountId, amt]) => ({
+          journal_entry_id: entry.id,
+          account_id: accountId,
+          debit: amt,
+          credit: 0,
+          description: 'Penerimaan Barang',
+        }));
+        itemsPayload.push({
+          journal_entry_id: entry.id,
+          account_id: apAcc.id,
+          debit: 0,
+          credit: total,
+          description: 'Hutang Usaha',
+        });
+        const { error: itemsErr } = await supabase.from('journal_entry_items').insert(itemsPayload);
+        if (itemsErr) throw itemsErr;
+
+        rebuilt++;
+      }
+
+      toast.success(`Sync jurnal penerimaan selesai. Dibuat ulang: ${rebuilt}, dilewati: ${skipped}`);
+      fetchReport();
+    } catch (e: any) {
+      toast.error('Gagal sync jurnal penerimaan: ' + (e?.message || 'Unknown error'));
+    } finally {
+      setPosting(false);
+    }
+  };
 
   async function fetchReport() {
     setLoading(true);
@@ -198,6 +420,9 @@ export default function BalanceSheetReport() {
       <div className="flex items-center justify-between print:hidden">
         <h2 className="text-3xl font-bold tracking-tight">Laporan Neraca (Balance Sheet)</h2>
         <div className="flex gap-2">
+            <Button variant="outline" onClick={syncJurnalPenerimaan} disabled={posting || loading} className="print:hidden">
+                <RefreshCw className={`mr-2 h-4 w-4 ${posting ? 'animate-spin' : ''}`} /> Sync GR
+            </Button>
             <Button variant="outline" onClick={exportToExcel} className="print:hidden">
                 <Download className="mr-2 h-4 w-4" /> Export Excel
             </Button>
