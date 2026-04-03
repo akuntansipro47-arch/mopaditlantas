@@ -256,6 +256,7 @@ export interface Database {
           entry_number: string
           vehicle_id: string | null
           entry_date: string
+          estimated_finish_date: string | null
           reference_number: string | null
           nota_dinas_number: string | null
           service_group: 'PERBAIKAN' | 'SERVICE_RINGAN'
@@ -263,11 +264,25 @@ export interface Database {
           status: 'OPEN' | 'PROCESSED' | 'CLOSED' | null
           created_at: string
         }
+        Insert: {
+          id?: string
+          entry_number?: string
+          vehicle_id?: string | null
+          entry_date: string
+          estimated_finish_date?: string | null
+          reference_number?: string | null
+          nota_dinas_number?: string | null
+          service_group: 'PERBAIKAN' | 'SERVICE_RINGAN'
+          notes?: string | null
+          status?: 'OPEN' | 'PROCESSED' | 'CLOSED' | null
+          created_at?: string
+        }
         Update: {
           id?: string
           entry_number?: string
           vehicle_id?: string | null
           entry_date?: string
+          estimated_finish_date?: string | null
           reference_number?: string | null
           nota_dinas_number?: string | null
           service_group?: 'PERBAIKAN' | 'SERVICE_RINGAN'

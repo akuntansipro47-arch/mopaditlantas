@@ -79,6 +79,7 @@ CREATE TABLE IF NOT EXISTS vehicle_entries (
     entry_number VARCHAR(50) UNIQUE NOT NULL, -- Auto generated
     vehicle_id UUID REFERENCES vehicles(id),
     entry_date DATE NOT NULL,
+    estimated_finish_date DATE,
     reference_number VARCHAR(50), -- No. Ref/Record
     nota_dinas_number VARCHAR(50), -- No. Nota Dinas
     service_group VARCHAR(50) NOT NULL CHECK (service_group IN ('PERBAIKAN', 'SERVICE_RINGAN')),

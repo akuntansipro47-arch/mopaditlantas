@@ -71,6 +71,7 @@ export default function VehicleEntryPage() {
   // Form State
   const [formData, setFormData] = useState({
     entry_date: new Date().toISOString().split('T')[0],
+    estimated_finish_date: '',
     vehicle_id: '',
     nota_dinas_number: '',
     service_group: 'PERBAIKAN',
@@ -268,6 +269,7 @@ export default function VehicleEntryPage() {
   const resetForm = () => {
     setFormData({
       entry_date: new Date().toISOString().split('T')[0],
+      estimated_finish_date: '',
       vehicle_id: '',
       nota_dinas_number: '',
       service_group: 'PERBAIKAN',
@@ -296,6 +298,7 @@ export default function VehicleEntryPage() {
   const handleEdit = async (item: EntryWithDetails) => {
     setFormData({
       entry_date: item.entry_date,
+      estimated_finish_date: (item as any).estimated_finish_date || '',
       vehicle_id: item.vehicle_id || '',
       nota_dinas_number: item.nota_dinas_number || '',
       service_group: item.service_group,
@@ -463,6 +466,7 @@ export default function VehicleEntryPage() {
     try {
       const entryPayload = {
         entry_date: formData.entry_date,
+        estimated_finish_date: formData.estimated_finish_date ? formData.estimated_finish_date : null,
         vehicle_id: formData.vehicle_id,
         nota_dinas_number: formData.nota_dinas_number,
         service_group: formData.service_group,
@@ -625,6 +629,11 @@ export default function VehicleEntryPage() {
                       <Label>No. Nota Dinas</Label>
                       <Input name="nota_dinas_number" value={formData.nota_dinas_number} onChange={handleInputChange} placeholder="ND-..." required />
                     </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label>Tgl Estimasi Unit Selesai</Label>
+                    <Input name="estimated_finish_date" type="date" value={formData.estimated_finish_date} onChange={handleInputChange} />
                   </div>
 
                   <div className="space-y-2">
@@ -1064,6 +1073,7 @@ export default function VehicleEntryPage() {
                 <TableRow>
                   <TableHead>No. Entry</TableHead>
                   <TableHead>Tanggal</TableHead>
+                  <TableHead>Est. Selesai</TableHead>
                   <TableHead>Kendaraan</TableHead>
                   <TableHead>Group</TableHead>
                   <TableHead>Nota Dinas</TableHead>
@@ -1075,12 +1085,13 @@ export default function VehicleEntryPage() {
               </TableHeader>
               <TableBody>
                 {filteredEntries.length === 0 ? (
-                  <TableRow><TableCell colSpan={9} className="text-center h-24">Tidak ada data entry.</TableCell></TableRow>
+                  <TableRow><TableCell colSpan={10} className="text-center h-24">Tidak ada data entry.</TableCell></TableRow>
                 ) : (
                   filteredEntries.map((item) => (
                     <TableRow key={item.id} className="align-top">
                       <TableCell className="font-medium">{item.entry_number}</TableCell>
                       <TableCell>{formatDate(item.entry_date)}</TableCell>
+                      <TableCell>{(item as any).estimated_finish_date ? formatDate((item as any).estimated_finish_date) : '-'}</TableCell>
                       <TableCell>
                         <div className="flex flex-col">
                           <span className="font-medium">{item.vehicles?.license_plate}</span>

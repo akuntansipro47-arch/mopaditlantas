@@ -46,6 +46,7 @@ import { useAuth } from '@/context/AuthContext';
 export default function Dashboard() {
   const { user } = useAuth();
   const [loading, setLoading] = useState(true);
+  const [overdueUnits, setOverdueUnits] = useState<any[]>([]);
   const [stats, setStats] = useState({
     monthlyPOSpending: 0,
     activeWOCount: 0,
@@ -119,8 +120,9 @@ export default function Dashboard() {
       // We'll run lighter queries in parallel first
       const startOfYear = `${currentYear}-01-01`;
       const endOfYear = `${currentYear}-12-31`;
+      const todayStr = today.toISOString().split('T')[0];
 
-      const [woCountRes, poCountRes, entryCountRes, entriesRes] = await Promise.all([
+      const [woCountRes, poCountRes, entryCountRes, entriesRes, overdueRes] = await Promise.all([
           supabase.from('work_orders').select('*', { count: 'exact', head: true }).eq('status', 'IN_PROGRESS'),
           supabase.from('purchase_orders').select('*', { count: 'exact', head: true }).in('status', ['ISSUED', 'RECEIVED_PART']),
           supabase.from('vehicle_entries').select('*', { count: 'exact', head: true }).gte('entry_date', firstDayOfMonth),
@@ -136,6 +138,24 @@ export default function Dashboard() {
             `)
             .gte('entry_date', startOfYear)
             .lte('entry_date', endOfYear)
+          ,
+          supabase
+            .from('vehicle_entries')
+            .select(`
+              id,
+              entry_number,
+              entry_date,
+              estimated_finish_date,
+              status,
+              nota_dinas_number,
+              vehicles (license_plate, brand_type, vehicle_type),
+              work_orders (status, wo_number)
+            `)
+            .not('estimated_finish_date', 'is', null)
+            .lte('estimated_finish_date', todayStr)
+            .neq('status', 'CLOSED')
+            .order('estimated_finish_date', { ascending: true })
+            .limit(15)
       ]);
 
       statsData.activeWOCount = woCountRes.count || 0;
@@ -188,6 +208,42 @@ export default function Dashboard() {
           });
       }
       setMonthlyStats(monthlyData);
+
+      try {
+        const list = (overdueRes.data as any[]) || [];
+        const t0 = new Date(todayStr).getTime();
+        const filtered = list.filter((e: any) => {
+          const wo = Array.isArray(e.work_orders) && e.work_orders.length > 0 ? e.work_orders[0] : null;
+          const woStatus = String(wo?.status || '').toUpperCase();
+          if (woStatus === 'CLOSED' || woStatus === 'COMPLETED') return false;
+          return true;
+        });
+        const mapped = filtered
+          .map((e: any) => {
+            const est = String(e.estimated_finish_date || '');
+            const estTime = est ? new Date(est).getTime() : 0;
+            const daysLate = estTime ? Math.floor((t0 - estTime) / (1000 * 60 * 60 * 24)) : 0;
+            const wo = Array.isArray(e.work_orders) && e.work_orders.length > 0 ? e.work_orders[0] : null;
+            return {
+              id: e.id,
+              entry_number: e.entry_number,
+              entry_date: e.entry_date,
+              estimated_finish_date: e.estimated_finish_date,
+              nota_dinas_number: e.nota_dinas_number,
+              status: wo?.status || e.status,
+              wo_number: wo?.wo_number || '',
+              license_plate: e.vehicles?.license_plate || '-',
+              brand_type: e.vehicles?.brand_type || '-',
+              vehicle_type: e.vehicles?.vehicle_type || '',
+              daysLate: Math.max(0, daysLate),
+            };
+          })
+          .sort((a: any, b: any) => (b.daysLate || 0) - (a.daysLate || 0));
+        setOverdueUnits(mapped);
+      } catch (e) {
+        console.error('Overdue unit calc error:', e);
+        setOverdueUnits([]);
+      }
 
       // --- 2. HEAVY CALCULATIONS (Inventory, Spending, Charts) ---
       // Run these in a second batch or independently to not block the initial render if we were using streaming, 
@@ -546,6 +602,67 @@ export default function Dashboard() {
               </TableBody>
             </Table>
           </div>
+        </CardContent>
+      </Card>
+
+      <Card className="shadow-md border-slate-200">
+        <CardHeader className="flex flex-row items-center justify-between">
+          <div>
+            <CardTitle className="flex items-center gap-2">
+              <AlertTriangle className="h-5 w-5 text-red-600" />
+              Monitoring Progres Unit
+            </CardTitle>
+            <CardDescription>
+              Notifikasi unit yang melewati tgl estimasi selesai
+            </CardDescription>
+          </div>
+          <Button variant="ghost" size="sm" className="text-xs" asChild>
+            <a href="/transactions/vehicle-entry">Lihat Entry</a>
+          </Button>
+        </CardHeader>
+        <CardContent>
+          {overdueUnits.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-6 text-emerald-600">
+              <CheckCircle className="h-8 w-8 mb-2 opacity-50" />
+              <p className="text-sm font-medium">Tidak ada unit overdue.</p>
+            </div>
+          ) : (
+            <div className="rounded-md border">
+              <Table>
+                <TableHeader>
+                  <TableRow className="bg-slate-50">
+                    <TableHead>Nopol</TableHead>
+                    <TableHead>Est. Selesai</TableHead>
+                    <TableHead className="text-center">Terlambat</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>No. WO</TableHead>
+                    <TableHead>Nota Dinas</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {overdueUnits.map((u: any) => (
+                    <TableRow key={u.id}>
+                      <TableCell>
+                        <div className="flex flex-col">
+                          <span className="font-medium">{u.license_plate}</span>
+                          <span className="text-xs text-muted-foreground">{u.brand_type}</span>
+                        </div>
+                      </TableCell>
+                      <TableCell>{u.estimated_finish_date ? formatDate(u.estimated_finish_date) : '-'}</TableCell>
+                      <TableCell className="text-center">
+                        <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-red-100 text-red-800">
+                          {u.daysLate} hari
+                        </span>
+                      </TableCell>
+                      <TableCell>{String(u.status || '-')}</TableCell>
+                      <TableCell className="font-medium">{u.wo_number || '-'}</TableCell>
+                      <TableCell>{u.nota_dinas_number || '-'}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
         </CardContent>
       </Card>
 
