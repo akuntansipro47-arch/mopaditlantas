@@ -522,6 +522,19 @@ export default function GrossProfitReport() {
             let hppSource = '-';
             
             if (bill.item_type === 'PART' && bill.goods_id) {
+                if ((hargaPagu === 0 || totalHarga === 0) && Array.isArray(wo.vehicle_entries?.vehicle_entry_spareparts)) {
+                  const billName = String(bill.item_name || '').replace(/^Penggantian\s+/i, '').trim();
+                  const goodsName = String(bill.goods?.name || '').trim();
+                  const matched = wo.vehicle_entries.vehicle_entry_spareparts.find((p: any) =>
+                    isNameMatch(String(p?.item_name || ''), goodsName || billName)
+                  );
+                  const ep = Number(matched?.estimated_price || 0);
+                  const q = Number(matched?.qty || billQty || 0);
+                  if (ep > 0 && q > 0) {
+                    hargaPagu = ep;
+                    totalHarga = ep * q;
+                  }
+                }
                 issuedByGoodsId.delete(String(bill.goods_id));
                 const isValueOnly = valueOnlyParts.some((p: any) => isNameMatch(p.item_name, bill.goods?.name || bill.item_name || ''));
                 billingPartNames.push(String(bill.goods?.name || bill.item_name || ''));

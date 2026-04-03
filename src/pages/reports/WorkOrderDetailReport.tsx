@@ -32,6 +32,40 @@ export default function WorkOrderDetailReport() {
     if (aa === bb) return true;
     return aa.includes(bb) || bb.includes(aa);
   };
+
+  const getDisplayPrices = (wo: any, bill: any) => {
+    const qty = Number(bill?.qty || 0);
+    const rawUnit = Number(bill?.unit_price || 0);
+    let unitPrice = Number.isFinite(rawUnit) ? rawUnit : 0;
+    let totalPrice = Number(bill?.total_price);
+    if (!Number.isFinite(totalPrice)) totalPrice = unitPrice * qty;
+
+    const type = String(bill?.item_type || '').toUpperCase();
+    if (type !== 'PART') return { unitPrice, totalPrice };
+
+    if (unitPrice > 0 && totalPrice > 0) return { unitPrice, totalPrice };
+
+    const entryParts = Array.isArray(wo?.vehicle_entries?.vehicle_entry_spareparts)
+      ? wo.vehicle_entries.vehicle_entry_spareparts
+      : [];
+
+    const billName = String(bill?.item_name || '').replace(/^Penggantian\s+/i, '').trim();
+    const goodsName = String(bill?.goods?.name || '').trim();
+
+    const matched = entryParts.find((ep: any) => {
+      const epName = String(ep?.item_name || '');
+      return isNameMatch(epName, goodsName || billName);
+    });
+
+    const ep = Number(matched?.estimated_price || 0);
+    const q = Number(matched?.qty || qty || 0);
+    if (ep > 0 && q > 0) {
+      unitPrice = ep;
+      totalPrice = ep * q;
+    }
+
+    return { unitPrice, totalPrice };
+  };
   
   // Filters
   // Fix timezone issue by manually adjusting date
@@ -533,6 +567,7 @@ export default function WorkOrderDetailReport() {
             });
         } else {
             billingsToExport.forEach((bill: any) => {
+                const { unitPrice, totalPrice } = getDisplayPrices(wo, bill);
                 const qty = Number(bill.qty || 0);
                 let hppSatuan = 0;
                 if (bill.item_type === 'PART' && bill.goods_id) {
@@ -541,7 +576,6 @@ export default function WorkOrderDetailReport() {
                     hppSatuan = jobHppMap[String(bill.job_type_id)] || 0;
                 }
                 const realisasi = hppSatuan * qty;
-                const total = Number(bill.total_price || 0);
                 rows.push({
                     'No. WO': wo.wo_number,
                     'Tanggal': formatDate(wo.work_date),
@@ -554,10 +588,10 @@ export default function WorkOrderDetailReport() {
                     'Item': bill.item_name,
                     'Tipe Item': bill.item_type,
                     'Qty': bill.qty,
-                    'Harga Satuan': bill.unit_price,
-                    'Total Harga': bill.total_price,
+                    'Harga Satuan': unitPrice,
+                    'Total Harga': totalPrice,
                     'Realisasi': realisasi,
-                    'Selisih': total - realisasi
+                    'Selisih': totalPrice - realisasi
                 });
             });
         }
@@ -738,35 +772,41 @@ export default function WorkOrderDetailReport() {
                                                         <span>{bill.item_name}</span>
                                                     </div>
                                                 </TableCell>
-                                                <TableCell className="text-center py-2">{bill.qty}</TableCell>
-                                                <TableCell className="text-right py-2 text-gray-500">{formatCurrency(bill.unit_price)}</TableCell>
-                                                <TableCell className="text-right py-2 font-medium">{formatCurrency(bill.total_price)}</TableCell>
-                                                <TableCell className="text-right py-2 bg-gray-50">
-                                                    {(() => {
-                                                        const qty = Number(bill.qty || 0);
-                                                        let hppSatuan = 0;
-                                                        if (bill.item_type === 'PART' && bill.goods_id) {
+                                                {(() => {
+                                                  const { unitPrice, totalPrice } = getDisplayPrices(wo, bill);
+                                                  return (
+                                                    <>
+                                                      <TableCell className="text-center py-2">{bill.qty}</TableCell>
+                                                      <TableCell className="text-right py-2 text-gray-500">{formatCurrency(unitPrice)}</TableCell>
+                                                      <TableCell className="text-right py-2 font-medium">{formatCurrency(totalPrice)}</TableCell>
+                                                      <TableCell className="text-right py-2 bg-gray-50">
+                                                        {(() => {
+                                                          const qty = Number(bill.qty || 0);
+                                                          let hppSatuan = 0;
+                                                          if (bill.item_type === 'PART' && bill.goods_id) {
                                                             hppSatuan = partHppMap[String(bill.goods_id)] || 0;
-                                                        } else if (bill.item_type === 'JOB' && bill.job_type_id) {
+                                                          } else if (bill.item_type === 'JOB' && bill.job_type_id) {
                                                             hppSatuan = jobHppMap[String(bill.job_type_id)] || 0;
-                                                        }
-                                                        return formatCurrency(hppSatuan * qty);
-                                                    })()}
-                                                </TableCell>
-                                                <TableCell className="text-right py-2 bg-green-50 font-medium">
-                                                    {(() => {
-                                                        const qty = Number(bill.qty || 0);
-                                                        let hppSatuan = 0;
-                                                        if (bill.item_type === 'PART' && bill.goods_id) {
+                                                          }
+                                                          return formatCurrency(hppSatuan * qty);
+                                                        })()}
+                                                      </TableCell>
+                                                      <TableCell className="text-right py-2 bg-green-50 font-medium">
+                                                        {(() => {
+                                                          const qty = Number(bill.qty || 0);
+                                                          let hppSatuan = 0;
+                                                          if (bill.item_type === 'PART' && bill.goods_id) {
                                                             hppSatuan = partHppMap[String(bill.goods_id)] || 0;
-                                                        } else if (bill.item_type === 'JOB' && bill.job_type_id) {
+                                                          } else if (bill.item_type === 'JOB' && bill.job_type_id) {
                                                             hppSatuan = jobHppMap[String(bill.job_type_id)] || 0;
-                                                        }
-                                                        const realisasi = hppSatuan * qty;
-                                                        const total = Number(bill.total_price || 0);
-                                                        return formatCurrency(total - realisasi);
-                                                    })()}
-                                                </TableCell>
+                                                          }
+                                                          const realisasi = hppSatuan * qty;
+                                                          return formatCurrency(totalPrice - realisasi);
+                                                        })()}
+                                                      </TableCell>
+                                                    </>
+                                                  );
+                                                })()}
                                             </TableRow>
                                         ))
                                     ) : (
