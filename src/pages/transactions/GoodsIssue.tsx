@@ -424,6 +424,57 @@ export default function GoodsIssuePage() {
     }
   };
 
+  const fetchPersediaanAccount = async () => {
+    const { data } = await supabase
+      .from('chart_of_accounts')
+      .select('id, account_code, account_name')
+      .eq('account_type', 'DETAIL')
+      .ilike('account_name', '%persediaan%')
+      .order('account_code', { ascending: true })
+      .limit(1)
+      .maybeSingle();
+    return data || null;
+  };
+
+  const fetchHppSparepartAccount = async () => {
+    const { data } = await supabase
+      .from('chart_of_accounts')
+      .select('id, account_code, account_name')
+      .eq('account_type', 'DETAIL')
+      .eq('category', 'HPP')
+      .or('account_name.ilike.%sparepart%,account_name.ilike.%persediaan%,account_name.ilike.%hpp%')
+      .order('account_code', { ascending: true })
+      .limit(1)
+      .maybeSingle();
+    if (data) return data;
+    const { data: data2 } = await supabase
+      .from('chart_of_accounts')
+      .select('id, account_code, account_name')
+      .eq('account_type', 'DETAIL')
+      .eq('category', 'HPP')
+      .order('account_code', { ascending: true })
+      .limit(1)
+      .maybeSingle();
+    return data2 || null;
+  };
+
+  const fetchLastPoPriceMap = async (goodsIds: string[]) => {
+    const map: Record<string, number> = {};
+    if (goodsIds.length === 0) return map;
+    const { data } = await supabase
+      .from('purchase_order_items')
+      .select('goods_id, unit_price, created_at')
+      .in('goods_id', goodsIds)
+      .order('created_at', { ascending: false });
+    (data || []).forEach((it: any) => {
+      const gid = String(it.goods_id || '');
+      if (!gid) return;
+      if (map[gid] !== undefined) return;
+      map[gid] = Number(it.unit_price || 0);
+    });
+    return map;
+  };
+
   const handleSubmit = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     setLoading(true);
@@ -447,6 +498,7 @@ export default function GoodsIssuePage() {
       }
 
       let targetIssueId = editingId;
+      let issueNumber = '';
 
       if (editingId) {
         // --- UPDATE MODE ---
@@ -481,6 +533,8 @@ export default function GoodsIssuePage() {
           .eq('id', editingId);
         
         if (headerError) throw headerError;
+        const { data: head } = await supabase.from('goods_issues').select('issue_number').eq('id', editingId).maybeSingle();
+        issueNumber = String(head?.issue_number || '');
 
       } else {
         // --- CREATE MODE ---
@@ -496,6 +550,7 @@ export default function GoodsIssuePage() {
         
         if (issueError) throw issueError;
         targetIssueId = newIssue.id;
+        issueNumber = String(newIssue.issue_number || '');
       }
 
       // 4. Insert New Items & Deduct Stock (Common for both)
@@ -528,6 +583,68 @@ export default function GoodsIssuePage() {
                   .update({ current_stock: (currentGood.current_stock || 0) - Number(item.quantity || 0) })
                  .eq('id', item.goods_id);
              }
+          }
+        }
+      }
+
+      if (targetIssueId) {
+        await supabase.from('journal_entries').delete().eq('reference', targetIssueId);
+
+        const nonValueItems = issueItems
+          .filter((it) => Boolean(it.goods_id) && !Boolean(it.value_only))
+          .map((it) => ({ goods_id: String(it.goods_id), quantity: Number(it.quantity || 0) }))
+          .filter((it) => it.goods_id && it.quantity > 0);
+
+        if (nonValueItems.length > 0) {
+          const goodsIds = Array.from(new Set(nonValueItems.map((it) => it.goods_id)));
+          const { data: goodsRows } = await supabase.from('goods').select('id, item_type').in('id', goodsIds);
+          const goodsTypeById = new Map<string, string>();
+          (goodsRows || []).forEach((g: any) => goodsTypeById.set(String(g.id), String(g.item_type || '')));
+
+          const persItems = nonValueItems.filter((it) => String(goodsTypeById.get(it.goods_id) || '').toUpperCase() === 'PERSEDIAAN');
+          if (persItems.length > 0) {
+            const persAcc = await fetchPersediaanAccount();
+            if (!persAcc) throw new Error('Akun Persediaan tidak ditemukan di COA.');
+            const hppAcc = await fetchHppSparepartAccount();
+            if (!hppAcc) throw new Error('Akun HPP (Sparepart/Persediaan) tidak ditemukan di COA.');
+
+            const priceMap = await fetchLastPoPriceMap(persItems.map((it) => it.goods_id));
+            const totalCost = persItems.reduce((sum, it) => sum + (Number(priceMap[it.goods_id] || 0) * it.quantity), 0);
+
+            if (totalCost > 0) {
+              const woNumber = wos.find((w) => w.id === formData.work_order_id)?.wo_number || '';
+              const { data: entry, error: entryErr } = await supabase
+                .from('journal_entries')
+                .insert([{
+                  entry_date: formData.issue_date,
+                  voucher_no: issueNumber || `GI-${Date.now()}`,
+                  description: `Barang Keluar ${issueNumber || ''} ${woNumber ? `(${woNumber})` : ''}`.trim(),
+                  entry_type: 'JOURNAL',
+                  total_amount: totalCost,
+                  reference: targetIssueId,
+                }])
+                .select()
+                .single();
+              if (entryErr) throw entryErr;
+
+              const { error: itemsErr2 } = await supabase.from('journal_entry_items').insert([
+                {
+                  journal_entry_id: entry.id,
+                  account_id: hppAcc.id,
+                  debit: totalCost,
+                  credit: 0,
+                  description: 'HPP Persediaan',
+                },
+                {
+                  journal_entry_id: entry.id,
+                  account_id: persAcc.id,
+                  debit: 0,
+                  credit: totalCost,
+                  description: 'Pengurangan Persediaan',
+                },
+              ]);
+              if (itemsErr2) throw itemsErr2;
+            }
           }
         }
       }

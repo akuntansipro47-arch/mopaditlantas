@@ -76,6 +76,57 @@ export default function GoodsReceipt() {
     fetchReceiptHistory();
   }, [dateFilter]);
 
+  const fetchApAccount = async () => {
+    const { data } = await supabase
+      .from('chart_of_accounts')
+      .select('id, account_code, account_name')
+      .eq('account_type', 'DETAIL')
+      .or('account_name.ilike.%hutang usaha%,account_name.ilike.%hutang dagang%')
+      .limit(1)
+      .maybeSingle();
+    if (data) return data;
+    const { data: data2 } = await supabase
+      .from('chart_of_accounts')
+      .select('id, account_code, account_name')
+      .eq('sub_category', 'HUTANG')
+      .eq('account_type', 'DETAIL')
+      .limit(1)
+      .maybeSingle();
+    return data2 || null;
+  };
+
+  const fetchAccountByCode = async (accountCode: string) => {
+    const { data } = await supabase
+      .from('chart_of_accounts')
+      .select('id, account_code, account_name')
+      .eq('account_code', accountCode)
+      .eq('account_type', 'DETAIL')
+      .limit(1)
+      .maybeSingle();
+    return data || null;
+  };
+
+  const fetchPersediaanAccount = async () => {
+    const { data } = await supabase
+      .from('chart_of_accounts')
+      .select('id, account_code, account_name')
+      .eq('account_type', 'DETAIL')
+      .ilike('account_name', '%persediaan%')
+      .order('account_code', { ascending: true })
+      .limit(1)
+      .maybeSingle();
+    return data || null;
+  };
+
+  const accountCodeByGoodsType = (t: string) => {
+    const type = String(t || '').toUpperCase();
+    if (type === 'PERALATAN_WORKSHOP') return '1400101';
+    if (type === 'INVENTARIS_KANTOR') return '1400102';
+    if (type === 'FURNITURE') return '1400103';
+    if (type === 'PERLENGKAPAN') return '1400104';
+    return null;
+  };
+
   async function fetchOpenPOs() {
     setLoading(true);
     try {
@@ -194,6 +245,7 @@ export default function GoodsReceipt() {
       // 1. Validate & Prepare Items
       const itemsToReceive: { goods_id: string; quantity: number }[] = [];
       let totalReceiptAmount = 0;
+      const receiptAmountByGoodsId: Record<string, number> = {};
 
       // Group PO items by goods_id to handle pricing (FIFO strategy)
       const poItemsByGoods: Record<string, typeof selectedPO.items> = {};
@@ -231,6 +283,7 @@ export default function GoodsReceipt() {
                 if (availableInLine > 0) {
                     const take = Math.min(remainingToPrice, availableInLine);
                     totalReceiptAmount += take * linePrice;
+                    receiptAmountByGoodsId[goodsId] = (receiptAmountByGoodsId[goodsId] || 0) + (take * linePrice);
                     remainingToPrice -= take;
                 }
             }
@@ -337,6 +390,77 @@ export default function GoodsReceipt() {
           }
       } else {
           toast.success(`Penerimaan Partial berhasil! Status PO: ${newStatus}`);
+      }
+
+      if (totalReceiptAmount > 0) {
+        const goodsIds = Object.keys(receiptAmountByGoodsId);
+        const { data: goodsRows, error: goodsErr } = await supabase
+          .from('goods')
+          .select('id, item_type')
+          .in('id', goodsIds);
+        if (goodsErr) throw goodsErr;
+
+        const goodsTypeById = new Map<string, string>();
+        (goodsRows || []).forEach((g: any) => {
+          goodsTypeById.set(String(g.id), String(g.item_type || ''));
+        });
+
+        const apAcc = await fetchApAccount();
+        if (!apAcc) throw new Error('Akun Hutang Usaha tidak ditemukan di COA.');
+
+        const persAcc = await fetchPersediaanAccount();
+        if (!persAcc) throw new Error('Akun Persediaan tidak ditemukan di COA.');
+
+        const debitByAccountId: Record<string, number> = {};
+        for (const [gid, amount] of Object.entries(receiptAmountByGoodsId)) {
+          const gType = goodsTypeById.get(gid) || '';
+          const code = accountCodeByGoodsType(gType);
+          let acc = null;
+          if (String(gType).toUpperCase() === 'PERSEDIAAN') {
+            acc = persAcc;
+          } else if (code) {
+            acc = await fetchAccountByCode(code);
+          } else {
+            continue;
+          }
+          if (!acc) continue;
+          debitByAccountId[String(acc.id)] = (debitByAccountId[String(acc.id)] || 0) + Number(amount || 0);
+        }
+
+        const debitLines = Object.entries(debitByAccountId).filter(([, v]) => Number(v || 0) !== 0);
+        if (debitLines.length > 0) {
+          const { data: entry, error: entryErr } = await supabase
+            .from('journal_entries')
+            .insert([{
+              entry_date: receiptData.receipt_date,
+              voucher_no: `GR-${newReceipt.receipt_number}`,
+              description: `Penerimaan Barang ${newReceipt.receipt_number} (PO ${selectedPO.po_number})`,
+              entry_type: 'JOURNAL',
+              total_amount: totalReceiptAmount,
+              reference: newReceipt.id,
+            }])
+            .select()
+            .single();
+          if (entryErr) throw entryErr;
+
+          const itemsPayload: any[] = debitLines.map(([accountId, amt]) => ({
+            journal_entry_id: entry.id,
+            account_id: accountId,
+            debit: amt,
+            credit: 0,
+            description: 'Penerimaan Barang',
+          }));
+          itemsPayload.push({
+            journal_entry_id: entry.id,
+            account_id: apAcc.id,
+            debit: 0,
+            credit: totalReceiptAmount,
+            description: 'Hutang Usaha',
+          });
+
+          const { error: itemsErr2 } = await supabase.from('journal_entry_items').insert(itemsPayload);
+          if (itemsErr2) throw itemsErr2;
+        }
       }
 
       setIsDialogOpen(false);
