@@ -94,6 +94,38 @@ export default function ChartOfAccounts() {
     fetchAccounts();
   }, []);
 
+  const createRootPersediaan = async () => {
+    try {
+      const exists = accounts.some(
+        (a) => a.parent_id === null && String(a.account_name || '').toUpperCase().includes('PERSEDIAAN')
+      );
+      if (exists) {
+        toast.info('Root PERSEDIAAN sudah ada.');
+        return;
+      }
+
+      const used = new Set(accounts.map((a) => String(a.account_code || '').trim()));
+      let codeNum = 1300;
+      while (used.has(String(codeNum))) codeNum += 1;
+
+      const { error } = await supabase.from('chart_of_accounts').insert([{
+        account_code: String(codeNum),
+        account_name: 'PERSEDIAAN',
+        account_type: 'HEADER',
+        parent_id: null,
+        category: 'AKTIVA',
+        sub_category: 'AKTIVA_LANCAR',
+        balance_type: 'DEBIT',
+      }]);
+      if (error) throw error;
+
+      toast.success('Root PERSEDIAAN berhasil dibuat.');
+      fetchAccounts();
+    } catch (e: any) {
+      toast.error('Gagal membuat root PERSEDIAAN: ' + (e?.message || 'Unknown error'));
+    }
+  };
+
   async function fetchAccounts() {
     setLoading(true);
     try {
@@ -265,10 +297,14 @@ export default function ChartOfAccounts() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h2 className="text-3xl font-bold tracking-tight">Akun Perkiraan (COA)</h2>
-        <Dialog open={isDialogOpen} onOpenChange={(open) => { setIsDialogOpen(open); if(!open) resetForm(); }}>
-          <DialogTrigger asChild>
-            <Button><Plus className="mr-2 h-4 w-4" /> Tambah Akun</Button>
-          </DialogTrigger>
+        <div className="flex gap-2">
+          <Button variant="outline" type="button" onClick={createRootPersediaan}>
+            Buat Root Persediaan
+          </Button>
+          <Dialog open={isDialogOpen} onOpenChange={(open) => { setIsDialogOpen(open); if(!open) resetForm(); }}>
+            <DialogTrigger asChild>
+              <Button><Plus className="mr-2 h-4 w-4" /> Tambah Akun</Button>
+            </DialogTrigger>
           <DialogContent className="sm:max-w-[600px]">
             <DialogHeader>
               <DialogTitle>{isEditing ? 'Edit Akun' : 'Tambah Akun Baru'}</DialogTitle>
@@ -368,7 +404,8 @@ export default function ChartOfAccounts() {
               </DialogFooter>
             </form>
           </DialogContent>
-        </Dialog>
+          </Dialog>
+        </div>
       </div>
 
       <Card>

@@ -17,6 +17,7 @@ export default function GoodsReceiptReport() {
   const [data, setData] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
+  const [posting, setPosting] = useState(false);
   const [search, setSearch] = useState('');
   const [itemTypeFilter, setItemTypeFilter] = useState('ALL'); // Add Item Type Filter
   const [dateRange, setDateRange] = useState({
@@ -27,6 +28,70 @@ export default function GoodsReceiptReport() {
   useEffect(() => {
     fetchData();
   }, [dateRange]);
+
+  const fetchApAccount = async () => {
+    const { data } = await supabase
+      .from('chart_of_accounts')
+      .select('id, account_code, account_name')
+      .eq('account_type', 'DETAIL')
+      .or('account_name.ilike.%hutang usaha%,account_name.ilike.%hutang dagang%')
+      .limit(1)
+      .maybeSingle();
+    if (data) return data;
+    const { data: data2 } = await supabase
+      .from('chart_of_accounts')
+      .select('id, account_code, account_name')
+      .eq('sub_category', 'HUTANG')
+      .eq('account_type', 'DETAIL')
+      .limit(1)
+      .maybeSingle();
+    return data2 || null;
+  };
+
+  const fetchPersediaanAccount = async () => {
+    const { data } = await supabase
+      .from('chart_of_accounts')
+      .select('id, account_code, account_name')
+      .eq('account_type', 'DETAIL')
+      .ilike('account_name', '%persediaan%')
+      .order('account_code', { ascending: true })
+      .limit(1)
+      .maybeSingle();
+    return data || null;
+  };
+
+  const fetchAccountByCodePrefix = async (prefix: string) => {
+    const { data } = await supabase
+      .from('chart_of_accounts')
+      .select('id, account_code, account_name')
+      .eq('account_type', 'DETAIL')
+      .ilike('account_code', `${prefix}%`)
+      .order('account_code', { ascending: true })
+      .limit(1)
+      .maybeSingle();
+    return data || null;
+  };
+
+  const fetchAccountByName = async (nameLike: string) => {
+    const { data } = await supabase
+      .from('chart_of_accounts')
+      .select('id, account_code, account_name')
+      .eq('account_type', 'DETAIL')
+      .ilike('account_name', `%${nameLike}%`)
+      .order('account_code', { ascending: true })
+      .limit(1)
+      .maybeSingle();
+    return data || null;
+  };
+
+  const accountCodeByGoodsType = (t: string) => {
+    const type = String(t || '').toUpperCase();
+    if (type === 'PERALATAN_WORKSHOP') return '1400101';
+    if (type === 'INVENTARIS_KANTOR') return '1400102';
+    if (type === 'FURNITURE') return '1400103';
+    if (type === 'PERLENGKAPAN') return '1400104';
+    return null;
+  };
 
   async function fetchData(customStart?: string, customEnd?: string) {
     setLoading(true);
@@ -93,15 +158,18 @@ export default function GoodsReceiptReport() {
 
         return receipt.items.map((item: any) => ({
           ...item,
+          receipt_id: receipt.id,
           receipt_number: receipt.receipt_number,
           receipt_date: receipt.receipt_date,
           // received_by removed
+          po_id: receipt.purchase_orders?.id,
           po_number: receipt.purchase_orders?.po_number,
           po_date: receipt.purchase_orders?.po_date,
           supplier_name: receipt.purchase_orders?.suppliers?.name,
           // Find price from PO items
           unit_price: receipt.purchase_orders?.items?.find((pi: any) => pi.goods_id === item.goods?.id)?.unit_price || 0,
-          item_type: item.goods?.item_type || 'LAINNYA'
+          item_type: item.goods?.item_type || 'LAINNYA',
+          goods_id: item.goods?.id || null
         }));
       });
 
@@ -135,6 +203,141 @@ export default function GoodsReceiptReport() {
   }, {});
 
   const totalValue = filteredData.reduce((sum, item) => sum + (item.quantity_received * item.unit_price), 0);
+
+  const syncJournalForReceipts = async () => {
+    if (!confirm('Sinkronisasi jurnal untuk penerimaan barang pada periode ini? Jurnal yang sudah ada akan dibuat ulang.')) return;
+    setPosting(true);
+    try {
+      const apAcc = await fetchApAccount();
+      if (!apAcc) {
+        toast.error('Akun Hutang Usaha tidak ditemukan di COA.');
+        return;
+      }
+
+      const persAcc = await fetchPersediaanAccount();
+
+      const byReceipt = new Map<string, any[]>();
+      (filteredData || []).forEach((row: any) => {
+        const rid = String(row.receipt_id || '');
+        if (!rid) return;
+        const prev = byReceipt.get(rid) || [];
+        byReceipt.set(rid, [...prev, row]);
+      });
+
+      const receiptIds = Array.from(byReceipt.keys());
+      if (receiptIds.length === 0) {
+        toast.info('Tidak ada data penerimaan pada periode ini.');
+        return;
+      }
+
+      let rebuilt = 0;
+      let skipped = 0;
+
+      for (const receiptId of receiptIds) {
+        const rows = byReceipt.get(receiptId) || [];
+        const debitByAccountId: Record<string, number> = {};
+        let total = 0;
+
+        for (const r of rows) {
+          const qty = Number(r.quantity_received || 0);
+          const unit = Number(r.unit_price || 0);
+          const amt = qty * unit;
+          if (!amt) continue;
+
+          const itemType = String(r.goods?.item_type || r.item_type || '').toUpperCase();
+          const code = accountCodeByGoodsType(itemType);
+          let acc: any = null;
+
+          if (itemType === 'PERSEDIAAN') {
+            acc = persAcc;
+            if (!acc) {
+              skipped++;
+              continue;
+            }
+          } else if (itemType === 'ASET_AKTIVA_TETAP') {
+            acc = await fetchAccountByName('aktiva tetap');
+          } else if (code) {
+            acc = (await fetchAccountByCodePrefix(code)) || null;
+          }
+
+          if (!acc) {
+            const fallbackName =
+              itemType === 'PERALATAN_WORKSHOP'
+                ? 'peralatan workshop'
+                : itemType === 'INVENTARIS_KANTOR'
+                  ? 'inventaris kantor'
+                  : itemType === 'FURNITURE'
+                    ? 'furniture'
+                    : itemType === 'PERLENGKAPAN'
+                      ? 'perlengkapan'
+                      : '';
+            acc = fallbackName ? await fetchAccountByName(fallbackName) : null;
+          }
+
+          if (!acc) {
+            skipped++;
+            continue;
+          }
+
+          const aid = String(acc.id);
+          debitByAccountId[aid] = (debitByAccountId[aid] || 0) + amt;
+          total += amt;
+        }
+
+        const debitLines = Object.entries(debitByAccountId).filter(([, v]) => Number(v || 0) !== 0);
+        if (debitLines.length === 0 || total <= 0) {
+          skipped++;
+          continue;
+        }
+
+        await supabase.from('journal_entries').delete().eq('reference', receiptId);
+
+        const first = rows[0] || {};
+        const receiptDate = String(first.receipt_date || new Date().toISOString().split('T')[0]);
+        const receiptNo = String(first.receipt_number || '').trim();
+        const poNo = first.po_number ? String(first.po_number).trim() : '';
+
+        const { data: entry, error: entryErr } = await supabase
+          .from('journal_entries')
+          .insert([{
+            entry_date: receiptDate,
+            voucher_no: `GR-${receiptNo}`,
+            description: `Penerimaan Barang ${receiptNo}${poNo ? ` (PO ${poNo})` : ''}`,
+            entry_type: 'JOURNAL',
+            total_amount: total,
+            reference: receiptId,
+          }])
+          .select()
+          .single();
+        if (entryErr) throw entryErr;
+
+        const itemsPayload: any[] = debitLines.map(([accountId, amt]) => ({
+          journal_entry_id: entry.id,
+          account_id: accountId,
+          debit: amt,
+          credit: 0,
+          description: 'Penerimaan Barang',
+        }));
+        itemsPayload.push({
+          journal_entry_id: entry.id,
+          account_id: apAcc.id,
+          debit: 0,
+          credit: total,
+          description: 'Hutang Usaha',
+        });
+        const { error: itemsErr } = await supabase.from('journal_entry_items').insert(itemsPayload);
+        if (itemsErr) throw itemsErr;
+
+        rebuilt++;
+      }
+
+      toast.success(`Sinkron jurnal selesai. Dibuat ulang: ${rebuilt}, dilewati: ${skipped}`);
+    } catch (e: any) {
+      toast.error('Gagal sinkron jurnal: ' + (e?.message || 'Unknown error'));
+    } finally {
+      setPosting(false);
+    }
+  };
 
   const handleSyncLegacyData = async () => {
     if (!confirm('Fitur ini akan membuat data "Penerimaan Barang" otomatis untuk PO yang statusnya SUDAH DITERIMA tapi belum muncul di laporan ini.\n\nStok barang TIDAK akan ditambah lagi (asumsi stok sudah masuk).\n\nLanjutkan?')) {
@@ -309,6 +512,10 @@ export default function GoodsReceiptReport() {
              </Select>
            </div>
 
+          <Button variant="outline" onClick={syncJournalForReceipts} disabled={posting || loading}>
+            <RefreshCw className={`mr-2 h-4 w-4 ${posting ? 'animate-spin' : ''}`} />
+            {posting ? 'Sync Jurnal...' : 'Sync Jurnal'}
+          </Button>
            <Button variant="secondary" onClick={handleSyncLegacyData} disabled={syncing}>
              <RefreshCw className={`mr-2 h-4 w-4 ${syncing ? 'animate-spin' : ''}`} /> 
              {syncing ? 'Syncing...' : 'Sinkronisasi Data Lama'}
