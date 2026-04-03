@@ -15,6 +15,7 @@ export default function PurchaseDetailReport() {
   const [search, setSearch] = useState('');
   const [supplierFilter, setSupplierFilter] = useState('ALL');
   const [suppliers, setSuppliers] = useState<any[]>([]);
+  const [receivedQtyMap, setReceivedQtyMap] = useState<Record<string, number>>({});
   const [dateRange, setDateRange] = useState({
     start: new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0],
     end: new Date().toISOString().split('T')[0]
@@ -43,8 +44,9 @@ export default function PurchaseDetailReport() {
           quantity,
           unit_price,
           total_price,
-          goods (name, item_code, unit),
+          goods (id, name, item_code, unit, item_type),
           purchase_orders (
+            id,
             po_number,
             po_date,
             status,
@@ -86,6 +88,36 @@ export default function PurchaseDetailReport() {
         return poDate >= dateRange.start && poDate <= dateRange.end;
       });
 
+      const poIds = Array.from(new Set(items.map((it: any) => String(it.purchase_orders?.id || '')).filter(Boolean)));
+      const nextReceivedMap: Record<string, number> = {};
+      if (poIds.length > 0) {
+        const { data: receipts, error: receiptErr } = await supabase
+          .from('goods_receipts')
+          .select(`
+            id,
+            po_id,
+            items:goods_receipt_items (
+              goods_id,
+              quantity_received
+            )
+          `)
+          .in('po_id', poIds);
+        if (receiptErr) throw receiptErr;
+
+        (receipts || []).forEach((r: any) => {
+          const poId = String(r.po_id || '');
+          const its = Array.isArray(r.items) ? r.items : [];
+          its.forEach((it: any) => {
+            const gid = String(it.goods_id || '');
+            const qty = Number(it.quantity_received || 0);
+            if (!poId || !gid || qty <= 0) return;
+            const key = `${poId}:${gid}`;
+            nextReceivedMap[key] = (nextReceivedMap[key] || 0) + qty;
+          });
+        });
+      }
+
+      setReceivedQtyMap(nextReceivedMap);
       setData(items);
     } catch (error) {
       console.error('Error fetching Purchase Details:', error);
@@ -93,6 +125,26 @@ export default function PurchaseDetailReport() {
       setLoading(false);
     }
   }
+
+  const receivedKey = (item: any) => {
+    const poId = String(item.purchase_orders?.id || '');
+    const gid = String(item.goods?.id || '');
+    return poId && gid ? `${poId}:${gid}` : '';
+  };
+
+  const getReceivedQty = (item: any) => {
+    const key = receivedKey(item);
+    return key ? Number(receivedQtyMap[key] || 0) : 0;
+  };
+
+  const getReceiveStatus = (item: any) => {
+    const ordered = Number(item.quantity || 0);
+    const received = getReceivedQty(item);
+    if (ordered <= 0) return 'N/A';
+    if (received <= 0) return 'Belum';
+    if (received + 1e-9 < ordered) return 'Parsial';
+    return 'Sudah';
+  };
 
   const filteredData = data.filter(item => 
     item.goods?.name.toLowerCase().includes(search.toLowerCase()) ||
@@ -103,6 +155,14 @@ export default function PurchaseDetailReport() {
   );
 
   const totalAmount = filteredData.reduce((sum, item) => sum + (item.total_price || 0), 0);
+  const totalReceivedValue = filteredData.reduce((sum, item) => {
+    const ordered = Number(item.quantity || 0);
+    const received = getReceivedQty(item);
+    const unit = Number(item.unit_price || 0);
+    const qty = Math.min(ordered, received);
+    return sum + qty * unit;
+  }, 0);
+  const totalDiff = totalAmount - totalReceivedValue;
 
   const exportToExcel = () => {
     const flattenData = filteredData.map(item => ({
@@ -111,9 +171,12 @@ export default function PurchaseDetailReport() {
       'Supplier': item.purchase_orders?.suppliers?.name,
       'Nopol': item.purchase_orders?.work_orders?.vehicle_entries?.vehicles?.license_plate || '-',
       'Nama Kendaraan': item.purchase_orders?.work_orders?.vehicle_entries?.vehicles?.brand_type || '-',
+      'Tipe': item.goods?.item_type || '-',
       'Kode Barang': item.goods?.item_code,
       'Nama Barang': item.goods?.name,
       'Qty': item.quantity,
+      'Qty Diterima': getReceivedQty(item),
+      'Status Terima': getReceiveStatus(item),
       'Satuan': item.goods?.unit,
       'Harga Satuan': item.unit_price,
       'Total Harga': item.total_price
@@ -157,8 +220,16 @@ export default function PurchaseDetailReport() {
           <CardContent><div className="text-2xl font-bold">{formatCurrency(totalAmount)}</div></CardContent>
         </Card>
         <Card>
+          <CardHeader className="pb-2"><CardTitle className="text-sm font-medium">Total Nilai Diterima</CardTitle></CardHeader>
+          <CardContent><div className="text-2xl font-bold">{formatCurrency(totalReceivedValue)}</div></CardContent>
+        </Card>
+        <Card>
           <CardHeader className="pb-2"><CardTitle className="text-sm font-medium">Jumlah Item Barang</CardTitle></CardHeader>
           <CardContent><div className="text-2xl font-bold">{filteredData.length}</div></CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="pb-2"><CardTitle className="text-sm font-medium">Selisih (PO - Terima)</CardTitle></CardHeader>
+          <CardContent><div className="text-2xl font-bold">{formatCurrency(totalDiff)}</div></CardContent>
         </Card>
       </div>
 
@@ -180,15 +251,18 @@ export default function PurchaseDetailReport() {
                 <TableHead>No. PO</TableHead>
                 <TableHead>Supplier</TableHead>
                 <TableHead>Kendaraan</TableHead>
+                <TableHead>Tipe</TableHead>
                 <TableHead>Nama Barang</TableHead>
                 <TableHead className="text-center">Qty</TableHead>
+                <TableHead className="text-center">Diterima</TableHead>
+                <TableHead>Status</TableHead>
                 <TableHead className="text-right">Harga Satuan</TableHead>
                 <TableHead className="text-right">Total</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {filteredData.length === 0 ? (
-                <TableRow><TableCell colSpan={8} className="text-center py-8">Tidak ada data.</TableCell></TableRow>
+                <TableRow><TableCell colSpan={11} className="text-center py-8">Tidak ada data.</TableCell></TableRow>
               ) : (
                 filteredData.map((item, idx) => (
                   <TableRow key={idx}>
@@ -199,12 +273,30 @@ export default function PurchaseDetailReport() {
                       <div className="font-medium">{item.purchase_orders?.work_orders?.vehicle_entries?.vehicles?.license_plate || '-'}</div>
                       <div className="text-xs text-gray-500">{item.purchase_orders?.work_orders?.vehicle_entries?.vehicles?.brand_type || '-'}</div>
                     </TableCell>
+                    <TableCell>{item.goods?.item_type || '-'}</TableCell>
                     <TableCell>
                       <div className="font-medium">{item.goods?.name}</div>
                       <div className="text-xs text-gray-500">{item.goods?.item_code}</div>
                     </TableCell>
                     <TableCell className="text-center">
                       {item.quantity} <span className="text-xs text-gray-500">{item.goods?.unit}</span>
+                    </TableCell>
+                    <TableCell className="text-center">
+                      {getReceivedQty(item)} <span className="text-xs text-gray-500">{item.goods?.unit}</span>
+                    </TableCell>
+                    <TableCell>
+                      {(() => {
+                        const s = getReceiveStatus(item);
+                        const cls =
+                          s === 'Sudah'
+                            ? 'bg-green-100 text-green-800'
+                            : s === 'Parsial'
+                              ? 'bg-yellow-100 text-yellow-800'
+                              : s === 'Belum'
+                                ? 'bg-red-100 text-red-800'
+                                : 'bg-slate-100 text-slate-700';
+                        return <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${cls}`}>{s}</span>;
+                      })()}
                     </TableCell>
                     <TableCell className="text-right">{formatCurrency(item.unit_price)}</TableCell>
                     <TableCell className="text-right font-bold">{formatCurrency(item.total_price)}</TableCell>
