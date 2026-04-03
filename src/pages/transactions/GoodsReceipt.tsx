@@ -118,6 +118,18 @@ export default function GoodsReceipt() {
     return data || null;
   };
 
+  const fetchAccountByName = async (nameLike: string) => {
+    const { data } = await supabase
+      .from('chart_of_accounts')
+      .select('id, account_code, account_name')
+      .eq('account_type', 'DETAIL')
+      .ilike('account_name', `%${nameLike}%`)
+      .order('account_code', { ascending: true })
+      .limit(1)
+      .maybeSingle();
+    return data || null;
+  };
+
   const accountCodeByGoodsType = (t: string) => {
     const type = String(t || '').toUpperCase();
     if (type === 'PERALATAN_WORKSHOP') return '1400101';
@@ -125,6 +137,240 @@ export default function GoodsReceipt() {
     if (type === 'FURNITURE') return '1400103';
     if (type === 'PERLENGKAPAN') return '1400104';
     return null;
+  };
+
+  const postJournalForReceipt = async (args: {
+    receiptId: string;
+    receiptNumber: string;
+    receiptDate: string;
+    poNumber?: string | null;
+    receiptAmountByGoodsId: Record<string, number>;
+    totalAmount: number;
+  }) => {
+    const {
+      receiptId,
+      receiptNumber,
+      receiptDate,
+      poNumber,
+      receiptAmountByGoodsId,
+      totalAmount,
+    } = args;
+
+    const goodsIds = Object.keys(receiptAmountByGoodsId).filter(Boolean);
+    if (goodsIds.length === 0 || totalAmount <= 0) return;
+
+    const { data: goodsRows, error: goodsErr } = await supabase
+      .from('goods')
+      .select('id, item_type')
+      .in('id', goodsIds);
+    if (goodsErr) throw goodsErr;
+
+    const goodsTypeById = new Map<string, string>();
+    (goodsRows || []).forEach((g: any) => {
+      goodsTypeById.set(String(g.id), String(g.item_type || ''));
+    });
+
+    const apAcc = await fetchApAccount();
+    if (!apAcc) {
+      toast.error('Jurnal GR tidak dibuat: Akun Hutang Usaha tidak ditemukan di COA.');
+      return;
+    }
+
+    const anyPersediaan = goodsIds.some((gid) => String(goodsTypeById.get(gid) || '').toUpperCase() === 'PERSEDIAAN');
+    const persAcc = anyPersediaan ? await fetchPersediaanAccount() : null;
+    if (anyPersediaan && !persAcc) {
+      toast.error('Jurnal GR tidak lengkap: Akun Persediaan tidak ditemukan di COA.');
+    }
+
+    const debitByAccountId: Record<string, number> = {};
+    for (const [gid, amount] of Object.entries(receiptAmountByGoodsId)) {
+      const amt = Number(amount || 0);
+      if (!amt) continue;
+      const gType = String(goodsTypeById.get(gid) || '').toUpperCase();
+      const code = accountCodeByGoodsType(gType);
+      let acc: any = null;
+
+      if (gType === 'PERSEDIAAN') {
+        acc = persAcc;
+        if (!acc) continue;
+      } else if (code) {
+        acc = await fetchAccountByCode(code);
+        if (!acc) {
+          const label =
+            gType === 'PERALATAN_WORKSHOP'
+              ? 'peralatan workshop'
+              : gType === 'INVENTARIS_KANTOR'
+                ? 'inventaris kantor'
+                : gType === 'FURNITURE'
+                  ? 'furniture'
+                  : gType === 'PERLENGKAPAN'
+                    ? 'perlengkapan'
+                    : '';
+          acc = label ? await fetchAccountByName(label) : null;
+        }
+      } else {
+        continue;
+      }
+
+      if (!acc) continue;
+      debitByAccountId[String(acc.id)] = (debitByAccountId[String(acc.id)] || 0) + amt;
+    }
+
+    const debitLines = Object.entries(debitByAccountId).filter(([, v]) => Number(v || 0) !== 0);
+    if (debitLines.length === 0) return;
+
+    await supabase.from('journal_entries').delete().eq('reference', receiptId);
+
+    const { data: entry, error: entryErr } = await supabase
+      .from('journal_entries')
+      .insert([{
+        entry_date: receiptDate,
+        voucher_no: `GR-${receiptNumber}`,
+        description: `Penerimaan Barang ${receiptNumber}${poNumber ? ` (PO ${poNumber})` : ''}`,
+        entry_type: 'JOURNAL',
+        total_amount: totalAmount,
+        reference: receiptId,
+      }])
+      .select()
+      .single();
+    if (entryErr) throw entryErr;
+
+    const itemsPayload: any[] = debitLines.map(([accountId, amt]) => ({
+      journal_entry_id: entry.id,
+      account_id: accountId,
+      debit: amt,
+      credit: 0,
+      description: 'Penerimaan Barang',
+    }));
+    itemsPayload.push({
+      journal_entry_id: entry.id,
+      account_id: apAcc.id,
+      debit: 0,
+      credit: totalAmount,
+      description: 'Hutang Usaha',
+    });
+
+    const { error: itemsErr2 } = await supabase.from('journal_entry_items').insert(itemsPayload);
+    if (itemsErr2) throw itemsErr2;
+  };
+
+  const syncJournalFromHistory = async () => {
+    if (!confirm('Sinkronisasi jurnal untuk semua penerimaan di periode ini? Ini hanya akan membuat jurnal yang belum ada.')) return;
+    setLoading(true);
+    try {
+      const targets = filteredReceipts;
+      if (!targets || targets.length === 0) {
+        toast.info('Tidak ada data penerimaan pada periode ini.');
+        return;
+      }
+
+      const receiptIds = targets.map((r: any) => r.id).filter(Boolean);
+      const { data: existing } = await supabase
+        .from('journal_entries')
+        .select('reference')
+        .in('reference', receiptIds);
+      const existingRef = new Set((existing || []).map((x: any) => String(x.reference || '')));
+
+      const poIds = Array.from(new Set(targets.map((r: any) => String(r.po_id || '')).filter(Boolean)));
+      const amountByReceiptId = new Map<string, { receiptAmountByGoodsId: Record<string, number>; total: number }>();
+
+      for (const poId of poIds) {
+        const { data: poItems } = await supabase
+          .from('purchase_order_items')
+          .select('goods_id, quantity, unit_price, created_at')
+          .eq('po_id', poId)
+          .order('created_at', { ascending: true });
+
+        const poItemsByGoods: Record<string, any[]> = {};
+        (poItems || []).forEach((it: any) => {
+          if (!it.goods_id) return;
+          const gid = String(it.goods_id);
+          if (!poItemsByGoods[gid]) poItemsByGoods[gid] = [];
+          poItemsByGoods[gid].push(it);
+        });
+
+        const { data: poReceipts } = await supabase
+          .from('goods_receipts')
+          .select(`
+            id,
+            receipt_date,
+            created_at,
+            items:goods_receipt_items (goods_id, quantity_received)
+          `)
+          .eq('po_id', poId)
+          .order('receipt_date', { ascending: true })
+          .order('created_at', { ascending: true });
+
+        const historyByGoods: Record<string, number> = {};
+
+        (poReceipts || []).forEach((r: any) => {
+          const receiptAmountByGoodsId: Record<string, number> = {};
+          let total = 0;
+          const items = Array.isArray(r.items) ? r.items : [];
+          items.forEach((it: any) => {
+            const gid = String(it.goods_id || '');
+            const qty = Number(it.quantity_received || 0);
+            if (!gid || qty <= 0) return;
+
+            let remainingToPrice = qty;
+            let currentHistory = Number(historyByGoods[gid] || 0);
+            const lines = poItemsByGoods[gid] || [];
+
+            for (const line of lines) {
+              if (remainingToPrice <= 0) break;
+              const lineQty = Number(line.quantity || 0);
+              const linePrice = Number(line.unit_price || 0);
+              const usedByHistory = Math.min(lineQty, currentHistory);
+              currentHistory -= usedByHistory;
+              const availableInLine = lineQty - usedByHistory;
+              if (availableInLine > 0) {
+                const take = Math.min(remainingToPrice, availableInLine);
+                const amt = take * linePrice;
+                total += amt;
+                receiptAmountByGoodsId[gid] = (receiptAmountByGoodsId[gid] || 0) + amt;
+                remainingToPrice -= take;
+              }
+            }
+
+            historyByGoods[gid] = (historyByGoods[gid] || 0) + qty;
+          });
+
+          amountByReceiptId.set(String(r.id), { receiptAmountByGoodsId, total });
+        });
+      }
+
+      let created = 0;
+      let skipped = 0;
+
+      for (const r of targets) {
+        const rid = String((r as any).id || '');
+        if (!rid) continue;
+        if (existingRef.has(rid)) {
+          skipped++;
+          continue;
+        }
+        const calc = amountByReceiptId.get(rid);
+        if (!calc || calc.total <= 0) {
+          skipped++;
+          continue;
+        }
+        await postJournalForReceipt({
+          receiptId: rid,
+          receiptNumber: String((r as any).receipt_number || ''),
+          receiptDate: String((r as any).receipt_date || ''),
+          poNumber: (r as any).purchase_orders?.po_number || null,
+          receiptAmountByGoodsId: calc.receiptAmountByGoodsId,
+          totalAmount: calc.total,
+        });
+        created++;
+      }
+
+      toast.success(`Sinkron jurnal selesai. Dibuat: ${created}, dilewati: ${skipped}`);
+    } catch (e: any) {
+      toast.error('Gagal sinkron jurnal: ' + (e?.message || 'Unknown error'));
+    } finally {
+      setLoading(false);
+    }
   };
 
   async function fetchOpenPOs() {
@@ -393,73 +639,18 @@ export default function GoodsReceipt() {
       }
 
       if (totalReceiptAmount > 0) {
-        const goodsIds = Object.keys(receiptAmountByGoodsId);
-        const { data: goodsRows, error: goodsErr } = await supabase
-          .from('goods')
-          .select('id, item_type')
-          .in('id', goodsIds);
-        if (goodsErr) throw goodsErr;
-
-        const goodsTypeById = new Map<string, string>();
-        (goodsRows || []).forEach((g: any) => {
-          goodsTypeById.set(String(g.id), String(g.item_type || ''));
-        });
-
-        const apAcc = await fetchApAccount();
-        if (!apAcc) throw new Error('Akun Hutang Usaha tidak ditemukan di COA.');
-
-        const persAcc = await fetchPersediaanAccount();
-        if (!persAcc) throw new Error('Akun Persediaan tidak ditemukan di COA.');
-
-        const debitByAccountId: Record<string, number> = {};
-        for (const [gid, amount] of Object.entries(receiptAmountByGoodsId)) {
-          const gType = goodsTypeById.get(gid) || '';
-          const code = accountCodeByGoodsType(gType);
-          let acc = null;
-          if (String(gType).toUpperCase() === 'PERSEDIAAN') {
-            acc = persAcc;
-          } else if (code) {
-            acc = await fetchAccountByCode(code);
-          } else {
-            continue;
-          }
-          if (!acc) continue;
-          debitByAccountId[String(acc.id)] = (debitByAccountId[String(acc.id)] || 0) + Number(amount || 0);
-        }
-
-        const debitLines = Object.entries(debitByAccountId).filter(([, v]) => Number(v || 0) !== 0);
-        if (debitLines.length > 0) {
-          const { data: entry, error: entryErr } = await supabase
-            .from('journal_entries')
-            .insert([{
-              entry_date: receiptData.receipt_date,
-              voucher_no: `GR-${newReceipt.receipt_number}`,
-              description: `Penerimaan Barang ${newReceipt.receipt_number} (PO ${selectedPO.po_number})`,
-              entry_type: 'JOURNAL',
-              total_amount: totalReceiptAmount,
-              reference: newReceipt.id,
-            }])
-            .select()
-            .single();
-          if (entryErr) throw entryErr;
-
-          const itemsPayload: any[] = debitLines.map(([accountId, amt]) => ({
-            journal_entry_id: entry.id,
-            account_id: accountId,
-            debit: amt,
-            credit: 0,
-            description: 'Penerimaan Barang',
-          }));
-          itemsPayload.push({
-            journal_entry_id: entry.id,
-            account_id: apAcc.id,
-            debit: 0,
-            credit: totalReceiptAmount,
-            description: 'Hutang Usaha',
+        try {
+          await postJournalForReceipt({
+            receiptId: newReceipt.id,
+            receiptNumber: String(newReceipt.receipt_number || ''),
+            receiptDate: receiptData.receipt_date,
+            poNumber: selectedPO.po_number,
+            receiptAmountByGoodsId,
+            totalAmount: totalReceiptAmount,
           });
-
-          const { error: itemsErr2 } = await supabase.from('journal_entry_items').insert(itemsPayload);
-          if (itemsErr2) throw itemsErr2;
+        } catch (e: any) {
+          console.error('Gagal membuat jurnal GR:', e);
+          toast.error('Penerimaan sukses, tapi gagal membuat jurnal: ' + (e?.message || 'Unknown error'));
         }
       }
 
@@ -557,6 +748,9 @@ export default function GoodsReceipt() {
           <div className="flex justify-between items-center mb-4">
              <CardTitle>Riwayat Penerimaan (History)</CardTitle>
              <div className="flex gap-2 items-center">
+                <Button variant="outline" size="sm" onClick={syncJournalFromHistory} disabled={loading}>
+                  Sync Jurnal
+                </Button>
                 <div className="flex items-center gap-2">
                   <span className="text-sm text-gray-500">Periode:</span>
                   <Input 
