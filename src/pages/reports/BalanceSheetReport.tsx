@@ -333,7 +333,7 @@ export default function BalanceSheetReport() {
 
         relevantAccounts.forEach((acc: any) => {
             let bal = 0;
-            const code = acc.account_code || '';
+            const code = String(acc.account_code || '').trim();
             
             if (acc.account_type === 'DETAIL') {
                 bal = balances[acc.id] || 0;
@@ -341,17 +341,31 @@ export default function BalanceSheetReport() {
                 bal = getBalance(acc.id, code);
             }
             
-            const isAsset = ['AKTIVA', 'ASSETS'].includes(acc.category) || code.startsWith('1');
+            const prefix = code[0] || '';
+            const bucket =
+              prefix === '1'
+                ? 'ASSET'
+                : prefix === '2'
+                  ? 'LIABILITY'
+                  : prefix === '3'
+                    ? 'EQUITY'
+                    : ['AKTIVA', 'ASSETS'].includes(acc.category)
+                      ? 'ASSET'
+                      : ['KEWAJIBAN', 'PASSIVA', 'LIABILITIES'].includes(acc.category)
+                        ? 'LIABILITY'
+                        : ['EKUITAS', 'MODAL', 'EQUITY'].includes(acc.category)
+                          ? 'EQUITY'
+                          : null;
             
-            if (!isAsset) {
+            if (bucket !== 'ASSET') {
                 bal = -bal; 
             }
 
             if (Math.abs(bal) > 0.01) {
                 const item = { ...acc, balance: bal };
-                if (isAsset) assets.push(item);
-                else if (['KEWAJIBAN', 'PASSIVA', 'LIABILITIES'].includes(acc.category) || code.startsWith('2')) liabilities.push(item);
-                else if (['EKUITAS', 'MODAL', 'EQUITY'].includes(acc.category) || code.startsWith('3')) equity.push(item);
+                if (bucket === 'ASSET') assets.push(item);
+                else if (bucket === 'LIABILITY') liabilities.push(item);
+                else if (bucket === 'EQUITY') equity.push(item);
             }
         });
 
