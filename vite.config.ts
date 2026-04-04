@@ -28,9 +28,9 @@ export default defineConfig({
         skipWaiting: true,
       },
       manifest: {
-        name: 'Monitoring Pagu Anggaran',
-        short_name: 'Monitoring Pagu',
-        description: 'Aplikasi Monitoring Pagu Anggaran Kendaraan',
+        name: 'OtoSmart \"Workshop Monitoring System\"',
+        short_name: 'OtoSmart',
+        description: 'OtoSmart Workshop Monitoring System',
         theme_color: '#ffffff',
         icons: [
           {
