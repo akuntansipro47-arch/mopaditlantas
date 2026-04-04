@@ -41,10 +41,11 @@ export default function Vehicles() {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [currentId, setCurrentId] = useState<string | null>(null);
+  const [formErrors, setFormErrors] = useState<Record<string, string>>({});
 
   // Form State
   const [formData, setFormData] = useState({
-    vehicle_type: '',
+    vehicle_type: 'R4',
     license_plate: '',
     brand_type: '',
     chassis_number: '',
@@ -76,10 +77,24 @@ export default function Vehicles() {
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
     setFormData(prev => ({ ...prev, [name]: value.toUpperCase() }));
+    if (formErrors[name]) {
+      setFormErrors(prev => {
+        const next = { ...prev };
+        delete next[name];
+        return next;
+      });
+    }
   };
 
   const handleSelectChange = (value: string) => {
     setFormData(prev => ({ ...prev, vehicle_type: value }));
+    if (formErrors.vehicle_type) {
+      setFormErrors(prev => {
+        const next = { ...prev };
+        delete next.vehicle_type;
+        return next;
+      });
+    }
   };
 
   const resetForm = () => {
@@ -91,6 +106,7 @@ export default function Vehicles() {
       engine_number: '',
       body_number: ''
     });
+    setFormErrors({});
     setIsEditing(false);
     setCurrentId(null);
   };
@@ -104,6 +120,7 @@ export default function Vehicles() {
       engine_number: vehicle.engine_number || '',
       body_number: vehicle.body_number || ''
     });
+    setFormErrors({});
     setIsEditing(true);
     setCurrentId(vehicle.id);
     setIsDialogOpen(true);
@@ -125,6 +142,18 @@ export default function Vehicles() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    const nextErrors: Record<string, string> = {};
+    if (!String(formData.vehicle_type || '').trim()) nextErrors.vehicle_type = 'Wajib dipilih';
+    if (!String(formData.license_plate || '').trim()) nextErrors.license_plate = 'Wajib diisi';
+    if (!String(formData.brand_type || '').trim()) nextErrors.brand_type = 'Wajib diisi';
+    if (!String(formData.chassis_number || '').trim()) nextErrors.chassis_number = 'Wajib diisi';
+    if (!String(formData.engine_number || '').trim()) nextErrors.engine_number = 'Wajib diisi';
+    if (!String(formData.body_number || '').trim()) nextErrors.body_number = 'Wajib diisi';
+    if (Object.keys(nextErrors).length > 0) {
+      setFormErrors(nextErrors);
+      toast.error('Lengkapi semua kolom wajib sebelum menyimpan.');
+      return;
+    }
     setLoading(true);
 
     try {
@@ -188,7 +217,7 @@ export default function Vehicles() {
                     value={formData.vehicle_type} 
                     onValueChange={handleSelectChange}
                   >
-                    <SelectTrigger className="col-span-3">
+                    <SelectTrigger className={`col-span-3 ${formErrors.vehicle_type ? 'border-red-500' : ''}`}>
                       <SelectValue placeholder="Pilih Jenis" />
                     </SelectTrigger>
                     <SelectContent>
@@ -197,67 +226,87 @@ export default function Vehicles() {
                       <SelectItem value="R2_KECIL">R2 Kecil</SelectItem>
                     </SelectContent>
                   </Select>
+                  {formErrors.vehicle_type && <div className="col-span-4 text-right text-xs text-red-600">{formErrors.vehicle_type}</div>}
                 </div>
                 <div className="grid grid-cols-4 items-center gap-4">
                   <Label htmlFor="license_plate" className="text-right">
                     No. Polisi
                   </Label>
-                  <Input
-                    id="license_plate"
-                    name="license_plate"
-                    value={formData.license_plate}
-                    onChange={handleInputChange}
-                    className="col-span-3"
-                    required
-                  />
+                  <div className="col-span-3 space-y-1">
+                    <Input
+                      id="license_plate"
+                      name="license_plate"
+                      value={formData.license_plate}
+                      onChange={handleInputChange}
+                      className={formErrors.license_plate ? 'border-red-500' : ''}
+                      required
+                    />
+                    {formErrors.license_plate && <p className="text-xs text-red-600">{formErrors.license_plate}</p>}
+                  </div>
                 </div>
                 <div className="grid grid-cols-4 items-center gap-4">
                   <Label htmlFor="brand_type" className="text-right">
                     Merk/Type
                   </Label>
-                  <Input
-                    id="brand_type"
-                    name="brand_type"
-                    value={formData.brand_type}
-                    onChange={handleInputChange}
-                    className="col-span-3"
-                  />
+                  <div className="col-span-3 space-y-1">
+                    <Input
+                      id="brand_type"
+                      name="brand_type"
+                      value={formData.brand_type}
+                      onChange={handleInputChange}
+                      className={formErrors.brand_type ? 'border-red-500' : ''}
+                      required
+                    />
+                    {formErrors.brand_type && <p className="text-xs text-red-600">{formErrors.brand_type}</p>}
+                  </div>
                 </div>
                 <div className="grid grid-cols-4 items-center gap-4">
                   <Label htmlFor="chassis_number" className="text-right">
                     No. Rangka
                   </Label>
-                  <Input
-                    id="chassis_number"
-                    name="chassis_number"
-                    value={formData.chassis_number}
-                    onChange={handleInputChange}
-                    className="col-span-3"
-                  />
+                  <div className="col-span-3 space-y-1">
+                    <Input
+                      id="chassis_number"
+                      name="chassis_number"
+                      value={formData.chassis_number}
+                      onChange={handleInputChange}
+                      className={formErrors.chassis_number ? 'border-red-500' : ''}
+                      required
+                    />
+                    {formErrors.chassis_number && <p className="text-xs text-red-600">{formErrors.chassis_number}</p>}
+                  </div>
                 </div>
                 <div className="grid grid-cols-4 items-center gap-4">
                   <Label htmlFor="engine_number" className="text-right">
                     No. Mesin
                   </Label>
-                  <Input
-                    id="engine_number"
-                    name="engine_number"
-                    value={formData.engine_number}
-                    onChange={handleInputChange}
-                    className="col-span-3"
-                  />
+                  <div className="col-span-3 space-y-1">
+                    <Input
+                      id="engine_number"
+                      name="engine_number"
+                      value={formData.engine_number}
+                      onChange={handleInputChange}
+                      className={formErrors.engine_number ? 'border-red-500' : ''}
+                      required
+                    />
+                    {formErrors.engine_number && <p className="text-xs text-red-600">{formErrors.engine_number}</p>}
+                  </div>
                 </div>
                 <div className="grid grid-cols-4 items-center gap-4">
                   <Label htmlFor="body_number" className="text-right">
                     No. Lambung
                   </Label>
-                  <Input
-                    id="body_number"
-                    name="body_number"
-                    value={formData.body_number}
-                    onChange={handleInputChange}
-                    className="col-span-3"
-                  />
+                  <div className="col-span-3 space-y-1">
+                    <Input
+                      id="body_number"
+                      name="body_number"
+                      value={formData.body_number}
+                      onChange={handleInputChange}
+                      className={formErrors.body_number ? 'border-red-500' : ''}
+                      required
+                    />
+                    {formErrors.body_number && <p className="text-xs text-red-600">{formErrors.body_number}</p>}
+                  </div>
                 </div>
               </div>
               <DialogFooter>
