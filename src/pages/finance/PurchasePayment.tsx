@@ -162,8 +162,22 @@ export default function PurchasePayment() {
       const filtered =
         data?.filter((a) => {
           const cat = String(a.category || '').toUpperCase();
+          const code = String(a.account_code || '').trim();
           const name = String(a.account_name || '').toLowerCase();
-          return cat.includes('BEBAN') || cat.includes('BIAYA') || name.includes('beban') || name.includes('biaya') || name.includes('admin') || name.includes('transfer') || name.includes('bank');
+          return (
+            code.startsWith('5') ||
+            code.startsWith('6') ||
+            cat.includes('HPP') ||
+            cat.includes('BEBAN') ||
+            cat.includes('BIAYA') ||
+            name.includes('hpp') ||
+            name.includes('beban') ||
+            name.includes('biaya') ||
+            name.includes('admin') ||
+            name.includes('transfer') ||
+            name.includes('ongkir') ||
+            name.includes('kirim')
+          );
         }) || [];
 
       setExpenseAccounts(filtered);
@@ -962,7 +976,7 @@ export default function PurchasePayment() {
                 </div>
                 {Number(paymentData.transfer_fee || 0) > 0 && (
                   <div className="space-y-2">
-                      <Label>Akun Biaya Admin/Transfer</Label>
+                      <Label>Akun Biaya (Admin/Ongkir)</Label>
                       <div className="flex gap-2">
                           <Input 
                               readOnly 
