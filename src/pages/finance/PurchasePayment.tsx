@@ -923,9 +923,14 @@ export default function PurchasePayment() {
                 <div className="space-y-2">
                     <Label>Jumlah Bayar</Label>
                     <Input 
-                        type="number" 
-                        value={paymentData.amount} 
-                        onChange={e => setPaymentData({...paymentData, amount: Number(e.target.value)})} 
+                        type="text"
+                        inputMode="numeric"
+                        pattern="[0-9]*"
+                        value={String(paymentData.amount ?? '')}
+                        onChange={e => {
+                          const digits = String(e.target.value || '').replace(/[^0-9]/g, '');
+                          setPaymentData({ ...paymentData, amount: digits ? Number(digits) : 0 });
+                        }}
                     />
                     <p className="text-xs text-gray-500">
                         Sisa Tagihan: {formatCurrency(
@@ -938,9 +943,14 @@ export default function PurchasePayment() {
                 <div className="space-y-2">
                     <Label>Biaya Admin / Transfer (Opsional)</Label>
                     <Input
-                        type="number"
-                        value={paymentData.transfer_fee}
-                        onChange={e => setPaymentData({...paymentData, transfer_fee: Number(e.target.value)})}
+                        type="text"
+                        inputMode="numeric"
+                        pattern="[0-9]*"
+                        value={String(paymentData.transfer_fee ?? '')}
+                        onChange={e => {
+                          const digits = String(e.target.value || '').replace(/[^0-9]/g, '');
+                          setPaymentData({ ...paymentData, transfer_fee: digits ? Number(digits) : 0 });
+                        }}
                     />
                     <p className="text-xs text-gray-500">
                       Total Keluar Kas/Bank: {formatCurrency(Number(paymentData.amount || 0) + Number(paymentData.transfer_fee || 0))}
