@@ -13,6 +13,8 @@ import {
 } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { formatDate, formatCurrency } from '@/lib/utils';
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 type ReturnLine = {
   goods_id: string;
@@ -39,6 +41,9 @@ export default function PurchaseOrderReturn() {
   const [returnDate, setReturnDate] = useState(new Date().toISOString().split('T')[0]);
   const [returnNotes, setReturnNotes] = useState('');
   const [returnLines, setReturnLines] = useState<ReturnLine[]>([]);
+  const [settlementType, setSettlementType] = useState<'REFUND' | 'DEPOSIT'>('REFUND');
+  const [settlementAccountId, setSettlementAccountId] = useState<string>('');
+  const [coaAccounts, setCoaAccounts] = useState<any[]>([]);
 
   // Date Filter State (Default to current month)
   const [dateFilter, setDateFilter] = useState({
@@ -49,6 +54,18 @@ export default function PurchaseOrderReturn() {
   useEffect(() => {
     fetchCompletedPOs();
   }, [dateFilter]);
+
+  useEffect(() => {
+    const loadCoa = async () => {
+      const { data } = await supabase
+        .from('chart_of_accounts')
+        .select('id, account_code, account_name, account_type')
+        .eq('account_type', 'DETAIL')
+        .order('account_code', { ascending: true });
+      setCoaAccounts((data as any[]) || []);
+    };
+    loadCoa();
+  }, []);
 
   async function fetchCompletedPOs() {
     setLoading(true);
@@ -91,6 +108,12 @@ export default function PurchaseOrderReturn() {
       const { error: colErr } = await supabase.from('purchase_return_items').select('id').limit(1);
       if (colErr) {
         throw new Error("DB belum siap: tabel purchase_return_items belum ada. Jalankan migration 20260404_add_purchase_returns.sql di Supabase.");
+      }
+    }
+    {
+      const { error: colErr } = await supabase.from('purchase_returns').select('settlement_type').limit(1);
+      if (colErr) {
+        throw new Error("DB belum siap: kolom settlement retur belum ada. Jalankan migration 20260404_add_purchase_returns_settlement.sql di Supabase.");
       }
     }
 
@@ -202,6 +225,8 @@ export default function PurchaseOrderReturn() {
     setReturnDate(new Date().toISOString().split('T')[0]);
     setReturnNotes('');
     setReturnLines([]);
+    setSettlementType('REFUND');
+    setSettlementAccountId('');
     setIsConfirmOpen(true);
     try {
       await loadReturnData(po);
@@ -214,6 +239,10 @@ export default function PurchaseOrderReturn() {
     if (!selectedPO) return;
     if (!returnDate) {
       toast.error('Tanggal retur wajib diisi.');
+      return;
+    }
+    if (!settlementAccountId) {
+      toast.error('Akun penyelesaian wajib dipilih.');
       return;
     }
 
@@ -240,12 +269,17 @@ export default function PurchaseOrderReturn() {
 
     setIsProcessing(true);
     try {
+      const totalReturnAmount = itemsToReturn.reduce((sum, l) => sum + Number(l.unit_price || 0) * Number(l.return_qty || 0), 0);
+
       const { data: header, error: hErr } = await supabase
         .from('purchase_returns')
         .insert([{
           return_number: `RT-${Date.now()}`,
           po_id: selectedPO.id,
           return_date: returnDate,
+          settlement_type: settlementType,
+          settlement_account_id: settlementAccountId,
+          settlement_amount: totalReturnAmount,
           notes: returnNotes ? returnNotes : null,
         }])
         .select()
@@ -273,6 +307,122 @@ export default function PurchaseOrderReturn() {
           .update({ current_stock: newStock })
           .eq('id', l.goods_id);
         if (uErr) throw uErr;
+      }
+
+      const fetchPersediaanAccount = async () => {
+        const { data } = await supabase
+          .from('chart_of_accounts')
+          .select('id, account_code, account_name')
+          .eq('account_type', 'DETAIL')
+          .ilike('account_name', '%persediaan%')
+          .order('account_code', { ascending: true })
+          .limit(1)
+          .maybeSingle();
+        return data || null;
+      };
+
+      const fetchAccountByCode = async (accountCode: string) => {
+        const { data } = await supabase
+          .from('chart_of_accounts')
+          .select('id, account_code, account_name')
+          .eq('account_code', accountCode)
+          .eq('account_type', 'DETAIL')
+          .limit(1)
+          .maybeSingle();
+        return data || null;
+      };
+
+      const fetchAccountByName = async (nameLike: string) => {
+        const { data } = await supabase
+          .from('chart_of_accounts')
+          .select('id, account_code, account_name')
+          .eq('account_type', 'DETAIL')
+          .ilike('account_name', `%${nameLike}%`)
+          .order('account_code', { ascending: true })
+          .limit(1)
+          .maybeSingle();
+        return data || null;
+      };
+
+      const accountCodeByGoodsType = (t: string) => {
+        const type = String(t || '').toUpperCase();
+        if (type === 'PERALATAN_WORKSHOP') return '1400101';
+        if (type === 'INVENTARIS_KANTOR') return '1400102';
+        if (type === 'FURNITURE') return '1400103';
+        if (type === 'PERLENGKAPAN') return '1400104';
+        return null;
+      };
+
+      const persAcc = await fetchPersediaanAccount();
+      const creditByAccountId: Record<string, number> = {};
+      for (const l of itemsToReturn) {
+        const amt = Number(l.unit_price || 0) * Number(l.return_qty || 0);
+        if (!amt) continue;
+        const itemType = String(l.item_type || '').toUpperCase();
+        let acc: any = null;
+        if (itemType === 'PERSEDIAAN') {
+          acc = persAcc;
+        } else if (itemType === 'ASET_AKTIVA_TETAP') {
+          acc = await fetchAccountByName('aktiva tetap');
+        } else {
+          const code = accountCodeByGoodsType(itemType);
+          if (code) acc = await fetchAccountByCode(code);
+        }
+        if (!acc) {
+          const fallbackName =
+            itemType === 'PERALATAN_WORKSHOP'
+              ? 'peralatan workshop'
+              : itemType === 'INVENTARIS_KANTOR'
+                ? 'inventaris kantor'
+                : itemType === 'FURNITURE'
+                  ? 'furniture'
+                  : itemType === 'PERLENGKAPAN'
+                    ? 'perlengkapan'
+                    : itemType === 'PERSEDIAAN'
+                      ? 'persediaan'
+                      : '';
+          acc = fallbackName ? await fetchAccountByName(fallbackName) : null;
+        }
+        if (!acc) continue;
+        creditByAccountId[String(acc.id)] = (creditByAccountId[String(acc.id)] || 0) + amt;
+      }
+
+      const creditLines = Object.entries(creditByAccountId).filter(([, v]) => Number(v || 0) !== 0);
+      if (totalReturnAmount > 0 && creditLines.length > 0) {
+        await supabase.from('journal_entries').delete().eq('reference', header.id);
+
+        const { data: je, error: jeErr } = await supabase
+          .from('journal_entries')
+          .insert([{
+            entry_date: returnDate,
+            voucher_no: header.return_number,
+            reference: header.id,
+            description: `Retur Pembelian ${header.return_number} (PO ${selectedPO.po_number})`,
+            entry_type: 'JOURNAL',
+            total_amount: totalReturnAmount,
+          }])
+          .select()
+          .single();
+        if (jeErr) throw jeErr;
+
+        const itemsPayload: any[] = [{
+          journal_entry_id: je.id,
+          account_id: settlementAccountId,
+          debit: totalReturnAmount,
+          credit: 0,
+          description: settlementType === 'REFUND' ? 'Refund Retur Pembelian' : 'Deposit/Uang Muka Retur Pembelian',
+        }];
+        creditLines.forEach(([accountId, amt]) => {
+          itemsPayload.push({
+            journal_entry_id: je.id,
+            account_id: accountId,
+            debit: 0,
+            credit: amt,
+            description: 'Pengurangan nilai barang (Retur)',
+          });
+        });
+        const { error: jelErr } = await supabase.from('journal_entry_items').insert(itemsPayload);
+        if (jelErr) throw jelErr;
       }
 
       const { data: refreshed } = await supabase
@@ -448,6 +598,41 @@ export default function PurchaseOrderReturn() {
               </div>
             </div>
 
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-2">
+                <Label className="text-xs text-slate-500">Penyelesaian Retur</Label>
+                <Select value={settlementType} onValueChange={(v: any) => setSettlementType(v)}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Pilih opsi..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="REFUND">Refund (Kas/Bank)</SelectItem>
+                    <SelectItem value="DEPOSIT">Deposit / Uang Muka</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label className="text-xs text-slate-500">Akun Penyelesaian</Label>
+                <Select value={settlementAccountId} onValueChange={setSettlementAccountId}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Pilih akun..." />
+                  </SelectTrigger>
+                  <SelectContent className="max-h-[280px]">
+                    {coaAccounts.map((a: any) => (
+                      <SelectItem key={a.id} value={a.id}>
+                        {a.account_code} - {a.account_name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-slate-500">
+                  {settlementType === 'REFUND'
+                    ? 'Pilih akun Kas/Bank yang menerima refund.'
+                    : 'Pilih akun Deposit/Uang Muka (piutang vendor) untuk saldo retur.'}
+                </p>
+              </div>
+            </div>
+
             <div className="rounded-md border max-h-[360px] overflow-auto">
               <Table>
                 <TableHeader>
@@ -502,6 +687,16 @@ export default function PurchaseOrderReturn() {
               <AlertTriangle className="h-4 w-4 text-amber-500 mt-0.5" />
               <div>
                 Qty retur tidak boleh melebihi sisa diterima, dan stok harus cukup (barang belum dipakai).
+              </div>
+            </div>
+            <div className="flex justify-end">
+              <div className="text-sm">
+                <span className="text-slate-500 mr-2">Total Retur:</span>
+                <span className="font-bold">
+                  {formatCurrency(
+                    (returnLines || []).reduce((sum, l) => sum + Number(l.unit_price || 0) * Number(l.return_qty || 0), 0)
+                  )}
+                </span>
               </div>
             </div>
           </div>

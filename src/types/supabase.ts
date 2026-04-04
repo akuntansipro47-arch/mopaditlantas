@@ -471,6 +471,9 @@ export interface Database {
           return_number: string
           po_id: string | null
           return_date: string
+          settlement_type: string | null
+          settlement_account_id: string | null
+          settlement_amount: number
           notes: string | null
           created_at: string
         }
@@ -479,6 +482,9 @@ export interface Database {
           return_number?: string
           po_id?: string | null
           return_date: string
+          settlement_type?: string | null
+          settlement_account_id?: string | null
+          settlement_amount?: number
           notes?: string | null
           created_at?: string
         }
@@ -487,6 +493,9 @@ export interface Database {
           return_number?: string
           po_id?: string | null
           return_date?: string
+          settlement_type?: string | null
+          settlement_account_id?: string | null
+          settlement_amount?: number
           notes?: string | null
           created_at?: string
         }

@@ -144,6 +144,9 @@ CREATE TABLE IF NOT EXISTS purchase_returns (
     return_number VARCHAR(50) UNIQUE NOT NULL,
     po_id UUID REFERENCES purchase_orders(id),
     return_date DATE NOT NULL,
+    settlement_type TEXT,
+    settlement_account_id UUID REFERENCES chart_of_accounts(id),
+    settlement_amount NUMERIC NOT NULL DEFAULT 0,
     notes TEXT,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
