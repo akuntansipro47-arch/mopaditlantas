@@ -465,6 +465,61 @@ export interface Database {
           created_at?: string
         }
       }
+      purchase_returns: {
+        Row: {
+          id: string
+          return_number: string
+          po_id: string | null
+          return_date: string
+          notes: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          return_number?: string
+          po_id?: string | null
+          return_date: string
+          notes?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          return_number?: string
+          po_id?: string | null
+          return_date?: string
+          notes?: string | null
+          created_at?: string
+        }
+      }
+      purchase_return_items: {
+        Row: {
+          id: string
+          return_id: string
+          goods_id: string | null
+          quantity_returned: number
+          unit_price: number
+          total_price: number
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          return_id: string
+          goods_id?: string | null
+          quantity_returned: number
+          unit_price: number
+          total_price: number
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          return_id?: string
+          goods_id?: string | null
+          quantity_returned?: number
+          unit_price?: number
+          total_price?: number
+          created_at?: string
+        }
+      }
       work_orders: {
         Row: {
           id: string

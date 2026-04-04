@@ -1,12 +1,11 @@
-import { useState, useEffect } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '@/lib/supabase';
-import { Database } from '@/types/supabase';
 import { 
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow 
 } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Search, RotateCcw, AlertTriangle, CheckCircle2 } from 'lucide-react';
+import { Search, RotateCcw, AlertTriangle } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { toast } from 'sonner';
 import {
@@ -15,6 +14,21 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { formatDate, formatCurrency } from '@/lib/utils';
 
+type ReturnLine = {
+  goods_id: string;
+  item_code: string;
+  name: string;
+  unit: string;
+  item_type: string;
+  ordered_qty: number;
+  received_qty: number;
+  returned_qty: number;
+  available_qty: number;
+  current_stock: number;
+  unit_price: number;
+  return_qty: number;
+};
+
 export default function PurchaseOrderReturn() {
   const [pos, setPos] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -22,6 +36,9 @@ export default function PurchaseOrderReturn() {
   const [selectedPO, setSelectedPO] = useState<any>(null);
   const [isConfirmOpen, setIsConfirmOpen] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [returnDate, setReturnDate] = useState(new Date().toISOString().split('T')[0]);
+  const [returnNotes, setReturnNotes] = useState('');
+  const [returnLines, setReturnLines] = useState<ReturnLine[]>([]);
 
   // Date Filter State (Default to current month)
   const [dateFilter, setDateFilter] = useState({
@@ -42,9 +59,9 @@ export default function PurchaseOrderReturn() {
         .select(`
           *,
           suppliers (name),
-          goods_receipts (receipt_number)
+          goods_receipts (receipt_number, receipt_date)
         `)
-        .in('status', ['RECEIVED_FULL', 'RECEIVED_PARTIAL', 'CLOSED'])
+        .in('status', ['RECEIVED_FULL', 'RECEIVED_PART'])
         .gte('po_date', dateFilter.startDate)
         .lte('po_date', dateFilter.endDate)
         .order('po_date', { ascending: false });
@@ -58,108 +75,263 @@ export default function PurchaseOrderReturn() {
     }
   }
 
-  const handleReturnClick = (po: any) => {
+  const receivedKey = (goodsId: string) => String(goodsId || '');
+
+  const loadReturnData = async (po: any) => {
+    const poId = String(po?.id || '');
+    if (!poId) return;
+
+    {
+      const { error: colErr } = await supabase.from('purchase_returns').select('id').limit(1);
+      if (colErr) {
+        throw new Error("DB belum siap: tabel purchase_returns belum ada. Jalankan migration 20260404_add_purchase_returns.sql di Supabase.");
+      }
+    }
+    {
+      const { error: colErr } = await supabase.from('purchase_return_items').select('id').limit(1);
+      if (colErr) {
+        throw new Error("DB belum siap: tabel purchase_return_items belum ada. Jalankan migration 20260404_add_purchase_returns.sql di Supabase.");
+      }
+    }
+
+    const { data: poItems, error: poErr } = await supabase
+      .from('purchase_order_items')
+      .select(`
+        goods_id,
+        quantity,
+        unit_price,
+        goods (id, name, item_code, unit, item_type)
+      `)
+      .eq('po_id', poId);
+    if (poErr) throw poErr;
+
+    const goodsById = new Map<string, any>();
+    const orderedByGoods = new Map<string, { qty: number; unit_price: number }>();
+    (poItems || []).forEach((it: any) => {
+      const gid = String(it.goods_id || it.goods?.id || '');
+      if (!gid) return;
+      if (it.goods) goodsById.set(gid, it.goods);
+      const prev = orderedByGoods.get(gid);
+      orderedByGoods.set(gid, {
+        qty: (prev?.qty || 0) + Number(it.quantity || 0),
+        unit_price: prev?.unit_price !== undefined ? prev.unit_price : Number(it.unit_price || 0),
+      });
+    });
+
+    const { data: receipts, error: rErr } = await supabase
+      .from('goods_receipts')
+      .select(`
+        id,
+        receipt_date,
+        items:goods_receipt_items (
+          goods_id,
+          quantity_received
+        )
+      `)
+      .eq('po_id', poId);
+    if (rErr) throw rErr;
+
+    const receivedByGoods = new Map<string, number>();
+    (receipts || []).forEach((r: any) => {
+      const items = Array.isArray(r.items) ? r.items : [];
+      items.forEach((it: any) => {
+        const gid = String(it.goods_id || '');
+        if (!gid) return;
+        receivedByGoods.set(gid, (receivedByGoods.get(gid) || 0) + Number(it.quantity_received || 0));
+      });
+    });
+
+    const { data: returns, error: retErr } = await supabase
+      .from('purchase_returns')
+      .select('id')
+      .eq('po_id', poId);
+    if (retErr) throw retErr;
+
+    const returnedByGoods = new Map<string, number>();
+    const returnIds = (returns || []).map((x: any) => x.id).filter(Boolean);
+    if (returnIds.length > 0) {
+      const { data: retItems, error: retItemErr } = await supabase
+        .from('purchase_return_items')
+        .select('goods_id, quantity_returned')
+        .in('return_id', returnIds);
+      if (retItemErr) throw retItemErr;
+      (retItems || []).forEach((it: any) => {
+        const gid = String(it.goods_id || '');
+        if (!gid) return;
+        returnedByGoods.set(gid, (returnedByGoods.get(gid) || 0) + Number(it.quantity_returned || 0));
+      });
+    }
+
+    const goodsIds = Array.from(orderedByGoods.keys());
+    const { data: goodsStocks, error: gErr } = await supabase
+      .from('goods')
+      .select('id, current_stock')
+      .in('id', goodsIds);
+    if (gErr) throw gErr;
+    const stockById = new Map<string, number>();
+    (goodsStocks || []).forEach((g: any) => stockById.set(String(g.id), Number(g.current_stock || 0)));
+
+    const lines: ReturnLine[] = goodsIds.map((gid) => {
+      const g = goodsById.get(gid) || {};
+      const ordered = orderedByGoods.get(gid)?.qty || 0;
+      const unitPrice = orderedByGoods.get(gid)?.unit_price || 0;
+      const received = receivedByGoods.get(receivedKey(gid)) || 0;
+      const returned = returnedByGoods.get(receivedKey(gid)) || 0;
+      const available = Math.max(0, received - returned);
+      return {
+        goods_id: gid,
+        item_code: String(g.item_code || ''),
+        name: String(g.name || ''),
+        unit: String(g.unit || ''),
+        item_type: String(g.item_type || ''),
+        ordered_qty: ordered,
+        received_qty: received,
+        returned_qty: returned,
+        available_qty: available,
+        current_stock: stockById.get(gid) || 0,
+        unit_price: Number(unitPrice || 0),
+        return_qty: 0,
+      };
+    });
+
+    setReturnLines(lines);
+  };
+
+  const handleReturnClick = async (po: any) => {
     setSelectedPO(po);
+    setReturnDate(new Date().toISOString().split('T')[0]);
+    setReturnNotes('');
+    setReturnLines([]);
     setIsConfirmOpen(true);
+    try {
+      await loadReturnData(po);
+    } catch (e: any) {
+      toast.error('Gagal memuat rincian PO: ' + (e?.message || 'Unknown error'));
+    }
   };
 
   const processReturn = async () => {
     if (!selectedPO) return;
+    if (!returnDate) {
+      toast.error('Tanggal retur wajib diisi.');
+      return;
+    }
+
+    const itemsToReturn = (returnLines || [])
+      .map((l) => ({ ...l, return_qty: Number(l.return_qty || 0) }))
+      .filter((l) => l.return_qty > 0);
+
+    if (itemsToReturn.length === 0) {
+      toast.error('Isi minimal 1 qty retur.');
+      return;
+    }
+
+    const invalid = itemsToReturn.find((l) => l.return_qty > l.available_qty + 1e-9);
+    if (invalid) {
+      toast.error(`Qty retur melebihi sisa diterima untuk ${invalid.name || invalid.item_code}.`);
+      return;
+    }
+
+    const stockInvalid = itemsToReturn.find((l) => l.return_qty > l.current_stock + 1e-9);
+    if (stockInvalid) {
+      toast.error(`Stok tidak cukup untuk retur ${stockInvalid.name || stockInvalid.item_code}.`);
+      return;
+    }
+
     setIsProcessing(true);
-
     try {
-      // 1. Get PO items to know what stock to deduct
-      const { data: poItems } = await supabase
-        .from('purchase_order_items')
-        .select('*')
-        .eq('po_id', selectedPO.id);
+      const { data: header, error: hErr } = await supabase
+        .from('purchase_returns')
+        .insert([{
+          return_number: `RT-${Date.now()}`,
+          po_id: selectedPO.id,
+          return_date: returnDate,
+          notes: returnNotes ? returnNotes : null,
+        }])
+        .select()
+        .single();
+      if (hErr) throw hErr;
 
-      if (poItems && poItems.length > 0) {
-        // 2. Deduct stock for each item (Reversing the receipt)
-        for (const item of poItems) {
-           // Only deduct if quantity_received > 0
-           if (item.quantity_received && item.quantity_received > 0) {
-               const { data: currentGood } = await supabase
-                 .from('goods')
-                 .select('current_stock')
-                 .eq('id', item.goods_id)
-                 .single();
-               
-               if (currentGood) {
-                   const newStock = Math.max(0, (currentGood.current_stock || 0) - item.quantity_received);
-                   await supabase
-                     .from('goods')
-                     .update({ current_stock: newStock })
-                     .eq('id', item.goods_id);
-               }
-               
-               // Reset received quantity in PO Item
-               await supabase
-                 .from('purchase_order_items')
-                 .update({ quantity_received: 0 })
-                 .eq('id', item.id);
-           }
-        }
+      const payload = itemsToReturn.map((l) => {
+        const unit = Number(l.unit_price || 0);
+        const qty = Number(l.return_qty || 0);
+        return {
+          return_id: header.id,
+          goods_id: l.goods_id,
+          quantity_returned: qty,
+          unit_price: unit,
+          total_price: unit * qty,
+        };
+      });
+      const { error: iErr } = await supabase.from('purchase_return_items').insert(payload as any);
+      if (iErr) throw iErr;
+
+      for (const l of itemsToReturn) {
+        const newStock = Math.max(0, Number(l.current_stock || 0) - Number(l.return_qty || 0));
+        const { error: uErr } = await supabase
+          .from('goods')
+          .update({ current_stock: newStock })
+          .eq('id', l.goods_id);
+        if (uErr) throw uErr;
       }
 
-      // 3. Reset PO Status to ISSUED (so it can be received again or cancelled)
-      // Also reset total_received_amount if it exists in your schema (optional)
-      const { error: updateError } = await supabase
-        .from('purchase_orders')
-        .update({ 
-            status: 'ISSUED',
-            // You might want to add a note or log about this return
-        })
-        .eq('id', selectedPO.id);
-
-      if (updateError) throw updateError;
-
-      // 4. Delete related Goods Receipt records (Crucial step to fix FK error)
-      // First, get all receipts related to this PO
-      const { data: receipts } = await supabase
-        .from('goods_receipts')
+      const { data: refreshed } = await supabase
+        .from('purchase_returns')
         .select('id')
         .eq('po_id', selectedPO.id);
-
-      if (receipts && receipts.length > 0) {
-          const receiptIds = receipts.map(r => r.id);
-
-          // Delete receipt items first
-          await supabase
-            .from('goods_receipt_items')
-            .delete()
-            .in('receipt_id', receiptIds);
-
-          // Then delete receipts
-          await supabase
-            .from('goods_receipts')
-            .delete()
-            .in('id', receiptIds);
+      const returnIds = (refreshed || []).map((x: any) => x.id).filter(Boolean);
+      const returnedByGoods = new Map<string, number>();
+      if (returnIds.length > 0) {
+        const { data: retItems } = await supabase
+          .from('purchase_return_items')
+          .select('goods_id, quantity_returned')
+          .in('return_id', returnIds);
+        (retItems || []).forEach((it: any) => {
+          const gid = String(it.goods_id || '');
+          if (!gid) return;
+          returnedByGoods.set(gid, (returnedByGoods.get(gid) || 0) + Number(it.quantity_returned || 0));
+        });
       }
 
-      toast.success(`PO ${selectedPO.po_number} berhasil diretur. Status kembali ke ISSUED.`);
+      let allZero = true;
+      let allFull = true;
+      (returnLines || []).forEach((l) => {
+        const received = Number(l.received_qty || 0);
+        const returned = returnedByGoods.get(l.goods_id) || 0;
+        const remaining = Math.max(0, received - returned);
+        const ordered = Number(l.ordered_qty || 0);
+        if (remaining > 0) allZero = false;
+        if (ordered > 0 && remaining + 1e-9 < ordered) allFull = false;
+      });
+
+      const nextStatus = allZero ? 'ISSUED' : allFull ? 'RECEIVED_FULL' : 'RECEIVED_PART';
+      const { error: poErr } = await supabase.from('purchase_orders').update({ status: nextStatus as any }).eq('id', selectedPO.id);
+      if (poErr) throw poErr;
+
+      toast.success(`Retur berhasil. Status PO sekarang: ${nextStatus}`);
       setIsConfirmOpen(false);
       fetchCompletedPOs();
-
     } catch (error: any) {
-      toast.error('Gagal memproses retur: ' + error.message);
+      toast.error('Gagal memproses retur: ' + (error?.message || 'Unknown error'));
     } finally {
       setIsProcessing(false);
     }
   };
 
-  const filteredPos = pos.filter(po => 
-    po.po_number.toLowerCase().includes(search.toLowerCase()) ||
-    po.suppliers?.name.toLowerCase().includes(search.toLowerCase())
-  );
+  const filteredPos = useMemo(() => {
+    const q = search.toLowerCase();
+    return pos.filter((po) =>
+      String(po.po_number || '').toLowerCase().includes(q) ||
+      String(po.suppliers?.name || '').toLowerCase().includes(q)
+    );
+  }, [pos, search]);
 
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-2">
-        <h2 className="text-3xl font-bold tracking-tight">Retur Pembelian (Batal Terima)</h2>
+        <h2 className="text-3xl font-bold tracking-tight">Retur Pembelian</h2>
         <p className="text-muted-foreground">
-            Modul ini digunakan untuk membatalkan penerimaan barang (PO) yang sudah selesai. 
-            <br/><span className="text-red-500 font-bold">PERHATIAN:</span> Stok barang akan otomatis dikurangi kembali sesuai jumlah yang diterima sebelumnya.
+            Retur pembelian bisa dilakukan sebagian. Stok barang akan otomatis dikurangi sesuai qty retur.
         </p>
       </div>
 
@@ -226,21 +398,22 @@ export default function PurchaseOrderReturn() {
                       <TableCell>{po.suppliers?.name}</TableCell>
                       <TableCell>{formatCurrency(po.total_amount)}</TableCell>
                       <TableCell>
-                        <Badge variant={po.status === 'RECEIVED_FULL' ? 'default' : 'secondary'} className={
-                            po.status === 'RECEIVED_FULL' ? 'bg-green-600' : 'bg-blue-600'
-                        }>
-                            {po.status === 'RECEIVED_FULL' ? 'Diterima Penuh' : po.status}
+                        <Badge
+                          variant={po.status === 'RECEIVED_FULL' ? 'default' : 'secondary'}
+                          className={po.status === 'RECEIVED_FULL' ? 'bg-green-600' : 'bg-blue-600'}
+                        >
+                          {po.status === 'RECEIVED_FULL' ? 'Diterima Penuh' : po.status === 'RECEIVED_PART' ? 'Diterima Parsial' : po.status}
                         </Badge>
                       </TableCell>
                       <TableCell className="text-right">
                         <Button 
-                            variant="destructive" 
+                            variant="outline" 
                             size="sm" 
                             className="h-8"
                             onClick={() => handleReturnClick(po)}
                         >
                             <RotateCcw className="mr-2 h-3.5 w-3.5" />
-                            Retur / Batal
+                            Retur
                         </Button>
                       </TableCell>
                     </TableRow>
@@ -255,24 +428,87 @@ export default function PurchaseOrderReturn() {
       <Dialog open={isConfirmOpen} onOpenChange={setIsConfirmOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-red-600">
-                <AlertTriangle className="h-5 w-5" />
-                Konfirmasi Retur Pembelian
+            <DialogTitle className="flex items-center gap-2">
+              <RotateCcw className="h-5 w-5" />
+              Retur Pembelian
             </DialogTitle>
             <DialogDescription className="pt-2">
-              Anda akan membatalkan penerimaan untuk PO <strong>{selectedPO?.po_number}</strong>.
-              <ul className="list-disc pl-5 mt-2 space-y-1 text-slate-700">
-                  <li>Status PO akan dikembalikan menjadi <strong>ISSUED</strong>.</li>
-                  <li><strong>Stok barang</strong> yang diterima dari PO ini akan <strong>DIKURANGI/DITARIK KEMBALI</strong> dari gudang.</li>
-                  <li>Pastikan fisik barang juga dikembalikan atau disesuaikan.</li>
-              </ul>
-              <p className="mt-4 font-bold">Apakah Anda yakin ingin melanjutkan?</p>
+              Isi qty retur untuk PO <strong>{selectedPO?.po_number}</strong>.
             </DialogDescription>
           </DialogHeader>
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <span className="text-xs text-slate-500">Tanggal Retur</span>
+                <Input type="date" value={returnDate} onChange={(e) => setReturnDate(e.target.value)} />
+              </div>
+              <div className="space-y-1">
+                <span className="text-xs text-slate-500">Catatan (opsional)</span>
+                <Input value={returnNotes} onChange={(e) => setReturnNotes(e.target.value)} placeholder="Keterangan retur..." />
+              </div>
+            </div>
+
+            <div className="rounded-md border max-h-[360px] overflow-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Barang</TableHead>
+                    <TableHead className="text-center">Diterima</TableHead>
+                    <TableHead className="text-center">Sudah Retur</TableHead>
+                    <TableHead className="text-center">Sisa</TableHead>
+                    <TableHead className="text-center">Qty Retur</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {returnLines.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={5} className="text-center py-6 text-muted-foreground">
+                        Memuat rincian...
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    returnLines.map((l) => (
+                      <TableRow key={l.goods_id}>
+                        <TableCell>
+                          <div className="flex flex-col">
+                            <span className="font-medium">{l.name || '-'}</span>
+                            <span className="text-xs text-slate-500">{l.item_code || '-'} • {l.item_type || '-'}</span>
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-center">{l.received_qty} <span className="text-xs text-slate-400">{l.unit}</span></TableCell>
+                        <TableCell className="text-center">{l.returned_qty} <span className="text-xs text-slate-400">{l.unit}</span></TableCell>
+                        <TableCell className="text-center font-semibold">{l.available_qty} <span className="text-xs text-slate-400">{l.unit}</span></TableCell>
+                        <TableCell className="text-center">
+                          <Input
+                            type="number"
+                            min={0}
+                            max={l.available_qty}
+                            value={String(l.return_qty || 0)}
+                            onChange={(e) => {
+                              const v = Math.max(0, Number(e.target.value || 0));
+                              setReturnLines((prev) => prev.map((x) => x.goods_id === l.goods_id ? { ...x, return_qty: v } : x));
+                            }}
+                            disabled={isProcessing || l.available_qty <= 0}
+                            className="h-9 w-24 text-center inline-flex"
+                          />
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  )}
+                </TableBody>
+              </Table>
+            </div>
+            <div className="text-xs text-slate-500 flex items-start gap-2">
+              <AlertTriangle className="h-4 w-4 text-amber-500 mt-0.5" />
+              <div>
+                Qty retur tidak boleh melebihi sisa diterima, dan stok harus cukup (barang belum dipakai).
+              </div>
+            </div>
+          </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setIsConfirmOpen(false)} disabled={isProcessing}>Batal</Button>
-            <Button variant="destructive" onClick={processReturn} disabled={isProcessing}>
-                {isProcessing ? 'Memproses...' : 'Ya, Retur PO Ini'}
+            <Button onClick={processReturn} disabled={isProcessing}>
+                {isProcessing ? 'Memproses...' : 'Proses Retur'}
             </Button>
           </DialogFooter>
         </DialogContent>
