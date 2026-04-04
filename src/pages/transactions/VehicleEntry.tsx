@@ -54,6 +54,7 @@ export default function VehicleEntryPage() {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [currentId, setCurrentId] = useState<string | null>(null);
+  const [formErrors, setFormErrors] = useState<Record<string, string>>({});
 
   // Vehicle Search State
   const [isVehicleSearchOpen, setIsVehicleSearchOpen] = useState(false);
@@ -260,10 +261,24 @@ export default function VehicleEntryPage() {
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
     setFormData(prev => ({ ...prev, [name]: value }));
+    if (formErrors[name]) {
+      setFormErrors(prev => {
+        const next = { ...prev };
+        delete next[name];
+        return next;
+      });
+    }
   };
 
   const handleSelectChange = (name: string, value: string) => {
     setFormData(prev => ({ ...prev, [name]: value }));
+    if (formErrors[name]) {
+      setFormErrors(prev => {
+        const next = { ...prev };
+        delete next[name];
+        return next;
+      });
+    }
   };
 
   const resetForm = () => {
@@ -275,6 +290,7 @@ export default function VehicleEntryPage() {
       service_group: 'PERBAIKAN',
       notes: '',
     });
+    setFormErrors({});
     setEntryJobs([]);
     setIsVehicleSearchOpen(false);
     setVehicleSearchQuery('');
@@ -304,6 +320,7 @@ export default function VehicleEntryPage() {
       service_group: item.service_group,
       notes: item.notes || '',
     });
+    setFormErrors({});
     
     const existingJobs = item.vehicle_entry_jobs || [];
     const existingParts = item.vehicle_entry_spareparts || [];
@@ -402,6 +419,13 @@ export default function VehicleEntryPage() {
 
   const handleAddJob = () => {
     setEntryJobs([...entryJobs, { group: 'PERBAIKAN', job_id: '', job_name: '', notes: '', value_only: false, estimated_price: 0, spareparts: [] }]);
+    if (formErrors.entryJobs) {
+      setFormErrors(prev => {
+        const next = { ...prev };
+        delete next.entryJobs;
+        return next;
+      });
+    }
   };
 
   const handleRemoveJob = (index: number) => {
@@ -430,6 +454,14 @@ export default function VehicleEntryPage() {
   const handleSelectJob = (jobId: string) => {
     if (activeJobSearchIndex !== null) {
       handleJobChange(activeJobSearchIndex, 'job_id', jobId);
+      const key = `job_${activeJobSearchIndex}`;
+      if (formErrors[key]) {
+        setFormErrors(prev => {
+          const next = { ...prev };
+          delete next[key];
+          return next;
+        });
+      }
       setIsJobSearchOpen(false);
       setJobSearchQuery('');
     }
@@ -461,6 +493,22 @@ export default function VehicleEntryPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    const nextErrors: Record<string, string> = {};
+    if (!formData.entry_date) nextErrors.entry_date = 'Wajib diisi';
+    if (!formData.nota_dinas_number) nextErrors.nota_dinas_number = 'Wajib diisi';
+    if (!formData.estimated_finish_date) nextErrors.estimated_finish_date = 'Wajib diisi';
+    if (!formData.vehicle_id) nextErrors.vehicle_id = 'Wajib dipilih';
+    if (!entryJobs || entryJobs.length === 0) nextErrors.entryJobs = 'Minimal 1 pekerjaan wajib diisi';
+    (entryJobs || []).forEach((j, idx) => {
+      if (!j.job_id) nextErrors[`job_${idx}`] = 'Pilih pekerjaan';
+      if (!j.group) nextErrors[`job_group_${idx}`] = 'Pilih group';
+    });
+    if (Object.keys(nextErrors).length > 0) {
+      setFormErrors(nextErrors);
+      toast.error('Lengkapi kolom wajib sebelum menyimpan.');
+      return;
+    }
+
     setLoading(true);
 
     try {
@@ -623,17 +671,41 @@ export default function VehicleEntryPage() {
                   <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-2">
                       <Label>Tanggal Masuk</Label>
-                      <Input name="entry_date" type="date" value={formData.entry_date} onChange={handleInputChange} required />
+                      <Input
+                        name="entry_date"
+                        type="date"
+                        value={formData.entry_date}
+                        onChange={handleInputChange}
+                        className={cn(formErrors.entry_date && 'border-red-500')}
+                        required
+                      />
+                      {formErrors.entry_date && <p className="text-xs text-red-600">{formErrors.entry_date}</p>}
                     </div>
                     <div className="space-y-2">
                       <Label>No. Nota Dinas</Label>
-                      <Input name="nota_dinas_number" value={formData.nota_dinas_number} onChange={handleInputChange} placeholder="ND-..." required />
+                      <Input
+                        name="nota_dinas_number"
+                        value={formData.nota_dinas_number}
+                        onChange={handleInputChange}
+                        placeholder="ND-..."
+                        className={cn(formErrors.nota_dinas_number && 'border-red-500')}
+                        required
+                      />
+                      {formErrors.nota_dinas_number && <p className="text-xs text-red-600">{formErrors.nota_dinas_number}</p>}
                     </div>
                   </div>
 
                   <div className="space-y-2">
                     <Label>Tgl Estimasi Unit Selesai</Label>
-                    <Input name="estimated_finish_date" type="date" value={formData.estimated_finish_date} onChange={handleInputChange} />
+                    <Input
+                      name="estimated_finish_date"
+                      type="date"
+                      value={formData.estimated_finish_date}
+                      onChange={handleInputChange}
+                      className={cn(formErrors.estimated_finish_date && 'border-red-500')}
+                      required
+                    />
+                    {formErrors.estimated_finish_date && <p className="text-xs text-red-600">{formErrors.estimated_finish_date}</p>}
                   </div>
 
                   <div className="space-y-2">
@@ -643,7 +715,8 @@ export default function VehicleEntryPage() {
                       role="combobox"
                       className={cn(
                         "w-full justify-between font-normal",
-                        !formData.vehicle_id && "text-muted-foreground"
+                        !formData.vehicle_id && "text-muted-foreground",
+                        formErrors.vehicle_id && "border-red-500"
                       )}
                       onClick={(e) => { e.preventDefault(); setIsVehicleSearchOpen(true); }}
                     >
@@ -652,6 +725,7 @@ export default function VehicleEntryPage() {
                         : "Cari Nopol..."}
                       <Search className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                     </Button>
+                    {formErrors.vehicle_id && <p className="text-xs text-red-600">{formErrors.vehicle_id}</p>}
                   </div>
 
                   {/* Vehicle Search Dialog */}
@@ -728,6 +802,7 @@ export default function VehicleEntryPage() {
                       <Label>Daftar Pekerjaan / Service (Bisa Campuran Group)</Label>
                       <Button type="button" variant="outline" size="sm" onClick={handleAddJob}>+ Tambah Pekerjaan</Button>
                     </div>
+                    {formErrors.entryJobs && <p className="text-xs text-red-600">{formErrors.entryJobs}</p>}
                     
                     {entryJobs.map((job, index) => (
                       <div key={index} className="grid grid-cols-12 gap-2 items-end border-b pb-2 mb-2 last:border-0 last:pb-0 last:mb-0">
@@ -755,7 +830,8 @@ export default function VehicleEntryPage() {
                             role="combobox"
                             className={cn(
                               "w-full justify-between font-normal h-9 px-3",
-                              !job.job_id && "text-muted-foreground"
+                              !job.job_id && "text-muted-foreground",
+                              formErrors[`job_${index}`] && "border-red-500"
                             )}
                             onClick={(e) => {
                               e.preventDefault();
@@ -770,6 +846,7 @@ export default function VehicleEntryPage() {
                             </span>
                             <Search className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                           </Button>
+                          {formErrors[`job_${index}`] && <p className="text-xs text-red-600">{formErrors[`job_${index}`]}</p>}
                         </div>
                         <div className="col-span-1 space-y-1">
                           <Label className="text-xs">Nilai Saja</Label>
