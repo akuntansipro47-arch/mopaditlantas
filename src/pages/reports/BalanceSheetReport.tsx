@@ -15,6 +15,8 @@ import ReportPrintHeader from '@/components/reports/ReportPrintHeader';
 export default function BalanceSheetReport() {
   const [loading, setLoading] = useState(false);
   const [posting, setPosting] = useState(false);
+  const [trialBalance, setTrialBalance] = useState({ debit: 0, credit: 0, diff: 0 });
+  const [unbalancedJournals, setUnbalancedJournals] = useState<any[]>([]);
   const [reportData, setReportData] = useState<any>({
       assets: [],
       liabilities: [],
@@ -274,11 +276,45 @@ export default function BalanceSheetReport() {
         const { data: journals, error: jError } = await supabase
             .from('journal_entry_items')
             .select(`
-                debit, credit, account_id,
-                journal_entries!inner (entry_date)
+                journal_entry_id, debit, credit, account_id,
+                journal_entries!inner (entry_date, voucher_no, description)
             `)
             .lte('journal_entries.entry_date', reportDate);
         if (jError) throw jError;
+
+        let totalDebit = 0;
+        let totalCredit = 0;
+        const byEntry = new Map<string, any>();
+        (journals || [])?.forEach((j: any) => {
+          const d = Number(j.debit || 0);
+          const c = Number(j.credit || 0);
+          totalDebit += d;
+          totalCredit += c;
+          const entryId = String(j.journal_entry_id || '');
+          if (!entryId) return;
+          const je = j.journal_entries || {};
+          const prev = byEntry.get(entryId) || {
+            journal_entry_id: entryId,
+            entry_date: je.entry_date || '',
+            voucher_no: je.voucher_no || '',
+            description: je.description || '',
+            debit: 0,
+            credit: 0,
+          };
+          prev.debit += d;
+          prev.credit += c;
+          byEntry.set(entryId, prev);
+        });
+
+        const trialDiff = totalDebit - totalCredit;
+        setTrialBalance({ debit: totalDebit, credit: totalCredit, diff: trialDiff });
+
+        const unbalanced = Array.from(byEntry.values())
+          .map((x: any) => ({ ...x, diff: Number(x.debit || 0) - Number(x.credit || 0) }))
+          .filter((x: any) => Math.abs(Number(x.diff || 0)) > 0.01)
+          .sort((a: any, b: any) => Math.abs(Number(b.diff || 0)) - Math.abs(Number(a.diff || 0)))
+          .slice(0, 50);
+        setUnbalancedJournals(unbalanced);
 
         // 3. Calculate Balances
         const balances: Record<string, number> = {};
@@ -288,30 +324,20 @@ export default function BalanceSheetReport() {
         });
 
         // 4. Calculate Current Earnings
-        const normalizeByBalanceType = (raw: number, balanceType: any) => {
-          const bt = String(balanceType || '').toUpperCase();
-          if (bt === 'DEBIT') return raw;
-          if (bt === 'CREDIT') return -raw;
-          return raw;
-        };
-
         let totalRevenue = 0;
         let totalExpense = 0;
         let totalHpp = 0;
-
         (accounts || []).forEach((acc: any) => {
           const code = String(acc.account_code || '').trim();
           if (!code) return;
           const prefix = code[0] || '';
           if (prefix !== '4' && prefix !== '5' && prefix !== '6') return;
           if (String(acc.account_type || '').toUpperCase() !== 'DETAIL') return;
-          const raw = balances[acc.id] || 0;
-          const normal = normalizeByBalanceType(raw, acc.balance_type);
-          if (prefix === '4') totalRevenue += normal;
-          else if (prefix === '5') totalExpense += normal;
-          else if (prefix === '6') totalHpp += normal;
+          const raw = Number(balances[acc.id] || 0);
+          if (prefix === '4') totalRevenue += -raw;
+          else if (prefix === '5') totalExpense += raw;
+          else if (prefix === '6') totalHpp += raw;
         });
-
         const currentEarnings = totalRevenue - (totalExpense + totalHpp);
 
         // 5. Map to Report Structure
@@ -361,7 +387,7 @@ export default function BalanceSheetReport() {
                           ? 'EQUITY'
                           : null;
 
-            const normalized = normalizeByBalanceType(bal, acc.balance_type);
+            const normalized = bucket === 'ASSET' ? bal : -bal;
 
             if (Math.abs(normalized) > 0.01) {
                 const item = { ...acc, balance: normalized };
@@ -463,6 +489,11 @@ export default function BalanceSheetReport() {
                     onChange={e => setReportDate(e.target.value)}
                 />
             </div>
+            {Math.abs(trialBalance.diff) > 0.01 && (
+              <div className="mt-3 p-3 border rounded bg-red-50 text-red-900">
+                Jurnal tidak seimbang: {formatCurrency(trialBalance.diff)} (Total Debit - Total Kredit).
+              </div>
+            )}
             {Math.abs(balanceDiff) > 0.01 && (
               <div className="mt-3 p-3 border rounded bg-amber-50 text-amber-900">
                 Selisih Neraca: {formatCurrency(balanceDiff)} (Aktiva - (Kewajiban + Modal)).
@@ -589,6 +620,36 @@ export default function BalanceSheetReport() {
                     </div>
                 </div>
             </div>
+
+            {unbalancedJournals.length > 0 && (
+              <div className="mt-8 print:hidden">
+                <h3 className="font-bold bg-red-100 p-2 text-red-800 uppercase border-l-4 border-red-500">
+                  Jurnal Tidak Seimbang (Top 50)
+                </h3>
+                <div className="rounded-md border mt-3">
+                  <Table>
+                    <TableHeader className="bg-slate-50">
+                      <TableRow>
+                        <TableHead>Tanggal</TableHead>
+                        <TableHead>Voucher</TableHead>
+                        <TableHead>Deskripsi</TableHead>
+                        <TableHead className="text-right">Selisih</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {unbalancedJournals.map((j: any) => (
+                        <TableRow key={j.journal_entry_id}>
+                          <TableCell>{j.entry_date ? formatDate(j.entry_date) : '-'}</TableCell>
+                          <TableCell className="font-mono">{j.voucher_no || '-'}</TableCell>
+                          <TableCell className="max-w-[520px] truncate">{j.description || '-'}</TableCell>
+                          <TableCell className="text-right font-bold text-red-700">{formatCurrency(Number(j.diff || 0))}</TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              </div>
+            )}
         </CardContent>
       </Card>
     </div>
