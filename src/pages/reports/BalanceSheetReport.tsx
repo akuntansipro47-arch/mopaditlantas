@@ -388,9 +388,10 @@ export default function BalanceSheetReport() {
                           : null;
 
             const normalized = bucket === 'ASSET' ? bal : -bal;
+            const displayBalance = String(acc.account_type || '').toUpperCase() === 'DETAIL' ? normalized : 0;
 
             if (Math.abs(normalized) > 0.01) {
-                const item = { ...acc, balance: normalized };
+                const item = { ...acc, balance: displayBalance };
                 if (bucket === 'ASSET') assets.push(item);
                 else if (bucket === 'LIABILITY') liabilities.push(item);
                 else if (bucket === 'EQUITY') equity.push(item);
@@ -413,7 +414,11 @@ export default function BalanceSheetReport() {
 
   const sumTotal = (items: any[]) => {
     if (!Array.isArray(items)) return 0;
-    return items.reduce((acc, curr) => acc + (curr?.balance || 0), 0);
+    return items.reduce((acc, curr) => {
+      const isDetail = String(curr?.account_type || '').toUpperCase() === 'DETAIL';
+      if (!isDetail) return acc;
+      return acc + (Number(curr?.balance || 0) || 0);
+    }, 0);
   };
 
   const totalAssets = sumTotal(reportData?.assets);
