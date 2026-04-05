@@ -189,46 +189,34 @@ export default function DebugSync() {
       const { accReceivable, accServiceRev, accPartsRev } = await getAccounts();
       if (!accReceivable || !accServiceRev) throw new Error('Akun Piutang/Pendapatan tidak ditemukan di COA.');
 
-      const { data: existing, error: exErr } = await supabase
+      const targetDesc = `Jurnal Otomatis WO ${woNumber}`;
+      const { data: candidates, error: candErr } = await supabase
         .from('journal_entries')
         .select('id')
-        .eq('reference', woNumber)
-        .limit(1)
-        .maybeSingle();
-      if (exErr) throw exErr;
+        .or(`reference.eq.${woNumber},description.eq.${targetDesc},voucher_no.ilike.%${woNumber}%`)
+        .limit(50);
+      if (candErr) throw candErr;
 
-      let journalId = existing?.id || null;
-      if (!journalId) {
-        const { data: created, error: cErr } = await supabase
-          .from('journal_entries')
-          .insert([{
-            entry_date: wo.work_date,
-            voucher_no: `WO-${woNumber}`,
-            reference: woNumber,
-            description: `Jurnal Otomatis WO ${woNumber}`,
-            entry_type: 'JOURNAL',
-            total_amount: grandTotal,
-          }])
-          .select()
-          .single();
-        if (cErr) throw cErr;
-        journalId = created.id;
-      } else {
-        const { error: uErr } = await supabase
-          .from('journal_entries')
-          .update({
-            entry_date: wo.work_date,
-            voucher_no: `WO-${woNumber}`,
-            reference: woNumber,
-            description: `Jurnal Otomatis WO ${woNumber}`,
-            entry_type: 'JOURNAL',
-            total_amount: grandTotal,
-          })
-          .eq('id', journalId);
-        if (uErr) throw uErr;
+      const candidateIds = (candidates || []).map((x: any) => x.id).filter(Boolean);
+      if (candidateIds.length > 0) {
+        await supabase.from('journal_entry_items').delete().in('journal_entry_id', candidateIds);
+        await supabase.from('journal_entries').delete().in('id', candidateIds);
       }
 
-      await supabase.from('journal_entry_items').delete().eq('journal_entry_id', journalId);
+      const { data: created, error: cErr } = await supabase
+        .from('journal_entries')
+        .insert([{
+          entry_date: wo.work_date,
+          voucher_no: woNumber,
+          reference: woNumber,
+          description: targetDesc,
+          entry_type: 'JOURNAL',
+          total_amount: grandTotal,
+        }])
+        .select()
+        .single();
+      if (cErr) throw cErr;
+      const journalId = created.id;
 
       const itemsPayload: any[] = [
         {
@@ -341,7 +329,7 @@ export default function DebugSync() {
             .from('journal_entries')
             .insert([{
                 entry_date: wo.work_date, 
-                voucher_no: `WO-${wo.wo_number}`,
+                voucher_no: wo.wo_number,
                 reference: wo.wo_number,
                 description: `Jurnal Otomatis WO ${wo.wo_number}`,
                 total_amount: grandTotal,
