@@ -288,27 +288,31 @@ export default function BalanceSheetReport() {
         });
 
         // 4. Calculate Current Earnings
-        let currentEarnings = 0;
-        
-        const { data: incomeJournals, error: incErr } = await supabase
-            .from('journal_entry_items')
-            .select(`
-                debit, credit,
-                account:chart_of_accounts!inner (category),
-                journal_entries!inner (entry_date)
-            `)
-            .in('account.category', ['PENDAPATAN', 'HPP', 'BEBAN', 'PENJUALAN'])
-            .lte('journal_entries.entry_date', reportDate) as any;
-        if (incErr) throw incErr;
+        const normalizeByBalanceType = (raw: number, balanceType: any) => {
+          const bt = String(balanceType || '').toUpperCase();
+          if (bt === 'DEBIT') return raw;
+          if (bt === 'CREDIT') return -raw;
+          return raw;
+        };
 
-        (incomeJournals || [])?.forEach((j: any) => {
-            const cat = j.account.category;
-            if (cat === 'PENDAPATAN' || cat === 'PENJUALAN') {
-                currentEarnings += (j.credit - j.debit);
-            } else {
-                currentEarnings -= (j.debit - j.credit);
-            }
+        let totalRevenue = 0;
+        let totalExpense = 0;
+        let totalHpp = 0;
+
+        (accounts || []).forEach((acc: any) => {
+          const code = String(acc.account_code || '').trim();
+          if (!code) return;
+          const prefix = code[0] || '';
+          if (prefix !== '4' && prefix !== '5' && prefix !== '6') return;
+          if (String(acc.account_type || '').toUpperCase() !== 'DETAIL') return;
+          const raw = balances[acc.id] || 0;
+          const normal = normalizeByBalanceType(raw, acc.balance_type);
+          if (prefix === '4') totalRevenue += normal;
+          else if (prefix === '5') totalExpense += normal;
+          else if (prefix === '6') totalHpp += normal;
         });
+
+        const currentEarnings = totalRevenue - (totalExpense + totalHpp);
 
         // 5. Map to Report Structure
         const assets: any[] = [];
@@ -356,13 +360,11 @@ export default function BalanceSheetReport() {
                         : ['EKUITAS', 'MODAL', 'EQUITY'].includes(acc.category)
                           ? 'EQUITY'
                           : null;
-            
-            if (bucket !== 'ASSET') {
-                bal = -bal; 
-            }
 
-            if (Math.abs(bal) > 0.01) {
-                const item = { ...acc, balance: bal };
+            const normalized = normalizeByBalanceType(bal, acc.balance_type);
+
+            if (Math.abs(normalized) > 0.01) {
+                const item = { ...acc, balance: normalized };
                 if (bucket === 'ASSET') assets.push(item);
                 else if (bucket === 'LIABILITY') liabilities.push(item);
                 else if (bucket === 'EQUITY') equity.push(item);
@@ -391,6 +393,7 @@ export default function BalanceSheetReport() {
   const totalAssets = sumTotal(reportData?.assets);
   const totalLiabilities = sumTotal(reportData?.liabilities);
   const totalEquity = sumTotal(reportData?.equity) + (reportData?.currentEarnings || 0);
+  const balanceDiff = totalAssets - (totalLiabilities + totalEquity);
 
   const exportToExcel = () => {
     // We'll create two columns: Left (Assets), Right (Liabilities + Equity)
@@ -460,6 +463,11 @@ export default function BalanceSheetReport() {
                     onChange={e => setReportDate(e.target.value)}
                 />
             </div>
+            {Math.abs(balanceDiff) > 0.01 && (
+              <div className="mt-3 p-3 border rounded bg-amber-50 text-amber-900">
+                Selisih Neraca: {formatCurrency(balanceDiff)} (Aktiva - (Kewajiban + Modal)).
+              </div>
+            )}
         </CardHeader>
         
         <CardContent>
