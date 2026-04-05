@@ -324,21 +324,20 @@ export default function BalanceSheetReport() {
         });
 
         // 4. Calculate Current Earnings
-        let totalRevenue = 0;
-        let totalExpense = 0;
-        let totalHpp = 0;
+        // Current Earnings (Laba Tahun Berjalan)
+        // Untuk memastikan neraca balance walaupun struktur COA bervariasi, laba berjalan dihitung dari NET seluruh akun non-1/2/3
+        // (akun pendapatan/biaya/HPP/lain-lain). Secara definisi: total debit-credit seluruh akun = 0,
+        // sehingga laba berjalan = -sum(balance akun P&L).
+        let pnlNet = 0;
         (accounts || []).forEach((acc: any) => {
           const code = String(acc.account_code || '').trim();
           if (!code) return;
           const prefix = code[0] || '';
-          if (prefix !== '4' && prefix !== '5' && prefix !== '6') return;
+          if (prefix === '1' || prefix === '2' || prefix === '3') return;
           if (String(acc.account_type || '').toUpperCase() !== 'DETAIL') return;
-          const raw = Number(balances[acc.id] || 0);
-          if (prefix === '4') totalRevenue += -raw;
-          else if (prefix === '5') totalExpense += raw;
-          else if (prefix === '6') totalHpp += raw;
+          pnlNet += Number(balances[acc.id] || 0);
         });
-        const currentEarnings = totalRevenue - (totalExpense + totalHpp);
+        const currentEarnings = -pnlNet;
 
         // 5. Map to Report Structure
         const assets: any[] = [];
