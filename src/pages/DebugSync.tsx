@@ -6,10 +6,12 @@ import { toast } from 'sonner';
 import { RefreshCw, CheckCircle, AlertTriangle } from 'lucide-react';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { useAuth } from '@/context/AuthContext';
+import { formatCurrency, formatDate } from '@/lib/utils';
 
 export default function DebugSync() {
   const { user } = useAuth();
   const [wos, setWos] = useState<any[]>([]);
+  const [unbalanced, setUnbalanced] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [logs, setLogs] = useState<string[]>([]);
 
@@ -31,6 +33,7 @@ export default function DebugSync() {
 
   useEffect(() => {
     fetchProblematicWOs();
+    fetchUnbalancedWoJournals();
   }, []);
 
   const addLog = (msg: string) => setLogs(prev => [msg, ...prev]);
@@ -50,19 +53,220 @@ export default function DebugSync() {
       // 2. Get all Journal Entries related to WOs
       const { data: journals } = await supabase
         .from('journal_entries')
-        .select('reference_number')
-        .like('reference_number', 'WO-%'); // Assuming WO numbers start with WO-
+        .select('reference')
+        .like('reference', 'WO-%');
 
-      const journalRefs = new Set(journals?.map(j => j.reference_number));
+      const journalRefs = new Set((journals || []).map((j: any) => String(j.reference || '')));
 
       // 3. Filter WOs that don't have a journal
-      const missing = allWos.filter(wo => !journalRefs.has(wo.wo_number));
+      const missing = allWos.filter((wo: any) => !journalRefs.has(String(wo.wo_number || '')));
       
       setWos(missing);
       addLog(`Ditemukan ${missing.length} WO yang selesai tapi BELUM punya jurnal.`);
 
     } catch (error: any) {
       toast.error("Error fetching: " + error.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const fetchUnbalancedWoJournals = async () => {
+    try {
+      const { data: entries, error: eErr } = await supabase
+        .from('journal_entries')
+        .select('id, entry_date, voucher_no, reference, description')
+        .ilike('description', 'Jurnal Otomatis WO%')
+        .order('entry_date', { ascending: false })
+        .limit(300);
+      if (eErr) throw eErr;
+
+      const entryIds = (entries || []).map((e: any) => e.id).filter(Boolean);
+      if (entryIds.length === 0) {
+        setUnbalanced([]);
+        return;
+      }
+
+      const { data: items, error: iErr } = await supabase
+        .from('journal_entry_items')
+        .select('journal_entry_id, debit, credit')
+        .in('journal_entry_id', entryIds);
+      if (iErr) throw iErr;
+
+      const sums = new Map<string, { debit: number; credit: number }>();
+      (items || []).forEach((it: any) => {
+        const id = String(it.journal_entry_id || '');
+        if (!id) return;
+        const prev = sums.get(id) || { debit: 0, credit: 0 };
+        prev.debit += Number(it.debit || 0);
+        prev.credit += Number(it.credit || 0);
+        sums.set(id, prev);
+      });
+
+      const parseWoNumber = (e: any) => {
+        const ref = String(e.reference || '');
+        if (ref.startsWith('WO-')) return ref;
+        const desc = String(e.description || '');
+        const m = desc.match(/WO-\d{8}-\d+/);
+        return m ? m[0] : '';
+      };
+
+      const list = (entries || [])
+        .map((e: any) => {
+          const s = sums.get(String(e.id)) || { debit: 0, credit: 0 };
+          const diff = Number(s.debit) - Number(s.credit);
+          return {
+            id: e.id,
+            entry_date: e.entry_date,
+            voucher_no: e.voucher_no,
+            reference: e.reference,
+            description: e.description,
+            wo_number: parseWoNumber(e),
+            debit: s.debit,
+            credit: s.credit,
+            diff,
+          };
+        })
+        .filter((x: any) => Math.abs(Number(x.diff || 0)) > 0.01)
+        .sort((a: any, b: any) => Math.abs(Number(b.diff || 0)) - Math.abs(Number(a.diff || 0)))
+        .slice(0, 50);
+
+      setUnbalanced(list);
+      addLog(`Ditemukan ${list.length} jurnal WO yang TIDAK seimbang.`);
+    } catch (e: any) {
+      console.error('fetchUnbalancedWoJournals error', e);
+      setUnbalanced([]);
+    }
+  };
+
+  const getAccounts = async () => {
+    const { data: accounts, error } = await supabase
+      .from('chart_of_accounts')
+      .select('id, account_name, account_code, account_type, category');
+    if (error) throw error;
+    const isDetail = (a: any) => String(a?.account_type || '').toUpperCase() === 'DETAIL';
+    const findByCode = (code: string) => (accounts || []).find((a: any) => isDetail(a) && String(a?.account_code || '') === code);
+    const findByName = (keyword: string) =>
+      (accounts || []).find((a: any) => isDetail(a) && String(a?.account_name || '').toLowerCase().includes(keyword.toLowerCase()));
+    const accReceivable =
+      findByCode('1100201') || findByName('piutang usaha') || findByName('piutang') || findByName('receivable');
+    const accServiceRev =
+      findByCode('4100101') || findByName('pendapatan jasa') || findByName('jasa') || findByName('service');
+    const accPartsRev =
+      findByCode('4100102') || findByName('pendapatan sparepart') || findByName('sparepart') || accServiceRev;
+    return { accReceivable, accServiceRev, accPartsRev };
+  };
+
+  const rebuildWoJournal = async (woNumber: string) => {
+    setLoading(true);
+    try {
+      if (!woNumber) throw new Error('WO number kosong.');
+
+      const { data: wo, error: woErr } = await supabase
+        .from('work_orders')
+        .select('id, wo_number, work_date, status')
+        .eq('wo_number', woNumber)
+        .maybeSingle();
+      if (woErr) throw woErr;
+      if (!wo) throw new Error(`WO ${woNumber} tidak ditemukan.`);
+
+      const { data: billings, error: bErr } = await supabase
+        .from('work_order_billings')
+        .select('item_type, total_price')
+        .eq('work_order_id', wo.id);
+      if (bErr) throw bErr;
+
+      let totalService = 0;
+      let totalParts = 0;
+      (billings || []).forEach((it: any) => {
+        const amt = Number(it.total_price || 0);
+        if (String(it.item_type || '').toUpperCase() === 'JOB') totalService += amt;
+        else totalParts += amt;
+      });
+      const grandTotal = totalService + totalParts;
+      if (grandTotal <= 0) throw new Error(`WO ${woNumber} total tagihan 0.`);
+
+      const { accReceivable, accServiceRev, accPartsRev } = await getAccounts();
+      if (!accReceivable || !accServiceRev) throw new Error('Akun Piutang/Pendapatan tidak ditemukan di COA.');
+
+      const { data: existing, error: exErr } = await supabase
+        .from('journal_entries')
+        .select('id')
+        .eq('reference', woNumber)
+        .limit(1)
+        .maybeSingle();
+      if (exErr) throw exErr;
+
+      let journalId = existing?.id || null;
+      if (!journalId) {
+        const { data: created, error: cErr } = await supabase
+          .from('journal_entries')
+          .insert([{
+            entry_date: wo.work_date,
+            voucher_no: `WO-${woNumber}`,
+            reference: woNumber,
+            description: `Jurnal Otomatis WO ${woNumber}`,
+            entry_type: 'JOURNAL',
+            total_amount: grandTotal,
+          }])
+          .select()
+          .single();
+        if (cErr) throw cErr;
+        journalId = created.id;
+      } else {
+        const { error: uErr } = await supabase
+          .from('journal_entries')
+          .update({
+            entry_date: wo.work_date,
+            voucher_no: `WO-${woNumber}`,
+            reference: woNumber,
+            description: `Jurnal Otomatis WO ${woNumber}`,
+            entry_type: 'JOURNAL',
+            total_amount: grandTotal,
+          })
+          .eq('id', journalId);
+        if (uErr) throw uErr;
+      }
+
+      await supabase.from('journal_entry_items').delete().eq('journal_entry_id', journalId);
+
+      const itemsPayload: any[] = [
+        {
+          journal_entry_id: journalId,
+          account_id: accReceivable.id,
+          debit: grandTotal,
+          credit: 0,
+          description: `Piutang WO ${woNumber}`,
+        },
+      ];
+      if (totalService > 0) {
+        itemsPayload.push({
+          journal_entry_id: journalId,
+          account_id: accServiceRev.id,
+          debit: 0,
+          credit: totalService,
+          description: `Pendapatan Jasa WO ${woNumber}`,
+        });
+      }
+      if (totalParts > 0) {
+        itemsPayload.push({
+          journal_entry_id: journalId,
+          account_id: (accPartsRev?.id || accServiceRev.id),
+          debit: 0,
+          credit: totalParts,
+          description: `Pendapatan Sparepart WO ${woNumber}`,
+        });
+      }
+
+      const { error: insErr } = await supabase.from('journal_entry_items').insert(itemsPayload);
+      if (insErr) throw insErr;
+
+      addLog(`SUKSES: Rebuild jurnal WO ${woNumber}. Total: ${grandTotal}`);
+      toast.success(`Rebuild jurnal WO ${woNumber} berhasil.`);
+      fetchUnbalancedWoJournals();
+    } catch (e: any) {
+      addLog(`ERROR Rebuild ${woNumber}: ${e?.message || 'Unknown error'}`);
+      toast.error(`Gagal rebuild jurnal ${woNumber}: ${e?.message || 'Unknown error'}`);
     } finally {
       setLoading(false);
     }
@@ -137,11 +341,11 @@ export default function DebugSync() {
             .from('journal_entries')
             .insert([{
                 entry_date: wo.work_date, 
+                voucher_no: `WO-${wo.wo_number}`,
+                reference: wo.wo_number,
                 description: `Jurnal Otomatis WO ${wo.wo_number}`,
-                reference_number: wo.wo_number,
                 total_amount: grandTotal,
-                status: 'POSTED',
-                entry_type: 'AUTOMATIC' // FIX: Required field
+                entry_type: 'JOURNAL'
             }])
             .select()
             .single();
@@ -181,13 +385,15 @@ export default function DebugSync() {
             });
         }
 
-        await supabase.from('journal_entry_items').insert(journalItems);
+        const { error: jiErr } = await supabase.from('journal_entry_items').insert(journalItems);
+        if (jiErr) throw jiErr;
         
         addLog(`SUKSES: Jurnal dibuat untuk ${wo.wo_number}. Total: ${grandTotal}`);
         toast.success(`Jurnal WO ${wo.wo_number} berhasil dibuat!`);
         
         // Remove from list
         setWos(prev => prev.filter(w => w.id !== wo.id));
+        fetchUnbalancedWoJournals();
 
     } catch (e: any) {
         addLog(`ERROR ${wo.wo_number}: ${e.message}`);
@@ -250,6 +456,47 @@ export default function DebugSync() {
                 </TableBody>
             </Table>
           </div>
+
+          {unbalanced.length > 0 && (
+            <div className="mt-6">
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-muted-foreground">
+                  Jurnal Otomatis WO yang tidak seimbang (debit ≠ kredit).
+                </p>
+                <Button onClick={fetchUnbalancedWoJournals} disabled={loading} variant="outline">
+                  <RefreshCw className={`mr-2 h-4 w-4 ${loading ? 'animate-spin' : ''}`} /> Refresh
+                </Button>
+              </div>
+              <div className="border rounded-md">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Tanggal</TableHead>
+                      <TableHead>No. WO</TableHead>
+                      <TableHead>Deskripsi</TableHead>
+                      <TableHead className="text-right">Selisih</TableHead>
+                      <TableHead className="text-right">Aksi</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {unbalanced.map((j: any) => (
+                      <TableRow key={j.id}>
+                        <TableCell>{j.entry_date ? formatDate(j.entry_date) : '-'}</TableCell>
+                        <TableCell className="font-mono">{j.wo_number || '-'}</TableCell>
+                        <TableCell className="truncate max-w-[360px]">{j.description || '-'}</TableCell>
+                        <TableCell className="text-right font-bold text-red-700">{formatCurrency(Number(j.diff || 0))}</TableCell>
+                        <TableCell className="text-right">
+                          <Button size="sm" onClick={() => rebuildWoJournal(j.wo_number)} disabled={loading || !j.wo_number}>
+                            Fix (Rebuild)
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            </div>
+          )}
 
           <div className="mt-6 bg-slate-900 text-green-400 p-4 rounded-md font-mono text-xs h-48 overflow-y-auto">
             {logs.map((log, i) => (
