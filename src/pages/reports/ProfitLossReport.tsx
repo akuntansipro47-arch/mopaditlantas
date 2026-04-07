@@ -35,6 +35,84 @@ export default function ProfitLossReport() {
     return () => window.clearTimeout(t);
   }, [dateFilter.startDate, dateFilter.endDate]);
 
+  const fetchOperationalHppTotal = async (startDate: string, endDate: string) => {
+    const { data: wos, error: woErr } = await supabase
+      .from('work_orders')
+      .select(`
+        id,
+        work_date,
+        status,
+        work_order_billings (
+          item_type,
+          qty,
+          goods_id,
+          job_type_id
+        )
+      `)
+      .gte('work_date', startDate)
+      .lte('work_date', endDate)
+      .in('status', ['CLOSED', 'COMPLETED']);
+    if (woErr) throw woErr;
+
+    const goodsIds = new Set<string>();
+    const jobTypeIds = new Set<string>();
+
+    (wos || []).forEach((wo: any) => {
+      const bills = Array.isArray(wo.work_order_billings) ? wo.work_order_billings : [];
+      bills.forEach((b: any) => {
+        const type = String(b.item_type || '').toUpperCase();
+        if (type === 'PART' && b.goods_id) goodsIds.add(String(b.goods_id));
+        if (type === 'JOB' && b.job_type_id) jobTypeIds.add(String(b.job_type_id));
+      });
+    });
+
+    const partCostMap: Record<string, number> = {};
+    if (goodsIds.size > 0) {
+      const { data: poItems, error: poErr } = await supabase
+        .from('purchase_order_items')
+        .select('goods_id, unit_price, created_at')
+        .in('goods_id', Array.from(goodsIds))
+        .order('created_at', { ascending: false });
+      if (poErr) throw poErr;
+      (poItems || []).forEach((it: any) => {
+        const gid = String(it.goods_id || '');
+        if (!gid) return;
+        if (partCostMap[gid] !== undefined) return;
+        partCostMap[gid] = Number(it.unit_price || 0);
+      });
+    }
+
+    const jobCostMap: Record<string, number> = {};
+    if (jobTypeIds.size > 0) {
+      const { data: jobs, error: jobErr } = await supabase
+        .from('job_types')
+        .select('id, hpp')
+        .in('id', Array.from(jobTypeIds));
+      if (jobErr) throw jobErr;
+      (jobs || []).forEach((j: any) => {
+        jobCostMap[String(j.id)] = Number(j.hpp || 0);
+      });
+    }
+
+    let total = 0;
+    (wos || []).forEach((wo: any) => {
+      const bills = Array.isArray(wo.work_order_billings) ? wo.work_order_billings : [];
+      bills.forEach((b: any) => {
+        const qty = Number(b.qty || 0);
+        if (qty <= 0) return;
+        const type = String(b.item_type || '').toUpperCase();
+        if (type === 'PART' && b.goods_id) {
+          const hpp = partCostMap[String(b.goods_id)] || 0;
+          total += hpp * qty;
+        } else if (type === 'JOB' && b.job_type_id) {
+          const hpp = jobCostMap[String(b.job_type_id)] || 0;
+          total += hpp * qty;
+        }
+      });
+    });
+    return total;
+  };
+
   async function fetchReport() {
     const currentReq = ++requestSeq.current;
     setLoading(true);
@@ -115,9 +193,11 @@ export default function ProfitLossReport() {
         });
 
         // Convert to arrays
+        const operationalHppTotal = await fetchOperationalHppTotal(dateFilter.startDate, dateFilter.endDate);
+
         const result = {
             revenue: Object.values(grouped.revenue),
-            cogs: Object.values(grouped.cogs),
+            cogs: operationalHppTotal > 0 ? [{ name: 'HPP (Realisasi WO)', amount: operationalHppTotal }] : [],
             expenses: Object.values(grouped.expenses),
             other_revenue: Object.values(grouped.other_revenue),
             other_expenses: Object.values(grouped.other_expenses),
