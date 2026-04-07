@@ -839,7 +839,7 @@ export default function WorkOrderV2() {
                     .insert([{
                         issue_number: `GI-WO-AUTO-${Date.now()}-${Math.floor(Math.random()*1000)}`,
                         work_order_id: wo.id,
-                        issue_date: new Date().toISOString().split('T')[0]
+                        issue_date: wo.work_date || new Date().toISOString().split('T')[0]
                         // Removed notes
                     }])
                     .select()
@@ -873,9 +873,6 @@ export default function WorkOrderV2() {
         let updatedCount = 0;
         if (targetIssueId) {
             for (const item of billings) {
-                // STRICTLY FOLLOW RULE: Only "Service Ringan" items trigger auto-stock deduction.
-                if (!isServiceRingan(item.job_group)) continue;
-
                 if (item.goods_id) {
                     const billedQty = item.qty;
                     const alreadyIssuedQty = issuedMap.get(item.goods_id) || 0;
@@ -931,6 +928,110 @@ export default function WorkOrderV2() {
             toast.success(`Berhasil memperbaiki stok untuk ${updatedCount} item.`);
         } else {
             toast.info("Stok sudah sinkron. Tidak ada perubahan.");
+        }
+
+        // 6. Auto Journal HPP (PERSEDIAAN) untuk Goods Issue yang dibuat/diupdate
+        if (targetIssueId) {
+          const { data: issue, error: issueErr } = await supabase
+            .from('goods_issues')
+            .select(`
+              id,
+              issue_number,
+              issue_date,
+              items:goods_issue_items (
+                goods_id,
+                quantity,
+                goods (id, item_type)
+              )
+            `)
+            .eq('id', targetIssueId)
+            .maybeSingle();
+          if (issueErr) throw issueErr;
+
+          const items = Array.isArray((issue as any)?.items) ? (issue as any).items : [];
+          const persItems = items
+            .map((it: any) => {
+              const g: any = it.goods;
+              const itemType = String((Array.isArray(g) ? g[0]?.item_type : g?.item_type) || '').toUpperCase();
+              return { goods_id: String(it.goods_id || ''), quantity: Number(it.quantity || 0), itemType };
+            })
+            .filter((it: any) => it.goods_id && it.quantity > 0 && it.itemType === 'PERSEDIAAN');
+
+          if (persItems.length > 0) {
+            const goodsIds = Array.from(new Set(persItems.map((x: any) => x.goods_id)));
+            const { data: poItems, error: poErr } = await supabase
+              .from('purchase_order_items')
+              .select('goods_id, unit_price, created_at')
+              .in('goods_id', goodsIds)
+              .order('created_at', { ascending: false });
+            if (poErr) throw poErr;
+
+            const priceMap: Record<string, number> = {};
+            (poItems || []).forEach((p: any) => {
+              const gid = String(p.goods_id || '');
+              if (!gid) return;
+              if (priceMap[gid] !== undefined) return;
+              priceMap[gid] = Number(p.unit_price || 0);
+            });
+
+            const totalCost = persItems.reduce((sum: number, it: any) => sum + (Number(priceMap[it.goods_id] || 0) * it.quantity), 0);
+
+            if (totalCost > 0) {
+              const { data: persAcc } = await supabase
+                .from('chart_of_accounts')
+                .select('id, account_code, account_name')
+                .eq('account_type', 'DETAIL')
+                .ilike('account_name', '%persediaan%')
+                .order('account_code', { ascending: true })
+                .limit(1)
+                .maybeSingle();
+
+              const { data: hppAcc } = await supabase
+                .from('chart_of_accounts')
+                .select('id, account_code, account_name')
+                .eq('account_type', 'DETAIL')
+                .or('account_name.ilike.%hpp%,account_name.ilike.%harga pokok%')
+                .order('account_code', { ascending: true })
+                .limit(1)
+                .maybeSingle();
+
+              if (persAcc && hppAcc) {
+                await supabase.from('journal_entries').delete().eq('reference', targetIssueId);
+
+                const { data: je, error: jeErr } = await supabase
+                  .from('journal_entries')
+                  .insert([{
+                    entry_date: String((issue as any)?.issue_date || wo.work_date || new Date().toISOString().split('T')[0]),
+                    voucher_no: String((issue as any)?.issue_number || ''),
+                    reference: targetIssueId,
+                    description: `HPP Persediaan WO ${wo.wo_number}`,
+                    entry_type: 'JOURNAL',
+                    total_amount: totalCost,
+                  }])
+                  .select()
+                  .single();
+                if (jeErr) throw jeErr;
+
+                const { error: jiErr } = await supabase.from('journal_entry_items').insert([
+                  {
+                    journal_entry_id: je.id,
+                    account_id: hppAcc.id,
+                    debit: totalCost,
+                    credit: 0,
+                    description: 'HPP Persediaan',
+                  },
+                  {
+                    journal_entry_id: je.id,
+                    account_id: persAcc.id,
+                    debit: 0,
+                    credit: totalCost,
+                    description: 'Pengurangan Persediaan',
+                  },
+                ]);
+                if (jiErr) throw jiErr;
+              }
+            }
+          }
         }
 
     } catch (e: any) {

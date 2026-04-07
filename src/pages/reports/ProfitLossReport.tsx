@@ -161,7 +161,12 @@ export default function ProfitLossReport() {
                      groupKey = 'revenue';
                 }
                 amount = (item.credit || 0) - (item.debit || 0);
-            } else if (cat === 'HPP' || accCode.startsWith('5')) {
+            } else if (
+              cat === 'HPP' ||
+              accCode.startsWith('5') ||
+              String(item.account.account_name || '').toLowerCase().includes('hpp') ||
+              String(item.account.account_name || '').toLowerCase().includes('harga pokok')
+            ) {
                 groupKey = 'cogs';
                 amount = (item.debit || 0) - (item.credit || 0);
             } else if (cat === 'BEBAN' || accCode.startsWith('6')) {
@@ -193,11 +198,12 @@ export default function ProfitLossReport() {
         });
 
         // Convert to arrays
+        const journalCogs = Object.values(grouped.cogs);
         const operationalHppTotal = await fetchOperationalHppTotal(dateFilter.startDate, dateFilter.endDate);
 
         const result = {
             revenue: Object.values(grouped.revenue),
-            cogs: operationalHppTotal > 0 ? [{ name: 'HPP (Realisasi WO)', amount: operationalHppTotal }] : [],
+            cogs: journalCogs.length > 0 ? journalCogs : (operationalHppTotal > 0 ? [{ name: 'HPP (Realisasi WO)', amount: operationalHppTotal }] : []),
             expenses: Object.values(grouped.expenses),
             other_revenue: Object.values(grouped.other_revenue),
             other_expenses: Object.values(grouped.other_expenses),
