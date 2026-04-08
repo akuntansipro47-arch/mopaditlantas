@@ -12,6 +12,7 @@ CREATE TABLE IF NOT EXISTS vehicles (
     engine_number VARCHAR(50),
     body_number VARCHAR(50),
     brand_type VARCHAR(100),
+    owner_name VARCHAR(100),
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );

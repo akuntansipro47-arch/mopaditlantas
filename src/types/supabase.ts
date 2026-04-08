@@ -53,6 +53,7 @@ export interface Database {
           engine_number: string | null
           body_number: string | null
           brand_type: string | null
+          owner_name: string | null
           created_at: string
           updated_at: string
         }
@@ -64,6 +65,7 @@ export interface Database {
           engine_number?: string | null
           body_number?: string | null
           brand_type?: string | null
+          owner_name?: string | null
           created_at?: string
           updated_at?: string
         }
@@ -75,6 +77,7 @@ export interface Database {
           engine_number?: string | null
           body_number?: string | null
           brand_type?: string | null
+          owner_name?: string | null
           created_at?: string
           updated_at?: string
         }

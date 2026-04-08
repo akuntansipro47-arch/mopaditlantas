@@ -48,6 +48,7 @@ export default function Vehicles() {
     vehicle_type: 'R4',
     license_plate: '',
     brand_type: '',
+    owner_name: '',
     chassis_number: '',
     engine_number: '',
     body_number: ''
@@ -102,6 +103,7 @@ export default function Vehicles() {
       vehicle_type: 'R4',
       license_plate: '',
       brand_type: '',
+      owner_name: '',
       chassis_number: '',
       engine_number: '',
       body_number: ''
@@ -116,6 +118,7 @@ export default function Vehicles() {
       vehicle_type: vehicle.vehicle_type,
       license_plate: vehicle.license_plate,
       brand_type: vehicle.brand_type || '',
+      owner_name: (vehicle as any).owner_name || '',
       chassis_number: vehicle.chassis_number || '',
       engine_number: vehicle.engine_number || '',
       body_number: vehicle.body_number || ''
@@ -146,6 +149,7 @@ export default function Vehicles() {
     if (!String(formData.vehicle_type || '').trim()) nextErrors.vehicle_type = 'Wajib dipilih';
     if (!String(formData.license_plate || '').trim()) nextErrors.license_plate = 'Wajib diisi';
     if (!String(formData.brand_type || '').trim()) nextErrors.brand_type = 'Wajib diisi';
+    if (!String(formData.owner_name || '').trim()) nextErrors.owner_name = 'Wajib diisi';
     if (!String(formData.chassis_number || '').trim()) nextErrors.chassis_number = 'Wajib diisi';
     if (!String(formData.engine_number || '').trim()) nextErrors.engine_number = 'Wajib diisi';
     if (!String(formData.body_number || '').trim()) nextErrors.body_number = 'Wajib diisi';
@@ -184,7 +188,8 @@ export default function Vehicles() {
 
   const filteredVehicles = vehicles.filter(v => 
     v.license_plate.toLowerCase().includes(search.toLowerCase()) ||
-    (v.brand_type && v.brand_type.toLowerCase().includes(search.toLowerCase()))
+    (v.brand_type && v.brand_type.toLowerCase().includes(search.toLowerCase())) ||
+    ((v as any).owner_name && String((v as any).owner_name).toLowerCase().includes(search.toLowerCase()))
   );
 
   return (
@@ -258,6 +263,22 @@ export default function Vehicles() {
                       required
                     />
                     {formErrors.brand_type && <p className="text-xs text-red-600">{formErrors.brand_type}</p>}
+                  </div>
+                </div>
+                <div className="grid grid-cols-4 items-center gap-4">
+                  <Label htmlFor="owner_name" className="text-right">
+                    Pemilik/Pemakai
+                  </Label>
+                  <div className="col-span-3 space-y-1">
+                    <Input
+                      id="owner_name"
+                      name="owner_name"
+                      value={formData.owner_name}
+                      onChange={handleInputChange}
+                      className={formErrors.owner_name ? 'border-red-500' : ''}
+                      required
+                    />
+                    {formErrors.owner_name && <p className="text-xs text-red-600">{formErrors.owner_name}</p>}
                   </div>
                 </div>
                 <div className="grid grid-cols-4 items-center gap-4">
@@ -342,6 +363,7 @@ export default function Vehicles() {
                   <TableHead>No. Polisi</TableHead>
                   <TableHead>Jenis</TableHead>
                   <TableHead>Merk/Type</TableHead>
+                  <TableHead>Pemilik/Pemakai</TableHead>
                   <TableHead>No. Rangka</TableHead>
                   <TableHead>No. Mesin</TableHead>
                   <TableHead className="text-right">Aksi</TableHead>
@@ -350,7 +372,7 @@ export default function Vehicles() {
               <TableBody>
                 {filteredVehicles.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={6} className="h-24 text-center">
+                    <TableCell colSpan={7} className="h-24 text-center">
                       {loading ? 'Memuat data...' : 'Tidak ada data kendaraan ditemukan.'}
                     </TableCell>
                   </TableRow>
@@ -368,6 +390,7 @@ export default function Vehicles() {
                         </span>
                       </TableCell>
                       <TableCell>{vehicle.brand_type || '-'}</TableCell>
+                      <TableCell>{(vehicle as any).owner_name || '-'}</TableCell>
                       <TableCell>{vehicle.chassis_number || '-'}</TableCell>
                       <TableCell>{vehicle.engine_number || '-'}</TableCell>
                       <TableCell className="text-right">

@@ -1,0 +1,2 @@
+ALTER TABLE public.vehicles
+ADD COLUMN IF NOT EXISTS owner_name VARCHAR(100);
