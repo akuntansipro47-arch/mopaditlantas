@@ -246,14 +246,19 @@ export default function VehicleEntryPage() {
     }, 0);
   };
 
-  // Helper to check if job needs sparepart detail
+  const displayJobName = (name?: string | null) => {
+    const n = String(name || '').trim().toUpperCase();
+    if (n === 'GANTI SPAREPART/BAN/LAINNYA') return 'GANTI SPAREPART';
+    return String(name || '');
+  };
+
   const needsSparepartDetail = (job: { group: string, job_id: string; job_name?: string }) => {
       const selectedJob = jobs.find(j => j.id === job.job_id);
       const jobName = (job.job_name || selectedJob?.job_name || '').toLowerCase();
       const groupName = job.group?.toUpperCase() || '';
       
       const isPerbaikan = groupName.includes('PERBAIKAN');
-      const isGanti = jobName.includes('ganti sparepart') || jobName.includes('ban') || jobName.includes('lainnya');
+      const isGanti = jobName.includes('ganti sparepart');
       
       return isPerbaikan && isGanti;
   };
@@ -786,7 +791,7 @@ export default function VehicleEntryPage() {
                                   key={j.id}
                                   onSelect={() => handleSelectJob(j.id)}
                                 >
-                                  {j.job_name}
+                                  {displayJobName(j.job_name)}
                                   {entryJobs[activeJobSearchIndex]?.job_id === j.id && <Check className="ml-auto h-4 w-4" />}
                                 </CommandItem>
                               ))}
@@ -841,7 +846,7 @@ export default function VehicleEntryPage() {
                           >
                             <span className="truncate">
                               {job.job_id
-                                ? jobs.find(j => j.id === job.job_id)?.job_name
+                                ? displayJobName(jobs.find(j => j.id === job.job_id)?.job_name)
                                 : "Pilih Pekerjaan..."}
                             </span>
                             <Search className="ml-2 h-4 w-4 shrink-0 opacity-50" />
@@ -880,7 +885,7 @@ export default function VehicleEntryPage() {
                                 <TableBody>
                                   <TableRow className="h-8 hover:bg-transparent border-b">
                                     <TableCell className="py-1">
-                                      {jobs.find((j) => j.id === job.job_id)?.job_name || job.job_name || '-'}
+                                      {displayJobName(jobs.find((j) => j.id === job.job_id)?.job_name) || displayJobName(job.job_name) || '-'}
                                     </TableCell>
                                     <TableCell className="py-1 text-right">
                                       {canAdjustEstimationPrice ? (
@@ -1192,7 +1197,7 @@ export default function VehicleEntryPage() {
                                   }`}>
                                     {job.job_types?.job_group.includes('PERBAIKAN') ? 'PRB' : 'SRV'}
                                   </span>
-                                  <span className="font-medium">{job.job_types?.job_name || '-'}</span>
+                                  <span className="font-medium">{displayJobName(job.job_types?.job_name) || '-'}</span>
                                 </div>
                                 {job.notes && <span className="text-xs text-muted-foreground ml-1">- {job.notes}</span>}
                               </div>

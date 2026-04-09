@@ -36,6 +36,9 @@ type IssueItemSource = 'ESTIMASI' | 'PO' | 'STOK' | 'MANUAL';
 type IssueItemForm = {
   goods_id: string;
   quantity: number;
+  cap_quantity: number | null;
+  issued_quantity: number;
+  locked: boolean;
   source: IssueItemSource;
   mismatch: boolean;
   hint: string;
@@ -81,6 +84,7 @@ export default function GoodsIssuePage() {
   // Master Data
   const [wos, setWos] = useState<WO[]>([]);
   const [goodsList, setGoodsList] = useState<Goods[]>([]);
+  const [issuedByGoodsId, setIssuedByGoodsId] = useState<Record<string, { qty: number; lastIssueNumber: string; lastIssueDate: string }>>({});
   
   // Form State
   const [formData, setFormData] = useState({
@@ -90,7 +94,7 @@ export default function GoodsIssuePage() {
 
   // Items State (Dynamic Form)
   const [issueItems, setIssueItems] = useState<IssueItemForm[]>([
-    { goods_id: '', quantity: 1, source: 'MANUAL', mismatch: false, hint: '', value_only: false },
+    { goods_id: '', quantity: 1, cap_quantity: null, issued_quantity: 0, locked: false, source: 'MANUAL', mismatch: false, hint: '', value_only: false },
   ]);
 
   // Filter State
@@ -168,7 +172,7 @@ export default function GoodsIssuePage() {
   }
 
   const handleAddItem = () => {
-    setIssueItems([...issueItems, { goods_id: '', quantity: 1, source: 'MANUAL', mismatch: false, hint: '', value_only: false }]);
+    setIssueItems([...issueItems, { goods_id: '', quantity: 1, cap_quantity: null, issued_quantity: 0, locked: false, source: 'MANUAL', mismatch: false, hint: '', value_only: false }]);
   };
 
   const handleRemoveItem = (index: number) => {
@@ -187,10 +191,116 @@ export default function GoodsIssuePage() {
     setIssueItems(newItems);
   };
 
+  const fetchIssuedSummaryForWO = async (workOrderId: string, excludeIssueId?: string | null) => {
+    if (!workOrderId) return {} as Record<string, { qty: number; lastIssueNumber: string; lastIssueDate: string }>;
+
+    let rows: any[] | null = null;
+    {
+      const q = supabase
+        .from('goods_issue_items')
+        .select(`
+          goods_id,
+          quantity,
+          value_only,
+          goods_issues!inner (
+            id,
+            issue_date,
+            issue_number,
+            work_order_id
+          )
+        `)
+        .eq('goods_issues.work_order_id', workOrderId);
+      const q2 = excludeIssueId ? q.neq('issue_id', excludeIssueId) : q;
+      const { data, error } = await q2;
+      if (!error) rows = (data as any[]) || [];
+    }
+
+    if (!rows) {
+      const q = supabase
+        .from('goods_issue_items')
+        .select(`
+          goods_id,
+          quantity,
+          goods_issues!inner (
+            id,
+            issue_date,
+            issue_number,
+            work_order_id
+          )
+        `)
+        .eq('goods_issues.work_order_id', workOrderId);
+      const q2 = excludeIssueId ? q.neq('issue_id', excludeIssueId) : q;
+      const { data, error } = await q2;
+      if (error) throw error;
+      rows = (data as any[]) || [];
+    }
+
+    const out: Record<string, { qty: number; lastIssueNumber: string; lastIssueDate: string; _t: number }> = {};
+
+    for (const r of rows || []) {
+      const goodsId = String((r as any).goods_id || '');
+      if (!goodsId) continue;
+      if (Boolean((r as any).value_only)) continue;
+      const qty = Number((r as any).quantity || 0);
+      if (!Number.isFinite(qty) || qty <= 0) continue;
+
+      const gi = (r as any).goods_issues || {};
+      const issueDate = String(gi.issue_date || '');
+      const issueNumber = String(gi.issue_number || '');
+      const t = issueDate ? new Date(issueDate).getTime() : 0;
+
+      const prev = out[goodsId] || { qty: 0, lastIssueNumber: '', lastIssueDate: '', _t: 0 };
+      prev.qty += qty;
+      if (t >= prev._t) {
+        prev._t = t;
+        prev.lastIssueDate = issueDate;
+        prev.lastIssueNumber = issueNumber;
+      }
+      out[goodsId] = prev;
+    }
+
+    const cleaned: Record<string, { qty: number; lastIssueNumber: string; lastIssueDate: string }> = {};
+    Object.entries(out).forEach(([k, v]) => {
+      cleaned[k] = { qty: v.qty, lastIssueNumber: v.lastIssueNumber, lastIssueDate: v.lastIssueDate };
+    });
+    return cleaned;
+  };
+
+  const applyIssuedInfo = (it: IssueItemForm, goodsId: string, issuedMap: Record<string, { qty: number; lastIssueNumber: string; lastIssueDate: string }>) => {
+    const issued = issuedMap[goodsId]?.qty || 0;
+    const lastIssueNumber = issuedMap[goodsId]?.lastIssueNumber || '';
+    const lastIssueDate = issuedMap[goodsId]?.lastIssueDate || '';
+
+    const cap = Number.isFinite(Number(it.cap_quantity)) ? Number(it.cap_quantity) : null;
+    const remaining = cap !== null ? Math.max(0, cap - issued) : null;
+    const locked = cap === null ? issued > 0 : remaining !== null && remaining <= 0;
+
+    const nextQty = cap === null ? (locked ? 0 : it.quantity) : (remaining ?? 0);
+    const hintIssued =
+      issued > 0
+        ? `Sudah keluar: ${issued}${lastIssueDate ? ` (tgl ${formatDate(lastIssueDate)})` : ''}${lastIssueNumber ? ` ${lastIssueNumber}` : ''}`
+        : '';
+
+    const hintRemaining = cap !== null ? `Sisa yang bisa keluar: ${remaining}` : '';
+    const mergedHint = [it.hint, hintIssued, hintRemaining].filter(Boolean).join(' • ');
+
+    return {
+      ...it,
+      goods_id: goodsId,
+      issued_quantity: issued,
+      quantity: nextQty,
+      locked,
+      hint: mergedHint,
+      mismatch: it.mismatch || locked,
+    };
+  };
+
   const loadSuggestedItemsForWO = async (wo: WO) => {
     setLoading(true);
     try {
       const suggestions: IssueItemForm[] = [];
+      const issuedMap = await fetchIssuedSummaryForWO(String(wo.id), editingId);
+      setIssuedByGoodsId(issuedMap);
 
       const vehicleEntryId = (wo as any).vehicle_entry_id || '';
       const estItemsAgg = new Map<string, { name: string; qty: number; value_only: boolean }>();
@@ -289,6 +399,9 @@ export default function GoodsIssuePage() {
           suggestions.push({
             goods_id: goodsId,
             quantity: estQty,
+            cap_quantity: null,
+            issued_quantity: 0,
+            locked: false,
             source: 'ESTIMASI',
             mismatch: false,
             hint: 'Nilai saja (tidak mengurangi stok)',
@@ -316,28 +429,37 @@ export default function GoodsIssuePage() {
           hint = `Qty Estimasi (${estQty}) ≠ Qty PO Diterima (${poQty})`;
         }
 
-        suggestions.push({
+        const base: IssueItemForm = {
           goods_id: goodsId,
           quantity: estQty,
+          cap_quantity: estQty,
+          issued_quantity: 0,
+          locked: false,
           source,
           mismatch,
           hint,
           value_only: false,
-        });
+        };
+        suggestions.push(goodsId ? applyIssuedInfo(base, goodsId, issuedMap) : base);
       });
 
       Array.from(poItemsAggByName.values()).forEach((po) => {
         const isMatched = Array.from(estItemsAgg.values()).some((e) => isNameMatch(e.name, po.name));
         if (isMatched) return;
 
-        suggestions.push({
+        const poQty = Number(po.qty || 0);
+        const base: IssueItemForm = {
           goods_id: po.goods_id,
-          quantity: Number(po.qty || 0),
+          quantity: poQty,
+          cap_quantity: poQty,
+          issued_quantity: 0,
+          locked: false,
           source: 'PO',
           mismatch: true,
           hint: 'Ada di PO yang sudah diterima, tidak ada di estimasi',
           value_only: false,
-        });
+        };
+        suggestions.push(po.goods_id ? applyIssuedInfo(base, po.goods_id, issuedMap) : base);
       });
 
       if (suggestions.length > 0) {
@@ -346,7 +468,7 @@ export default function GoodsIssuePage() {
         if (mismatchCount > 0) toast.warning(`Ada ${mismatchCount} item yang tidak sesuai (Estimasi vs PO)`);
         else toast.success(`${suggestions.length} item dimuat (Estimasi + PO diterima)`);
       } else {
-        setIssueItems([{ goods_id: '', quantity: 1, source: 'MANUAL', mismatch: false, hint: '', value_only: false }]);
+        setIssueItems([{ goods_id: '', quantity: 1, cap_quantity: null, issued_quantity: 0, locked: false, source: 'MANUAL', mismatch: false, hint: '', value_only: false }]);
         toast.info('Tidak ada item estimasi/PO diterima untuk WO ini.');
       }
     } catch (e: any) {
@@ -362,10 +484,14 @@ export default function GoodsIssuePage() {
       issue_date: issue.issue_date,
       work_order_id: issue.work_order_id || '',
     });
+    fetchIssuedSummaryForWO(String(issue.work_order_id || ''), String(issue.id)).then(setIssuedByGoodsId).catch(() => setIssuedByGoodsId({}));
     setIssueItems(
       issue.items.map((i) => ({
         goods_id: i.goods_id || '',
         quantity: i.quantity,
+        cap_quantity: null,
+        issued_quantity: 0,
+        locked: false,
         source: 'MANUAL',
         mismatch: false,
         hint: '',
@@ -494,6 +620,31 @@ export default function GoodsIssuePage() {
       const invalid = issueItems.some((it) => !it.goods_id || Number(it.quantity || 0) <= 0);
       if (invalid) {
         toast.error('Pastikan semua item sudah dipilih dan qty > 0');
+        return null;
+      }
+
+      const issuedMap = await fetchIssuedSummaryForWO(String(formData.work_order_id || ''), editingId);
+      const offenders: string[] = [];
+      for (const it of issueItems) {
+        if (!it.goods_id) continue;
+        if (Boolean(it.value_only)) continue;
+        const issued = Number(issuedMap[it.goods_id]?.qty || 0);
+        const cap = Number.isFinite(Number(it.cap_quantity)) ? Number(it.cap_quantity) : null;
+        const qty = Number(it.quantity || 0);
+        if (cap === null) {
+          if (issued > 0 && qty > 0) {
+            const gName = goodsList.find((g) => g.id === it.goods_id)?.name || it.goods_id;
+            offenders.push(`${gName} (sudah keluar ${issued})`);
+          }
+        } else {
+          if (issued + qty > cap + 0.0001) {
+            const gName = goodsList.find((g) => g.id === it.goods_id)?.name || it.goods_id;
+            offenders.push(`${gName} (maks ${cap}, sudah ${issued})`);
+          }
+        }
+      }
+      if (offenders.length > 0) {
+        toast.error(`Barang sudah pernah keluar untuk WO ini atau melebihi sisa: ${offenders.slice(0, 5).join(', ')}${offenders.length > 5 ? '…' : ''}`);
         return null;
       }
 
@@ -652,8 +803,9 @@ export default function GoodsIssuePage() {
       toast.success(editingId ? 'Data berhasil diperbarui' : 'Pengeluaran barang berhasil dicatat');
       setIsDialogOpen(false);
       setFormData({ issue_date: new Date().toISOString().split('T')[0], work_order_id: '' });
-      setIssueItems([{ goods_id: '', quantity: 1, source: 'MANUAL', mismatch: false, hint: '', value_only: false }]);
+      setIssueItems([{ goods_id: '', quantity: 1, cap_quantity: null, issued_quantity: 0, locked: false, source: 'MANUAL', mismatch: false, hint: '', value_only: false }]);
       setEditingId(null);
+      setIssuedByGoodsId({});
       fetchIssues();
       fetchMasterData();
       return targetIssueId;
@@ -673,8 +825,9 @@ export default function GoodsIssuePage() {
 
   const resetForm = () => {
     setFormData({ issue_date: new Date().toISOString().split('T')[0], work_order_id: '' });
-    setIssueItems([{ goods_id: '', quantity: 1, source: 'MANUAL', mismatch: false, hint: '', value_only: false }]);
+    setIssueItems([{ goods_id: '', quantity: 1, cap_quantity: null, issued_quantity: 0, locked: false, source: 'MANUAL', mismatch: false, hint: '', value_only: false }]);
     setEditingId(null);
+    setIssuedByGoodsId({});
   };
 
   return (
@@ -814,7 +967,12 @@ export default function GoodsIssuePage() {
                         <Button
                           type="button"
                           variant="outline"
-                          className={cn("w-full justify-between text-left font-normal h-8", !item.goods_id && "text-muted-foreground")}
+                          disabled={item.locked}
+                          className={cn(
+                            "w-full justify-between text-left font-normal h-8",
+                            !item.goods_id && "text-muted-foreground",
+                            item.locked && "opacity-70 cursor-not-allowed"
+                          )}
                           onClick={() => handleOpenSearch(index)}
                         >
                           <span className="truncate">
@@ -840,6 +998,7 @@ export default function GoodsIssuePage() {
                           inputMode="numeric"
                           className="h-8 text-center" 
                           value={item.quantity} 
+                          disabled={item.locked}
                           onChange={(e) => {
                             const val = e.target.value.replace(/[^0-9]/g, '');
                             handleItemChange(index, 'quantity', val ? parseInt(val) : 0);
@@ -965,13 +1124,32 @@ export default function GoodsIssuePage() {
                   <CommandItem
                     key={g.id}
                     onSelect={() => {
+                      const issued = Number(issuedByGoodsId[g.id]?.qty || 0);
+                      if (issued > 0 && !editingId) {
+                        toast.error(`Barang ini sudah pernah keluar untuk WO ini (qty ${issued}). Pilih barang lain.`);
+                        return;
+                      }
                       if (activeItemIndex !== null) {
-                        handleItemChange(activeItemIndex, 'goods_id', g.id);
+                        setIssueItems((prev) => {
+                          const next = [...prev];
+                          const current = next[activeItemIndex];
+                          const base: IssueItemForm = {
+                            ...current,
+                            goods_id: g.id,
+                            cap_quantity: null,
+                            source: current.source || 'MANUAL',
+                          };
+                          next[activeItemIndex] = applyIssuedInfo(base, g.id, issuedByGoodsId);
+                          return next;
+                        });
                       }
                       setItemSearchOpen(false);
                       setActiveItemIndex(null);
                     }}
-                    className="cursor-pointer p-2 hover:bg-slate-100"
+                    className={cn(
+                      "cursor-pointer p-2 hover:bg-slate-100",
+                      formData.work_order_id && issuedByGoodsId[g.id]?.qty ? "opacity-60" : ""
+                    )}
                   >
                     <Check
                       className={cn(
@@ -983,7 +1161,10 @@ export default function GoodsIssuePage() {
                     />
                     <div className="flex flex-col">
                       <span className="font-medium">{g.name}</span>
-                      <span className="text-xs text-muted-foreground">{g.unit} - Stok: {g.current_stock}</span>
+                      <span className="text-xs text-muted-foreground">
+                        {g.unit} - Stok: {g.current_stock}
+                        {formData.work_order_id && issuedByGoodsId[g.id]?.qty ? ` • Sudah keluar: ${issuedByGoodsId[g.id]?.qty}` : ''}
+                      </span>
                     </div>
                   </CommandItem>
                 ))}
