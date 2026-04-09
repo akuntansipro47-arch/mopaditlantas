@@ -38,6 +38,8 @@ type EntryWithDetails = VehicleEntry & {
 };
 
 type SparepartDraft = {
+  goods_id?: string;
+  item_code?: string;
   name: string;
   qty: number;
   price: number;
@@ -120,7 +122,7 @@ export default function VehicleEntryPage() {
     setVehicles(v || []);
     const { data: j } = await supabase.from('job_types').select('*');
     setJobs(j || []);
-    const { data: g } = await supabase.from('goods').select('id, name, selling_price, current_stock').order('name');
+    const { data: g } = await supabase.from('goods').select('id, item_code, name, selling_price, current_stock').order('name');
     setGoodsList(g || []);
   }
 
@@ -174,7 +176,7 @@ export default function VehicleEntryPage() {
   };
 
   const handleAddTempSparepart = () => {
-    setTempSpareparts([...tempSpareparts, { name: '', qty: 1, price: 0, value_only: false }]);
+    setTempSpareparts([...tempSpareparts, { goods_id: '', item_code: '', name: '', qty: 1, price: 0, value_only: false }]);
   };
 
   const handleRemoveTempSparepart = (idx: number) => {
@@ -190,6 +192,8 @@ export default function VehicleEntryPage() {
   const handleSelectGoodForSparepart = (good: any) => {
       if (activePartIndex !== null) {
           const newParts = [...tempSpareparts];
+          newParts[activePartIndex].goods_id = String(good.id || '');
+          newParts[activePartIndex].item_code = String(good.item_code || '');
           newParts[activePartIndex].name = good.name;
           newParts[activePartIndex].price = good.selling_price || 0;
           setTempSpareparts(newParts);
@@ -343,6 +347,8 @@ export default function VehicleEntryPage() {
       const parts = existingParts
         .filter(p => p.job_type_id === jobTypeId)
         .map(p => ({
+          goods_id: String((p as any).goods_id || ''),
+          item_code: String((p as any).item_code || ''),
           name: p.item_name,
           qty: p.qty,
           price: p.estimated_price,
@@ -365,6 +371,8 @@ export default function VehicleEntryPage() {
     const unassignedParts = existingParts.filter(p => !p.job_type_id || !knownJobTypeIds.has(p.job_type_id));
     if (unassignedParts.length > 0) {
       const partsToAdd = unassignedParts.map(p => ({
+        goods_id: String((p as any).goods_id || ''),
+        item_code: String((p as any).item_code || ''),
         name: p.item_name,
         qty: p.qty,
         price: p.estimated_price,
@@ -411,6 +419,8 @@ export default function VehicleEntryPage() {
             value_only: false,
             estimated_price: 0,
             spareparts: existingParts.map(p => ({
+              goods_id: String((p as any).goods_id || ''),
+              item_code: String((p as any).item_code || ''),
               name: p.item_name,
               qty: p.qty,
               price: p.estimated_price,
@@ -605,6 +615,8 @@ export default function VehicleEntryPage() {
                       allSpareparts.push({
                           vehicle_entry_id: targetId,
                           job_type_id: job.job_id,
+                          goods_id: part.goods_id ? part.goods_id : null,
+                          item_code: part.item_code ? part.item_code : null,
                           item_name: part.name,
                           qty: part.qty,
                           estimated_price: part.price,
@@ -615,6 +627,17 @@ export default function VehicleEntryPage() {
           });
 
           if (allSpareparts.length > 0) {
+               const hasGoodsRef = allSpareparts.some((p) => Boolean((p as any).goods_id) || Boolean((p as any).item_code));
+               if (hasGoodsRef) {
+                 const { error: colErr } = await supabase
+                   .from('vehicle_entry_spareparts')
+                   .select('goods_id')
+                   .limit(1);
+                 if (colErr) {
+                   toast.error("DB belum siap: kolom referensi barang (goods_id/item_code) belum ada. Jalankan migration 20260409_add_goods_ref_to_vehicle_entry_spareparts.sql di Supabase.");
+                   return;
+                 }
+               }
                const hasValueOnly = allSpareparts.some((p) => Boolean((p as any).value_only));
                if (hasValueOnly) {
                  const { error: colErr } = await supabase

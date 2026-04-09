@@ -64,6 +64,12 @@ const isNameMatch = (a: string, b: string) => {
   const bb = normalizeText(b);
   if (!aa || !bb) return false;
   if (aa === bb) return true;
+  const ac = aa.replace(/\s+/g, '');
+  const bc = bb.replace(/\s+/g, '');
+  if (ac && bc) {
+    if (ac === bc) return true;
+    if (ac.includes(bc) || bc.includes(ac)) return true;
+  }
   return aa.includes(bb) || bb.includes(aa);
 };
 
@@ -303,13 +309,13 @@ export default function GoodsIssuePage() {
       setIssuedByGoodsId(issuedMap);
 
       const vehicleEntryId = (wo as any).vehicle_entry_id || '';
-      const estItemsAgg = new Map<string, { name: string; qty: number; value_only: boolean }>();
+      const estItemsAgg = new Map<string, { name: string; qty: number; value_only: boolean; goods_id?: string; item_code?: string }>();
       if (vehicleEntryId) {
         let estData: any[] | null = null;
         {
           const { data, error } = await supabase
             .from('vehicle_entry_spareparts')
-            .select('item_name, qty, value_only')
+            .select('goods_id, item_code, item_name, qty, value_only')
             .eq('vehicle_entry_id', vehicleEntryId);
           if (!error) estData = (data as any[]) || [];
           else {
@@ -324,7 +330,9 @@ export default function GoodsIssuePage() {
 
         (estData || []).forEach((it: any) => {
           const name = String(it.item_name || '').trim();
-          const key = normalizeText(name);
+          const gid = String(it.goods_id || '').trim();
+          const code = String(it.item_code || '').trim();
+          const key = gid ? `gid:${gid}` : code ? `code:${normalizeText(code).replace(/\\s+/g, '')}` : `name:${normalizeText(name)}`;
           if (!key) return;
           const prev = estItemsAgg.get(key);
           const qty = Number(it.qty || 0);
@@ -332,8 +340,10 @@ export default function GoodsIssuePage() {
           if (prev) {
             prev.qty += qty;
             prev.value_only = prev.value_only || vo;
+            if (!prev.goods_id && gid) prev.goods_id = gid;
+            if (!prev.item_code && code) prev.item_code = code;
           } else {
-            estItemsAgg.set(key, { name, qty, value_only: vo });
+            estItemsAgg.set(key, { name, qty, value_only: vo, goods_id: gid || undefined, item_code: code || undefined });
           }
         });
       }
@@ -347,7 +357,7 @@ export default function GoodsIssuePage() {
           status,
           purchase_order_items (
             quantity,
-            goods (id, name)
+            goods (id, item_code, name)
           )
         `
         )
@@ -355,35 +365,44 @@ export default function GoodsIssuePage() {
         .in('status', ['RECEIVED_PART', 'RECEIVED_FULL']);
       if (poErr) throw poErr;
 
-      const poItemsAggByName = new Map<string, { goods_id: string; name: string; qty: number }>();
+      const poItemsAggByName = new Map<string, { goods_id: string; item_code: string; name: string; qty: number }>();
       (poData || []).forEach((po: any) => {
         const items = Array.isArray(po.purchase_order_items) ? po.purchase_order_items : [];
         items.forEach((it: any) => {
           const g = it.goods;
           const name = String(g?.name || '').trim();
           const goods_id = String(g?.id || '');
+          const item_code = String(g?.item_code || '').trim();
           const qty = Number(it.quantity || 0);
           const key = normalizeText(name);
           if (!key || !goods_id) return;
           const prev = poItemsAggByName.get(key);
           if (prev) prev.qty += qty;
-          else poItemsAggByName.set(key, { goods_id, name, qty });
+          else poItemsAggByName.set(key, { goods_id, item_code, name, qty });
         });
       });
 
       const matchedPoKeys = new Set<string>();
 
       Array.from(estItemsAgg.values()).forEach((est) => {
-        const poMatches = Array.from(poItemsAggByName.values()).filter((p) => isNameMatch(est.name, p.name));
+        const estGid = String(est.goods_id || '').trim();
+        const estCode = String(est.item_code || '').trim();
+        const poMatches = Array.from(poItemsAggByName.values()).filter((p) => {
+          if (estGid) return String(p.goods_id || '') === estGid;
+          if (estCode) return normalizeText(String(p.item_code || '')).replace(/\\s+/g, '') === normalizeText(estCode).replace(/\\s+/g, '');
+          return isNameMatch(est.name, p.name);
+        });
         const poQty = poMatches.reduce((sum, p) => sum + (Number(p.qty) || 0), 0);
         const match = poMatches[0];
         if (match) matchedPoKeys.add(normalizeText(match.name));
 
-        let goodsId = match?.goods_id || '';
+        let goodsId = estGid || match?.goods_id || '';
         const matchedGood =
           goodsId
             ? goodsList.find((g) => g.id === goodsId)
-            : goodsList.find((g) => isNameMatch(est.name, g.name));
+            : estCode
+              ? goodsList.find((g) => normalizeText(String((g as any).item_code || '')).replace(/\\s+/g, '') === normalizeText(estCode).replace(/\\s+/g, ''))
+              : goodsList.find((g) => isNameMatch(est.name, g.name));
 
         if (!goodsId && matchedGood?.id) goodsId = matchedGood.id;
 
@@ -444,7 +463,13 @@ export default function GoodsIssuePage() {
       });
 
       Array.from(poItemsAggByName.values()).forEach((po) => {
-        const isMatched = Array.from(estItemsAgg.values()).some((e) => isNameMatch(e.name, po.name));
+        const isMatched = Array.from(estItemsAgg.values()).some((e) => {
+          const eg = String(e.goods_id || '').trim();
+          if (eg) return eg === String(po.goods_id || '');
+          const ec = String(e.item_code || '').trim();
+          if (ec) return normalizeText(String(po.item_code || '')).replace(/\s+/g, '') === normalizeText(ec).replace(/\s+/g, '');
+          return isNameMatch(e.name, po.name);
+        });
         if (isMatched) return;
 
         const poQty = Number(po.qty || 0);
