@@ -85,8 +85,7 @@ export default function VehicleEntryPage() {
     endDate: new Date().toISOString().split('T')[0] // Today
   });
 
-  // Multiple Jobs State
-  const [entryJobs, setEntryJobs] = useState<{ group: string, job_id: string; job_name?: string; notes: string; value_only: boolean; estimated_price: number; spareparts?: SparepartDraft[] }[]>([]);
+  const [entryJobs, setEntryJobs] = useState<{ group: string, job_id: string; job_name?: string; notes: string; value_only: boolean; estimated_price: number; spareparts?: SparepartDraft[]; sparepart_enabled?: boolean }[]>([]);
   
   // Sparepart Dialog State
   const [isSparepartDialogOpen, setIsSparepartDialogOpen] = useState(false);
@@ -163,8 +162,12 @@ export default function VehicleEntryPage() {
   const [activePartIndex, setActivePartIndex] = useState<number | null>(null);
   const [partSearchQuery, setPartSearchQuery] = useState('');
 
-  // --- Sparepart Sub-Column Logic ---
   const handleOpenSparepartDialog = (index: number) => {
+    setEntryJobs((prev) => {
+      const next = [...prev];
+      if (next[index]) next[index] = { ...next[index], sparepart_enabled: true };
+      return next;
+    });
     setActiveJobIndex(index);
     setTempSpareparts(entryJobs[index].spareparts || []);
     setIsSparepartDialogOpen(true);
@@ -199,6 +202,7 @@ export default function VehicleEntryPage() {
     if (activeJobIndex !== null) {
       const newJobs = [...entryJobs];
       newJobs[activeJobIndex].spareparts = tempSpareparts;
+      newJobs[activeJobIndex].sparepart_enabled = true;
       setEntryJobs(newJobs);
     }
     setIsSparepartDialogOpen(false);
@@ -353,6 +357,7 @@ export default function VehicleEntryPage() {
         value_only: Boolean((j as any).value_only),
         estimated_price: jobEstimated,
         spareparts: parts,
+        sparepart_enabled: parts.length > 0,
       };
     });
 
@@ -369,6 +374,7 @@ export default function VehicleEntryPage() {
       const gantiJobIdx = mappedJobs.findIndex(j => needsSparepartDetail(j));
       if (gantiJobIdx >= 0) {
         mappedJobs[gantiJobIdx].spareparts = [...(mappedJobs[gantiJobIdx].spareparts || []), ...partsToAdd];
+        mappedJobs[gantiJobIdx].sparepart_enabled = true;
       } else if (mappedJobs.length > 0) {
         mappedJobs.push({
           group: 'PERBAIKAN',
@@ -378,6 +384,7 @@ export default function VehicleEntryPage() {
           value_only: false,
           estimated_price: 0,
           spareparts: partsToAdd,
+          sparepart_enabled: true,
         });
       } else {
         mappedJobs.push({
@@ -388,6 +395,7 @@ export default function VehicleEntryPage() {
           value_only: false,
           estimated_price: 0,
           spareparts: partsToAdd,
+          sparepart_enabled: true,
         });
       }
     }
@@ -408,10 +416,11 @@ export default function VehicleEntryPage() {
               price: p.estimated_price,
               value_only: Boolean((p as any).value_only),
             })),
+            sparepart_enabled: true,
           },
         ]);
       } else {
-        setEntryJobs([{ group: item.service_group as string, job_id: '', job_name: '', notes: '', value_only: false, estimated_price: 0, spareparts: [] }]);
+        setEntryJobs([{ group: item.service_group as string, job_id: '', job_name: '', notes: '', value_only: false, estimated_price: 0, spareparts: [], sparepart_enabled: false }]);
       }
     } else {
       setEntryJobs(mappedJobs);
@@ -423,7 +432,7 @@ export default function VehicleEntryPage() {
   };
 
   const handleAddJob = () => {
-    setEntryJobs([...entryJobs, { group: 'PERBAIKAN', job_id: '', job_name: '', notes: '', value_only: false, estimated_price: 0, spareparts: [] }]);
+    setEntryJobs([...entryJobs, { group: 'PERBAIKAN', job_id: '', job_name: '', notes: '', value_only: false, estimated_price: 0, spareparts: [], sparepart_enabled: false }]);
     if (formErrors.entryJobs) {
       setFormErrors(prev => {
         const next = { ...prev };
@@ -445,11 +454,15 @@ export default function VehicleEntryPage() {
       newJobs[index].job_name = '';
       newJobs[index].value_only = false;
       newJobs[index].estimated_price = 0;
+      newJobs[index].sparepart_enabled = false;
+      newJobs[index].spareparts = [];
     } else if (field === 'job_id') {
       newJobs[index].job_id = value;
       const job = jobs.find(j => j.id === value);
       newJobs[index].job_name = job?.job_name || '';
       newJobs[index].estimated_price = Number((job as any)?.selling_price || 0);
+      newJobs[index].sparepart_enabled = false;
+      newJobs[index].spareparts = [];
     } else {
       newJobs[index].notes = value;
     }
@@ -909,12 +922,42 @@ export default function VehicleEntryPage() {
                           </div>
                         )}
                         
-                        {/* Sub-column for Sparepart Detail (Conditional) */}
-                        {(needsSparepartDetail(job) || (job.spareparts && job.spareparts.length > 0)) && (
+                        {String(job.group || '').toUpperCase().includes('PERBAIKAN') && (
+                          <div className="col-span-12 mt-2 pl-4 border-l-2 border-orange-200">
+                            <div className="flex items-center gap-2">
+                              <div className="flex items-center gap-2">
+                                <Checkbox
+                                  checked={Boolean(job.sparepart_enabled)}
+                                  onCheckedChange={(v) => {
+                                    const checked = Boolean(v);
+                                    setEntryJobs((prev) => {
+                                      const next = [...prev];
+                                      if (next[index]) next[index] = { ...next[index], sparepart_enabled: checked };
+                                      return next;
+                                    });
+                                    if (checked) handleOpenSparepartDialog(index);
+                                  }}
+                                />
+                                <span className="text-xs text-orange-800 font-medium">Rincian Sparepart</span>
+                              </div>
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                className="h-6 text-xs bg-white"
+                                onClick={() => handleOpenSparepartDialog(index)}
+                              >
+                                Input Rincian
+                              </Button>
+                            </div>
+                          </div>
+                        )}
+
+                        {(Boolean(job.sparepart_enabled) || (job.spareparts && job.spareparts.length > 0)) && (
                             <div className="col-span-12 mt-2 pl-4 border-l-2 border-orange-200">
                                 <div className="bg-orange-50 p-2 rounded-md">
                                     <div className="flex justify-between items-center mb-2">
-                                        <Label className="text-xs font-bold text-orange-800">Rincian Sparepart / Ban (Estimasi)</Label>
+                                        <Label className="text-xs font-bold text-orange-800">Rincian Sparepart (Estimasi)</Label>
                                         <Button type="button" variant="outline" size="sm" className="h-6 text-xs bg-white" onClick={() => handleOpenSparepartDialog(index)}>
                                             {job.spareparts && job.spareparts.length > 0 ? 'Edit Rincian' : '+ Input Rincian'}
                                         </Button>
