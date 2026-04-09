@@ -66,6 +66,7 @@ export default function WorkOrderV2() {
   const [isBillingOpen, setIsBillingOpen] = useState(false);
   const [billingItems, setBillingItems] = useState<WOBillingItem[]>([]);
   const [activeWO, setActiveWO] = useState<WOWithDetails | null>(null);
+  const [hasEstimateChange, setHasEstimateChange] = useState(false);
   const [goodsList, setGoodsList] = useState<Goods[]>([]);
   const [itemSearchOpen, setItemSearchOpen] = useState(false);
   const [itemSearchQuery, setItemSearchQuery] = useState('');
@@ -509,6 +510,7 @@ export default function WorkOrderV2() {
 
       let items: WOBillingItem[] = [];
       const existingPerbaikanPriceByGoodsId = new Map<string, number>();
+      let latestEntryJobs: any[] = [];
 
       if (existingBillings && existingBillings.length > 0) {
         // Use existing billings but REFRESH "Perbaikan" parts from Goods Issue
@@ -571,6 +573,20 @@ export default function WorkOrderV2() {
         }
       }
 
+      if (wo.vehicle_entry_id) {
+        const { data: entryDataLatest } = await supabase
+          .from('vehicle_entries')
+          .select(`
+            vehicle_entry_jobs (
+              estimated_price,
+              job_types (*)
+            )
+          `)
+          .eq('id', wo.vehicle_entry_id)
+          .single();
+        latestEntryJobs = entryDataLatest?.vehicle_entry_jobs || [];
+      }
+
       // 2. INJECT Issued Goods (Perbaikan) - Always fresh from Goods Issue
       if (issueData) {
         issueData.forEach((issue: any) => {
@@ -613,12 +629,114 @@ export default function WorkOrderV2() {
         });
       }
 
+      try {
+        const latestJobTypeIds = new Set<string>(
+          (latestEntryJobs || [])
+            .map((j: any) => String(j?.job_types?.id || ''))
+            .filter(Boolean)
+        );
+        const currentJobTypeIds = new Set<string>(
+          (items || [])
+            .filter((i) => i.item_type === 'JOB' && Boolean(i.job_type_id))
+            .map((i) => String(i.job_type_id || ''))
+            .filter(Boolean)
+        );
+
+        const latestCount = latestJobTypeIds.size;
+        const currentCount = currentJobTypeIds.size;
+        let changed = latestCount !== currentCount;
+        if (!changed) {
+          for (const id of latestJobTypeIds) {
+            if (!currentJobTypeIds.has(id)) {
+              changed = true;
+              break;
+            }
+          }
+        }
+        setHasEstimateChange(changed);
+        if (changed && latestCount > 0) {
+          toast.info('Estimasi pekerjaan berubah. Gunakan tombol "Sync dari Estimasi" agar detail WO mengikuti perubahan.');
+        }
+      } catch {
+        setHasEstimateChange(false);
+      }
+
       setBillingItems(items);
       setIsBillingOpen(true);
 
     } catch (error) {
       console.error(error);
       toast.error("Gagal memuat detail pekerjaan");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const syncBillingJobsFromEstimate = async () => {
+    if (!activeWO?.vehicle_entry_id) {
+      toast.error('Vehicle Entry tidak ditemukan untuk WO ini.');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const { data: entryDataLatest, error } = await supabase
+        .from('vehicle_entries')
+        .select(`
+          vehicle_entry_jobs (
+            estimated_price,
+            job_types (*)
+          )
+        `)
+        .eq('id', activeWO.vehicle_entry_id)
+        .single();
+      if (error) throw error;
+
+      const latestEntryJobs = (entryDataLatest?.vehicle_entry_jobs as any[]) || [];
+      const existingByJobTypeId = new Map<string, WOBillingItem>();
+      (billingItems || [])
+        .filter((i) => i.item_type === 'JOB' && Boolean(i.job_type_id))
+        .forEach((i) => existingByJobTypeId.set(String(i.job_type_id), i));
+
+      const rebuiltJobs: WOBillingItem[] = latestEntryJobs
+        .map((j: any) => {
+          const jt = j?.job_types;
+          if (!jt?.id) return null;
+          const jobTypeId = String(jt.id);
+          const jobName = String(jt.job_name || '');
+          const jobGroup = String(jt.job_group || '');
+          const existing = existingByJobTypeId.get(jobTypeId);
+
+          const isSR = isServiceRingan(jobGroup);
+          const qty = isSR ? Number(existing?.qty || 1) : 1;
+          const goods_id = isSR ? (existing?.goods_id || null) : null;
+          const est = Number(j?.estimated_price || 0);
+          const sp = Number(jt?.selling_price || 0);
+          const baseUnit = est > 0 ? est : sp;
+          const unit_price = isSR ? Number(existing?.unit_price || 0) : baseUnit;
+
+          return {
+            item_type: 'JOB',
+            job_type_id: jobTypeId,
+            goods_id,
+            item_name: jobName,
+            job_group: jobGroup,
+            qty,
+            unit_price,
+            total_price: qty * unit_price,
+            source: 'WO_INTERFACE',
+          } as WOBillingItem;
+        })
+        .filter(Boolean) as WOBillingItem[];
+
+      const manualJobs = (billingItems || []).filter((i) => i.item_type === 'JOB' && !i.job_type_id);
+      const parts = (billingItems || []).filter((i) => i.item_type === 'PART');
+
+      setBillingItems([...rebuiltJobs, ...manualJobs, ...parts]);
+      setHasEstimateChange(false);
+      toast.success('Detail WO sudah disinkronkan dari estimasi terbaru.');
+    } catch (e: any) {
+      toast.error('Gagal sync dari estimasi: ' + (e?.message || 'Unknown error'));
     } finally {
       setLoading(false);
     }
@@ -1355,6 +1473,11 @@ export default function WorkOrderV2() {
             </DialogHeader>
 
             <div className="flex-1 overflow-y-auto py-4">
+                 {hasEstimateChange && (
+                   <div className="mb-3 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+                     Estimasi pekerjaan sudah berubah. Klik "Sync dari Estimasi" agar detail mengikuti data terbaru.
+                   </div>
+                 )}
                  <Table>
                     <TableHeader>
                         <TableRow>
@@ -1449,6 +1572,13 @@ export default function WorkOrderV2() {
                     Total Estimasi Biaya: {formatCurrency(calculateGrandTotal())}
                 </div>
                 <div className="flex gap-2">
+                    <Button
+                      variant="outline"
+                      disabled={loading || !activeWO?.vehicle_entry_id}
+                      onClick={syncBillingJobsFromEstimate}
+                    >
+                      Sync dari Estimasi
+                    </Button>
                     <Button variant="outline" onClick={() => setIsBillingOpen(false)}>Batal</Button>
                     <Button className="bg-blue-600 hover:bg-blue-700" onClick={handleSaveBilling}>
                         <CheckCircle className="mr-2 h-4 w-4" /> Simpan
