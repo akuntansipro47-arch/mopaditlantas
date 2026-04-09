@@ -59,6 +59,8 @@ const normalizeText = (v: string) =>
     .trim()
     .replace(/\s+/g, ' ');
 
+const normalizeCompact = (v: string) => normalizeText(v).replace(/\s+/g, '');
+
 const isNameMatch = (a: string, b: string) => {
   const aa = normalizeText(a);
   const bb = normalizeText(b);
@@ -71,6 +73,33 @@ const isNameMatch = (a: string, b: string) => {
     if (ac.includes(bc) || bc.includes(ac)) return true;
   }
   return aa.includes(bb) || bb.includes(aa);
+};
+
+const nameMatchScore = (a: string, b: string) => {
+  const aa = normalizeText(a);
+  const bb = normalizeText(b);
+  if (!aa || !bb) return 0;
+  const ac = normalizeCompact(a);
+  const bc = normalizeCompact(b);
+  if (ac && bc && ac === bc) return 100;
+  if (aa === bb) return 90;
+  if (ac && bc && (ac.includes(bc) || bc.includes(ac))) return 60 - Math.min(30, Math.abs(ac.length - bc.length));
+  if (aa.includes(bb) || bb.includes(aa)) return 50 - Math.min(25, Math.abs(aa.length - bb.length));
+  return 0;
+};
+
+const pickBestByName = <T extends { name: string }>(needle: string, candidates: T[]) => {
+  let best: T | null = null;
+  let bestScore = 0;
+  candidates.forEach((c) => {
+    const s = nameMatchScore(needle, c.name);
+    if (s > bestScore) {
+      bestScore = s;
+      best = c;
+    }
+  });
+  if (!best || bestScore < 40) return null;
+  return best;
 };
 
 export default function GoodsIssuePage() {
@@ -393,16 +422,25 @@ export default function GoodsIssuePage() {
           return isNameMatch(est.name, p.name);
         });
         const poQty = poMatches.reduce((sum, p) => sum + (Number(p.qty) || 0), 0);
-        const match = poMatches[0];
+        const match = estGid || estCode ? (poMatches[0] || null) : pickBestByName(est.name, poMatches);
         if (match) matchedPoKeys.add(normalizeText(match.name));
 
         let goodsId = estGid || match?.goods_id || '';
-        const matchedGood =
-          goodsId
-            ? goodsList.find((g) => g.id === goodsId)
-            : estCode
-              ? goodsList.find((g) => normalizeText(String((g as any).item_code || '')).replace(/\\s+/g, '') === normalizeText(estCode).replace(/\\s+/g, ''))
-              : goodsList.find((g) => isNameMatch(est.name, g.name));
+        const matchedGood = (() => {
+          if (goodsId) return goodsList.find((g) => g.id === goodsId) || null;
+          if (estCode) {
+            return (
+              goodsList.find(
+                (g) =>
+                  normalizeText(String((g as any).item_code || ''))
+                    .replace(/\s+/g, '') ===
+                  normalizeText(estCode).replace(/\s+/g, '')
+              ) || null
+            );
+          }
+          const candidates = goodsList.filter((g) => isNameMatch(est.name, g.name));
+          return candidates.length > 0 ? pickBestByName(est.name, candidates) : null;
+        })();
 
         if (!goodsId && matchedGood?.id) goodsId = matchedGood.id;
 
