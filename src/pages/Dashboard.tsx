@@ -640,25 +640,29 @@ export default function Dashboard() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {overdueUnits.map((u: any) => (
-                    <TableRow key={u.id}>
+                  {overdueUnits.map((u: any) => {
+                    const isSeverelyOverdue = u.daysLate > 3;
+                    return (
+                    <TableRow key={u.id} className={isSeverelyOverdue ? "bg-red-100 hover:bg-red-200" : ""}>
                       <TableCell>
                         <div className="flex flex-col">
-                          <span className="font-medium">{u.license_plate}</span>
-                          <span className="text-xs text-muted-foreground">{u.brand_type}</span>
+                          <span className={`font-medium ${isSeverelyOverdue ? 'text-red-950' : ''}`}>{u.license_plate}</span>
+                          <span className={`text-xs ${isSeverelyOverdue ? 'text-red-800' : 'text-muted-foreground'}`}>{u.brand_type}</span>
                         </div>
                       </TableCell>
-                      <TableCell>{u.estimated_finish_date ? formatDate(u.estimated_finish_date) : '-'}</TableCell>
+                      <TableCell className={isSeverelyOverdue ? 'text-red-950 font-medium' : ''}>
+                        {u.estimated_finish_date ? formatDate(u.estimated_finish_date) : '-'}
+                      </TableCell>
                       <TableCell className="text-center">
-                        <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-red-100 text-red-800">
+                        <span className={`text-xs font-bold px-2.5 py-1 rounded-full ${isSeverelyOverdue ? 'bg-red-600 text-white shadow-sm animate-pulse' : 'bg-orange-100 text-orange-800'}`}>
                           {u.daysLate} hari
                         </span>
                       </TableCell>
-                      <TableCell>{String(u.status || '-')}</TableCell>
-                      <TableCell className="font-medium">{u.wo_number || '-'}</TableCell>
-                      <TableCell>{u.nota_dinas_number || '-'}</TableCell>
+                      <TableCell className={isSeverelyOverdue ? 'text-red-950' : ''}>{String(u.status || '-')}</TableCell>
+                      <TableCell className={`font-medium ${isSeverelyOverdue ? 'text-red-950' : ''}`}>{u.wo_number || '-'}</TableCell>
+                      <TableCell className={isSeverelyOverdue ? 'text-red-950' : ''}>{u.nota_dinas_number || '-'}</TableCell>
                     </TableRow>
-                  ))}
+                  )})}
                 </TableBody>
               </Table>
             </div>
