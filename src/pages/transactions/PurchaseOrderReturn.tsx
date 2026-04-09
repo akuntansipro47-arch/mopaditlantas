@@ -41,7 +41,7 @@ export default function PurchaseOrderReturn() {
   const [returnDate, setReturnDate] = useState(new Date().toISOString().split('T')[0]);
   const [returnNotes, setReturnNotes] = useState('');
   const [returnLines, setReturnLines] = useState<ReturnLine[]>([]);
-  const [settlementType, setSettlementType] = useState<'REFUND' | 'DEPOSIT'>('REFUND');
+  const [settlementType, setSettlementType] = useState<'REFUND' | 'DEPOSIT' | 'AP_DEDUCT'>('REFUND');
   const [settlementAccountId, setSettlementAccountId] = useState<string>('');
   const [coaAccounts, setCoaAccounts] = useState<any[]>([]);
 
@@ -67,19 +67,30 @@ export default function PurchaseOrderReturn() {
     loadCoa();
   }, []);
 
-  const getPoPaymentEligibility = (po: any) => {
+  const getPoPaymentInfo = (po: any) => {
     const inv = (po as any)?.purchase_invoices;
     const invoices = Array.isArray(inv) ? inv : inv ? [inv] : [];
     if (invoices.length === 0) {
-      return { eligible: false, reason: 'Belum ada invoice' };
+      return { status: 'NO_INVOICE' as const, total: 0, paid: 0, reason: 'Belum ada invoice' };
     }
     const total = invoices.reduce((sum: number, x: any) => sum + Number(x?.total_amount || 0), 0);
     const paid = invoices.reduce((sum: number, x: any) => sum + Number(x?.paid_amount || 0), 0);
-    const ok = total <= 0 ? false : paid + 0.01 >= total;
-    if (!ok) {
-      return { eligible: false, reason: 'Invoice belum lunas' };
-    }
-    return { eligible: true, reason: '' };
+    if (paid <= 0.009) return { status: 'UNPAID' as const, total, paid, reason: '' };
+    if (total > 0 && paid + 0.01 < total) return { status: 'PARTIAL' as const, total, paid, reason: '' };
+    return { status: 'PAID' as const, total, paid, reason: '' };
+  };
+
+  const getDefaultApAccountId = () => {
+    const byCode = (code: string) => coaAccounts.find((a: any) => String(a.account_code || '') === code)?.id;
+    const byNameIncludes = (s: string) =>
+      coaAccounts.find((a: any) => String(a.account_name || '').toLowerCase().includes(s))?.id;
+    return (
+      byCode('2100201') ||
+      byNameIncludes('hutang usaha') ||
+      byNameIncludes('hutang') ||
+      coaAccounts.find((a: any) => String(a.account_code || '').startsWith('21'))?.id ||
+      ''
+    );
   };
 
   async function fetchCompletedPOs() {
@@ -237,17 +248,22 @@ export default function PurchaseOrderReturn() {
   };
 
   const handleReturnClick = async (po: any) => {
-    const elig = getPoPaymentEligibility(po);
-    if (!elig.eligible) {
-      toast.error(`Retur tidak aktif: ${elig.reason}.`);
+    const p = getPoPaymentInfo(po);
+    if (p.status === 'NO_INVOICE') {
+      toast.error(`Retur tidak aktif: ${p.reason}.`);
       return;
     }
     setSelectedPO(po);
     setReturnDate(new Date().toISOString().split('T')[0]);
     setReturnNotes('');
     setReturnLines([]);
-    setSettlementType('REFUND');
-    setSettlementAccountId('');
+    if (p.status === 'UNPAID') {
+      setSettlementType('AP_DEDUCT');
+      setSettlementAccountId(getDefaultApAccountId());
+    } else {
+      setSettlementType('REFUND');
+      setSettlementAccountId('');
+    }
     setIsConfirmOpen(true);
     try {
       await loadReturnData(po);
@@ -258,16 +274,18 @@ export default function PurchaseOrderReturn() {
 
   const processReturn = async () => {
     if (!selectedPO) return;
-    const elig = getPoPaymentEligibility(selectedPO);
-    if (!elig.eligible) {
-      toast.error(`Retur tidak aktif: ${elig.reason}.`);
+    const p = getPoPaymentInfo(selectedPO);
+    if (p.status === 'NO_INVOICE') {
+      toast.error(`Retur tidak aktif: ${p.reason}.`);
       return;
     }
     if (!returnDate) {
       toast.error('Tanggal retur wajib diisi.');
       return;
     }
-    if (!settlementAccountId) {
+    const effectiveSettlementAccountId = settlementAccountId || (p.status === 'UNPAID' ? getDefaultApAccountId() : '');
+    const effectiveSettlementType = p.status === 'UNPAID' ? 'AP_DEDUCT' : settlementType;
+    if (p.status !== 'UNPAID' && !effectiveSettlementAccountId) {
       toast.error('Akun penyelesaian wajib dipilih.');
       return;
     }
@@ -303,8 +321,8 @@ export default function PurchaseOrderReturn() {
           return_number: `RT-${Date.now()}`,
           po_id: selectedPO.id,
           return_date: returnDate,
-          settlement_type: settlementType,
-          settlement_account_id: settlementAccountId,
+          settlement_type: effectiveSettlementType,
+          settlement_account_id: effectiveSettlementAccountId ? effectiveSettlementAccountId : null,
           settlement_amount: totalReturnAmount,
           notes: returnNotes ? returnNotes : null,
         }])
@@ -433,10 +451,15 @@ export default function PurchaseOrderReturn() {
 
         const itemsPayload: any[] = [{
           journal_entry_id: je.id,
-          account_id: settlementAccountId,
+          account_id: effectiveSettlementAccountId,
           debit: totalReturnAmount,
           credit: 0,
-          description: settlementType === 'REFUND' ? 'Refund Retur Pembelian' : 'Deposit/Uang Muka Retur Pembelian',
+          description:
+            effectiveSettlementType === 'AP_DEDUCT'
+              ? 'Pengurangan Hutang Usaha (Retur Pembelian)'
+              : effectiveSettlementType === 'REFUND'
+                ? 'Refund Retur Pembelian'
+                : 'Deposit/Uang Muka Retur Pembelian',
         }];
         creditLines.forEach(([accountId, amt]) => {
           itemsPayload.push({
@@ -564,7 +587,8 @@ export default function PurchaseOrderReturn() {
                 ) : (
                   filteredPos.map((po) => (
                     (() => {
-                      const elig = getPoPaymentEligibility(po);
+                      const p = getPoPaymentInfo(po);
+                      const eligible = p.status !== 'NO_INVOICE';
                       return (
                     <TableRow key={po.id}>
                       <TableCell className="font-medium">{po.po_number}</TableCell>
@@ -585,14 +609,14 @@ export default function PurchaseOrderReturn() {
                         </Badge>
                       </TableCell>
                       <TableCell className="text-right">
-                        {!elig.eligible && (
-                          <div className="text-[10px] text-red-600 mb-1">{elig.reason}</div>
+                        {!eligible && (
+                          <div className="text-[10px] text-red-600 mb-1">{p.reason}</div>
                         )}
                         <Button 
                             variant="outline" 
                             size="sm" 
                             className="h-8"
-                            disabled={!elig.eligible}
+                            disabled={!eligible}
                             onClick={() => handleReturnClick(po)}
                         >
                             <RotateCcw className="mr-2 h-3.5 w-3.5" />
@@ -622,6 +646,15 @@ export default function PurchaseOrderReturn() {
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
+            {(() => {
+              const p = getPoPaymentInfo(selectedPO);
+              if (p.status !== 'UNPAID') return null;
+              return (
+                <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+                  Invoice belum dibayar. Retur akan otomatis mengurangi Hutang Usaha, tanpa perlu pilih akun penyelesaian.
+                </div>
+              );
+            })()}
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1">
                 <span className="text-xs text-slate-500">Tanggal Retur</span>
@@ -633,40 +666,46 @@ export default function PurchaseOrderReturn() {
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-2">
-                <Label className="text-xs text-slate-500">Penyelesaian Retur</Label>
-                <Select value={settlementType} onValueChange={(v: any) => setSettlementType(v)}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Pilih opsi..." />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="REFUND">Refund (Kas/Bank)</SelectItem>
-                    <SelectItem value="DEPOSIT">Deposit / Uang Muka</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <Label className="text-xs text-slate-500">Akun Penyelesaian</Label>
-                <Select value={settlementAccountId} onValueChange={setSettlementAccountId}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Pilih akun..." />
-                  </SelectTrigger>
-                  <SelectContent className="max-h-[280px]">
-                    {coaAccounts.map((a: any) => (
-                      <SelectItem key={a.id} value={a.id}>
-                        {a.account_code} - {a.account_name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <p className="text-xs text-slate-500">
-                  {settlementType === 'REFUND'
-                    ? 'Pilih akun Kas/Bank yang menerima refund.'
-                    : 'Pilih akun Deposit/Uang Muka (piutang vendor) untuk saldo retur.'}
-                </p>
-              </div>
-            </div>
+            {(() => {
+              const p = getPoPaymentInfo(selectedPO);
+              if (p.status === 'UNPAID') return null;
+              return (
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-2">
+                    <Label className="text-xs text-slate-500">Penyelesaian Retur</Label>
+                    <Select value={settlementType} onValueChange={(v: any) => setSettlementType(v)}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Pilih opsi..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="REFUND">Refund (Kas/Bank)</SelectItem>
+                        <SelectItem value="DEPOSIT">Deposit / Uang Muka</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-xs text-slate-500">Akun Penyelesaian</Label>
+                    <Select value={settlementAccountId} onValueChange={setSettlementAccountId}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Pilih akun..." />
+                      </SelectTrigger>
+                      <SelectContent className="max-h-[280px]">
+                        {coaAccounts.map((a: any) => (
+                          <SelectItem key={a.id} value={a.id}>
+                            {a.account_code} - {a.account_name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <p className="text-xs text-slate-500">
+                      {settlementType === 'REFUND'
+                        ? 'Pilih akun Kas/Bank yang menerima refund.'
+                        : 'Pilih akun Deposit/Uang Muka (piutang vendor) untuk saldo retur.'}
+                    </p>
+                  </div>
+                </div>
+              );
+            })()}
 
             <div className="rounded-md border max-h-[360px] overflow-auto">
               <Table>
