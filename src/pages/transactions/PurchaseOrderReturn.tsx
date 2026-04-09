@@ -67,6 +67,21 @@ export default function PurchaseOrderReturn() {
     loadCoa();
   }, []);
 
+  const getPoPaymentEligibility = (po: any) => {
+    const inv = (po as any)?.purchase_invoices;
+    const invoices = Array.isArray(inv) ? inv : inv ? [inv] : [];
+    if (invoices.length === 0) {
+      return { eligible: false, reason: 'Belum ada invoice' };
+    }
+    const total = invoices.reduce((sum: number, x: any) => sum + Number(x?.total_amount || 0), 0);
+    const paid = invoices.reduce((sum: number, x: any) => sum + Number(x?.paid_amount || 0), 0);
+    const ok = total <= 0 ? false : paid + 0.01 >= total;
+    if (!ok) {
+      return { eligible: false, reason: 'Invoice belum lunas' };
+    }
+    return { eligible: true, reason: '' };
+  };
+
   async function fetchCompletedPOs() {
     setLoading(true);
     try {
@@ -76,7 +91,8 @@ export default function PurchaseOrderReturn() {
         .select(`
           *,
           suppliers (name),
-          goods_receipts (receipt_number, receipt_date)
+          goods_receipts (receipt_number, receipt_date),
+          purchase_invoices (id, status, total_amount, paid_amount)
         `)
         .in('status', ['RECEIVED_FULL', 'RECEIVED_PART'])
         .gte('po_date', dateFilter.startDate)
@@ -221,6 +237,11 @@ export default function PurchaseOrderReturn() {
   };
 
   const handleReturnClick = async (po: any) => {
+    const elig = getPoPaymentEligibility(po);
+    if (!elig.eligible) {
+      toast.error(`Retur tidak aktif: ${elig.reason}.`);
+      return;
+    }
     setSelectedPO(po);
     setReturnDate(new Date().toISOString().split('T')[0]);
     setReturnNotes('');
@@ -237,6 +258,11 @@ export default function PurchaseOrderReturn() {
 
   const processReturn = async () => {
     if (!selectedPO) return;
+    const elig = getPoPaymentEligibility(selectedPO);
+    if (!elig.eligible) {
+      toast.error(`Retur tidak aktif: ${elig.reason}.`);
+      return;
+    }
     if (!returnDate) {
       toast.error('Tanggal retur wajib diisi.');
       return;
@@ -537,6 +563,9 @@ export default function PurchaseOrderReturn() {
                   <TableRow><TableCell colSpan={8} className="text-center h-24">Tidak ada PO yang dapat diretur dalam periode ini.</TableCell></TableRow>
                 ) : (
                   filteredPos.map((po) => (
+                    (() => {
+                      const elig = getPoPaymentEligibility(po);
+                      return (
                     <TableRow key={po.id}>
                       <TableCell className="font-medium">{po.po_number}</TableCell>
                       <TableCell className="text-xs text-blue-600 font-medium">
@@ -556,10 +585,14 @@ export default function PurchaseOrderReturn() {
                         </Badge>
                       </TableCell>
                       <TableCell className="text-right">
+                        {!elig.eligible && (
+                          <div className="text-[10px] text-red-600 mb-1">{elig.reason}</div>
+                        )}
                         <Button 
                             variant="outline" 
                             size="sm" 
                             className="h-8"
+                            disabled={!elig.eligible}
                             onClick={() => handleReturnClick(po)}
                         >
                             <RotateCcw className="mr-2 h-3.5 w-3.5" />
@@ -567,6 +600,8 @@ export default function PurchaseOrderReturn() {
                         </Button>
                       </TableCell>
                     </TableRow>
+                      );
+                    })()
                   ))
                 )}
               </TableBody>
