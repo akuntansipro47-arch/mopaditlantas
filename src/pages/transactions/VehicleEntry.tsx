@@ -203,6 +203,11 @@ export default function VehicleEntryPage() {
   };
 
   const handleSaveSpareparts = () => {
+    const invalid = tempSpareparts.find((p) => !p.value_only && !String((p as any).goods_id || '').trim());
+    if (invalid) {
+      toast.error('Rincian sparepart wajib dipilih dari master barang (kode barang).');
+      return;
+    }
     if (activeJobIndex !== null) {
       const newJobs = [...entryJobs];
       newJobs[activeJobIndex].spareparts = tempSpareparts;

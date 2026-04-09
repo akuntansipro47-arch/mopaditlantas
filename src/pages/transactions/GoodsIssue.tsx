@@ -416,13 +416,16 @@ export default function GoodsIssuePage() {
       Array.from(estItemsAgg.values()).forEach((est) => {
         const estGid = String(est.goods_id || '').trim();
         const estCode = String(est.item_code || '').trim();
+
         const poMatches = Array.from(poItemsAggByName.values()).filter((p) => {
           if (estGid) return String(p.goods_id || '') === estGid;
-          if (estCode) return normalizeText(String(p.item_code || '')).replace(/\\s+/g, '') === normalizeText(estCode).replace(/\\s+/g, '');
-          return isNameMatch(est.name, p.name);
+          if (estCode) {
+            return normalizeText(String(p.item_code || '')).replace(/\s+/g, '') === normalizeText(estCode).replace(/\s+/g, '');
+          }
+          return false;
         });
         const poQty = poMatches.reduce((sum, p) => sum + (Number(p.qty) || 0), 0);
-        const match = estGid || estCode ? (poMatches[0] || null) : pickBestByName(est.name, poMatches);
+        const match = poMatches[0] || null;
         if (match) matchedPoKeys.add(normalizeText(match.name));
 
         let goodsId = estGid || match?.goods_id || '';
@@ -432,14 +435,12 @@ export default function GoodsIssuePage() {
             return (
               goodsList.find(
                 (g) =>
-                  normalizeText(String((g as any).item_code || ''))
-                    .replace(/\s+/g, '') ===
+                  normalizeText(String((g as any).item_code || '')).replace(/\s+/g, '') ===
                   normalizeText(estCode).replace(/\s+/g, '')
               ) || null
             );
           }
-          const candidates = goodsList.filter((g) => isNameMatch(est.name, g.name));
-          return candidates.length > 0 ? pickBestByName(est.name, candidates) : null;
+          return null;
         })();
 
         if (!goodsId && matchedGood?.id) goodsId = matchedGood.id;
@@ -467,20 +468,12 @@ export default function GoodsIssuePage() {
           return;
         }
 
-        if (poMatches.length === 0) {
-          if (matchedGood?.id && isInventory && stock > 0) {
-            source = 'STOK';
-            if (stock >= estQty) {
-              mismatch = false;
-              hint = 'Menggunakan stok tersedia (tanpa PO)';
-            } else {
-              mismatch = true;
-              hint = `Stok tersedia (${stock}) < Qty Estimasi (${estQty})`;
-            }
-          } else {
-            mismatch = true;
-            hint = 'Belum ada PO diterima dan stok persediaan tidak tersedia';
-          }
+        if (!goodsId) {
+          mismatch = true;
+          hint = `Estimasi belum terhubung ke Kode Barang. Silakan pilih barang sesuai estimasi: ${est.name}`;
+        } else if (poMatches.length === 0) {
+          mismatch = true;
+          hint = 'Belum ada PO diterima untuk barang ini';
         } else if (poQty > 0 && estQty !== Number(poQty || 0)) {
           mismatch = true;
           hint = `Qty Estimasi (${estQty}) ≠ Qty PO Diterima (${poQty})`;
@@ -506,7 +499,7 @@ export default function GoodsIssuePage() {
           if (eg) return eg === String(po.goods_id || '');
           const ec = String(e.item_code || '').trim();
           if (ec) return normalizeText(String(po.item_code || '')).replace(/\s+/g, '') === normalizeText(ec).replace(/\s+/g, '');
-          return isNameMatch(e.name, po.name);
+          return false;
         });
         if (isMatched) return;
 
