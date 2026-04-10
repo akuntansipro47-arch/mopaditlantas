@@ -360,7 +360,7 @@ export default function PurchaseOrderV2() {
       poItems.length === 0 ||
       poItems.some((i: any) => {
         const lt = i.line_type || 'PART';
-        if (lt === 'JASA') return !i.job_type_id || i.quantity <= 0;
+        if (lt === 'JASA') return (!i.job_type_id && !String(i.service_name || '').trim()) || i.quantity <= 0;
         return !i.goods_id || i.quantity <= 0;
       })
     ) {
@@ -668,12 +668,12 @@ export default function PurchaseOrderV2() {
                                       line_type: 'JASA' as const,
                                       goods_id: '',
                                       job_type_id: String(j.job_type_id || ''),
-                                      service_name: String(j.job_types?.job_name || ''),
+                                      service_name: String(j.job_types?.job_name || j.notes || ''),
                                       brand: '',
                                       quantity: 1,
                                       unit_price: Number(j.estimated_price || 0),
                                     }))
-                                    .filter((x: any) => x.job_type_id && Number(x.unit_price || 0) > 0)
+                                    .filter((x: any) => (x.job_type_id || String(x.service_name || '').trim()) && Number(x.unit_price || 0) > 0)
                                 : [];
 
                               const parts = wo.vehicle_entries?.vehicle_entry_spareparts || [];
