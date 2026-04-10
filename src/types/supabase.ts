@@ -358,7 +358,7 @@ export interface Database {
           po_number: string
           supplier_id: string | null
           work_order_id: string | null
-          status: 'DRAFT' | 'ISSUED' | 'RECEIVED_PART' | 'RECEIVED_FULL'
+          status: 'DRAFT' | 'ISSUED' | 'RECEIVED_PART' | 'RECEIVED_FULL' | 'CANCELLED' | 'RETURNED_FULL'
           total_amount: number
           created_at: string
           po_date: string | null
@@ -369,7 +369,7 @@ export interface Database {
           po_number?: string
           supplier_id?: string | null
           work_order_id?: string | null
-          status?: 'DRAFT' | 'ISSUED' | 'RECEIVED_PART' | 'RECEIVED_FULL'
+          status?: 'DRAFT' | 'ISSUED' | 'RECEIVED_PART' | 'RECEIVED_FULL' | 'CANCELLED' | 'RETURNED_FULL'
           total_amount?: number
           created_at?: string
           po_date?: string | null
@@ -380,7 +380,7 @@ export interface Database {
           po_number?: string
           supplier_id?: string | null
           work_order_id?: string | null
-          status?: 'DRAFT' | 'ISSUED' | 'RECEIVED_PART' | 'RECEIVED_FULL'
+          status?: 'DRAFT' | 'ISSUED' | 'RECEIVED_PART' | 'RECEIVED_FULL' | 'CANCELLED' | 'RETURNED_FULL'
           total_amount?: number
           created_at?: string
           po_date?: string | null

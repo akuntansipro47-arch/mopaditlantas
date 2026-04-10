@@ -210,7 +210,7 @@ export default function PurchaseOrderV2() {
         const isDateInRange = poDate >= dateFilter.startDate && poDate <= dateFilter.endDate;
         
         // "po yang belum closing saja"
-        const isNotClosed = po.status !== 'RECEIVED_FULL' && po.status !== 'CANCELLED';
+        const isNotClosed = po.status !== 'RECEIVED_FULL' && po.status !== 'CANCELLED' && po.status !== 'RETURNED_FULL';
         
         // Show if (Not Closed) OR (In Date Range)
         // If in date range, show even if closed.
@@ -465,7 +465,7 @@ export default function PurchaseOrderV2() {
 
   const handleDelete = async (id: string) => {
     const poToDelete = pos.find(p => p.id === id);
-    if (poToDelete && (poToDelete.status === 'RECEIVED_FULL' || poToDelete.status === 'RECEIVED_PART')) {
+    if (poToDelete && (poToDelete.status === 'RECEIVED_FULL' || poToDelete.status === 'RECEIVED_PART' || poToDelete.status === 'RETURNED_FULL')) {
        toast.error('PO yang sudah diterima (sebagian/penuh) tidak dapat dihapus. Gunakan menu Retur Pembelian.');
        return;
     }
@@ -1056,6 +1056,7 @@ export default function PurchaseOrderV2() {
                       const nopol = v?.license_plate || '-';
                       const vGroup = v?.vehicle_type || '';
                       const vText = item.work_order_id ? (vGroup ? `${nopol} (${vGroup})` : nopol) : '-';
+                      const canEdit = item.status === 'ISSUED' || item.status === 'DRAFT';
 
                     return (
                       <TableRow key={item.id}>
@@ -1073,9 +1074,11 @@ export default function PurchaseOrderV2() {
                         <TableCell>
                           <span className={`px-2 py-1 rounded-full text-xs font-semibold ${
                             item.status === 'ISSUED' ? 'bg-blue-100 text-blue-800' : 
-                            item.status === 'RECEIVED_FULL' ? 'bg-green-100 text-green-800' : 'bg-gray-100'
+                            item.status === 'RECEIVED_FULL' ? 'bg-green-100 text-green-800' :
+                            item.status === 'RETURNED_FULL' ? 'bg-red-100 text-red-800' :
+                            'bg-gray-100'
                           }`}>
-                            {item.status.replace('_', ' ')}
+                            {item.status === 'RETURNED_FULL' ? 'RETUR PENUH' : item.status.replace('_', ' ')}
                           </span>
                         </TableCell>
                         <TableCell className="font-bold">{formatCurrency(item.total_amount)}</TableCell>
@@ -1090,7 +1093,14 @@ export default function PurchaseOrderV2() {
                             <Button variant="secondary" size="sm" onClick={() => handleEdit(item, true)} title="Lihat Detail">
                               <Eye className="h-4 w-4 mr-1" /> Detail
                             </Button>
-                            <Button variant="default" size="sm" className="bg-yellow-600 hover:bg-yellow-700 text-white" onClick={() => handleEdit(item, false)} title="Edit PO">
+                            <Button
+                              variant="default"
+                              size="sm"
+                              disabled={!canEdit}
+                              className="bg-yellow-600 hover:bg-yellow-700 text-white disabled:opacity-60"
+                              onClick={() => handleEdit(item, false)}
+                              title={canEdit ? 'Edit PO' : 'PO tidak dapat diedit'}
+                            >
                               <Pencil className="h-4 w-4 mr-1" /> Edit
                             </Button>
                             <Button variant="destructive" size="sm" onClick={() => handleDelete(item.id)} title="Hapus PO">

@@ -114,7 +114,7 @@ export default function PurchaseOrderReturn() {
           goods_receipts (receipt_number, receipt_date),
           purchase_invoices (id, status, total_amount, paid_amount)
         `)
-        .in('status', ['RECEIVED_FULL', 'RECEIVED_PART'])
+        .in('status', ['RECEIVED_FULL', 'RECEIVED_PART', 'RETURNED_FULL'])
         .gte('po_date', dateFilter.startDate)
         .lte('po_date', dateFilter.endDate)
         .order('po_date', { ascending: false });
@@ -544,7 +544,7 @@ export default function PurchaseOrderReturn() {
         if (ordered > 0 && remaining + 1e-9 < ordered) allFull = false;
       });
 
-      const nextStatus = allZero ? 'ISSUED' : allFull ? 'RECEIVED_FULL' : 'RECEIVED_PART';
+      const nextStatus = allZero ? 'RETURNED_FULL' : allFull ? 'RECEIVED_FULL' : 'RECEIVED_PART';
       const { error: poErr } = await supabase.from('purchase_orders').update({ status: nextStatus as any }).eq('id', selectedPO.id);
       if (poErr) throw poErr;
 
@@ -629,7 +629,7 @@ export default function PurchaseOrderReturn() {
                   filteredPos.map((po) => (
                     (() => {
                       const p = getPoPaymentInfo(po);
-                      const eligible = p.status !== 'NO_INVOICE';
+                      const eligible = p.status !== 'NO_INVOICE' && String((po as any).status || '') !== 'RETURNED_FULL';
                       return (
                     <TableRow key={po.id}>
                       <TableCell className="font-medium">{po.po_number}</TableCell>
@@ -644,14 +644,28 @@ export default function PurchaseOrderReturn() {
                       <TableCell>
                         <Badge
                           variant={po.status === 'RECEIVED_FULL' ? 'default' : 'secondary'}
-                          className={po.status === 'RECEIVED_FULL' ? 'bg-green-600' : 'bg-blue-600'}
+                          className={
+                            po.status === 'RECEIVED_FULL'
+                              ? 'bg-green-600'
+                              : po.status === 'RETURNED_FULL'
+                                ? 'bg-red-600'
+                                : 'bg-blue-600'
+                          }
                         >
-                          {po.status === 'RECEIVED_FULL' ? 'Diterima Penuh' : po.status === 'RECEIVED_PART' ? 'Diterima Parsial' : po.status}
+                          {po.status === 'RECEIVED_FULL'
+                            ? 'Diterima Penuh'
+                            : po.status === 'RECEIVED_PART'
+                              ? 'Diterima Parsial'
+                              : po.status === 'RETURNED_FULL'
+                                ? 'Retur Penuh'
+                                : po.status}
                         </Badge>
                       </TableCell>
                       <TableCell className="text-right">
                         {!eligible && (
-                          <div className="text-[10px] text-red-600 mb-1">{p.reason}</div>
+                          <div className="text-[10px] text-red-600 mb-1">
+                            {String((po as any).status || '') === 'RETURNED_FULL' ? 'PO sudah diretur penuh.' : p.reason}
+                          </div>
                         )}
                         <Button 
                             variant="outline" 
