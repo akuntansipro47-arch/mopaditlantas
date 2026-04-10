@@ -120,7 +120,7 @@ export default function VehicleEntryPage() {
   async function fetchMasterData() {
     const { data: v } = await supabase.from('vehicles').select('*');
     setVehicles(v || []);
-    const { data: j } = await supabase.from('job_types').select('*');
+    const { data: j } = await supabase.from('job_types').select('*').or('is_active.is.null,is_active.eq.true');
     setJobs(j || []);
     const { data: g } = await supabase.from('goods').select('id, item_code, name, selling_price, current_stock').order('name');
     setGoodsList(g || []);

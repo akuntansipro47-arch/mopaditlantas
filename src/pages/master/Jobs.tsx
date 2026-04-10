@@ -6,7 +6,7 @@ import {
 } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Plus, Search, Pencil, Trash2, Wrench } from 'lucide-react';
+import { Plus, Search, Pencil, Trash2, Wrench, CheckCircle, XCircle } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { toast } from 'sonner';
 import {
@@ -16,6 +16,7 @@ import { Label } from "@/components/ui/label";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
+import { Checkbox } from "@/components/ui/checkbox";
 
 import { formatCurrency } from '@/lib/utils';
 
@@ -34,6 +35,7 @@ export default function Jobs() {
     job_group: 'PERBAIKAN',
     selling_price: 0,
     hpp: 0,
+    is_active: true,
   });
 
   const [missingColumn, setMissingColumn] = useState(false);
@@ -82,7 +84,7 @@ export default function Jobs() {
   };
 
   const resetForm = () => {
-    setFormData({ job_name: '', job_group: 'PERBAIKAN', selling_price: 0, hpp: 0 });
+    setFormData({ job_name: '', job_group: 'PERBAIKAN', selling_price: 0, hpp: 0, is_active: true });
     setIsEditing(false);
     setCurrentId(null);
   };
@@ -93,6 +95,7 @@ export default function Jobs() {
       job_group: item.job_group,
       selling_price: item.selling_price || 0,
       hpp: item.hpp || 0,
+      is_active: (item as any).is_active !== false,
     });
     setIsEditing(true);
     setCurrentId(item.id);
@@ -222,6 +225,22 @@ export default function Jobs() {
                       {missingColumn && <p className="text-[10px] text-red-500 mt-1">Kolom HPP belum tersedia di database.</p>}
                   </div>
                 </div>
+                <div className="grid grid-cols-4 items-center gap-4">
+                  <Label className="text-right">Status</Label>
+                  <div className="col-span-3 flex items-center space-x-2">
+                    <Checkbox
+                      id="is_active"
+                      checked={!formData.is_active}
+                      onCheckedChange={(checked) => setFormData(prev => ({ ...prev, is_active: !checked }))}
+                    />
+                    <label
+                      htmlFor="is_active"
+                      className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 text-red-600"
+                    >
+                      Non-Aktifkan Pekerjaan Ini
+                    </label>
+                  </div>
+                </div>
               </div>
               <DialogFooter>
                 <Button type="submit" disabled={loading}>{loading ? 'Menyimpan...' : 'Simpan'}</Button>
@@ -250,16 +269,20 @@ export default function Jobs() {
                   <TableHead>Group</TableHead>
                   <TableHead>Harga Jual</TableHead>
                   <TableHead>HPP</TableHead>
+                  <TableHead className="text-center">Status</TableHead>
                   <TableHead className="text-right">Aksi</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {filteredJobs.length === 0 ? (
-                  <TableRow><TableCell colSpan={5} className="text-center h-24">Tidak ada data.</TableCell></TableRow>
+                  <TableRow><TableCell colSpan={6} className="text-center h-24">Tidak ada data.</TableCell></TableRow>
                 ) : (
                   filteredJobs.map((item: any) => (
-                    <TableRow key={item.id}>
-                      <TableCell className="font-medium">{item.job_name}</TableCell>
+                    <TableRow key={item.id} className={(item as any).is_active === false ? 'bg-gray-50 opacity-60' : ''}>
+                      <TableCell className="font-medium">
+                        {item.job_name}
+                        {(item as any).is_active === false && <span className="ml-2 text-xs text-red-500 font-bold">(Non-Aktif)</span>}
+                      </TableCell>
                       <TableCell>
                         <span className={`px-2 py-1 rounded-full text-xs ${item.job_group === 'PERBAIKAN' ? 'bg-orange-100 text-orange-800' : 'bg-blue-100 text-blue-800'}`}>
                           {item.job_group.replace('_', ' ')}
@@ -267,6 +290,13 @@ export default function Jobs() {
                       </TableCell>
                       <TableCell>{formatCurrency(item.selling_price || 0)}</TableCell>
                       <TableCell>{formatCurrency(item.hpp || 0)}</TableCell>
+                      <TableCell className="text-center">
+                        {(item as any).is_active !== false ? (
+                          <CheckCircle className="h-4 w-4 text-green-500 mx-auto" />
+                        ) : (
+                          <XCircle className="h-4 w-4 text-red-500 mx-auto" />
+                        )}
+                      </TableCell>
                       <TableCell className="text-right">
                         <div className="flex justify-end gap-2">
                           <Button variant="ghost" size="icon" onClick={() => handleEdit(item)}><Pencil className="h-4 w-4" /></Button>

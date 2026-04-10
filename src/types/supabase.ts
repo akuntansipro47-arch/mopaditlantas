@@ -185,6 +185,7 @@ export interface Database {
           hpp: number
           job_code: string | null
           vehicle_type: 'R4' | 'R2' | 'R2_KECIL' | null
+          is_active: boolean | null
         }
         Insert: {
           id?: string
@@ -195,6 +196,7 @@ export interface Database {
           hpp?: number
           job_code?: string | null
           vehicle_type?: 'R4' | 'R2' | 'R2_KECIL' | null
+          is_active?: boolean | null
         }
         Update: {
           id?: string
@@ -205,6 +207,7 @@ export interface Database {
           hpp?: number
           job_code?: string | null
           vehicle_type?: 'R4' | 'R2' | 'R2_KECIL' | null
+          is_active?: boolean | null
         }
       }
       budget_periods: {
