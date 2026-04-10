@@ -133,6 +133,7 @@ export default function PurchaseOrderV2() {
               job_type_id,
               notes,
               estimated_price,
+              value_only,
               job_types (job_name, job_group, selling_price)
             ),
             vehicle_entry_spareparts (goods_id, item_code, item_name, qty, estimated_price, value_only)
@@ -665,6 +666,7 @@ export default function PurchaseOrderV2() {
                               const jobs = wo.vehicle_entries?.vehicle_entry_jobs || [];
                               const jobItems = Array.isArray(jobs)
                                 ? jobs
+                                    .filter((j: any) => !Boolean((j as any).value_only))
                                     .map((j: any) => ({
                                       line_type: 'JASA' as const,
                                       goods_id: '',
@@ -672,7 +674,14 @@ export default function PurchaseOrderV2() {
                                       service_name: String(j.job_types?.job_name || j.notes || ''),
                                       brand: '',
                                       quantity: 1,
-                                      unit_price: Number(j.estimated_price || 0),
+                                      unit_price: (() => {
+                                        const epRaw = j.estimated_price;
+                                        const ep = Number(epRaw);
+                                        if (Number.isFinite(ep) && ep > 0) return ep;
+                                        const sp = Number(j.job_types?.selling_price || 0);
+                                        if (sp > 0) return sp;
+                                        return 0;
+                                      })(),
                                     }))
                                     .filter((x: any) => (x.job_type_id || String(x.service_name || '').trim()) && Number(x.unit_price || 0) > 0)
                                 : [];
