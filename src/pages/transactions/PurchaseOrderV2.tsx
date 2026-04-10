@@ -429,7 +429,14 @@ export default function PurchaseOrderV2() {
           line_type: item.line_type || (item.goods_id ? 'PART' : item.job_type_id ? 'JASA' : 'PART'),
           goods_id: (item.line_type || 'PART') === 'JASA' ? null : item.goods_id,
           job_type_id: (item.line_type || 'PART') === 'JASA' ? item.job_type_id : null,
-          service_name: (item.line_type || 'PART') === 'JASA' ? (item.service_name || '') : null,
+          service_name:
+            (item.line_type || 'PART') === 'JASA'
+              ? (item.service_name || '')
+              : String(
+                  item.estimated_name ||
+                    goodsList.find((g: any) => String(g.id) === String(item.goods_id))?.name ||
+                    ''
+                ) || null,
           brand: (item.line_type || 'PART') === 'JASA' ? null : item.brand,
           quantity: item.quantity,
           unit_price: item.unit_price,
@@ -461,6 +468,18 @@ export default function PurchaseOrderV2() {
     if (poToDelete && (poToDelete.status === 'RECEIVED_FULL' || poToDelete.status === 'RECEIVED_PART')) {
        toast.error('PO yang sudah diterima (sebagian/penuh) tidak dapat dihapus. Gunakan menu Retur Pembelian.');
        return;
+    }
+
+    {
+      const { data: returns, error: retErr } = await supabase
+        .from('purchase_returns')
+        .select('id')
+        .eq('po_id', id)
+        .limit(1);
+      if (!retErr && returns && returns.length > 0) {
+        toast.error('PO tidak dapat dihapus karena sudah ada transaksi retur pembelian.');
+        return;
+      }
     }
 
     if (!confirm('Hapus PO ini? Data yang dihapus tidak dapat dikembalikan.')) return;
@@ -495,7 +514,12 @@ export default function PurchaseOrderV2() {
       toast.success('PO dihapus');
       fetchPOs();
     } catch (error: any) {
-      toast.error('Gagal menghapus: ' + error.message);
+      const msg = String(error?.message || '');
+      if (msg.includes('purchase_returns_po_id_fkey')) {
+        toast.error('PO tidak dapat dihapus karena sudah ada transaksi retur pembelian.');
+        return;
+      }
+      toast.error('Gagal menghapus: ' + msg);
     }
   };
 
