@@ -186,6 +186,7 @@ export default function PurchaseOrderV2() {
         .select(`
           *,
           suppliers (*),
+          purchase_returns (id),
           work_orders (
             wo_number,
             vehicle_entries (
@@ -1057,6 +1058,15 @@ export default function PurchaseOrderV2() {
                       const vGroup = v?.vehicle_type || '';
                       const vText = item.work_order_id ? (vGroup ? `${nopol} (${vGroup})` : nopol) : '-';
                       const canEdit = item.status === 'ISSUED' || item.status === 'DRAFT';
+                      const hasReturn = Array.isArray((item as any).purchase_returns) && (item as any).purchase_returns.length > 0;
+                      const statusLabel =
+                        item.status === 'RETURNED_FULL'
+                          ? 'RETUR PENUH'
+                          : item.status === 'CANCELLED'
+                            ? 'DIBATALKAN'
+                            : hasReturn
+                              ? 'ADA RETUR'
+                              : String(item.status || '').replace('_', ' ');
 
                     return (
                       <TableRow key={item.id}>
@@ -1076,9 +1086,11 @@ export default function PurchaseOrderV2() {
                             item.status === 'ISSUED' ? 'bg-blue-100 text-blue-800' : 
                             item.status === 'RECEIVED_FULL' ? 'bg-green-100 text-green-800' :
                             item.status === 'RETURNED_FULL' ? 'bg-red-100 text-red-800' :
+                            item.status === 'CANCELLED' ? 'bg-gray-200 text-gray-800' :
+                            hasReturn ? 'bg-amber-100 text-amber-800' :
                             'bg-gray-100'
                           }`}>
-                            {item.status === 'RETURNED_FULL' ? 'RETUR PENUH' : item.status.replace('_', ' ')}
+                            {statusLabel}
                           </span>
                         </TableCell>
                         <TableCell className="font-bold">{formatCurrency(item.total_amount)}</TableCell>
