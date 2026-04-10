@@ -495,15 +495,11 @@ export default function VehicleEntryPage() {
       newJobs[index].job_name = '';
       newJobs[index].value_only = false;
       newJobs[index].estimated_price = 0;
-      newJobs[index].sparepart_enabled = false;
-      newJobs[index].spareparts = [];
     } else if (field === 'job_id') {
       newJobs[index].job_id = value;
       const job = jobs.find(j => j.id === value);
       newJobs[index].job_name = job?.job_name || '';
       newJobs[index].estimated_price = Number((job as any)?.selling_price || 0);
-      newJobs[index].sparepart_enabled = false;
-      newJobs[index].spareparts = [];
     } else {
       newJobs[index].notes = value;
     }
