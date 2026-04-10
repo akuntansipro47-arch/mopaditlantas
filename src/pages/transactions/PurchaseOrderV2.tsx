@@ -662,9 +662,14 @@ export default function PurchaseOrderV2() {
                                 : [];
 
                               const combined = [...jobItems, ...partItems];
+                              const priced = combined.filter((x: any) => Number(x.unit_price || 0) > 0);
+                              const skipped = combined.length - priced.length;
+                              if (skipped > 0) {
+                                toast.info(`${skipped} item estimasi tidak dimuat karena harga = 0.`);
+                              }
                               setPoItems(
-                                combined.length > 0
-                                  ? combined
+                                priced.length > 0
+                                  ? priced
                                   : [{ line_type: 'PART', goods_id: '', job_type_id: '', service_name: '', brand: '', quantity: 1, unit_price: 0 }]
                               );
                             }}
