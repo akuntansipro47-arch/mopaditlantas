@@ -44,7 +44,8 @@ export default function PurchasePaymentHistoryReport() {
             purchase_orders (po_number),
             suppliers (name)
           ),
-          payment_account:chart_of_accounts (account_code, account_name)
+          payment_account:chart_of_accounts!purchase_payments_payment_account_id_fkey (account_code, account_name),
+          fee_account:chart_of_accounts!purchase_payments_fee_account_id_fkey (account_code, account_name)
         `)
         .gte('payment_date', dateRange.start)
         .lte('payment_date', dateRange.end)
@@ -215,4 +216,3 @@ export default function PurchasePaymentHistoryReport() {
     </div>
   );
 }
-
