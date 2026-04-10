@@ -437,7 +437,7 @@ export default function PurchaseOrderV2() {
                     goodsList.find((g: any) => String(g.id) === String(item.goods_id))?.name ||
                     ''
                 ) || null,
-          brand: (item.line_type || 'PART') === 'JASA' ? null : item.brand,
+          brand: item.brand || null,
           quantity: item.quantity,
           unit_price: item.unit_price,
           total_price: item.quantity * item.unit_price
