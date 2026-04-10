@@ -133,7 +133,7 @@ export default function PurchaseOrderV2() {
               job_type_id,
               notes,
               estimated_price,
-              job_types (job_name, job_group)
+              job_types (job_name, job_group, selling_price)
             ),
             vehicle_entry_spareparts (goods_id, item_code, item_name, qty, estimated_price, value_only)
           )
@@ -153,7 +153,8 @@ export default function PurchaseOrderV2() {
               vehicle_entry_jobs (
                 job_type_id,
                 notes,
-                job_types (job_name, job_group)
+                estimated_price,
+                job_types (job_name, job_group, selling_price)
               ),
               vehicle_entry_spareparts (item_name, qty, estimated_price)
             )
