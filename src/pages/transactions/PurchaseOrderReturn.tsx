@@ -655,7 +655,7 @@ export default function PurchaseOrderReturn() {
               Isi qty retur untuk PO <strong>{selectedPO?.po_number}</strong>.
             </DialogDescription>
           </DialogHeader>
-          <div className="flex-1 overflow-y-auto pr-1 space-y-4">
+          <div className="flex-1 overflow-y-auto pr-1">
             {(() => {
               const p = getPoPaymentInfo(selectedPO);
               if (p.status !== 'UNPAID') return null;
@@ -665,143 +665,146 @@ export default function PurchaseOrderReturn() {
                 </div>
               );
             })()}
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1">
-                <span className="text-xs text-slate-500">Tanggal Retur</span>
-                <Input type="date" value={returnDate} onChange={(e) => setReturnDate(e.target.value)} />
-              </div>
-              <div className="space-y-1">
-                <span className="text-xs text-slate-500">Catatan (opsional)</span>
-                <Input value={returnNotes} onChange={(e) => setReturnNotes(e.target.value)} placeholder="Keterangan retur..." />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-2">
-                <Label className="text-xs text-slate-500">Mode Retur</Label>
-                <Select value={returnMode} onValueChange={(v: any) => setReturnMode(v)}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Pilih mode..." />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="PARTIAL">Retur Sebagian</SelectItem>
-                    <SelectItem value="FULL">Retur Keseluruhan</SelectItem>
-                  </SelectContent>
-                </Select>
-                <p className="text-xs text-slate-500">
-                  {returnMode === 'FULL'
-                    ? 'Otomatis mengisi qty retur = sisa diterima untuk semua barang.'
-                    : 'Isi qty retur per barang (satu per satu).'}
-                </p>
-              </div>
-              <div />
-            </div>
-
-            {(() => {
-              const p = getPoPaymentInfo(selectedPO);
-              if (p.status === 'UNPAID') return null;
-              return (
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-2">
-                    <Label className="text-xs text-slate-500">Penyelesaian Retur</Label>
-                    <Select value={settlementType} onValueChange={(v: any) => setSettlementType(v)}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Pilih opsi..." />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="REFUND">Refund (Kas/Bank)</SelectItem>
-                        <SelectItem value="DEPOSIT">Deposit / Uang Muka</SelectItem>
-                      </SelectContent>
-                    </Select>
+            <div className="mt-4 grid gap-4 lg:grid-cols-2">
+              <div className="space-y-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <span className="text-xs text-slate-500">Tanggal Retur</span>
+                    <Input type="date" value={returnDate} onChange={(e) => setReturnDate(e.target.value)} />
                   </div>
-                  <div className="space-y-2">
-                    <Label className="text-xs text-slate-500">Akun Penyelesaian</Label>
-                    <Select value={settlementAccountId} onValueChange={setSettlementAccountId}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Pilih akun..." />
-                      </SelectTrigger>
-                      <SelectContent className="max-h-[280px]">
-                        {coaAccounts.map((a: any) => (
-                          <SelectItem key={a.id} value={a.id}>
-                            {a.account_code} - {a.account_name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <p className="text-xs text-slate-500">
-                      {settlementType === 'REFUND'
-                        ? 'Pilih akun Kas/Bank yang menerima refund.'
-                        : 'Pilih akun Deposit/Uang Muka (piutang vendor) untuk saldo retur.'}
-                    </p>
+                  <div className="space-y-1">
+                    <span className="text-xs text-slate-500">Catatan (opsional)</span>
+                    <Input value={returnNotes} onChange={(e) => setReturnNotes(e.target.value)} placeholder="Keterangan retur..." />
                   </div>
                 </div>
-              );
-            })()}
 
-            <div className="rounded-md border max-h-[360px] overflow-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Barang</TableHead>
-                    <TableHead className="text-center">Diterima</TableHead>
-                    <TableHead className="text-center">Sudah Retur</TableHead>
-                    <TableHead className="text-center">Sisa</TableHead>
-                    <TableHead className="text-center">Qty Retur</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {returnLines.length === 0 ? (
-                    <TableRow>
-                      <TableCell colSpan={5} className="text-center py-6 text-muted-foreground">
-                        Memuat rincian...
-                      </TableCell>
-                    </TableRow>
-                  ) : (
-                    returnLines.map((l) => (
-                      <TableRow key={l.goods_id}>
-                        <TableCell>
-                          <div className="flex flex-col">
-                            <span className="font-medium">{l.name || '-'}</span>
-                            <span className="text-xs text-slate-500">{l.item_code || '-'} • {l.item_type || '-'}</span>
-                          </div>
-                        </TableCell>
-                        <TableCell className="text-center">{l.received_qty} <span className="text-xs text-slate-400">{l.unit}</span></TableCell>
-                        <TableCell className="text-center">{l.returned_qty} <span className="text-xs text-slate-400">{l.unit}</span></TableCell>
-                        <TableCell className="text-center font-semibold">{l.available_qty} <span className="text-xs text-slate-400">{l.unit}</span></TableCell>
-                        <TableCell className="text-center">
-                          <Input
-                            type="number"
-                            min={0}
-                            max={l.available_qty}
-                            value={String(l.return_qty || 0)}
-                            onChange={(e) => {
-                              const v = Math.max(0, Number(e.target.value || 0));
-                              setReturnLines((prev) => prev.map((x) => x.goods_id === l.goods_id ? { ...x, return_qty: v } : x));
-                            }}
-                            disabled={isProcessing || l.available_qty <= 0 || returnMode === 'FULL'}
-                            className="h-9 w-24 text-center inline-flex"
-                          />
-                        </TableCell>
-                      </TableRow>
-                    ))
-                  )}
-                </TableBody>
-              </Table>
-            </div>
-            <div className="text-xs text-slate-500 flex items-start gap-2">
-              <AlertTriangle className="h-4 w-4 text-amber-500 mt-0.5" />
-              <div>
-                Qty retur tidak boleh melebihi sisa diterima, dan stok harus cukup (barang belum dipakai).
+                <div className="space-y-2">
+                  <Label className="text-xs text-slate-500">Mode Retur</Label>
+                  <Select value={returnMode} onValueChange={(v: any) => setReturnMode(v)}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Pilih mode..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="PARTIAL">Retur Sebagian</SelectItem>
+                      <SelectItem value="FULL">Retur Keseluruhan</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-slate-500">
+                    {returnMode === 'FULL'
+                      ? 'Otomatis mengisi qty retur = sisa diterima untuk semua barang.'
+                      : 'Isi qty retur per barang (satu per satu).'}
+                  </p>
+                </div>
+
+                {(() => {
+                  const p = getPoPaymentInfo(selectedPO);
+                  if (p.status === 'UNPAID') return null;
+                  return (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div className="space-y-2">
+                        <Label className="text-xs text-slate-500">Penyelesaian Retur</Label>
+                        <Select value={settlementType} onValueChange={(v: any) => setSettlementType(v)}>
+                          <SelectTrigger>
+                            <SelectValue placeholder="Pilih opsi..." />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="REFUND">Refund (Kas/Bank)</SelectItem>
+                            <SelectItem value="DEPOSIT">Deposit / Uang Muka</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-2">
+                        <Label className="text-xs text-slate-500">Akun Penyelesaian</Label>
+                        <Select value={settlementAccountId} onValueChange={setSettlementAccountId}>
+                          <SelectTrigger>
+                            <SelectValue placeholder="Pilih akun..." />
+                          </SelectTrigger>
+                          <SelectContent className="max-h-[280px]">
+                            {coaAccounts.map((a: any) => (
+                              <SelectItem key={a.id} value={a.id}>
+                                {a.account_code} - {a.account_name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <p className="text-xs text-slate-500">
+                          {settlementType === 'REFUND'
+                            ? 'Pilih akun Kas/Bank yang menerima refund.'
+                            : 'Pilih akun Deposit/Uang Muka (piutang vendor) untuk saldo retur.'}
+                        </p>
+                      </div>
+                    </div>
+                  );
+                })()}
               </div>
-            </div>
-            <div className="flex justify-end">
-              <div className="text-sm">
-                <span className="text-slate-500 mr-2">Total Retur:</span>
-                <span className="font-bold">
-                  {formatCurrency(
-                    (returnLines || []).reduce((sum, l) => sum + Number(l.unit_price || 0) * Number(l.return_qty || 0), 0)
-                  )}
-                </span>
+
+              <div className="space-y-3">
+                <div className="rounded-md border overflow-auto max-h-[360px] lg:max-h-[520px]">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Barang</TableHead>
+                        <TableHead className="text-center">Diterima</TableHead>
+                        <TableHead className="text-center">Sudah Retur</TableHead>
+                        <TableHead className="text-center">Sisa</TableHead>
+                        <TableHead className="text-center">Qty Retur</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {returnLines.length === 0 ? (
+                        <TableRow>
+                          <TableCell colSpan={5} className="text-center py-6 text-muted-foreground">
+                            Memuat rincian...
+                          </TableCell>
+                        </TableRow>
+                      ) : (
+                        returnLines.map((l) => (
+                          <TableRow key={l.goods_id}>
+                            <TableCell>
+                              <div className="flex flex-col">
+                                <span className="font-medium">{l.name || '-'}</span>
+                                <span className="text-xs text-slate-500">{l.item_code || '-'} • {l.item_type || '-'}</span>
+                              </div>
+                            </TableCell>
+                            <TableCell className="text-center">{l.received_qty} <span className="text-xs text-slate-400">{l.unit}</span></TableCell>
+                            <TableCell className="text-center">{l.returned_qty} <span className="text-xs text-slate-400">{l.unit}</span></TableCell>
+                            <TableCell className="text-center font-semibold">{l.available_qty} <span className="text-xs text-slate-400">{l.unit}</span></TableCell>
+                            <TableCell className="text-center">
+                              <Input
+                                type="number"
+                                min={0}
+                                max={l.available_qty}
+                                value={String(l.return_qty || 0)}
+                                onChange={(e) => {
+                                  const v = Math.max(0, Number(e.target.value || 0));
+                                  setReturnLines((prev) => prev.map((x) => x.goods_id === l.goods_id ? { ...x, return_qty: v } : x));
+                                }}
+                                disabled={isProcessing || l.available_qty <= 0 || returnMode === 'FULL'}
+                                className="h-9 w-24 text-center inline-flex"
+                              />
+                            </TableCell>
+                          </TableRow>
+                        ))
+                      )}
+                    </TableBody>
+                  </Table>
+                </div>
+                <div className="text-xs text-slate-500 flex items-start gap-2">
+                  <AlertTriangle className="h-4 w-4 text-amber-500 mt-0.5" />
+                  <div>
+                    Qty retur tidak boleh melebihi sisa diterima, dan stok harus cukup (barang belum dipakai).
+                  </div>
+                </div>
+                <div className="flex justify-end">
+                  <div className="text-sm">
+                    <span className="text-slate-500 mr-2">Total Retur:</span>
+                    <span className="font-bold">
+                      {formatCurrency(
+                        (returnLines || []).reduce((sum, l) => sum + Number(l.unit_price || 0) * Number(l.return_qty || 0), 0)
+                      )}
+                    </span>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
