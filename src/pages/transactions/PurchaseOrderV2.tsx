@@ -120,25 +120,54 @@ export default function PurchaseOrderV2() {
     const { data: j } = await supabase.from('job_types').select('*').or('is_active.is.null,is_active.eq.true').order('job_name', { ascending: true });
     setJobTypes((j as any[]) || []);
     // Fetch OPEN Work Orders with Vehicle info and estimations
-    const { data: w } = await supabase
-      .from('work_orders')
-      .select(`
-        *,
-        vehicle_entries (
-          id,
-          entry_number,
-          vehicles (license_plate, brand_type),
-          vehicle_entry_jobs (
-            job_type_id,
-            notes,
-            estimated_price,
-            job_types (job_name, job_group)
-          ),
-          vehicle_entry_spareparts (goods_id, item_code, item_name, qty, estimated_price, value_only)
-        )
-      `)
-      .in('status', ['OPEN', 'IN_PROGRESS']); // Fetch both OPEN and IN_PROGRESS
-    setWorkOrders(w || []);
+    {
+      const { data: w, error: wErr } = await supabase
+        .from('work_orders')
+        .select(`
+          *,
+          vehicle_entries (
+            id,
+            entry_number,
+            vehicles (license_plate, brand_type),
+            vehicle_entry_jobs (
+              job_type_id,
+              notes,
+              estimated_price,
+              job_types (job_name, job_group)
+            ),
+            vehicle_entry_spareparts (goods_id, item_code, item_name, qty, estimated_price, value_only)
+          )
+        `)
+        .in('status', ['OPEN', 'IN_PROGRESS']); // Fetch both OPEN and IN_PROGRESS
+      if (!wErr) {
+        setWorkOrders(w || []);
+      } else {
+        const { data: w2, error: w2Err } = await supabase
+          .from('work_orders')
+          .select(`
+            *,
+            vehicle_entries (
+              id,
+              entry_number,
+              vehicles (license_plate, brand_type),
+              vehicle_entry_jobs (
+                job_type_id,
+                notes,
+                job_types (job_name, job_group)
+              ),
+              vehicle_entry_spareparts (item_name, qty, estimated_price)
+            )
+          `)
+          .in('status', ['OPEN', 'IN_PROGRESS']);
+        if (w2Err) {
+          toast.error('Gagal memuat Work Order: ' + (w2Err.message || wErr.message));
+          setWorkOrders([]);
+        } else {
+          toast.warning('DB belum update lengkap, daftar WO dimuat dengan data estimasi minimal.');
+          setWorkOrders(w2 || []);
+        }
+      }
+    }
   }
 
   async function fetchPOs() {
@@ -621,6 +650,7 @@ export default function PurchaseOrderV2() {
                              const searchLower = woSearchQuery.toLowerCase();
                              return (
                                wo.wo_number.toLowerCase().includes(searchLower) ||
+                               String(wo.vehicle_entries?.entry_number || '').toLowerCase().includes(searchLower) ||
                                wo.vehicle_entries?.vehicles?.license_plate?.toLowerCase().includes(searchLower)
                              );
                           })
