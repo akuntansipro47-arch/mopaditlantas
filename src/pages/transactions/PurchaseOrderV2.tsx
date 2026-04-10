@@ -46,6 +46,7 @@ export default function PurchaseOrderV2() {
   // Master Data
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [goodsList, setGoodsList] = useState<Goods[]>([]);
+  const [jobTypes, setJobTypes] = useState<any[]>([]);
   const [workOrders, setWorkOrders] = useState<any[]>([]); // To link PO to WO if needed
 
   const [poType, setPoType] = useState<'WO' | 'STOCK'>('WO');
@@ -59,16 +60,22 @@ export default function PurchaseOrderV2() {
 
   // Items State (Dynamic Form)
   const [poItems, setPoItems] = useState<{
+    line_type?: 'PART' | 'JASA';
     goods_id: string;
+    job_type_id?: string;
+    service_name?: string;
     brand: string;
     quantity: number;
     unit_price: number;
     estimated_name?: string;
-  }[]>([{ goods_id: '', brand: '', quantity: 1, unit_price: 0 }]);
+  }[]>([{ line_type: 'PART', goods_id: '', job_type_id: '', service_name: '', brand: '', quantity: 1, unit_price: 0 }]);
 
   const [itemSearchOpen, setItemSearchOpen] = useState(false);
   const [itemSearchQuery, setItemSearchQuery] = useState('');
   const [activeItemIndex, setActiveItemIndex] = useState<number | null>(null);
+  const [jobSearchOpen, setJobSearchOpen] = useState(false);
+  const [jobSearchQuery, setJobSearchQuery] = useState('');
+  const [activeJobItemIndex, setActiveJobItemIndex] = useState<number | null>(null);
 
   // Filter State
   const [dateFilter, setDateFilter] = useState({
@@ -110,6 +117,8 @@ export default function PurchaseOrderV2() {
     setSuppliers(s || []);
     const { data: g } = await supabase.from('goods').select('*').order('name', { ascending: true });
     setGoodsList(g || []);
+    const { data: j } = await supabase.from('job_types').select('*').or('is_active.is.null,is_active.eq.true').order('job_name', { ascending: true });
+    setJobTypes((j as any[]) || []);
     // Fetch OPEN Work Orders with Vehicle info and estimations
     const { data: w } = await supabase
       .from('work_orders')
@@ -180,10 +189,18 @@ export default function PurchaseOrderV2() {
   }
 
   const handleAddItem = () => {
-    setPoItems([...poItems, { goods_id: '', brand: '', quantity: 1, unit_price: 0 }]);
+    setPoItems([...poItems, { line_type: 'PART', goods_id: '', job_type_id: '', service_name: '', brand: '', quantity: 1, unit_price: 0 }]);
   };
 
   const handleOpenSearch = (index: number) => {
+    const it = poItems[index];
+    const lt = (it as any)?.line_type || 'PART';
+    if (lt === 'JASA') {
+      setActiveJobItemIndex(index);
+      setJobSearchQuery('');
+      setJobSearchOpen(true);
+      return;
+    }
     setActiveItemIndex(index);
     setItemSearchQuery('');
     setItemSearchOpen(true);
@@ -216,7 +233,7 @@ export default function PurchaseOrderV2() {
       work_order_id: 'NONE',
       po_date: new Date().toISOString().split('T')[0]
     });
-    setPoItems([{ goods_id: '', brand: '', quantity: 1, unit_price: 0 }]);
+    setPoItems([{ line_type: 'PART', goods_id: '', job_type_id: '', service_name: '', brand: '', quantity: 1, unit_price: 0 }]);
     setPoType('WO');
     setEditingId(null);
     setIsReadOnly(false);
@@ -271,13 +288,16 @@ export default function PurchaseOrderV2() {
       
       if (items && items.length > 0) {
         setPoItems(items.map((i: any) => ({
+          line_type: (i.line_type || (i.goods_id ? 'PART' : i.job_type_id ? 'JASA' : 'PART')) as any,
           goods_id: i.goods_id || '',
+          job_type_id: i.job_type_id || '',
+          service_name: i.service_name || '',
           brand: i.brand || '',
           quantity: i.quantity,
           unit_price: i.unit_price || 0
         })));
       } else {
-        setPoItems([{ goods_id: '', brand: '', quantity: 1, unit_price: 0 }]);
+        setPoItems([{ line_type: 'PART', goods_id: '', job_type_id: '', service_name: '', brand: '', quantity: 1, unit_price: 0 }]);
       }
       
       setIsDialogOpen(true);
@@ -307,8 +327,15 @@ export default function PurchaseOrderV2() {
       toast.error('Silakan pilih supplier');
       return;
     }
-    if (poItems.length === 0 || poItems.some(i => !i.goods_id || i.quantity <= 0)) {
-      toast.error('Mohon lengkapi daftar barang (minimal 1 barang dengan Qty > 0)');
+    if (
+      poItems.length === 0 ||
+      poItems.some((i: any) => {
+        const lt = i.line_type || 'PART';
+        if (lt === 'JASA') return !i.job_type_id || i.quantity <= 0;
+        return !i.goods_id || i.quantity <= 0;
+      })
+    ) {
+      toast.error('Mohon lengkapi daftar barang/jasa (minimal 1 item dengan Qty > 0)');
       return;
     }
 
@@ -360,10 +387,13 @@ export default function PurchaseOrderV2() {
 
       // Insert Items (for both Create and Update)
       if (targetPoId) {
-        const itemsPayload = poItems.map(item => ({
+        const itemsPayload = poItems.map((item: any) => ({
           po_id: targetPoId,
-          goods_id: item.goods_id,
-          brand: item.brand,
+          line_type: item.line_type || (item.goods_id ? 'PART' : item.job_type_id ? 'JASA' : 'PART'),
+          goods_id: (item.line_type || 'PART') === 'JASA' ? null : item.goods_id,
+          job_type_id: (item.line_type || 'PART') === 'JASA' ? item.job_type_id : null,
+          service_name: (item.line_type || 'PART') === 'JASA' ? (item.service_name || '') : null,
+          brand: (item.line_type || 'PART') === 'JASA' ? null : item.brand,
           quantity: item.quantity,
           unit_price: item.unit_price,
           total_price: item.quantity * item.unit_price
@@ -601,24 +631,42 @@ export default function PurchaseOrderV2() {
                               setFormData({ ...formData, work_order_id: wo.id });
                               setWoSearchOpen(false);
 
-                              // Auto-populate PO Items from Estimasi
-                              const parts = wo.vehicle_entries?.vehicle_entry_spareparts || [];
-                              if (parts.length > 0) {
-                                const newItems = parts.map((p: any) => {
-                                  // Coba cari match di master data
-                                  const match = goodsList.find(g => g.name.toLowerCase() === p.item_name.toLowerCase());
-                                  return {
-                                    goods_id: match ? match.id : '',
+                              const jobs = wo.vehicle_entries?.vehicle_entry_jobs || [];
+                              const jobItems = Array.isArray(jobs)
+                                ? jobs.map((j: any) => ({
+                                    line_type: 'JASA' as const,
+                                    goods_id: '',
+                                    job_type_id: String(j.job_type_id || ''),
+                                    service_name: String(j.job_types?.job_name || ''),
                                     brand: '',
-                                    quantity: p.qty || 1,
-                                    unit_price: p.estimated_price || 0,
-                                    estimated_name: p.item_name
-                                  };
-                                });
-                                setPoItems(newItems);
-                              } else {
-                                setPoItems([{ goods_id: '', brand: '', quantity: 1, unit_price: 0 }]);
-                              }
+                                    quantity: 1,
+                                    unit_price: Number(j.estimated_price || 0),
+                                  }))
+                                : [];
+
+                              const parts = wo.vehicle_entries?.vehicle_entry_spareparts || [];
+                              const partItems = Array.isArray(parts)
+                                ? parts.map((p: any) => {
+                                    const match = goodsList.find((g) => g.name.toLowerCase() === String(p.item_name || '').toLowerCase());
+                                    return {
+                                      line_type: 'PART' as const,
+                                      goods_id: match ? match.id : '',
+                                      job_type_id: '',
+                                      service_name: '',
+                                      brand: '',
+                                      quantity: p.qty || 1,
+                                      unit_price: p.estimated_price || 0,
+                                      estimated_name: p.item_name,
+                                    };
+                                  })
+                                : [];
+
+                              const combined = [...jobItems, ...partItems];
+                              setPoItems(
+                                combined.length > 0
+                                  ? combined
+                                  : [{ line_type: 'PART', goods_id: '', job_type_id: '', service_name: '', brand: '', quantity: 1, unit_price: 0 }]
+                              );
                             }}
                             className="cursor-pointer p-3 hover:bg-slate-100 border-b last:border-0 aria-selected:bg-slate-100"
                           >
@@ -685,14 +733,15 @@ export default function PurchaseOrderV2() {
 
               <div className="space-y-4 border rounded-md p-4 bg-slate-50">
                   <div className="flex justify-between items-center">
-                    <Label className="text-base font-semibold">Daftar Barang</Label>
-                    {!isReadOnly && <Button type="button" variant="outline" size="sm" onClick={handleAddItem}>+ Tambah Barang</Button>}
+                    <Label className="text-base font-semibold">Daftar Barang / Jasa</Label>
+                    {!isReadOnly && <Button type="button" variant="outline" size="sm" onClick={handleAddItem}>+ Tambah Item</Button>}
                   </div>
                   
                   <Table>
                     <TableHeader>
                       <TableRow>
-                        <TableHead className="w-[300px]">Barang</TableHead>
+                        <TableHead className="w-[120px]">Jasa/Part</TableHead>
+                        <TableHead className="w-[300px]">Barang / Jasa</TableHead>
                         <TableHead className="w-[200px]">Merk / Tipe</TableHead>
                         <TableHead className="w-[100px]">Qty</TableHead>
                         <TableHead className="w-[180px]">Harga Satuan</TableHead>
@@ -703,26 +752,69 @@ export default function PurchaseOrderV2() {
                       {poItems.map((item, index) => (
                         <TableRow key={index}>
                           <TableCell>
+                            <Select
+                              value={(item as any).line_type || 'PART'}
+                              onValueChange={(v: any) => {
+                                const next = [...poItems] as any[];
+                                const cur = next[index] || {};
+                                if (v === 'JASA') {
+                                  next[index] = {
+                                    ...cur,
+                                    line_type: 'JASA',
+                                    goods_id: '',
+                                    estimated_name: undefined,
+                                    brand: '',
+                                  };
+                                } else {
+                                  next[index] = {
+                                    ...cur,
+                                    line_type: 'PART',
+                                    job_type_id: '',
+                                    service_name: '',
+                                  };
+                                }
+                                setPoItems(next as any);
+                              }}
+                              disabled={isReadOnly}
+                            >
+                              <SelectTrigger className="h-9">
+                                <SelectValue placeholder="Pilih..." />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="PART">PART</SelectItem>
+                                <SelectItem value="JASA">JASA</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </TableCell>
+                          <TableCell>
                             <Button 
                               type="button"
-                              variant={!item.goods_id && item.estimated_name ? "secondary" : "outline"}
+                              variant={(item as any).line_type === 'PART' && !item.goods_id && item.estimated_name ? "secondary" : "outline"}
                               className={cn(
                                 "w-full justify-between text-left font-normal", 
-                                !item.goods_id && !item.estimated_name && "text-muted-foreground",
-                                !item.goods_id && item.estimated_name && "bg-amber-100 text-amber-800 border-amber-300 hover:bg-amber-200"
+                                (item as any).line_type === 'PART' && !item.goods_id && !item.estimated_name && "text-muted-foreground",
+                                (item as any).line_type === 'JASA' && !(item as any).job_type_id && "text-muted-foreground",
+                                (item as any).line_type === 'PART' && !item.goods_id && item.estimated_name && "bg-amber-100 text-amber-800 border-amber-300 hover:bg-amber-200"
                               )}
                               onClick={() => handleOpenSearch(index)}
                               disabled={isReadOnly}
                             >
                               <span>
-                                {item.goods_id 
+                                {((item as any).line_type || 'PART') === 'JASA'
                                   ? (() => {
-                                      const g = goodsList.find(g => g.id === item.goods_id);
-                                      return g ? `${g.name} (${g.unit})` : "Barang tidak ditemukan";
+                                      const id = String((item as any).job_type_id || '');
+                                      const jt = jobTypes.find((j: any) => String(j.id) === id);
+                                      const name = String((item as any).service_name || jt?.job_name || '');
+                                      return name ? name : 'Klik untuk cari jasa...';
                                     })()
-                                  : item.estimated_name 
-                                    ? `Pilih master untuk: ${item.estimated_name}`
-                                    : "Klik untuk cari barang..."
+                                  : item.goods_id 
+                                    ? (() => {
+                                        const g = goodsList.find(g => g.id === item.goods_id);
+                                        return g ? `${g.name} (${g.unit})` : "Barang tidak ditemukan";
+                                      })()
+                                    : item.estimated_name 
+                                      ? `Pilih master untuk: ${item.estimated_name}`
+                                      : "Klik untuk cari barang..."
                                 }
                               </span>
                               <Search className="ml-2 h-4 w-4 opacity-50" />
@@ -733,7 +825,7 @@ export default function PurchaseOrderV2() {
                               className="h-9" placeholder="Merk/Tipe..."
                               value={item.brand} 
                               onChange={(e) => handleItemChange(index, 'brand', e.target.value)} 
-                              disabled={isReadOnly}
+                              disabled={isReadOnly || ((item as any).line_type || 'PART') === 'JASA'}
                             />
                           </TableCell>
                           <TableCell>
@@ -939,7 +1031,10 @@ export default function PurchaseOrderV2() {
                     key={g.id}
                     onSelect={() => {
                       if (activeItemIndex !== null) {
+                        handleItemChange(activeItemIndex, 'line_type', 'PART');
                         handleItemChange(activeItemIndex, 'goods_id', g.id);
+                        handleItemChange(activeItemIndex, 'job_type_id', '');
+                        handleItemChange(activeItemIndex, 'service_name', '');
                         // Also update selling price if available
                         if (g.selling_price) {
                           handleItemChange(activeItemIndex, 'unit_price', g.selling_price);
@@ -964,6 +1059,59 @@ export default function PurchaseOrderV2() {
                     </div>
                   </CommandItem>
                 ))}
+              </CommandGroup>
+            </CommandList>
+          </Command>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={jobSearchOpen} onOpenChange={setJobSearchOpen}>
+        <DialogContent className="sm:max-w-[500px] p-0">
+          <Command className="rounded-lg border shadow-md">
+            <CommandInput
+              placeholder="Cari jasa/pekerjaan..."
+              value={jobSearchQuery}
+              onChange={(e) => setJobSearchQuery(e.target.value)}
+            />
+            <CommandList>
+              <CommandEmpty>Jasa tidak ditemukan.</CommandEmpty>
+              <CommandGroup heading="Daftar Jasa / Pekerjaan">
+                {jobTypes
+                  .filter((j: any) => String(j.job_name || '').toLowerCase().includes(jobSearchQuery.toLowerCase()))
+                  .slice(0, 50)
+                  .map((j: any) => (
+                    <CommandItem
+                      key={j.id}
+                      onSelect={() => {
+                        if (activeJobItemIndex !== null) {
+                          handleItemChange(activeJobItemIndex, 'line_type', 'JASA');
+                          handleItemChange(activeJobItemIndex, 'job_type_id', j.id);
+                          handleItemChange(activeJobItemIndex, 'service_name', j.job_name);
+                          handleItemChange(activeJobItemIndex, 'goods_id', '');
+                          handleItemChange(activeJobItemIndex, 'estimated_name', undefined);
+                          handleItemChange(activeJobItemIndex, 'brand', '');
+                          handleItemChange(activeJobItemIndex, 'quantity', 1);
+                          handleItemChange(activeJobItemIndex, 'unit_price', Number(j.hpp || 0));
+                        }
+                        setJobSearchOpen(false);
+                        setActiveJobItemIndex(null);
+                      }}
+                      className="cursor-pointer p-2 hover:bg-slate-100"
+                    >
+                      <Check
+                        className={cn(
+                          "mr-2 h-4 w-4",
+                          activeJobItemIndex !== null && String((poItems[activeJobItemIndex] as any)?.job_type_id || '') === String(j.id)
+                            ? "opacity-100"
+                            : "opacity-0"
+                        )}
+                      />
+                      <div className="flex flex-col">
+                        <span className="font-medium">{j.job_name}</span>
+                        <span className="text-xs text-muted-foreground">{j.job_group || '-'} • HPP: {formatCurrency(Number(j.hpp || 0))}</span>
+                      </div>
+                    </CommandItem>
+                  ))}
               </CommandGroup>
             </CommandList>
           </Command>

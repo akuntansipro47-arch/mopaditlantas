@@ -392,6 +392,9 @@ export interface Database {
           id: string
           po_id: string
           goods_id: string | null
+          line_type: string | null
+          job_type_id: string | null
+          service_name: string | null
           quantity: number
           unit_price: number | null
           total_price: number | null
@@ -402,6 +405,9 @@ export interface Database {
           id?: string
           po_id: string
           goods_id?: string | null
+          line_type?: string | null
+          job_type_id?: string | null
+          service_name?: string | null
           quantity: number
           unit_price?: number | null
           total_price?: number | null
@@ -412,6 +418,9 @@ export interface Database {
           id?: string
           po_id?: string
           goods_id?: string | null
+          line_type?: string | null
+          job_type_id?: string | null
+          service_name?: string | null
           quantity?: number
           unit_price?: number | null
           total_price?: number | null
