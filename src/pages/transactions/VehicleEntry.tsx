@@ -165,17 +165,13 @@ export default function VehicleEntryPage() {
   const [partSearchQuery, setPartSearchQuery] = useState('');
 
   const handleOpenSparepartDialog = (index: number) => {
+    setActiveJobIndex(index);
+    setTempSpareparts(entryJobs[index]?.spareparts ? [...(entryJobs[index].spareparts || [])] : []);
     setEntryJobs((prev) => {
       const next = [...prev];
-      if (next[index]) {
-        next[index] = { ...next[index], sparepart_enabled: true };
-        setTempSpareparts(next[index].spareparts || []);
-      } else {
-        setTempSpareparts([]);
-      }
+      if (next[index]) next[index] = { ...next[index], sparepart_enabled: true };
       return next;
     });
-    setActiveJobIndex(index);
     setIsSparepartDialogOpen(true);
   };
 
@@ -226,6 +222,16 @@ export default function VehicleEntryPage() {
       setEntryJobs((prev) => {
         const next = [...prev];
         if (!next[activeJobIndex]) return next;
+
+        const prevParts = Array.isArray((next[activeJobIndex] as any).spareparts)
+          ? ((next[activeJobIndex] as any).spareparts as any[])
+          : [];
+
+        if (cleaned.length === 0 && prevParts.length > 0) {
+          const ok = confirm('Semua rincian sparepart akan dihapus. Lanjutkan?');
+          if (!ok) return prev;
+        }
+
         next[activeJobIndex] = {
           ...next[activeJobIndex],
           spareparts: cleaned,
