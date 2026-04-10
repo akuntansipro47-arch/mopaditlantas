@@ -94,7 +94,7 @@ export default function PurchaseOrderV2() {
   }, [isDialogOpen]);
 
   useRealtimeRefetch({
-    tables: ['suppliers', 'goods', 'work_orders', 'vehicle_entries', 'vehicles', 'vehicle_entry_spareparts'],
+    tables: ['suppliers', 'goods', 'work_orders', 'vehicle_entries', 'vehicles', 'vehicle_entry_spareparts', 'vehicle_entry_jobs', 'job_types'],
     enabled: isDialogOpen,
     onRefetch: fetchMasterData,
   });
@@ -119,6 +119,12 @@ export default function PurchaseOrderV2() {
           id,
           entry_number,
           vehicles (license_plate, brand_type),
+          vehicle_entry_jobs (
+            job_type_id,
+            notes,
+            estimated_price,
+            job_types (job_name, job_group)
+          ),
           vehicle_entry_spareparts (item_name, qty, estimated_price)
         )
       `)
@@ -629,6 +635,44 @@ export default function PurchaseOrderV2() {
                                 <span className="font-medium text-slate-700">{wo.vehicle_entries?.vehicles?.license_plate || '-'}</span>
                                 <span>{wo.vehicle_entries?.vehicles?.brand_type || '-'}</span>
                               </div>
+                              {Array.isArray(wo.vehicle_entries?.vehicle_entry_jobs) && wo.vehicle_entries.vehicle_entry_jobs.length > 0 && (
+                                <div className="mt-1 text-[11px] text-slate-700">
+                                  <div className="font-semibold text-[10px] text-slate-500 uppercase">Pekerjaan</div>
+                                  <div className="space-y-0.5">
+                                    {wo.vehicle_entries.vehicle_entry_jobs.slice(0, 3).map((j: any, idx: number) => (
+                                      <div key={idx} className="flex items-start gap-2">
+                                        <span className="px-1.5 py-0.5 rounded bg-slate-200 text-slate-700 text-[10px] font-bold shrink-0">
+                                          {j.job_types?.job_group || '-'}
+                                        </span>
+                                        <span className="truncate">{j.job_types?.job_name || '-'}</span>
+                                      </div>
+                                    ))}
+                                    {wo.vehicle_entries.vehicle_entry_jobs.length > 3 && (
+                                      <div className="text-[10px] text-slate-500 italic">
+                                        +{wo.vehicle_entries.vehicle_entry_jobs.length - 3} pekerjaan lainnya
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              )}
+                              {Array.isArray(wo.vehicle_entries?.vehicle_entry_spareparts) && wo.vehicle_entries.vehicle_entry_spareparts.length > 0 && (
+                                <div className="mt-1 text-[11px] text-slate-700">
+                                  <div className="font-semibold text-[10px] text-slate-500 uppercase">Sparepart</div>
+                                  <div className="space-y-0.5">
+                                    {wo.vehicle_entries.vehicle_entry_spareparts.slice(0, 3).map((p: any, idx: number) => (
+                                      <div key={idx} className="flex justify-between gap-2">
+                                        <span className="truncate">{p.item_name}</span>
+                                        <span className="text-slate-500">x{p.qty || 1}</span>
+                                      </div>
+                                    ))}
+                                    {wo.vehicle_entries.vehicle_entry_spareparts.length > 3 && (
+                                      <div className="text-[10px] text-slate-500 italic">
+                                        +{wo.vehicle_entries.vehicle_entry_spareparts.length - 3} sparepart lainnya
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              )}
                             </div>
                             {formData.work_order_id === wo.id && <Check className="ml-2 h-4 w-4 text-green-600" />}
                           </CommandItem>
