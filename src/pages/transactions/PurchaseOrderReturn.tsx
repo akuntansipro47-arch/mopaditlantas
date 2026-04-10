@@ -645,7 +645,7 @@ export default function PurchaseOrderReturn() {
       </Card>
 
       <Dialog open={isConfirmOpen} onOpenChange={setIsConfirmOpen}>
-        <DialogContent>
+        <DialogContent className="max-h-[85vh] sm:max-w-[900px] flex flex-col">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <RotateCcw className="h-5 w-5" />
@@ -655,7 +655,7 @@ export default function PurchaseOrderReturn() {
               Isi qty retur untuk PO <strong>{selectedPO?.po_number}</strong>.
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4">
+          <div className="flex-1 overflow-y-auto pr-1 space-y-4">
             {(() => {
               const p = getPoPaymentInfo(selectedPO);
               if (p.status !== 'UNPAID') return null;
@@ -805,7 +805,7 @@ export default function PurchaseOrderReturn() {
               </div>
             </div>
           </div>
-          <DialogFooter>
+          <DialogFooter className="mt-3 border-t pt-3">
             <Button variant="outline" onClick={() => setIsConfirmOpen(false)} disabled={isProcessing}>Batal</Button>
             <Button onClick={processReturn} disabled={isProcessing}>
                 {isProcessing ? 'Memproses...' : 'Proses Retur'}
