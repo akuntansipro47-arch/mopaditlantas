@@ -921,7 +921,7 @@ export default function PurchaseOrderV2() {
                               className="h-9" placeholder="Merk/Tipe..."
                               value={item.brand} 
                               onChange={(e) => handleItemChange(index, 'brand', e.target.value)} 
-                              disabled={isReadOnly || ((item as any).line_type || 'PART') === 'JASA'}
+                              disabled={isReadOnly}
                             />
                           </TableCell>
                           <TableCell>
