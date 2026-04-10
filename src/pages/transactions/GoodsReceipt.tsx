@@ -254,6 +254,39 @@ export default function GoodsReceipt() {
     if (itemsErr2) throw itemsErr2;
   };
 
+  const fetchServiceExpenseAccount = async () => {
+    const { data } = await supabase
+      .from('chart_of_accounts')
+      .select('id, account_code, account_name')
+      .eq('account_type', 'DETAIL')
+      .eq('category', 'HPP')
+      .or('account_name.ilike.%jasa%,account_name.ilike.%service%')
+      .order('account_code', { ascending: true })
+      .limit(1)
+      .maybeSingle();
+    if (data) return data;
+
+    const { data: data2 } = await supabase
+      .from('chart_of_accounts')
+      .select('id, account_code, account_name')
+      .eq('account_type', 'DETAIL')
+      .or('account_name.ilike.%beban jasa%,account_name.ilike.%jasa%,account_name.ilike.%service%')
+      .order('account_code', { ascending: true })
+      .limit(1)
+      .maybeSingle();
+    if (data2) return data2;
+
+    const { data: data3 } = await supabase
+      .from('chart_of_accounts')
+      .select('id, account_code, account_name')
+      .eq('account_type', 'DETAIL')
+      .eq('category', 'HPP')
+      .order('account_code', { ascending: true })
+      .limit(1)
+      .maybeSingle();
+    return data3 || null;
+  };
+
   const syncJournalFromHistory = async () => {
     if (!confirm('Sinkronisasi jurnal untuk semua penerimaan di periode ini? Ini hanya akan membuat jurnal yang belum ada.')) return;
     setLoading(true);
@@ -388,6 +421,8 @@ export default function GoodsReceipt() {
           )
         `)
         .in('status', ['ISSUED', 'RECEIVED_PART'])
+        .neq('status', 'RETURNED_FULL')
+        .neq('status', 'CANCELLED')
         .order('created_at', { ascending: false });
 
       if (error) throw error;
@@ -537,8 +572,108 @@ export default function GoodsReceipt() {
       }
 
       if (itemsToReceive.length === 0) {
-        toast.error("Tidak ada barang yang diterima (Qty 0).");
-        setLoading(false);
+        const hasGoodsLines = (selectedPO.items || []).some((it: any) => Boolean(it.goods_id));
+        if (hasGoodsLines) {
+          toast.error('Tidak ada barang yang diterima (Qty 0).');
+          setLoading(false);
+          return;
+        }
+
+        const closeAmount = Number((selectedPO as any).total_amount || 0);
+        if (!(closeAmount > 0)) {
+          toast.error('Tidak ada barang yang diterima (Qty 0).');
+          setLoading(false);
+          return;
+        }
+
+        const { data: newReceipt, error: receiptError } = await supabase
+          .from('goods_receipts')
+          .insert([{
+            receipt_number: `GR-${Date.now()}`,
+            po_id: selectedPO.id,
+            receipt_date: receiptData.receipt_date,
+            notes: receiptData.notes,
+            received_by: 'Admin'
+          }])
+          .select()
+          .single();
+        if (receiptError) throw receiptError;
+
+        await supabase
+          .from('purchase_orders')
+          .update({ status: 'RECEIVED_FULL' as any })
+          .eq('id', selectedPO.id);
+
+        {
+          const { error: invoiceError } = await supabase
+            .from('purchase_invoices')
+            .insert([{
+              invoice_number: `INV-${Date.now()}`,
+              po_id: selectedPO.id,
+              supplier_id: selectedPO.supplier_id,
+              invoice_date: receiptData.receipt_date,
+              due_date: new Date(new Date(receiptData.receipt_date).setDate(new Date(receiptData.receipt_date).getDate() + 30)).toISOString().split('T')[0],
+              total_amount: closeAmount,
+              status: 'UNPAID'
+            }]);
+
+          if (invoiceError) {
+            console.error('Failed to create invoice:', invoiceError);
+            toast.error('Close PO sukses TAPI gagal membuat Tagihan otomatis: ' + invoiceError.message);
+          }
+        }
+
+        try {
+          const apAcc = await fetchApAccount();
+          const svcAcc = await fetchServiceExpenseAccount();
+          if (!apAcc) {
+            toast.error('Jurnal close PO tidak dibuat: Akun Hutang Usaha tidak ditemukan di COA.');
+          } else if (!svcAcc) {
+            toast.error('Jurnal close PO tidak dibuat: Akun Beban/HPP Jasa tidak ditemukan di COA.');
+          } else {
+            await supabase.from('journal_entries').delete().eq('reference', newReceipt.id);
+            const { data: entry, error: entryErr } = await supabase
+              .from('journal_entries')
+              .insert([{
+                entry_date: receiptData.receipt_date,
+                voucher_no: String((newReceipt as any).receipt_number || ''),
+                description: `Penerimaan Jasa ${String((newReceipt as any).receipt_number || '')}${selectedPO.po_number ? ` (PO ${selectedPO.po_number})` : ''}`,
+                entry_type: 'JOURNAL',
+                total_amount: closeAmount,
+                reference: newReceipt.id,
+              }])
+              .select()
+              .single();
+            if (entryErr) throw entryErr;
+
+            const itemsPayload: any[] = [
+              {
+                journal_entry_id: entry.id,
+                account_id: svcAcc.id,
+                debit: closeAmount,
+                credit: 0,
+                description: 'Penerimaan Jasa',
+              },
+              {
+                journal_entry_id: entry.id,
+                account_id: apAcc.id,
+                debit: 0,
+                credit: closeAmount,
+                description: 'Hutang Usaha',
+              },
+            ];
+            const { error: itemsErr } = await supabase.from('journal_entry_items').insert(itemsPayload);
+            if (itemsErr) throw itemsErr;
+          }
+        } catch (e: any) {
+          console.error('Gagal membuat jurnal close PO:', e);
+          toast.error('Close PO sukses, tapi gagal membuat jurnal: ' + (e?.message || 'Unknown error'));
+        }
+
+        toast.success('PO jasa berhasil di-close dan hutang dicatat.');
+        setIsDialogOpen(false);
+        fetchOpenPOs();
+        fetchReceiptHistory();
         return;
       }
 
@@ -665,8 +800,12 @@ export default function GoodsReceipt() {
   };
 
   const filteredPOs = pos.filter(p => 
-    p.po_number.toLowerCase().includes(search.toLowerCase()) ||
-    p.suppliers?.name.toLowerCase().includes(search.toLowerCase())
+    p.status !== 'RETURNED_FULL' &&
+    p.status !== 'CANCELLED' &&
+    (
+      p.po_number.toLowerCase().includes(search.toLowerCase()) ||
+      p.suppliers?.name.toLowerCase().includes(search.toLowerCase())
+    )
   );
 
   const filteredReceipts = receipts.filter(r => 
