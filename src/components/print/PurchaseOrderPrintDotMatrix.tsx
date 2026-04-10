@@ -168,10 +168,11 @@ export default function PurchaseOrderPrintDotMatrix({ id }: POPrintProps) {
     const itemLines: string[] = [];
     items.forEach((it, idx) => {
       const no = String(idx + 1);
-      const name = String(it.goods?.name || it.estimated_name || '-');
+      const name = String(it.goods?.name || it.service_name || '-');
       const brand = String(it.brand || '-');
       const qty = Number(it.quantity || 0);
-      const unit = String(it.goods?.unit || '-').toUpperCase();
+      const lt = String(it?.line_type || '').toUpperCase();
+      const unit = String(it.goods?.unit || (lt === 'JASA' ? 'JASA' : '-')).toUpperCase();
       const price = Number(it.unit_price || 0);
       const total = Number(it.total_price || qty * price);
 

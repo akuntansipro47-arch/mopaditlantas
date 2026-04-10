@@ -180,7 +180,7 @@ export default function VehicleEntryPage() {
   };
 
   const handleRemoveTempSparepart = (idx: number) => {
-    setTempSpareparts(tempSpareparts.filter((_, i) => i !== idx));
+    setTempSpareparts((prev) => prev.filter((_, i) => i !== idx));
   };
 
   const handleTempSparepartChange = (idx: number, field: string, value: any) => {
@@ -203,7 +203,12 @@ export default function VehicleEntryPage() {
   };
 
   const handleSaveSpareparts = () => {
-    const invalid = tempSpareparts.find((p) => !p.value_only && !String((p as any).goods_id || '').trim());
+    const invalid = tempSpareparts.find((p) => {
+      if ((p as any).value_only) return false;
+      const goodsId = String((p as any).goods_id || '').trim();
+      const itemCode = String((p as any).item_code || '').trim();
+      return !goodsId && !itemCode;
+    });
     if (invalid) {
       toast.error('Rincian sparepart wajib dipilih dari master barang (kode barang).');
       return;
@@ -1131,7 +1136,7 @@ export default function VehicleEntryPage() {
                                         className="h-8 text-right bg-gray-100 font-bold text-slate-700"
                                     />
                                 </div>
-                                <Button variant="ghost" size="icon" className="h-8 w-8 text-red-500" onClick={() => handleRemoveTempSparepart(idx)}>
+                                <Button type="button" variant="ghost" size="icon" className="h-8 w-8 text-red-500" onClick={() => handleRemoveTempSparepart(idx)}>
                                     <Trash2 className="h-4 w-4" />
                                 </Button>
                             </div>
