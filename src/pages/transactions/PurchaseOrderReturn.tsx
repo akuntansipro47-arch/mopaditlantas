@@ -267,7 +267,7 @@ export default function PurchaseOrderReturn() {
     setReturnNotes('');
     setReturnLines([]);
     setReturnMode('PARTIAL');
-    if (p.status === 'UNPAID') {
+    if (p.status === 'UNPAID' || p.status === 'PARTIAL') {
       setSettlementType('AP_DEDUCT');
       setSettlementAccountId(getDefaultApAccountId());
     } else {
@@ -293,9 +293,14 @@ export default function PurchaseOrderReturn() {
       toast.error('Tanggal retur wajib diisi.');
       return;
     }
-    const effectiveSettlementAccountId = settlementAccountId || (p.status === 'UNPAID' ? getDefaultApAccountId() : '');
-    const effectiveSettlementType = p.status === 'UNPAID' ? 'AP_DEDUCT' : settlementType;
-    if (p.status !== 'UNPAID' && !effectiveSettlementAccountId) {
+    const shouldUseApDeduct = p.status === 'UNPAID' || p.status === 'PARTIAL';
+    const effectiveSettlementAccountId = settlementAccountId || (shouldUseApDeduct ? getDefaultApAccountId() : '');
+    const effectiveSettlementType = shouldUseApDeduct ? 'AP_DEDUCT' : settlementType;
+    if (shouldUseApDeduct && !effectiveSettlementAccountId) {
+      toast.error('Akun Hutang Usaha (AP) belum disetting. Mohon set COA Hutang Usaha untuk penyelesaian retur.');
+      return;
+    }
+    if (p.status === 'PAID' && !effectiveSettlementAccountId) {
       toast.error('Akun penyelesaian wajib dipilih.');
       return;
     }
