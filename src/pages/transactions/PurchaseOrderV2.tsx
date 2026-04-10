@@ -172,7 +172,6 @@ export default function PurchaseOrderV2() {
           toast.error('Gagal memuat Work Order: ' + (w2Err.message || wErr.message));
           setWorkOrders([]);
         } else {
-          toast.warning('DB belum update lengkap, daftar WO dimuat dengan data estimasi minimal.');
           setWorkOrders(w2 || []);
         }
       }
