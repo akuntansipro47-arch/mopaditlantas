@@ -35,6 +35,13 @@ type POWithDetails = PO & {
   work_orders: WO | null; // Optional link
 };
 
+const normalizeText = (v: string) =>
+  String(v || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim()
+    .replace(/\s+/g, ' ');
+
 export default function PurchaseOrderV2() {
   const [pos, setPos] = useState<POWithDetails[]>([]);
   const [loading, setLoading] = useState(true);
@@ -704,10 +711,14 @@ export default function PurchaseOrderV2() {
                                               String(g.item_code || '').toLowerCase().replace(/\s+/g, '').trim() === codeNorm
                                           )
                                         : null;
+                                      const byNameExact = goodsList.find(
+                                        (g: any) => normalizeText(String(g.name || '')) === normalizeText(String(p.item_name || ''))
+                                      );
                                       const gid = String((p as any).goods_id || '') || String(byCode?.id || '');
+                                      const finalGid = gid || String(byNameExact?.id || '');
                                       return {
                                         line_type: 'PART' as const,
-                                        goods_id: gid,
+                                        goods_id: finalGid,
                                         job_type_id: '',
                                         service_name: '',
                                         brand: '',
