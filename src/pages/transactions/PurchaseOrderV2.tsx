@@ -134,7 +134,7 @@ export default function PurchaseOrderV2() {
             estimated_price,
             job_types (job_name, job_group)
           ),
-          vehicle_entry_spareparts (item_name, qty, estimated_price)
+          vehicle_entry_spareparts (goods_id, item_code, item_name, qty, estimated_price, value_only)
         )
       `)
       .in('status', ['OPEN', 'IN_PROGRESS']); // Fetch both OPEN and IN_PROGRESS
@@ -633,43 +633,61 @@ export default function PurchaseOrderV2() {
 
                               const jobs = wo.vehicle_entries?.vehicle_entry_jobs || [];
                               const jobItems = Array.isArray(jobs)
-                                ? jobs.map((j: any) => ({
-                                    line_type: 'JASA' as const,
-                                    goods_id: '',
-                                    job_type_id: String(j.job_type_id || ''),
-                                    service_name: String(j.job_types?.job_name || ''),
-                                    brand: '',
-                                    quantity: 1,
-                                    unit_price: Number(j.estimated_price || 0),
-                                  }))
+                                ? jobs
+                                    .map((j: any) => ({
+                                      line_type: 'JASA' as const,
+                                      goods_id: '',
+                                      job_type_id: String(j.job_type_id || ''),
+                                      service_name: String(j.job_types?.job_name || ''),
+                                      brand: '',
+                                      quantity: 1,
+                                      unit_price: Number(j.estimated_price || 0),
+                                    }))
+                                    .filter((x: any) => x.job_type_id && Number(x.unit_price || 0) > 0)
                                 : [];
 
                               const parts = wo.vehicle_entries?.vehicle_entry_spareparts || [];
                               const partItems = Array.isArray(parts)
-                                ? parts.map((p: any) => {
-                                    const match = goodsList.find((g) => g.name.toLowerCase() === String(p.item_name || '').toLowerCase());
-                                    return {
-                                      line_type: 'PART' as const,
-                                      goods_id: match ? match.id : '',
-                                      job_type_id: '',
-                                      service_name: '',
-                                      brand: '',
-                                      quantity: p.qty || 1,
-                                      unit_price: p.estimated_price || 0,
-                                      estimated_name: p.item_name,
-                                    };
-                                  })
+                                ? parts
+                                    .filter((p: any) => !Boolean((p as any).value_only))
+                                    .map((p: any) => {
+                                      const codeNorm = String((p as any).item_code || '')
+                                        .toLowerCase()
+                                        .replace(/\s+/g, '')
+                                        .trim();
+                                      const byCode = codeNorm
+                                        ? goodsList.find(
+                                            (g: any) =>
+                                              String(g.item_code || '').toLowerCase().replace(/\s+/g, '').trim() === codeNorm
+                                          )
+                                        : null;
+                                      const gid = String((p as any).goods_id || '') || String(byCode?.id || '');
+                                      return {
+                                        line_type: 'PART' as const,
+                                        goods_id: gid,
+                                        job_type_id: '',
+                                        service_name: '',
+                                        brand: '',
+                                        quantity: p.qty || 1,
+                                        unit_price: p.estimated_price || 0,
+                                        estimated_name: p.item_name,
+                                      };
+                                    })
+                                    .filter((x: any) => x.goods_id && Number(x.unit_price || 0) > 0)
                                 : [];
 
                               const combined = [...jobItems, ...partItems];
-                              const priced = combined.filter((x: any) => Number(x.unit_price || 0) > 0);
-                              const skipped = combined.length - priced.length;
+                              const rawJobsCount = Array.isArray(jobs) ? jobs.length : 0;
+                              const rawPartsCount = Array.isArray(parts) ? parts.length : 0;
+                              const shownJobs = jobItems.length;
+                              const shownParts = partItems.length;
+                              const skipped = rawJobsCount + rawPartsCount - (shownJobs + shownParts);
                               if (skipped > 0) {
-                                toast.info(`${skipped} item estimasi tidak dimuat karena harga = 0.`);
+                                toast.info(`${skipped} item estimasi tidak dimuat (harga=0 / belum terhubung ke master).`);
                               }
                               setPoItems(
-                                priced.length > 0
-                                  ? priced
+                                combined.length > 0
+                                  ? combined
                                   : [{ line_type: 'PART', goods_id: '', job_type_id: '', service_name: '', brand: '', quantity: 1, unit_price: 0 }]
                               );
                             }}
