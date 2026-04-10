@@ -41,6 +41,7 @@ export default function PurchaseOrderReturn() {
   const [returnDate, setReturnDate] = useState(new Date().toISOString().split('T')[0]);
   const [returnNotes, setReturnNotes] = useState('');
   const [returnLines, setReturnLines] = useState<ReturnLine[]>([]);
+  const [returnMode, setReturnMode] = useState<'PARTIAL' | 'FULL'>('PARTIAL');
   const [settlementType, setSettlementType] = useState<'REFUND' | 'DEPOSIT' | 'AP_DEDUCT'>('REFUND');
   const [settlementAccountId, setSettlementAccountId] = useState<string>('');
   const [coaAccounts, setCoaAccounts] = useState<any[]>([]);
@@ -66,6 +67,14 @@ export default function PurchaseOrderReturn() {
     };
     loadCoa();
   }, []);
+
+  useEffect(() => {
+    if (!isConfirmOpen) return;
+    if (returnMode !== 'FULL') return;
+    setReturnLines((prev) =>
+      (prev || []).map((l) => ({ ...l, return_qty: Number(l.available_qty || 0) }))
+    );
+  }, [returnMode, isConfirmOpen]);
 
   const getPoPaymentInfo = (po: any) => {
     const inv = (po as any)?.purchase_invoices;
@@ -257,6 +266,7 @@ export default function PurchaseOrderReturn() {
     setReturnDate(new Date().toISOString().split('T')[0]);
     setReturnNotes('');
     setReturnLines([]);
+    setReturnMode('PARTIAL');
     if (p.status === 'UNPAID') {
       setSettlementType('AP_DEDUCT');
       setSettlementAccountId(getDefaultApAccountId());
@@ -666,6 +676,27 @@ export default function PurchaseOrderReturn() {
               </div>
             </div>
 
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-2">
+                <Label className="text-xs text-slate-500">Mode Retur</Label>
+                <Select value={returnMode} onValueChange={(v: any) => setReturnMode(v)}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Pilih mode..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="PARTIAL">Retur Sebagian</SelectItem>
+                    <SelectItem value="FULL">Retur Keseluruhan</SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-slate-500">
+                  {returnMode === 'FULL'
+                    ? 'Otomatis mengisi qty retur = sisa diterima untuk semua barang.'
+                    : 'Isi qty retur per barang (satu per satu).'}
+                </p>
+              </div>
+              <div />
+            </div>
+
             {(() => {
               const p = getPoPaymentInfo(selectedPO);
               if (p.status === 'UNPAID') return null;
@@ -747,7 +778,7 @@ export default function PurchaseOrderReturn() {
                               const v = Math.max(0, Number(e.target.value || 0));
                               setReturnLines((prev) => prev.map((x) => x.goods_id === l.goods_id ? { ...x, return_qty: v } : x));
                             }}
-                            disabled={isProcessing || l.available_qty <= 0}
+                            disabled={isProcessing || l.available_qty <= 0 || returnMode === 'FULL'}
                             className="h-9 w-24 text-center inline-flex"
                           />
                         </TableCell>
