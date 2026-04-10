@@ -203,7 +203,15 @@ export default function VehicleEntryPage() {
   };
 
   const handleSaveSpareparts = () => {
-    const invalid = tempSpareparts.find((p) => {
+    const normalized = tempSpareparts.filter((p) => {
+      if ((p as any).value_only) return true;
+      const goodsId = String((p as any).goods_id || '').trim();
+      const itemCode = String((p as any).item_code || '').trim();
+      const name = String((p as any).name || '').trim();
+      return Boolean(goodsId || itemCode || name);
+    });
+
+    const invalid = normalized.find((p) => {
       if ((p as any).value_only) return false;
       const goodsId = String((p as any).goods_id || '').trim();
       const itemCode = String((p as any).item_code || '').trim();
@@ -215,7 +223,7 @@ export default function VehicleEntryPage() {
     }
     if (activeJobIndex !== null) {
       const newJobs = [...entryJobs];
-      newJobs[activeJobIndex].spareparts = tempSpareparts;
+      newJobs[activeJobIndex].spareparts = normalized;
       newJobs[activeJobIndex].sparepart_enabled = true;
       setEntryJobs(newJobs);
     }
