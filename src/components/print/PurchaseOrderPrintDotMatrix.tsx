@@ -113,6 +113,8 @@ export default function PurchaseOrderPrintDotMatrix({ id }: POPrintProps) {
 
     const poNumber = String(po.po_number || '-');
     const poDate = String(po.po_date || '').replace(/-/g, '/');
+    const dateLabel = `TGL ${poDate}`;
+    const dateCol = Math.max(12, dateLabel.length);
 
     const supplierName = String(po.suppliers?.name || '-');
     const supplierAddress = String(po.suppliers?.address || '-');
@@ -127,7 +129,7 @@ export default function PurchaseOrderPrintDotMatrix({ id }: POPrintProps) {
       padRight(agencyAddress, WIDTH),
       padRight([agencyPhone ? `Telp: ${agencyPhone}` : '', agencyEmail ? `Email: ${agencyEmail}` : ''].filter(Boolean).join(' | '), WIDTH),
       line(WIDTH, '='),
-      padRight(`PURCHASE ORDER  ${poNumber}`, WIDTH - 12) + padLeft(`TGL ${poDate}`, 12),
+      padRight(`PURCHASE ORDER  ${poNumber}`, WIDTH - dateCol) + padLeft(dateLabel, dateCol),
       line(WIDTH, '-'),
       padRight(`SUPPLIER : ${supplierName}`, WIDTH),
       padRight(`ALAMAT   : ${supplierAddress}`, WIDTH),
@@ -201,9 +203,11 @@ export default function PurchaseOrderPrintDotMatrix({ id }: POPrintProps) {
     });
 
     const totalAmount = Number(po.total_amount || items.reduce((s, it) => s + Number(it.total_price || 0), 0));
+    const totalLabel = `TOTAL: ${formatMoney(totalAmount)}`;
+    const totalCol = Math.max(15, totalLabel.length);
     const footerLines = [
       line(WIDTH, '-'),
-      padRight('', WIDTH - 15) + padLeft(`TOTAL: ${formatMoney(totalAmount)}`, 15),
+      padRight('', WIDTH - totalCol) + padLeft(totalLabel, totalCol),
       '',
       padRight('Dibuat Oleh,', 26) + padRight('Disetujui Oleh,', 27) + padRight('Diketahui Oleh,', 27),
       '',
