@@ -167,11 +167,15 @@ export default function VehicleEntryPage() {
   const handleOpenSparepartDialog = (index: number) => {
     setEntryJobs((prev) => {
       const next = [...prev];
-      if (next[index]) next[index] = { ...next[index], sparepart_enabled: true };
+      if (next[index]) {
+        next[index] = { ...next[index], sparepart_enabled: true };
+        setTempSpareparts(next[index].spareparts || []);
+      } else {
+        setTempSpareparts([]);
+      }
       return next;
     });
     setActiveJobIndex(index);
-    setTempSpareparts(entryJobs[index].spareparts || []);
     setIsSparepartDialogOpen(true);
   };
 
@@ -211,21 +215,24 @@ export default function VehicleEntryPage() {
       return Boolean(goodsId || itemCode || name);
     });
 
-    const invalid = normalized.find((p) => {
-      if ((p as any).value_only) return false;
+    const cleaned = normalized.map((p) => {
       const goodsId = String((p as any).goods_id || '').trim();
       const itemCode = String((p as any).item_code || '').trim();
-      return !goodsId && !itemCode;
+      if (!goodsId && !itemCode) return { ...p, value_only: true };
+      return p;
     });
-    if (invalid) {
-      toast.error('Rincian sparepart wajib dipilih dari master barang (kode barang).');
-      return;
-    }
+
     if (activeJobIndex !== null) {
-      const newJobs = [...entryJobs];
-      newJobs[activeJobIndex].spareparts = normalized;
-      newJobs[activeJobIndex].sparepart_enabled = true;
-      setEntryJobs(newJobs);
+      setEntryJobs((prev) => {
+        const next = [...prev];
+        if (!next[activeJobIndex]) return next;
+        next[activeJobIndex] = {
+          ...next[activeJobIndex],
+          spareparts: cleaned,
+          sparepart_enabled: cleaned.length > 0,
+        };
+        return next;
+      });
     }
     setIsSparepartDialogOpen(false);
   };
