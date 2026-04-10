@@ -13,7 +13,7 @@ import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
-import { formatDate } from '@/lib/utils';
+import { formatCurrency, formatDate } from '@/lib/utils';
 import { Badge } from "@/components/ui/badge";
 
 type PO = Database['public']['Tables']['purchase_orders']['Row'];
@@ -23,6 +23,7 @@ type GoodsReceiptRow = Database['public']['Tables']['goods_receipts']['Row'];
 
 type POItemWithDetails = POItem & {
   goods: Goods | null;
+  job_types?: { job_name: string | null; job_group: string | null; hpp?: number | null } | null;
 };
 
 type POWithDetails = PO & {
@@ -418,7 +419,8 @@ export default function GoodsReceipt() {
           purchase_returns (id),
           items:purchase_order_items (
             *,
-            goods (name, unit, item_code)
+            goods (name, unit, item_code),
+            job_types (job_name, job_group, hpp)
           )
         `)
         .in('status', ['ISSUED', 'RECEIVED_PART'])
@@ -476,6 +478,21 @@ export default function GoodsReceipt() {
       receipt_date: new Date().toISOString().split('T')[0],
       notes: '',
     });
+
+    try {
+      const { data: freshItems } = await supabase
+        .from('purchase_order_items')
+        .select(`
+          *,
+          goods (name, unit, item_code),
+          job_types (job_name, job_group, hpp)
+        `)
+        .eq('po_id', po.id);
+      if (freshItems) {
+        setSelectedPO((prev) => (prev && prev.id === po.id ? ({ ...prev, items: freshItems as any } as any) : prev));
+      }
+    } catch {
+    }
     
     // Fetch previously received quantities for this PO
     const { data: existingReceipts } = await supabase
@@ -983,7 +1000,57 @@ export default function GoodsReceipt() {
              </div>
 
              <div className="border rounded-md p-4 bg-slate-50 max-h-[300px] overflow-y-auto">
-                <Label className="mb-2 block font-semibold">Rincian Barang (Partial Receiving)</Label>
+                {(() => {
+                  const items = (selectedPO?.items || []) as any[];
+                  const goodsIds = Array.from(new Set(items.map((i) => i.goods_id))).filter(Boolean);
+                  const jasaLines = items.filter((i) => {
+                    const lt = String(i?.line_type || '').toUpperCase();
+                    return lt === 'JASA' || (!i?.goods_id && (i?.service_name || i?.job_type_id));
+                  });
+
+                  if (goodsIds.length === 0 && jasaLines.length > 0) {
+                    return (
+                      <>
+                        <Label className="mb-2 block font-semibold">Rincian Jasa (Close PO)</Label>
+                        <Table>
+                          <TableHeader>
+                            <TableRow>
+                              <TableHead>Nama Jasa</TableHead>
+                              <TableHead className="w-24 text-center">Qty</TableHead>
+                              <TableHead className="w-40 text-right">Harga</TableHead>
+                              <TableHead className="w-44 text-right">Subtotal</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {jasaLines.map((it, idx) => {
+                              const name =
+                                String(it?.service_name || '').trim() ||
+                                String(it?.job_types?.job_name || '').trim() ||
+                                'Jasa';
+                              const qty = Number(it?.quantity || 0);
+                              const unit = Number(it?.unit_price || 0);
+                              const sub = qty * unit;
+                              return (
+                                <TableRow key={String(it?.id || idx)}>
+                                  <TableCell>
+                                    <div className="font-medium">{name}</div>
+                                    <div className="text-xs text-muted-foreground">{String(it?.job_types?.job_group || '')}</div>
+                                  </TableCell>
+                                  <TableCell className="text-center">{qty}</TableCell>
+                                  <TableCell className="text-right">{formatCurrency(unit)}</TableCell>
+                                  <TableCell className="text-right font-bold">{formatCurrency(sub)}</TableCell>
+                                </TableRow>
+                              );
+                            })}
+                          </TableBody>
+                        </Table>
+                      </>
+                    );
+                  }
+
+                  return (
+                    <>
+                      <Label className="mb-2 block font-semibold">Rincian Barang (Partial Receiving)</Label>
                 <Table>
                   <TableHeader>
                     <TableRow>
@@ -996,7 +1063,7 @@ export default function GoodsReceipt() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {selectedPO && Array.from(new Set(selectedPO.items.map(i => i.goods_id))).map((goodsId) => {
+                    {selectedPO && goodsIds.map((goodsId: any) => {
                        if (!goodsId) return null;
                        const item = selectedPO.items.find(i => i.goods_id === goodsId);
                        if (!item) return null;
@@ -1042,18 +1109,34 @@ export default function GoodsReceipt() {
                     })}
                   </TableBody>
                 </Table>
+                    </>
+                  );
+                })()}
              </div>
              
              <div className="flex items-center space-x-2 text-sm text-blue-700 bg-blue-50 p-3 rounded-md">
                 <CheckCircle2 className="h-4 w-4" />
-                <span>Pastikan jumlah yang diterima sesuai dengan fisik barang. Status PO akan otomatis menjadi "RECEIVED PART" atau "RECEIVED FULL".</span>
+                <span>
+                  {(() => {
+                    const items = (selectedPO?.items || []) as any[];
+                    const hasGoods = items.some((i) => Boolean(i?.goods_id));
+                    return hasGoods
+                      ? 'Pastikan jumlah yang diterima sesuai dengan fisik barang. Status PO akan otomatis menjadi "RECEIVED PART" atau "RECEIVED FULL".'
+                      : 'PO berisi JASA (tanpa stok). Proses ini akan menutup PO dan mencatat hutang serta jurnal HPP Jasa.';
+                  })()}
+                </span>
              </div>
           </div>
 
           <DialogFooter>
             <Button variant="outline" onClick={() => setIsDialogOpen(false)}>Batal</Button>
             <Button onClick={handleReceive} disabled={loading}>
-              {loading ? 'Memproses...' : 'Konfirmasi Terima Barang'}
+              {(() => {
+                if (loading) return 'Memproses...';
+                const items = (selectedPO?.items || []) as any[];
+                const hasGoods = items.some((i) => Boolean(i?.goods_id));
+                return hasGoods ? 'Konfirmasi Terima Barang' : 'Close PO Jasa';
+              })()}
             </Button>
           </DialogFooter>
         </DialogContent>
