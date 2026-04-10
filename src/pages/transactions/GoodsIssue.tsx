@@ -690,12 +690,32 @@ export default function GoodsIssuePage() {
 
       const issuedMap = await fetchIssuedSummaryForWO(String(formData.work_order_id || ''), editingId);
       const offenders: string[] = [];
+
+      const oldQtyByGoodsId: Record<string, number> = {};
+      if (editingId) {
+        const { data: old } = await supabase
+          .from('goods_issue_items')
+          .select('goods_id, quantity, value_only')
+          .eq('issue_id', editingId);
+        (old || []).forEach((x: any) => {
+          const gid = String(x?.goods_id || '');
+          if (!gid) return;
+          if (Boolean(x?.value_only)) return;
+          oldQtyByGoodsId[gid] = (oldQtyByGoodsId[gid] || 0) + Number(x?.quantity || 0);
+        });
+      }
+
       for (const it of itemsToSubmit) {
         if (!it.goods_id) continue;
         if (Boolean(it.value_only)) continue;
         const issued = Number(issuedMap[it.goods_id]?.qty || 0);
         const cap = Number.isFinite(Number(it.cap_quantity)) ? Number(it.cap_quantity) : null;
         const qty = Number(it.quantity || 0);
+
+        const oldQty = Number(oldQtyByGoodsId[it.goods_id] || 0);
+        const delta = qty - oldQty;
+        if (editingId && delta <= 0) continue;
+
         if (cap === null) {
           if (issued > 0 && qty > 0) {
             const gName = goodsList.find((g) => g.id === it.goods_id)?.name || it.goods_id;
