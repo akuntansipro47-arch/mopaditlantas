@@ -677,6 +677,9 @@ export default function PurchaseOrderV2() {
                                 : [];
 
                               const parts = wo.vehicle_entries?.vehicle_entry_spareparts || [];
+                              const hasGoodsRefColumns =
+                                Array.isArray(parts) &&
+                                parts.some((p: any) => Object.prototype.hasOwnProperty.call(p, 'goods_id') || Object.prototype.hasOwnProperty.call(p, 'item_code'));
                               const partItems = Array.isArray(parts)
                                 ? parts
                                     .filter((p: any) => !Boolean((p as any).value_only))
@@ -703,7 +706,11 @@ export default function PurchaseOrderV2() {
                                         estimated_name: p.item_name,
                                       };
                                     })
-                                    .filter((x: any) => x.goods_id && Number(x.unit_price || 0) > 0)
+                                    .filter((x: any) => {
+                                      if (Number(x.unit_price || 0) <= 0) return false;
+                                      if (!hasGoodsRefColumns) return true;
+                                      return Boolean(x.goods_id);
+                                    })
                                 : [];
 
                               const combined = [...jobItems, ...partItems];
