@@ -640,11 +640,11 @@ export default function VehicleEntryPage() {
                       allSpareparts.push({
                           vehicle_entry_id: targetId,
                           job_type_id: job.job_id,
-                          goods_id: part.goods_id ? part.goods_id : null,
-                          item_code: part.item_code ? part.item_code : null,
                           item_name: part.name,
                           qty: part.qty,
                           estimated_price: part.price,
+                          goods_id: part.goods_id ? part.goods_id : null,
+                          item_code: part.item_code ? part.item_code : null,
                           value_only: Boolean(part.value_only),
                       });
                   });
@@ -652,30 +652,33 @@ export default function VehicleEntryPage() {
           });
 
           if (allSpareparts.length > 0) {
-               const hasGoodsRef = allSpareparts.some((p) => Boolean((p as any).goods_id) || Boolean((p as any).item_code));
-               if (hasGoodsRef) {
-                 const { error: colErr } = await supabase
-                   .from('vehicle_entry_spareparts')
-                   .select('goods_id')
-                   .limit(1);
-                 if (colErr) {
-                   toast.error("DB belum siap: kolom referensi barang (goods_id/item_code) belum ada. Jalankan migration 20260409_add_goods_ref_to_vehicle_entry_spareparts.sql di Supabase.");
-                   return;
-                 }
-               }
-               const hasValueOnly = allSpareparts.some((p) => Boolean((p as any).value_only));
-               if (hasValueOnly) {
-                 const { error: colErr } = await supabase
-                   .from('vehicle_entry_spareparts')
-                   .select('value_only')
-                   .limit(1);
-                 if (colErr) {
-                   toast.error("DB belum siap: kolom 'value_only' belum ada. Jalankan migration 20260331_add_value_only_flags.sql di Supabase.");
-                   return;
-                 }
-               }
-               const { error: spError } = await supabase.from('vehicle_entry_spareparts').insert(allSpareparts);
-               if (spError) throw spError;
+            const supportsColumn = async (column: string) => {
+              const { error } = await supabase.from('vehicle_entry_spareparts').select(column).limit(1);
+              return !error;
+            };
+
+            const [supportsGoodsId, supportsItemCode, supportsValueOnly] = await Promise.all([
+              supportsColumn('goods_id'),
+              supportsColumn('item_code'),
+              supportsColumn('value_only'),
+            ]);
+
+            const payload = allSpareparts.map((p) => {
+              const base: any = {
+                vehicle_entry_id: p.vehicle_entry_id,
+                job_type_id: p.job_type_id,
+                item_name: p.item_name,
+                qty: p.qty,
+                estimated_price: p.estimated_price,
+              };
+              if (supportsGoodsId) base.goods_id = p.goods_id;
+              if (supportsItemCode) base.item_code = p.item_code;
+              if (supportsValueOnly) base.value_only = Boolean(p.value_only);
+              return base;
+            });
+
+            const { error: spError } = await supabase.from('vehicle_entry_spareparts').insert(payload);
+            if (spError) throw spError;
           }
       }
 
