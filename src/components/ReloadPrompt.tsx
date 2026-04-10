@@ -29,6 +29,10 @@ export default function ReloadPrompt() {
       },
       duration: Infinity,
     })
+
+    window.setTimeout(() => {
+      updateServiceWorker(true)
+    }, 4000)
   }, [needRefresh, updateServiceWorker])
 
   useEffect(() => {
