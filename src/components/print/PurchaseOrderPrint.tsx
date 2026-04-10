@@ -13,6 +13,18 @@ export default function PurchaseOrderPrint({ id }: POPrintProps) {
   const [loading, setLoading] = useState(true);
   const [agency, setAgency] = useState<any>(null);
 
+  const getItemName = (item: any) => {
+    const lt = String(item?.line_type || '').toUpperCase();
+    if (lt === 'JASA') return item?.service_name || '-';
+    return item?.goods?.name || item?.service_name || '-';
+  };
+
+  const getItemUnit = (item: any) => {
+    const lt = String(item?.line_type || '').toUpperCase();
+    if (lt === 'JASA') return 'JASA';
+    return item?.goods?.unit || '-';
+  };
+
   useEffect(() => {
     fetchData();
   }, [id]);
@@ -148,11 +160,11 @@ export default function PurchaseOrderPrint({ id }: POPrintProps) {
             <tr key={index} className="border-b border-gray-200">
               <td className="py-0.5 px-1 align-top text-center border-r border-gray-300">{index + 1}</td>
               <td className="py-0.5 px-1 align-top border-r border-gray-300">
-                <span className="font-medium block leading-tight">{item.goods?.name}</span>
+                <span className="font-medium block leading-tight">{getItemName(item)}</span>
               </td>
               <td className="py-0.5 px-1 align-top border-r border-gray-300 leading-tight">{item.brand || '-'}</td>
               <td className="py-0.5 px-1 align-top text-center font-medium border-r border-gray-300">{item.quantity}</td>
-              <td className="py-0.5 px-1 align-top text-center text-gray-500 text-[9px] uppercase border-r border-gray-300">{item.goods?.unit}</td>
+              <td className="py-0.5 px-1 align-top text-center text-gray-500 text-[9px] uppercase border-r border-gray-300">{getItemUnit(item)}</td>
               <td className="py-0.5 px-1 align-top text-right border-r border-gray-300">{formatCurrency(item.unit_price)}</td>
               <td className="py-0.5 px-1 align-top text-right font-bold">{formatCurrency(item.total_price)}</td>
             </tr>
