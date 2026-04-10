@@ -320,9 +320,34 @@ export default function PurchaseOrderReturn() {
       return;
     }
 
-    const stockInvalid = itemsToReturn.find((l) => l.return_qty > l.current_stock + 1e-9);
-    if (stockInvalid) {
-      toast.error(`Stok tidak cukup untuk retur ${stockInvalid.name || stockInvalid.item_code}.`);
+    const qtyByGoodsId = new Map<string, number>();
+    itemsToReturn.forEach((l) => {
+      const gid = String(l.goods_id || '');
+      if (!gid) return;
+      qtyByGoodsId.set(gid, (qtyByGoodsId.get(gid) || 0) + Number(l.return_qty || 0));
+    });
+
+    const goodsIds = Array.from(qtyByGoodsId.keys());
+    const { data: freshStocks, error: stockErr } = await supabase
+      .from('goods')
+      .select('id, current_stock')
+      .in('id', goodsIds);
+    if (stockErr) throw stockErr;
+
+    const stockById = new Map<string, number>();
+    (freshStocks || []).forEach((g: any) => stockById.set(String(g.id), Number(g.current_stock || 0)));
+
+    const stockInvalidId = goodsIds.find((gid) => {
+      const req = Number(qtyByGoodsId.get(gid) || 0);
+      const cur = Number(stockById.get(gid) || 0);
+      return req > cur + 1e-9;
+    });
+    if (stockInvalidId) {
+      const line = itemsToReturn.find((l) => String(l.goods_id) === String(stockInvalidId));
+      const name = line?.name || line?.item_code || stockInvalidId;
+      const req = Number(qtyByGoodsId.get(stockInvalidId) || 0);
+      const cur = Number(stockById.get(stockInvalidId) || 0);
+      toast.error(`Stok tidak cukup untuk retur ${name}. Stok: ${cur}, Retur: ${req}.`);
       return;
     }
 
@@ -359,12 +384,13 @@ export default function PurchaseOrderReturn() {
       const { error: iErr } = await supabase.from('purchase_return_items').insert(payload as any);
       if (iErr) throw iErr;
 
-      for (const l of itemsToReturn) {
-        const newStock = Math.max(0, Number(l.current_stock || 0) - Number(l.return_qty || 0));
+      for (const [gid, qty] of qtyByGoodsId.entries()) {
+        const cur = Number(stockById.get(gid) || 0);
+        const newStock = Math.max(0, cur - Number(qty || 0));
         const { error: uErr } = await supabase
           .from('goods')
           .update({ current_stock: newStock })
-          .eq('id', l.goods_id);
+          .eq('id', gid);
         if (uErr) throw uErr;
       }
 
