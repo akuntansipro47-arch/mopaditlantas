@@ -707,14 +707,6 @@ export default function PurchaseOrderV2() {
                                 : [];
 
                               const combined = [...jobItems, ...partItems];
-                              const rawJobsCount = Array.isArray(jobs) ? jobs.length : 0;
-                              const rawPartsCount = Array.isArray(parts) ? parts.length : 0;
-                              const shownJobs = jobItems.length;
-                              const shownParts = partItems.length;
-                              const skipped = rawJobsCount + rawPartsCount - (shownJobs + shownParts);
-                              if (skipped > 0) {
-                                toast.info(`${skipped} item estimasi tidak dimuat (harga=0 / belum terhubung ke master).`);
-                              }
                               setPoItems(
                                 combined.length > 0
                                   ? combined
