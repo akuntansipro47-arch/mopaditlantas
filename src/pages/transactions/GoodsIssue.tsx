@@ -207,11 +207,11 @@ export default function GoodsIssuePage() {
   }
 
   const handleAddItem = () => {
-    setIssueItems([...issueItems, { goods_id: '', quantity: 1, cap_quantity: null, issued_quantity: 0, locked: false, source: 'MANUAL', mismatch: false, hint: '', value_only: false }]);
+    setIssueItems((prev) => [...prev, { goods_id: '', quantity: 1, cap_quantity: null, issued_quantity: 0, locked: false, source: 'MANUAL', mismatch: false, hint: '', value_only: false }]);
   };
 
   const handleRemoveItem = (index: number) => {
-    setIssueItems(issueItems.filter((_, i) => i !== index));
+    setIssueItems((prev) => prev.filter((_, i) => i !== index));
   };
 
   const handleOpenSearch = (index: number) => {
@@ -673,7 +673,16 @@ export default function GoodsIssuePage() {
         }
       }
 
-      const invalid = issueItems.some((it) => !it.goods_id || Number(it.quantity || 0) <= 0);
+      const itemsToSubmit = (issueItems || [])
+        .map((it) => ({ ...it, quantity: Number(it.quantity || 0) }))
+        .filter((it) => it.goods_id && it.quantity > 0);
+
+      if (itemsToSubmit.length === 0) {
+        toast.error('Isi minimal 1 qty barang keluar.');
+        return null;
+      }
+
+      const invalid = itemsToSubmit.some((it) => !it.goods_id || Number(it.quantity || 0) <= 0);
       if (invalid) {
         toast.error('Pastikan semua item sudah dipilih dan qty > 0');
         return null;
@@ -681,7 +690,7 @@ export default function GoodsIssuePage() {
 
       const issuedMap = await fetchIssuedSummaryForWO(String(formData.work_order_id || ''), editingId);
       const offenders: string[] = [];
-      for (const it of issueItems) {
+      for (const it of itemsToSubmit) {
         if (!it.goods_id) continue;
         if (Boolean(it.value_only)) continue;
         const issued = Number(issuedMap[it.goods_id]?.qty || 0);
@@ -762,7 +771,7 @@ export default function GoodsIssuePage() {
 
       // 4. Insert New Items & Deduct Stock (Common for both)
       if (targetIssueId) {
-        const itemsPayload = issueItems.map((item) => ({
+        const itemsPayload = itemsToSubmit.map((item) => ({
           issue_id: targetIssueId,
           goods_id: item.goods_id,
           quantity: Number(item.quantity || 0),
@@ -776,7 +785,7 @@ export default function GoodsIssuePage() {
         if (itemsError) throw itemsError;
 
         // Deduct Stock
-        for (const item of issueItems) {
+        for (const item of itemsToSubmit) {
           if (item.goods_id && !item.value_only) {
              const { data: currentGood } = await supabase
                .from('goods')
