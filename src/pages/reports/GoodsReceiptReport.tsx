@@ -110,6 +110,7 @@ export default function GoodsReceiptReport() {
             po_number,
             po_date,
             suppliers (name),
+            work_orders (wo_number),
             items:purchase_order_items (
               goods_id,
               unit_price,
@@ -142,6 +143,7 @@ export default function GoodsReceiptReport() {
                     po_number: receipt.purchase_orders?.po_number,
                     po_date: receipt.purchase_orders?.po_date,
                     supplier_name: receipt.purchase_orders?.suppliers?.name,
+                    wo_number: receipt.purchase_orders?.work_orders?.wo_number,
                     quantity_received: poItem.quantity,
                     unit_price: poItem.unit_price,
                     goods: {
@@ -166,6 +168,7 @@ export default function GoodsReceiptReport() {
           po_number: receipt.purchase_orders?.po_number,
           po_date: receipt.purchase_orders?.po_date,
           supplier_name: receipt.purchase_orders?.suppliers?.name,
+          wo_number: receipt.purchase_orders?.work_orders?.wo_number,
           // Find price from PO items
           unit_price: receipt.purchase_orders?.items?.find((pi: any) => pi.goods_id === item.goods?.id)?.unit_price || 0,
           item_type: item.goods?.item_type || 'LAINNYA',
@@ -464,6 +467,7 @@ export default function GoodsReceiptReport() {
       'Tanggal Terima': formatDate(item.receipt_date),
       'No. PO': item.po_number,
       'Tanggal PO': formatDate(item.po_date),
+      'No. WO': item.wo_number || '-',
       'Supplier': item.supplier_name,
       'Tipe Barang': item.goods?.item_type,
       'Kode Barang': item.goods?.item_code,
@@ -558,6 +562,7 @@ export default function GoodsReceiptReport() {
                 <TableHead>Tanggal Terima</TableHead>
                 <TableHead>No. Terima</TableHead>
                 <TableHead>No. PO</TableHead>
+                <TableHead>No. WO</TableHead>
                 <TableHead>Supplier</TableHead>
                 <TableHead>Nama Barang</TableHead>
                 <TableHead>Tipe</TableHead>
@@ -568,13 +573,14 @@ export default function GoodsReceiptReport() {
             </TableHeader>
             <TableBody>
               {filteredData.length === 0 ? (
-                <TableRow><TableCell colSpan={8} className="text-center py-8">Tidak ada data.</TableCell></TableRow>
+                <TableRow><TableCell colSpan={10} className="text-center py-8">Tidak ada data.</TableCell></TableRow>
               ) : (
                 filteredData.map((item, idx) => (
                   <TableRow key={idx}>
                     <TableCell>{formatDate(item.receipt_date)}</TableCell>
                     <TableCell className="font-medium">{item.receipt_number}</TableCell>
                     <TableCell>{item.po_number}</TableCell>
+                    <TableCell>{item.wo_number || '-'}</TableCell>
                     <TableCell>{item.supplier_name}</TableCell>
                     <TableCell>
                       <div className="font-medium">{item.goods?.name}</div>
