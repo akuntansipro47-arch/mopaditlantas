@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Search, Printer, FileDown } from 'lucide-react';
+import { Search, Printer, FileDown, RefreshCw } from 'lucide-react';
 import { formatCurrency, formatDate } from '@/lib/utils';
 import * as XLSX from 'xlsx';
 
@@ -274,6 +274,9 @@ export default function EstimationVsRealizationReport() {
           <p className="text-muted-foreground">Monitoring unit masuk dan perbandingan nilai estimasi vs realisasi.</p>
         </div>
         <div className="flex gap-2">
+            <Button variant="outline" onClick={fetchData} disabled={loading}>
+                <RefreshCw className={`mr-2 h-4 w-4 ${loading ? 'animate-spin' : ''}`} /> Segarkan
+            </Button>
             <Button variant="outline" onClick={exportToExcel}>
                 <FileDown className="mr-2 h-4 w-4" /> Export Excel
             </Button>
