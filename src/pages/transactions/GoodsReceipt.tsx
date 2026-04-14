@@ -587,7 +587,7 @@ export default function GoodsReceipt() {
           receipt_date,
           notes,
           created_at,
-          purchase_order_id,
+          po_id,
           purchase_orders (
             po_number,
             suppliers (name),
