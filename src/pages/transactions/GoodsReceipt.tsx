@@ -495,7 +495,7 @@ export default function GoodsReceipt() {
       const { error: itemError } = await supabase
         .from('goods_receipt_items')
         .delete()
-        .eq('goods_receipt_id', receipt.id);
+        .eq('receipt_id', receipt.id);
 
       if (itemError) throw new Error(`Gagal menghapus item penerimaan: ${itemError.message}`);
 
