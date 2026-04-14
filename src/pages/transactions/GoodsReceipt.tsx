@@ -438,13 +438,83 @@ export default function GoodsReceipt() {
   }
 
   const handleCancelReceipt = async (receipt: GoodsReceiptWithDetails) => {
-    // TODO: Implement cancellation logic
+    if (!receipt) return;
+
     // 1. Check if all items are 'JASA'
-    // 2. Check if invoice exists and is unpaid
+    const allItemsAreJasa = receipt.items.every(item => item.goods?.item_type?.toUpperCase() === 'JASA' || item.goods?.item_type?.toUpperCase() === 'SERVICE');
+    if (!allItemsAreJasa) {
+      toast.error('Pembatalan gagal.', { description: 'Fitur ini hanya untuk penerimaan yang seluruhnya berisi JASA.' });
+      return;
+    }
+
+    // 2. Check for associated invoices and their payment status
+    const { data: invoices, error: invoiceError } = await supabase
+      .from('purchase_invoices')
+      .select('id, status, paid_amount')
+      .eq('goods_receipt_id', receipt.id);
+
+    if (invoiceError) {
+      toast.error('Gagal memeriksa invoice: ' + invoiceError.message);
+      return;
+    }
+
+    if (invoices && invoices.length > 0) {
+      const paidInvoice = invoices.find(inv => (inv.paid_amount || 0) > 0);
+      if (paidInvoice) {
+        toast.error('Pembatalan gagal.', { description: `Penerimaan ini sudah ditagih (Invoice) dan sudah ada pembayaran.` });
+        return;
+      }
+      toast.error('Pembatalan gagal.', { description: 'Penerimaan ini sudah dibuatkan invoice. Hapus invoice terlebih dahulu.' });
+      return;
+    }
+
     // 3. Confirm with user
-    // 4. Delete receipt and items
-    // 5. Refresh data
-    toast.info(`Pembatalan untuk ${receipt.receipt_number} belum diimplementasikan.`);
+    const isConfirmed = await new Promise((resolve) => {
+        toast(
+            "Konfirmasi Pembatalan",
+            {
+                description: `Anda yakin ingin membatalkan penerimaan ${receipt.receipt_number}? Tindakan ini tidak bisa diurungkan.`,
+                action: {
+                    label: "Ya, Batalkan",
+                    onClick: () => resolve(true),
+                },
+                onDismiss: () => resolve(false),
+                onAutoClose: () => resolve(false),
+            }
+        );
+    });
+
+    if (!isConfirmed) {
+        toast.info('Pembatalan dibatalkan oleh pengguna.');
+        return;
+    }
+
+    setLoading(true);
+    try {
+      // 4. Delete receipt items and then the receipt itself
+      const { error: itemError } = await supabase
+        .from('goods_receipt_items')
+        .delete()
+        .eq('goods_receipt_id', receipt.id);
+
+      if (itemError) throw new Error(`Gagal menghapus item penerimaan: ${itemError.message}`);
+
+      const { error: headerError } = await supabase
+        .from('goods_receipts')
+        .delete()
+        .eq('id', receipt.id);
+
+      if (headerError) throw new Error(`Gagal menghapus header penerimaan: ${headerError.message}`);
+      
+      // 5. Refresh data
+      toast.success('Penerimaan berhasil dibatalkan.');
+      fetchReceiptHistory(); // Refresh the list
+
+    } catch (error: any) {
+      toast.error('Terjadi kesalahan saat pembatalan: ' + error.message);
+    } finally {
+      setLoading(false);
+    }
   };
 
   async function fetchReceiptHistory() {
