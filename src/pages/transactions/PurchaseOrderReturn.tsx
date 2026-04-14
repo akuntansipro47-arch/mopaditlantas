@@ -338,6 +338,11 @@ export default function PurchaseOrderReturn() {
     (freshStocks || []).forEach((g: any) => stockById.set(String(g.id), Number(g.current_stock || 0)));
 
     const stockInvalidId = goodsIds.find((gid) => {
+      const line = itemsToReturn.find(l => l.goods_id === gid);
+      // Skip stock check for JASA type items
+      if (line && String(line.item_type || '').toUpperCase() === 'JASA') {
+        return false;
+      }
       const req = Number(qtyByGoodsId.get(gid) || 0);
       const cur = Number(stockById.get(gid) || 0);
       return req > cur + 1e-9;
@@ -385,6 +390,11 @@ export default function PurchaseOrderReturn() {
       if (iErr) throw iErr;
 
       for (const [gid, qty] of qtyByGoodsId.entries()) {
+        const line = itemsToReturn.find(l => l.goods_id === gid);
+        // Skip stock update for JASA type items
+        if (line && String(line.item_type || '').toUpperCase() === 'JASA') {
+          continue;
+        }
         const cur = Number(stockById.get(gid) || 0);
         const newStock = Math.max(0, cur - Number(qty || 0));
         const { error: uErr } = await supabase
