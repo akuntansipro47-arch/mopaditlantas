@@ -96,6 +96,21 @@ export default function PurchaseOrderV2() {
     fetchMasterData();
   }, [dateFilter]);
 
+  // --- Auto-refresh on page focus ---
+  useEffect(() => {
+    const handleFocus = () => {
+      // console.log('Page focused, refetching POs...');
+      fetchPOs();
+    };
+
+    window.addEventListener('focus', handleFocus);
+
+    // Cleanup listener when component unmounts
+    return () => {
+      window.removeEventListener('focus', handleFocus);
+    };
+  }, []); // Empty dependency array ensures this runs only once to set up the listener
+
   useEffect(() => {
     if (isDialogOpen) fetchMasterData();
   }, [isDialogOpen]);
