@@ -544,6 +544,7 @@ export default function GoodsReceipt() {
             .from('goods_receipts')
             .select(`
                 *,
+                purchase_order_id,
                 purchase_orders (
                     po_number,
                     suppliers (name),
@@ -556,7 +557,7 @@ export default function GoodsReceipt() {
                 ),
                 items:goods_receipt_items (
                     *,
-                    goods (name, unit)
+                    goods (name, unit, item_type)
                 )
             `)
             .gte('receipt_date', dateFilter.startDate)
