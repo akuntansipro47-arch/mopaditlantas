@@ -133,7 +133,6 @@ export default function PurchaseOrderReturn() {
   const receivedKey = (goodsId: string) => String(goodsId || '');
 
   const loadReturnData = async (po: any) => {
-    console.log('[RETUR] 1. Memulai loadReturnData untuk PO:', po?.po_number);
     const poId = String(po?.id || '');
     if (!poId) return;
 
@@ -159,33 +158,21 @@ export default function PurchaseOrderReturn() {
     const { data: poItems, error: poErr } = await supabase
       .from('purchase_order_items')
       .select(`
-        goods_id,
         quantity,
         unit_price,
-        goods (id, name, item_code, unit, item_type)
+        goods (id, name, item_code, unit, item_type, current_stock)
       `)
       .eq('po_id', poId);
     if (poErr) throw poErr;
-    console.log('[RETUR] 2. Berhasil mengambil PO Items:', poItems);
 
-    const goodsById = new Map<string, any>();
-    const orderedByGoods = new Map<string, { qty: number; unit_price: number }>();
-    (poItems || []).forEach((it: any) => {
-      const gid = String(it.goods_id || it.goods?.id || '');
-      if (!gid) return;
-      if (it.goods) goodsById.set(gid, it.goods);
-      const prev = orderedByGoods.get(gid);
-      orderedByGoods.set(gid, {
-        qty: (prev?.qty || 0) + Number(it.quantity || 0),
-        unit_price: prev?.unit_price !== undefined ? prev.unit_price : Number(it.unit_price || 0),
-      });
-    });
+    if (!poItems || poItems.length === 0) {
+      setReturnLines([]);
+      return;
+    }
 
     const { data: receipts, error: rErr } = await supabase
       .from('goods_receipts')
       .select(`
-        id,
-        receipt_date,
         items:goods_receipt_items (
           goods_id,
           quantity_received
@@ -193,7 +180,6 @@ export default function PurchaseOrderReturn() {
       `)
       .eq('po_id', poId);
     if (rErr) throw rErr;
-    console.log('[RETUR] 3. Berhasil mengambil Goods Receipts:', receipts);
 
     const receivedByGoods = new Map<string, number>();
     (receipts || []).forEach((r: any) => {
@@ -210,7 +196,6 @@ export default function PurchaseOrderReturn() {
       .select('id')
       .eq('po_id', poId);
     if (retErr) throw retErr;
-    console.log('[RETUR] 4. Berhasil mengambil Purchase Returns:', returns);
 
     const returnedByGoods = new Map<string, number>();
     const returnIds = (returns || []).map((x: any) => x.id).filter(Boolean);
@@ -227,40 +212,35 @@ export default function PurchaseOrderReturn() {
       });
     }
 
-    const goodsIds = Array.from(orderedByGoods.keys());
-    const { data: goodsStocks, error: gErr } = await supabase
-      .from('goods')
-      .select('id, current_stock')
-      .in('id', goodsIds);
-    if (gErr) throw gErr;
-    console.log('[RETUR] 5. Berhasil mengambil Stok Barang:', goodsStocks);
-    const stockById = new Map<string, number>();
-    (goodsStocks || []).forEach((g: any) => stockById.set(String(g.id), Number(g.current_stock || 0)));
+    const lines: ReturnLine[] = (poItems || [])
+      .map((item: any) => {
+        const g = item.goods;
+        if (!g || !g.id) {
+          return null;
+        }
 
-    const lines: ReturnLine[] = goodsIds.map((gid) => {
-      const g = goodsById.get(gid) || {};
-      const ordered = orderedByGoods.get(gid)?.qty || 0;
-      const unitPrice = orderedByGoods.get(gid)?.unit_price || 0;
-      const received = receivedByGoods.get(receivedKey(gid)) || 0;
-      const returned = returnedByGoods.get(receivedKey(gid)) || 0;
-      const available = Math.max(0, received - returned);
-      return {
-        goods_id: gid,
-        item_code: String(g.item_code || ''),
-        name: String(g.name || ''),
-        unit: String(g.unit || ''),
-        item_type: String(g.item_type || ''),
-        ordered_qty: ordered,
-        received_qty: received,
-        returned_qty: returned,
-        available_qty: available,
-        current_stock: stockById.get(gid) || 0,
-        unit_price: Number(unitPrice || 0),
-        return_qty: 0,
-      };
-    });
+        const gid = String(g.id);
+        const received = receivedByGoods.get(receivedKey(gid)) || 0;
+        const returned = returnedByGoods.get(receivedKey(gid)) || 0;
+        const available = Math.max(0, received - returned);
 
-    console.log('[RETUR] 6. Selesai memproses data, siap menampilkan lines:', lines);
+        return {
+          goods_id: gid,
+          item_code: String(g.item_code || ''),
+          name: String(g.name || ''),
+          unit: String(g.unit || ''),
+          item_type: String(g.item_type || ''),
+          ordered_qty: Number(item.quantity || 0),
+          received_qty: received,
+          returned_qty: returned,
+          available_qty: available,
+          current_stock: Number(g.current_stock || 0),
+          unit_price: Number(item.unit_price || 0),
+          return_qty: 0,
+        };
+      })
+      .filter((line): line is ReturnLine => line !== null);
+
     setReturnLines(lines);
   };
 
