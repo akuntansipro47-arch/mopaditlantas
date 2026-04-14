@@ -75,7 +75,7 @@ export default function GoodsReceipt() {
 
   useEffect(() => {
     fetchReceiptHistory();
-  }, [dateFilter]);
+  }, [dateFilter, historySearch]);
 
   const fetchApAccount = async () => {
     const { data } = await supabase
@@ -577,39 +577,59 @@ export default function GoodsReceipt() {
   };
 
   async function fetchReceiptHistory() {
-      // Fetch Goods Receipts based on Date Filter
-      // Goods Receipts don't usually have "Open" status, so we just filter by date.
-      try {
-          const { data, error } = await supabase
-            .from('goods_receipts')
-            .select(`
-                *,
-                purchase_order_id,
-                purchase_orders (
-                    po_number,
-                    suppliers (name),
-                    work_orders (
-                      wo_number,
-                      vehicle_entries (
-                        vehicles (license_plate, brand_type)
-                      )
-                    )
-                ),
-                items:goods_receipt_items (
-                    *,
-                    goods (name, unit, item_type)
-                )
-            `)
-            .gte('receipt_date', dateFilter.startDate)
-            .lte('receipt_date', dateFilter.endDate)
-            .order('receipt_date', { ascending: false });
+    setLoading(true);
+    try {
+      let query = supabase
+        .from('goods_receipts')
+        .select(`
+          id,
+          receipt_number,
+          receipt_date,
+          notes,
+          created_at,
+          purchase_order_id,
+          purchase_orders (
+            po_number,
+            suppliers (name),
+            work_orders (
+              wo_number,
+              vehicle_entries (
+                vehicles ( license_plate, brand_type )
+              )
+            )
+          ),
+          items:goods_receipt_items (
+            *,
+            goods (
+              id,
+              name,
+              item_type
+            )
+          )
+        `)
+        .order('created_at', { ascending: false });
 
-          if(error) throw error;
-          setReceipts(data as any || []);
-
-      } catch (error: any) {
-          console.error('Error fetching receipts:', error);
+      if (dateFilter.startDate) {
+        query = query.gte('receipt_date', dateFilter.startDate);
       }
+      if (dateFilter.endDate) {
+        query = query.lte('receipt_date', dateFilter.endDate);
+      }
+
+      // Add search filter logic
+      if (historySearch) {
+        query = query.or(`receipt_number.ilike.%${historySearch}%,purchase_orders.po_number.ilike.%${historySearch}%`);
+      }
+
+      const { data, error } = await query;
+
+      if (error) throw error;
+      setReceipts(data as any || []);
+    } catch (error: any) {
+      toast.error('Gagal mengambil riwayat penerimaan: ' + error.message);
+    } finally {
+      setLoading(false);
+    }
   }
 
   const handleSelectPO = async (po: POWithDetails) => {
