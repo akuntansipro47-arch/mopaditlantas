@@ -109,9 +109,11 @@ export default function PurchaseOrderReturn() {
       const { data, error } = await supabase
         .from('purchase_orders')
         .select(`
-          *,
+          id,
+          po_number,
+          po_date,
+          status,
           suppliers (name),
-          goods_receipts (receipt_number, receipt_date),
           purchase_invoices (id, status, total_amount, paid_amount)
         `)
         .in('status', ['RECEIVED_FULL', 'RECEIVED_PART', 'RETURNED_FULL'])
