@@ -505,9 +505,28 @@ export default function GoodsReceipt() {
         .eq('id', receipt.id);
 
       if (headerError) throw new Error(`Gagal menghapus header penerimaan: ${headerError.message}`);
+
+      // After deleting, check other receipts for the same PO to update PO status
+      if (receipt.purchase_order_id) {
+        const { data: otherReceipts, error: checkError } = await supabase
+          .from('goods_receipts')
+          .select('id')
+          .eq('purchase_order_id', receipt.purchase_order_id);
+
+        if (checkError) throw new Error(`Gagal memeriksa penerimaan lain: ${checkError.message}`);
+
+        const newStatus = (otherReceipts && otherReceipts.length > 0) ? 'RECEIVED_PART' : 'ISSUED';
+
+        const { error: poUpdateError } = await supabase
+          .from('purchase_orders')
+          .update({ status: newStatus })
+          .eq('id', receipt.purchase_order_id);
+
+        if (poUpdateError) throw new Error(`Gagal memperbarui status PO: ${poUpdateError.message}`);
+      }
       
       // 5. Refresh data
-      toast.success('Penerimaan berhasil dibatalkan.');
+      toast.success('Penerimaan berhasil dibatalkan. Status PO diperbarui.');
       fetchReceiptHistory(); // Refresh the list
 
     } catch (error: any) {
