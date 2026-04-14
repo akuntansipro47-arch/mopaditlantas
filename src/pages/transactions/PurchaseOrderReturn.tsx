@@ -133,6 +133,7 @@ export default function PurchaseOrderReturn() {
   const receivedKey = (goodsId: string) => String(goodsId || '');
 
   const loadReturnData = async (po: any) => {
+    console.log('[RETUR] 1. Memulai loadReturnData untuk PO:', po?.po_number);
     const poId = String(po?.id || '');
     if (!poId) return;
 
@@ -165,6 +166,7 @@ export default function PurchaseOrderReturn() {
       `)
       .eq('po_id', poId);
     if (poErr) throw poErr;
+    console.log('[RETUR] 2. Berhasil mengambil PO Items:', poItems);
 
     const goodsById = new Map<string, any>();
     const orderedByGoods = new Map<string, { qty: number; unit_price: number }>();
@@ -191,6 +193,7 @@ export default function PurchaseOrderReturn() {
       `)
       .eq('po_id', poId);
     if (rErr) throw rErr;
+    console.log('[RETUR] 3. Berhasil mengambil Goods Receipts:', receipts);
 
     const receivedByGoods = new Map<string, number>();
     (receipts || []).forEach((r: any) => {
@@ -207,6 +210,7 @@ export default function PurchaseOrderReturn() {
       .select('id')
       .eq('po_id', poId);
     if (retErr) throw retErr;
+    console.log('[RETUR] 4. Berhasil mengambil Purchase Returns:', returns);
 
     const returnedByGoods = new Map<string, number>();
     const returnIds = (returns || []).map((x: any) => x.id).filter(Boolean);
@@ -229,6 +233,7 @@ export default function PurchaseOrderReturn() {
       .select('id, current_stock')
       .in('id', goodsIds);
     if (gErr) throw gErr;
+    console.log('[RETUR] 5. Berhasil mengambil Stok Barang:', goodsStocks);
     const stockById = new Map<string, number>();
     (goodsStocks || []).forEach((g: any) => stockById.set(String(g.id), Number(g.current_stock || 0)));
 
@@ -255,6 +260,7 @@ export default function PurchaseOrderReturn() {
       };
     });
 
+    console.log('[RETUR] 6. Selesai memproses data, siap menampilkan lines:', lines);
     setReturnLines(lines);
   };
 
