@@ -497,348 +497,273 @@ export default function PurchaseOrderReturn() {
       }
 
       const { data: refreshed } = await supabase
-        .from('purchase_returns')
-        .select('id')
-        .eq('po_id', selectedPO.id);
-      const returnIds = (refreshed || []).map((x: any) => x.id).filter(Boolean);
-      const returnedByGoods = new Map<string, number>();
-      if (returnIds.length > 0) {
-        const { data: retItems } = await supabase
-          .from('purchase_return_items')
-          .select('goods_id, quantity_returned')
-          .in('return_id', returnIds);
-        (retItems || []).forEach((it: any) => {
-          const gid = String(it.goods_id || '');
-          if (!gid) return;
-          returnedByGoods.set(gid, (returnedByGoods.get(gid) || 0) + Number(it.quantity_returned || 0));
-        });
+        .from('purchase_orders')
+        .select(`
+          id,
+          po_number,
+          po_date,
+          status,
+          suppliers (name),
+          purchase_invoices (id, status, total_amount, paid_amount)
+        `)
+        .eq('id', selectedPO.id)
+        .single();
+      if (refreshed) {
+        setPos((prev) => prev.map((p) => (p.id === refreshed.id ? refreshed : p)));
       }
 
-      let allZero = true;
-      let allFull = true;
-      (returnLines || []).forEach((l) => {
-        const received = Number(l.received_qty || 0);
-        const returned = returnedByGoods.get(l.goods_id) || 0;
-        const remaining = Math.max(0, received - returned);
-        const ordered = Number(l.ordered_qty || 0);
-        if (remaining > 0) allZero = false;
-        if (ordered > 0 && remaining + 1e-9 < ordered) allFull = false;
-      });
-
-      const nextStatus = allZero ? 'RETURNED_FULL' : allFull ? 'RECEIVED_FULL' : 'RECEIVED_PART';
-      const { error: poErr } = await supabase.from('purchase_orders').update({ status: nextStatus as any }).eq('id', selectedPO.id);
-      if (poErr) throw poErr;
-
-      toast.success(`Retur berhasil. Status PO sekarang: ${nextStatus}`);
+      toast.success('Retur berhasil diproses.');
       setIsConfirmOpen(false);
-      fetchCompletedPOs();
+      setSelectedPO(null);
     } catch (error: any) {
-      toast.error('Gagal memproses retur: ' + (error?.message || 'Unknown error'));
+      toast.error('Gagal memproses retur: ' + error.message);
     } finally {
       setIsProcessing(false);
     }
   };
 
-  const filteredPos = useMemo(() => {
-    const q = search.toLowerCase();
-    return pos.filter((po) =>
-      String(po.po_number || '').toLowerCase().includes(q) ||
-      String(po.suppliers?.name || '').toLowerCase().includes(q)
-    );
-  }, [pos, search]);
+  const handleDateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const { name, value } = e.target;
+    setDateFilter(prev => ({ ...prev, [name]: value }));
+  };
+
+  const filteredPos = pos.filter(p => 
+    p.po_number.toLowerCase().includes(search.toLowerCase()) ||
+    p.suppliers?.name.toLowerCase().includes(search.toLowerCase())
+  );
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col gap-2">
-        <h2 className="text-3xl font-bold tracking-tight">Retur Pembelian</h2>
-        <p className="text-muted-foreground">
-            Retur pembelian bisa dilakukan sebagian. Stok barang akan otomatis dikurangi sesuai qty retur.
-        </p>
-      </div>
-
+    <div className="p-4">
       <Card>
-        <CardHeader className="pb-3">
-          <div className="flex justify-between items-center mb-4">
-             <CardTitle>Daftar PO Selesai / Diterima</CardTitle>
-             <div className="flex gap-2 items-center">
-                <div className="flex items-center gap-2 bg-white border rounded-md px-2 py-1">
-                  <span className="text-sm text-gray-500">Periode:</span>
-                  <Input 
-                    type="date" 
-                    className="w-auto border-0 p-0 h-auto focus-visible:ring-0 text-xs"
-                    value={dateFilter.startDate} 
-                    onChange={(e) => setDateFilter({...dateFilter, startDate: e.target.value})} 
-                  />
-                  <span className="text-sm text-gray-500">-</span>
-                  <Input 
-                    type="date" 
-                    className="w-auto border-0 p-0 h-auto focus-visible:ring-0 text-xs"
-                    value={dateFilter.endDate} 
-                    onChange={(e) => setDateFilter({...dateFilter, endDate: e.target.value})} 
-                  />
-                </div>
-                <div className="relative w-64 ml-4">
-                  <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
-                  <Input 
-                    placeholder="Cari No. PO / Supplier..." 
-                    className="pl-8 h-9" 
-                    value={search} 
-                    onChange={e => setSearch(e.target.value)} 
-                  />
-                </div>
-             </div>
-          </div>
+        <CardHeader>
+          <CardTitle>Daftar PO Selesai / Diterima</CardTitle>
+          <CardDescription>Pilih PO yang akan diretur. Hanya PO yang sudah diterima (sebagian/penuh) yang muncul di sini.</CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="rounded-md border">
-            <Table>
-              <TableHeader>
+          <div className="flex items-center space-x-2 mb-4">
+            <div className="relative flex-1">
+              <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+              <Input 
+                placeholder="Cari berdasarkan No. PO atau Supplier..." 
+                className="pl-8"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+              />
+            </div>
+            <div className="flex items-center space-x-2">
+              <Label>Dari</Label>
+              <Input type="date" name="startDate" value={dateFilter.startDate} onChange={handleDateChange} />
+              <Label>Sampai</Label>
+              <Input type="date" name="endDate" value={dateFilter.endDate} onChange={handleDateChange} />
+            </div>
+            <Button onClick={fetchCompletedPOs} variant="outline" size="icon">
+              <RotateCcw className="h-4 w-4" />
+            </Button>
+          </div>
+
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Tanggal PO</TableHead>
+                <TableHead>No. PO</TableHead>
+                <TableHead>Supplier</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead>Pembayaran</TableHead>
+                <TableHead>Aksi</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {loading ? (
                 <TableRow>
-                  <TableHead>No. PO</TableHead>
-                  <TableHead>No. Terima</TableHead>
-                  <TableHead>Tanggal</TableHead>
-                  <TableHead>Supplier</TableHead>
-                  <TableHead>Total Nilai</TableHead>
-                  <TableHead>Status Saat Ini</TableHead>
-                  <TableHead className="text-right">Aksi</TableHead>
+                  <TableCell colSpan={6} className="text-center">Memuat data...</TableCell>
                 </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filteredPos.length === 0 ? (
-                  <TableRow><TableCell colSpan={8} className="text-center h-24">Tidak ada PO yang dapat diretur dalam periode ini.</TableCell></TableRow>
-                ) : (
-                  filteredPos.map((po) => (
-                    (() => {
-                      const p = getPoPaymentInfo(po);
-                      const eligible = p.status !== 'NO_INVOICE' && String((po as any).status || '') !== 'RETURNED_FULL';
-                      return (
+              ) : filteredPos.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={6} className="text-center">Tidak ada data PO yang bisa diretur pada periode ini.</TableCell>
+                </TableRow>
+              ) : (
+                filteredPos.map(po => {
+                  const paymentInfo = getPoPaymentInfo(po);
+                  return (
                     <TableRow key={po.id}>
-                      <TableCell className="font-medium">{po.po_number}</TableCell>
-                      <TableCell className="text-xs text-blue-600 font-medium">
-                        {po.goods_receipts && po.goods_receipts.length > 0 
-                          ? po.goods_receipts.map((r: any) => r.receipt_number).join(', ')
-                          : '-'}
-                      </TableCell>
                       <TableCell>{formatDate(po.po_date)}</TableCell>
-                      <TableCell>{po.suppliers?.name}</TableCell>
-                      <TableCell>{formatCurrency(po.total_amount)}</TableCell>
+                      <TableCell>{po.po_number}</TableCell>
+                      <TableCell>{po.suppliers?.name || 'N/A'}</TableCell>
                       <TableCell>
-                        <Badge
-                          variant={po.status === 'RECEIVED_FULL' ? 'default' : 'secondary'}
-                          className={
-                            po.status === 'RECEIVED_FULL'
-                              ? 'bg-green-600'
-                              : po.status === 'RETURNED_FULL'
-                                ? 'bg-red-600'
-                                : 'bg-blue-600'
-                          }
-                        >
-                          {po.status === 'RECEIVED_FULL'
-                            ? 'Diterima Penuh'
-                            : po.status === 'RECEIVED_PART'
-                              ? 'Diterima Parsial'
-                              : po.status === 'RETURNED_FULL'
-                                ? 'Retur Penuh'
-                                : po.status}
+                        <Badge variant={
+                          po.status === 'RECEIVED_FULL' ? 'success' : 
+                          po.status === 'RECEIVED_PART' ? 'secondary' : 'default'
+                        }>
+                          {po.status}
                         </Badge>
                       </TableCell>
-                      <TableCell className="text-right">
-                        {!eligible && (
-                          <div className="text-[10px] text-red-600 mb-1">
-                            {String((po as any).status || '') === 'RETURNED_FULL' ? 'PO sudah diretur penuh.' : p.reason}
-                          </div>
-                        )}
-                        <Button 
-                            variant="outline" 
-                            size="sm" 
-                            className="h-8"
-                            disabled={!eligible}
-                            onClick={() => handleReturnClick(po)}
-                        >
-                            <RotateCcw className="mr-2 h-3.5 w-3.5" />
-                            Retur
+                      <TableCell>
+                        <Badge variant={
+                          paymentInfo.status === 'PAID' ? 'success' :
+                          paymentInfo.status === 'UNPAID' ? 'destructive' :
+                          paymentInfo.status === 'PARTIAL' ? 'warning' : 'default'
+                        }>
+                          {
+                            paymentInfo.status === 'PAID' ? 'Lunas' :
+                            paymentInfo.status === 'UNPAID' ? 'Belum Bayar' :
+                            paymentInfo.status === 'PARTIAL' ? 'Bayar Sebagian' : 'Tanpa Invoice'
+                          }
+                        </Badge>
+                      </TableCell>
+                      <TableCell>
+                        <Button onClick={() => handleReturnClick(po)} size="sm">
+                          Retur
                         </Button>
                       </TableCell>
                     </TableRow>
-                      );
-                    })()
+                  )
+                })
+              )}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
+
+      <Dialog open={isConfirmOpen} onOpenChange={setIsConfirmOpen}>
+        <DialogContent className="max-w-4xl">
+          <DialogHeader>
+            <DialogTitle>Retur Pembelian</DialogTitle>
+            <DialogDescription>
+              Isi qty retur untuk PO {selectedPO?.po_number}.
+            </DialogDescription>
+          </DialogHeader>
+          
+          {getPoPaymentInfo(selectedPO).status === 'UNPAID' || getPoPaymentInfo(selectedPO).status === 'PARTIAL' ? (
+            <div className="p-3 bg-yellow-100 border-l-4 border-yellow-500 text-yellow-700 rounded-md">
+              <p><AlertTriangle className="inline-block h-5 w-5 mr-2" />Invoice belum dibayar. Retur akan otomatis mengurangi Hutang Usaha, tanpa perlu pilih akun penyelesaian.</p>
+            </div>
+          ) : null}
+
+          <div className="grid grid-cols-3 gap-4">
+            <div>
+              <Label>Tanggal Retur</Label>
+              <Input type="date" value={returnDate} onChange={(e) => setReturnDate(e.target.value)} />
+            </div>
+            <div className="col-span-2">
+              <Label>Catatan (opsional)</Label>
+              <Input value={returnNotes} onChange={(e) => setReturnNotes(e.target.value)} placeholder="Keterangan retur..." />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-3 gap-4">
+            <div>
+              <Label>Mode Retur</Label>
+              <Select value={returnMode} onValueChange={(v: any) => setReturnMode(v)}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Pilih mode retur" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="PARTIAL">Retur Sebagian</SelectItem>
+                  <SelectItem value="FULL">Retur Keseluruhan</SelectItem>
+                </SelectContent>
+              </Select>
+              {returnMode === 'FULL' && <p className="text-xs text-muted-foreground mt-1">Otomatis mengisi qty retur = sisa diterima untuk semua barang.</p>}
+            </div>
+            {getPoPaymentInfo(selectedPO).status === 'PAID' && (
+              <div className="col-span-2">
+                <Label>Penyelesaian</Label>
+                <div className="flex space-x-2">
+                  <Select value={settlementType} onValueChange={(v: any) => setSettlementType(v)}>
+                    <SelectTrigger className="w-[180px]">
+                      <SelectValue placeholder="Tipe Penyelesaian" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="REFUND">Refund (Uang Kembali)</SelectItem>
+                      <SelectItem value="DEPOSIT">Simpan sebagai Deposit</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <Select value={settlementAccountId} onValueChange={setSettlementAccountId}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Pilih Akun Kas/Bank" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {coaAccounts
+                        .filter(a => String(a.account_code || '').startsWith('11'))
+                        .map(acc => (
+                          <SelectItem key={acc.id} value={acc.id}>
+                            {acc.account_code} - {acc.account_name}
+                          </SelectItem>
+                        ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div className="border rounded-md max-h-64 overflow-y-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Barang</TableHead>
+                  <TableHead className="text-right">Diterima</TableHead>
+                  <TableHead className="text-right">Sudah Retur</TableHead>
+                  <TableHead className="text-right">Sisa</TableHead>
+                  <TableHead className="w-[120px]">Qty Retur</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {returnLines.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={5} className="text-center h-24">
+                      Memuat rincian...
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  returnLines.map((line, index) => (
+                    <TableRow key={line.goods_id}>
+                      <TableCell>
+                        <p className="font-medium">{line.name}</p>
+                        <p className="text-xs text-muted-foreground">{line.item_code}</p>
+                      </TableCell>
+                      <TableCell className="text-right">{line.received_qty} {line.unit}</TableCell>
+                      <TableCell className="text-right">{line.returned_qty} {line.unit}</TableCell>
+                      <TableCell className="text-right font-medium">{line.available_qty} {line.unit}</TableCell>
+                      <TableCell>
+                        <Input
+                          type="number"
+                          value={line.return_qty}
+                          onChange={(e) => {
+                            const newQty = e.target.value;
+                            setReturnLines(prev =>
+                              prev.map((l, i) =>
+                                i === index ? { ...l, return_qty: Number(newQty) } : l
+                              )
+                            );
+                          }}
+                          max={line.available_qty}
+                          min={0}
+                        />
+                      </TableCell>
+                    </TableRow>
                   ))
                 )}
               </TableBody>
             </Table>
           </div>
-        </CardContent>
-      </Card>
+          <p className="text-xs text-yellow-600 mt-1"><AlertTriangle className="inline-block h-3 w-3 mr-1" />Qty retur tidak boleh melebihi sisa diterima, dan stok harus cukup (barang belum dipakai).</p>
 
-      <Dialog open={isConfirmOpen} onOpenChange={setIsConfirmOpen}>
-        <DialogContent className="max-h-[85vh] sm:max-w-[900px] flex flex-col">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <RotateCcw className="h-5 w-5" />
-              Retur Pembelian
-            </DialogTitle>
-            <DialogDescription className="pt-2">
-              Isi qty retur untuk PO <strong>{selectedPO?.po_number}</strong>.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="flex-1 overflow-y-auto pr-1">
-            {(() => {
-              const p = getPoPaymentInfo(selectedPO);
-              if (p.status !== 'UNPAID') return null;
-              return (
-                <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900">
-                  Invoice belum dibayar. Retur akan otomatis mengurangi Hutang Usaha, tanpa perlu pilih akun penyelesaian.
-                </div>
-              );
-            })()}
-            <div className="mt-4 grid gap-4 lg:grid-cols-2">
-              <div className="space-y-4">
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div className="space-y-1">
-                    <span className="text-xs text-slate-500">Tanggal Retur</span>
-                    <Input type="date" value={returnDate} onChange={(e) => setReturnDate(e.target.value)} />
-                  </div>
-                  <div className="space-y-1">
-                    <span className="text-xs text-slate-500">Catatan (opsional)</span>
-                    <Input value={returnNotes} onChange={(e) => setReturnNotes(e.target.value)} placeholder="Keterangan retur..." />
-                  </div>
-                </div>
-
-                <div className="space-y-2">
-                  <Label className="text-xs text-slate-500">Mode Retur</Label>
-                  <Select value={returnMode} onValueChange={(v: any) => setReturnMode(v)}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Pilih mode..." />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="PARTIAL">Retur Sebagian</SelectItem>
-                      <SelectItem value="FULL">Retur Keseluruhan</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  <p className="text-xs text-slate-500">
-                    {returnMode === 'FULL'
-                      ? 'Otomatis mengisi qty retur = sisa diterima untuk semua barang.'
-                      : 'Isi qty retur per barang (satu per satu).'}
-                  </p>
-                </div>
-
-                {(() => {
-                  const p = getPoPaymentInfo(selectedPO);
-                  if (p.status === 'UNPAID') return null;
-                  return (
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      <div className="space-y-2">
-                        <Label className="text-xs text-slate-500">Penyelesaian Retur</Label>
-                        <Select value={settlementType} onValueChange={(v: any) => setSettlementType(v)}>
-                          <SelectTrigger>
-                            <SelectValue placeholder="Pilih opsi..." />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="REFUND">Refund (Kas/Bank)</SelectItem>
-                            <SelectItem value="DEPOSIT">Deposit / Uang Muka</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      <div className="space-y-2">
-                        <Label className="text-xs text-slate-500">Akun Penyelesaian</Label>
-                        <Select value={settlementAccountId} onValueChange={setSettlementAccountId}>
-                          <SelectTrigger>
-                            <SelectValue placeholder="Pilih akun..." />
-                          </SelectTrigger>
-                          <SelectContent className="max-h-[280px]">
-                            {coaAccounts.map((a: any) => (
-                              <SelectItem key={a.id} value={a.id}>
-                                {a.account_code} - {a.account_name}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                        <p className="text-xs text-slate-500">
-                          {settlementType === 'REFUND'
-                            ? 'Pilih akun Kas/Bank yang menerima refund.'
-                            : 'Pilih akun Deposit/Uang Muka (piutang vendor) untuk saldo retur.'}
-                        </p>
-                      </div>
-                    </div>
-                  );
-                })()}
-              </div>
-
-              <div className="space-y-3">
-                <div className="rounded-md border overflow-auto max-h-[360px] lg:max-h-[520px]">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Barang</TableHead>
-                        <TableHead className="text-center">Diterima</TableHead>
-                        <TableHead className="text-center">Sudah Retur</TableHead>
-                        <TableHead className="text-center">Sisa</TableHead>
-                        <TableHead className="text-center">Qty Retur</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {returnLines.length === 0 ? (
-                        <TableRow>
-                          <TableCell colSpan={5} className="text-center py-6 text-muted-foreground">
-                            Memuat rincian...
-                          </TableCell>
-                        </TableRow>
-                      ) : (
-                        returnLines.map((l) => (
-                          <TableRow key={l.goods_id}>
-                            <TableCell>
-                              <div className="flex flex-col">
-                                <span className="font-medium">{l.name || '-'}</span>
-                                <span className="text-xs text-slate-500">{l.item_code || '-'} • {l.item_type || '-'}</span>
-                              </div>
-                            </TableCell>
-                            <TableCell className="text-center">{l.received_qty} <span className="text-xs text-slate-400">{l.unit}</span></TableCell>
-                            <TableCell className="text-center">{l.returned_qty} <span className="text-xs text-slate-400">{l.unit}</span></TableCell>
-                            <TableCell className="text-center font-semibold">{l.available_qty} <span className="text-xs text-slate-400">{l.unit}</span></TableCell>
-                            <TableCell className="text-center">
-                              <Input
-                                type="number"
-                                min={0}
-                                max={l.available_qty}
-                                value={String(l.return_qty || 0)}
-                                onChange={(e) => {
-                                  const v = Math.max(0, Number(e.target.value || 0));
-                                  setReturnLines((prev) => prev.map((x) => x.goods_id === l.goods_id ? { ...x, return_qty: v } : x));
-                                }}
-                                disabled={isProcessing || l.available_qty <= 0 || returnMode === 'FULL'}
-                                className="h-9 w-24 text-center inline-flex"
-                              />
-                            </TableCell>
-                          </TableRow>
-                        ))
-                      )}
-                    </TableBody>
-                  </Table>
-                </div>
-                <div className="text-xs text-slate-500 flex items-start gap-2">
-                  <AlertTriangle className="h-4 w-4 text-amber-500 mt-0.5" />
-                  <div>
-                    Qty retur tidak boleh melebihi sisa diterima, dan stok harus cukup (barang belum dipakai).
-                  </div>
-                </div>
-                <div className="flex justify-end">
-                  <div className="text-sm">
-                    <span className="text-slate-500 mr-2">Total Retur:</span>
-                    <span className="font-bold">
-                      {formatCurrency(
-                        (returnLines || []).reduce((sum, l) => sum + Number(l.unit_price || 0) * Number(l.return_qty || 0), 0)
-                      )}
-                    </span>
-                  </div>
-                </div>
+          <DialogFooter>
+            <div className="w-full flex justify-between items-center">
+              <p className="text-lg font-bold">
+                Total Retur: {formatCurrency(
+                  returnLines.reduce((sum, l) => sum + l.return_qty * l.unit_price, 0)
+                )}
+              </p>
+              <div>
+                <Button variant="ghost" onClick={() => setIsConfirmOpen(false)} disabled={isProcessing}>
+                  Batal
+                </Button>
+                <Button onClick={processReturn} disabled={isProcessing}>
+                  {isProcessing ? 'Memproses...' : 'Proses Retur'}
+                </Button>
               </div>
             </div>
-          </div>
-          <DialogFooter className="mt-3 border-t pt-3">
-            <Button variant="outline" onClick={() => setIsConfirmOpen(false)} disabled={isProcessing}>Batal</Button>
-            <Button onClick={processReturn} disabled={isProcessing}>
-                {isProcessing ? 'Memproses...' : 'Proses Retur'}
-            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
