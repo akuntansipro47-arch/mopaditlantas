@@ -437,6 +437,16 @@ export default function GoodsReceipt() {
     }
   }
 
+  const handleCancelReceipt = async (receipt: GoodsReceiptWithDetails) => {
+    // TODO: Implement cancellation logic
+    // 1. Check if all items are 'JASA'
+    // 2. Check if invoice exists and is unpaid
+    // 3. Confirm with user
+    // 4. Delete receipt and items
+    // 5. Refresh data
+    toast.info(`Pembatalan untuk ${receipt.receipt_number} belum diimplementasikan.`);
+  };
+
   async function fetchReceiptHistory() {
       // Fetch Goods Receipts based on Date Filter
       // Goods Receipts don't usually have "Open" status, so we just filter by date.
@@ -945,12 +955,12 @@ export default function GoodsReceipt() {
                   <TableHead>Kendaraan</TableHead>
                   <TableHead>Item Diterima</TableHead>
                   <TableHead>Catatan</TableHead>
-                  {/* <TableHead className="text-right">Aksi</TableHead> */}
+                  <TableHead className="text-right">Aksi</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {filteredReceipts.length === 0 ? (
-                  <TableRow><TableCell colSpan={8} className="text-center h-24">Tidak ada riwayat penerimaan pada periode ini.</TableCell></TableRow>
+                  <TableRow><TableCell colSpan={9} className="text-center h-24">Tidak ada riwayat penerimaan pada periode ini.</TableCell></TableRow>
                 ) : (
                   filteredReceipts.map((item) => (
                     <TableRow key={item.id}>
@@ -965,9 +975,19 @@ export default function GoodsReceipt() {
                       </TableCell>
                       <TableCell>{item.items.length} Item</TableCell>
                       <TableCell>{item.notes || '-'}</TableCell>
-                      {/* <TableCell className="text-right">
-                        <Button variant="ghost" size="icon"><Printer className="h-4 w-4" /></Button>
-                      </TableCell> */}
+                      <TableCell className="text-right">
+                        <div className="flex space-x-2 justify-end">
+                          <Button variant="outline" size="icon" onClick={() => toast.info('Print belum tersedia')}>
+                            <Printer className="h-4 w-4" />
+                          </Button>
+                          <Button variant="outline" size="icon" onClick={() => toast.info('Lihat detail belum tersedia')}>
+                            <Eye className="h-4 w-4" />
+                          </Button>
+                          <Button variant="destructive" size="sm" onClick={() => handleCancelReceipt(item)}>
+                            Batalkan
+                          </Button>
+                        </div>
+                      </TableCell>
                     </TableRow>
                   ))
                 )}
