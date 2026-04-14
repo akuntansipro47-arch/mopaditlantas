@@ -322,8 +322,7 @@ export default function WorkOrderV2() {
           *,
           mechanics (*),
           vehicle_entries (
-            *,
-            vehicles (*)
+            *
           )
         `)
         .order('created_at', { ascending: false });
