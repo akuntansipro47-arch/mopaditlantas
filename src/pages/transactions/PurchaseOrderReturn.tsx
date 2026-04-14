@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+gitimport { useEffect, useMemo, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { 
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow 
@@ -339,8 +339,10 @@ export default function PurchaseOrderReturn() {
 
     const stockInvalidId = goodsIds.find((gid) => {
       const line = itemsToReturn.find(l => l.goods_id === gid);
-      // Skip stock check for JASA type items
-      if (line && String(line.item_type || '').toUpperCase() === 'JASA') {
+      const itemType = String(line?.item_type || '').toUpperCase();
+
+      // Skip stock check for JASA or SERVICE type items
+      if (itemType === 'JASA' || itemType === 'SERVICE') {
         return false;
       }
       const req = Number(qtyByGoodsId.get(gid) || 0);
@@ -391,8 +393,10 @@ export default function PurchaseOrderReturn() {
 
       for (const [gid, qty] of qtyByGoodsId.entries()) {
         const line = itemsToReturn.find(l => l.goods_id === gid);
-        // Skip stock update for JASA type items
-        if (line && String(line.item_type || '').toUpperCase() === 'JASA') {
+        const itemType = String(line?.item_type || '').toUpperCase();
+
+        // Skip stock update for JASA or SERVICE type items
+        if (itemType === 'JASA' || itemType === 'SERVICE') {
           continue;
         }
         const cur = Number(stockById.get(gid) || 0);
