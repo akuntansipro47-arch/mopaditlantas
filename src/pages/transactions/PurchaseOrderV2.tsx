@@ -90,26 +90,22 @@ export default function PurchaseOrderV2() {
     endDate: new Date().toISOString().split('T')[0] // Today
   });
 
+  // --- Auto-refresh using interval ---
   useEffect(() => {
-    console.log('PurchaseOrder V2 Mounted');
-    fetchPOs();
-    fetchMasterData();
-  }, [dateFilter]);
+    // Fetch immediately on mount
+    fetchPOs(); 
 
-  // --- Auto-refresh on page focus ---
-  useEffect(() => {
-    const handleFocus = () => {
-      // console.log('Page focused, refetching POs...');
+    // Then, fetch every 5 seconds
+    const intervalId = setInterval(() => {
+      // console.log('Polling for PO updates...');
       fetchPOs();
-    };
+    }, 5000); // 5000 milliseconds = 5 seconds
 
-    window.addEventListener('focus', handleFocus);
-
-    // Cleanup listener when component unmounts
+    // Cleanup interval when component unmounts
     return () => {
-      window.removeEventListener('focus', handleFocus);
+      clearInterval(intervalId);
     };
-  }, []); // Empty dependency array ensures this runs only once to set up the listener
+  }, [dateFilter]); // Re-run if dateFilter changes
 
   useEffect(() => {
     if (isDialogOpen) fetchMasterData();
