@@ -136,92 +136,71 @@ export default function PurchaseOrderReturn() {
     const poId = String(po?.id || '');
     if (!poId) return;
 
-    {
-      const { error: colErr } = await supabase.from('purchase_returns').select('id').limit(1);
-      if (colErr) {
-        throw new Error("DB belum siap: tabel purchase_returns belum ada. Jalankan migration 20260404_add_purchase_returns.sql di Supabase.");
-      }
+    // --- Validasi tabel (tetap dipertahankan) ---
+    const tablesToValidate = ['purchase_returns', 'purchase_return_items'];
+    for (const table of tablesToValidate) {
+      const { error } = await supabase.from(table).select('id').limit(1);
+      if (error) throw new Error(`Database belum siap: tabel ${table} tidak ditemukan. Jalankan migrasi yang sesuai.`);
     }
-    {
-      const { error: colErr } = await supabase.from('purchase_return_items').select('id').limit(1);
-      if (colErr) {
-        throw new Error("DB belum siap: tabel purchase_return_items belum ada. Jalankan migration 20260404_add_purchase_returns.sql di Supabase.");
-      }
-    }
-    {
-      const { error: colErr } = await supabase.from('purchase_returns').select('settlement_type').limit(1);
-      if (colErr) {
-        throw new Error("DB belum siap: kolom settlement retur belum ada. Jalankan migration 20260404_add_purchase_returns_settlement.sql di Supabase.");
-      }
-    }
+    const { error: colErr } = await supabase.from('purchase_returns').select('settlement_type').limit(1);
+    if (colErr) throw new Error("Database belum siap: kolom 'settlement_type' di 'purchase_returns' tidak ditemukan.");
 
+    // --- LANGKAH 1: Ambil semua item PO, hanya dengan ID ---
     const { data: poItems, error: poErr } = await supabase
       .from('purchase_order_items')
-      .select(`
-        quantity,
-        unit_price,
-        goods (id, name, item_code, unit, item_type, current_stock)
-      `)
+      .select('goods_id, quantity, unit_price')
       .eq('po_id', poId);
     if (poErr) throw poErr;
-
     if (!poItems || poItems.length === 0) {
       setReturnLines([]);
       return;
     }
 
+    // --- LANGKAH 2: Ambil data 'goods' secara terpisah dan aman ---
+    const goodsIds = poItems.map(it => it.goods_id).filter(Boolean); // Filter ID yang null/kosong
+    const { data: goodsData, error: gErr } = await supabase
+      .from('goods')
+      .select('id, name, item_code, unit, item_type, current_stock')
+      .in('id', goodsIds);
+    if (gErr) throw gErr;
+    const goodsMap = new Map((goodsData || []).map(g => [g.id, g]));
+
+    // --- LANGKAH 3: Ambil data penerimaan & retur yang sudah ada ---
     const { data: receipts, error: rErr } = await supabase
       .from('goods_receipts')
-      .select(`
-        items:goods_receipt_items (
-          goods_id,
-          quantity_received
-        )
-      `)
+      .select('items:goods_receipt_items(goods_id, quantity_received)')
       .eq('po_id', poId);
     if (rErr) throw rErr;
-
     const receivedByGoods = new Map<string, number>();
-    (receipts || []).forEach((r: any) => {
-      const items = Array.isArray(r.items) ? r.items : [];
-      items.forEach((it: any) => {
-        const gid = String(it.goods_id || '');
-        if (!gid) return;
-        receivedByGoods.set(gid, (receivedByGoods.get(gid) || 0) + Number(it.quantity_received || 0));
-      });
-    });
+    (receipts || []).forEach(r => (r.items || []).forEach((it: any) => {
+      if (it.goods_id) receivedByGoods.set(it.goods_id, (receivedByGoods.get(it.goods_id) || 0) + Number(it.quantity_received || 0));
+    }));
 
-    const { data: returns, error: retErr } = await supabase
-      .from('purchase_returns')
-      .select('id')
-      .eq('po_id', poId);
+    const { data: returns, error: retErr } = await supabase.from('purchase_returns').select('id').eq('po_id', poId);
     if (retErr) throw retErr;
-
     const returnedByGoods = new Map<string, number>();
-    const returnIds = (returns || []).map((x: any) => x.id).filter(Boolean);
+    const returnIds = (returns || []).map(x => x.id).filter(Boolean);
     if (returnIds.length > 0) {
-      const { data: retItems, error: retItemErr } = await supabase
-        .from('purchase_return_items')
-        .select('goods_id, quantity_returned')
-        .in('return_id', returnIds);
+      const { data: retItems, error: retItemErr } = await supabase.from('purchase_return_items').select('goods_id, quantity_returned').in('return_id', returnIds);
       if (retItemErr) throw retItemErr;
       (retItems || []).forEach((it: any) => {
-        const gid = String(it.goods_id || '');
-        if (!gid) return;
-        returnedByGoods.set(gid, (returnedByGoods.get(gid) || 0) + Number(it.quantity_returned || 0));
+        if (it.goods_id) returnedByGoods.set(it.goods_id, (returnedByGoods.get(it.goods_id) || 0) + Number(it.quantity_returned || 0));
       });
     }
 
-    const lines: ReturnLine[] = (poItems || [])
-      .map((item: any) => {
-        const g = item.goods;
-        if (!g || !g.id) {
+    // --- LANGKAH 4: Gabungkan semua data dengan aman ---
+    const lines: ReturnLine[] = poItems
+      .map(item => {
+        const g = goodsMap.get(item.goods_id);
+        // JIKA DATA GOODS TIDAK DITEMUKAN, LEWATI ITEM INI
+        if (!g) {
+          console.warn(`[DATA-SKIP] Melewatkan item PO karena data barang (goods) dengan ID ${item.goods_id} tidak ditemukan.`);
           return null;
         }
 
         const gid = String(g.id);
-        const received = receivedByGoods.get(receivedKey(gid)) || 0;
-        const returned = returnedByGoods.get(receivedKey(gid)) || 0;
+        const received = receivedByGoods.get(gid) || 0;
+        const returned = returnedByGoods.get(gid) || 0;
         const available = Math.max(0, received - returned);
 
         return {
