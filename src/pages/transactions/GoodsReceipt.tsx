@@ -531,13 +531,13 @@ export default function GoodsReceipt() {
       console.log('Receipt utama berhasil dihapus.');
 
       // After deleting, check other receipts for the same PO to update PO status
-      console.log('Memperbarui status PO. ID PO:', receipt.purchase_order_id);
-      if (receipt.purchase_order_id) {
-        console.log('Mengecek penerimaan lain untuk PO ID:', receipt.purchase_order_id);
+      console.log('Memperbarui status PO. ID PO:', receipt.po_id);
+      if (receipt.po_id) {
+        console.log('Mengecek penerimaan lain untuk PO ID:', receipt.po_id);
         const { data: otherReceipts, error: checkError } = await supabase
           .from('goods_receipts')
           .select('id')
-          .eq('purchase_order_id', receipt.purchase_order_id);
+          .eq('po_id', receipt.po_id);
 
         if (checkError) {
           console.error('Error saat cek penerimaan lain:', checkError);
@@ -551,7 +551,7 @@ export default function GoodsReceipt() {
         const { error: poUpdateError } = await supabase
           .from('purchase_orders')
           .update({ status: newStatus })
-          .eq('id', receipt.purchase_order_id);
+          .eq('id', receipt.po_id);
 
         if (poUpdateError) {
           console.error('Error saat update status PO:', poUpdateError);
@@ -559,13 +559,14 @@ export default function GoodsReceipt() {
         }
         console.log('Status PO berhasil diperbarui.');
       } else {
-        console.warn('Tidak ada purchase_order_id pada receipt, tidak bisa update status PO.');
+        console.warn('Tidak ada po_id pada receipt, tidak bisa update status PO.');
       }
       
       // 5. Refresh data
       toast.success('Penerimaan berhasil dibatalkan. Status PO diperbarui.');
       console.log('--- PROSES PEMBATALAN SUKSES ---');
       fetchReceiptHistory(); // Refresh the list
+      fetchOpenPOs(); // Refresh the open POs list
 
     } catch (error: any) {
       console.error('Terjadi kesalahan fatal saat pembatalan:', error);
