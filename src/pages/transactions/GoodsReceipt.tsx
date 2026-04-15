@@ -438,56 +438,47 @@ export default function GoodsReceipt() {
   }
 
   const handleCancelReceipt = async (receipt: GoodsReceiptWithDetails) => {
-    console.log('--- MEMULAI PROSES PEMBATALAN ---');
+    console.log('--- MEMULAI PROSES PEMBATALAN (VERSI 2.0) ---');
     console.log('Receipt yang akan dibatalkan:', receipt);
-    if (!receipt) {
-        console.log('--- PROSES GAGAL: Receipt is null/undefined ---');
+    if (!receipt || !receipt.po_id) {
+        toast.error('Pembatalan gagal: Informasi PO tidak lengkap pada data penerimaan.');
+        console.log('--- PROSES GAGAL: Receipt is null/undefined atau po_id tidak ada ---');
         return;
     }
 
-    // 1. Check if all items are 'JASA'
     const allItemsAreJasa = receipt.items.every(item => item.goods?.item_type?.toUpperCase() === 'JASA' || item.goods?.item_type?.toUpperCase() === 'SERVICE');
-    console.log('Apakah ini Jasa?', allItemsAreJasa);
     if (!allItemsAreJasa) {
       toast.error('Pembatalan gagal.', { description: 'Fitur ini hanya untuk penerimaan yang seluruhnya berisi JASA.' });
-      console.log('--- PROSES GAGAL: Bukan Jasa ---');
       return;
     }
 
-    // 2. Check for associated invoices and their payment status
-    console.log('Mencari invoice untuk receipt ID:', receipt.id);
     const { data: invoices, error: invoiceError } = await supabase
       .from('purchase_invoices')
       .select('id, status, paid_amount')
       .eq('goods_receipt_id', receipt.id);
 
     if (invoiceError) {
-      console.error('Error saat cek invoice:', invoiceError);
       toast.error('Gagal memeriksa invoice: ' + invoiceError.message);
       return;
     }
-    console.log('Invoice yang ditemukan:', invoices);
 
     if (invoices && invoices.length > 0) {
       const paidInvoice = invoices.find(inv => (inv.paid_amount || 0) > 0);
       if (paidInvoice) {
         toast.error('Pembatalan gagal.', { description: `Penerimaan ini sudah ditagih (Invoice) dan sudah ada pembayaran.` });
-        console.log('--- PROSES GAGAL: Sudah ada invoice yang terbayar ---', paidInvoice);
         return;
       }
       toast.error('Pembatalan gagal.', { description: 'Penerimaan ini sudah dibuatkan invoice. Hapus invoice terlebih dahulu.' });
-      console.log('--- PROSES GAGAL: Sudah ada invoice ---');
       return;
     }
 
-    // 3. Confirm with user
     const isConfirmed = await new Promise((resolve) => {
         toast(
             "Konfirmasi Pembatalan",
             {
-                description: `Anda yakin ingin membatalkan penerimaan ${receipt.receipt_number}? Tindakan ini tidak bisa diurungkan.`,
+                description: `Anda yakin ingin membatalkan penerimaan ${receipt.receipt_number}? Ini akan membuat catatan retur dan mengembalikan status PO ke 'ISSUED'.`,
                 action: {
-                    label: "Ya, Batalkan",
+                    label: "Ya, Batalkan & Retur",
                     onClick: () => resolve(true),
                 },
                 onDismiss: () => resolve(false),
@@ -498,74 +489,88 @@ export default function GoodsReceipt() {
 
     if (!isConfirmed) {
         toast.info('Pembatalan dibatalkan oleh pengguna.');
-        console.log('--- PROSES DIBATALKAN PENGGUNA ---');
         return;
     }
 
     setLoading(true);
-    console.log('Memulai transaksi penghapusan...');
+    console.log('Memulai transaksi pembatalan & retur...');
     try {
-      // 4. Delete receipt items and then the receipt itself
-      console.log('Menghapus item dari goods_receipt_items dengan receipt_id:', receipt.id);
-      const { error: itemError } = await supabase
-        .from('goods_receipt_items')
-        .delete()
-        .eq('receipt_id', receipt.id);
+        // 1. Create a purchase_returns header
+        console.log('Membuat header purchase_returns untuk PO ID:', receipt.po_id);
+        const totalReturnValue = receipt.items.reduce((sum, item) => {
+            const price = item.unit_price || 0;
+            const qty = item.quantity_received || 0;
+            return sum + (price * qty);
+        }, 0);
 
-      if (itemError) {
-        console.error('Error saat hapus item:', itemError);
-        throw new Error(`Gagal menghapus item penerimaan: ${itemError.message}`);
-      }
-      console.log('Item berhasil dihapus.');
+        const { data: returnHeader, error: returnHeaderError } = await supabase
+            .from('purchase_returns')
+            .insert({
+                po_id: receipt.po_id,
+                return_date: new Date().toISOString().split('T')[0],
+                return_number: `RT-CANCEL-${receipt.receipt_number}`,
+                settlement_type: 'NONE', // For Jasa cancellation, no monetary settlement
+                notes: `Pembatalan otomatis untuk penerimaan jasa ${receipt.receipt_number}`,
+                settlement_amount: totalReturnValue,
+            })
+            .select()
+            .single();
 
-      console.log('Menghapus data dari goods_receipts dengan ID:', receipt.id);
-      const { error: headerError } = await supabase
-        .from('goods_receipts')
-        .delete()
-        .eq('id', receipt.id);
+        if (returnHeaderError) throw new Error(`Gagal membuat header retur: ${returnHeaderError.message}`);
+        console.log('Header retur berhasil dibuat:', returnHeader);
 
-      if (headerError) {
-        console.error('Error saat hapus receipt:', headerError);
-        throw new Error(`Gagal menghapus header penerimaan: ${headerError.message}`);
-      }
-      console.log('Receipt utama berhasil dihapus.');
+        // 2. Create purchase_return_items
+        const returnItemsPayload = receipt.items.map(item => ({
+            return_id: returnHeader.id,
+            goods_id: item.goods_id,
+            quantity_returned: item.quantity_received,
+            unit_price: item.unit_price,
+            total_price: (item.unit_price || 0) * (item.quantity_received || 0),
+        }));
 
-      // After deleting, check other receipts for the same PO to update PO status
-      console.log('Memperbarui status PO. ID PO:', receipt.po_id);
-      if (receipt.po_id) {
-        console.log('Mengecek penerimaan lain untuk PO ID:', receipt.po_id);
-        const { data: otherReceipts, error: checkError } = await supabase
-          .from('goods_receipts')
-          .select('id')
-          .eq('po_id', receipt.po_id);
+        console.log('Membuat item retur:', returnItemsPayload);
+        const { error: returnItemsError } = await supabase
+            .from('purchase_return_items')
+            .insert(returnItemsPayload);
 
-        if (checkError) {
-          console.error('Error saat cek penerimaan lain:', checkError);
-          throw new Error(`Gagal memeriksa penerimaan lain: ${checkError.message}`);
-        }
-        console.log('Penerimaan lain yang tersisa:', otherReceipts);
+        if (returnItemsError) throw new Error(`Gagal membuat item retur: ${returnItemsError.message}`);
+        console.log('Item retur berhasil dibuat.');
 
-        const newStatus = (otherReceipts && otherReceipts.length > 0) ? 'RECEIVED_PART' : 'ISSUED';
-        console.log('Status PO baru akan menjadi:', newStatus);
+        // 3. Delete the original receipt items and header
+        console.log('Menghapus item dari goods_receipt_items dengan receipt_id:', receipt.id);
+        const { error: itemDeleteError } = await supabase.from('goods_receipt_items').delete().eq('receipt_id', receipt.id);
+        if (itemDeleteError) throw new Error(`Gagal menghapus item penerimaan lama: ${itemDeleteError.message}`);
 
+        console.log('Menghapus header goods_receipts dengan ID:', receipt.id);
+        const { error: headerDeleteError } = await supabase.from('goods_receipts').delete().eq('id', receipt.id);
+        if (headerDeleteError) throw new Error(`Gagal menghapus header penerimaan lama: ${headerDeleteError.message}`);
+        console.log('Penerimaan lama berhasil dihapus.');
+
+        // 4. Update PO status to ISSUED
+        console.log('Memperbarui status PO menjadi ISSUED untuk PO ID:', receipt.po_id);
         const { error: poUpdateError } = await supabase
-          .from('purchase_orders')
-          .update({ status: newStatus })
-          .eq('id', receipt.po_id);
+            .from('purchase_orders')
+            .update({ status: 'ISSUED' })
+            .eq('id', receipt.po_id);
 
-        if (poUpdateError) {
-          console.error('Error saat update status PO:', poUpdateError);
-          throw new Error(`Gagal memperbarui status PO: ${poUpdateError.message}`);
-        }
+        if (poUpdateError) throw new Error(`Gagal memperbarui status PO: ${poUpdateError.message}`);
         console.log('Status PO berhasil diperbarui.');
-      } else {
-        console.warn('Tidak ada po_id pada receipt, tidak bisa update status PO.');
-      }
-      
-      // 5. Refresh data
-      toast.success('Penerimaan berhasil dibatalkan. Status PO diperbarui.');
-      console.log('--- PROSES PEMBATALAN SUKSES ---');
-      fetchReceiptHistory(); // Refresh the list
+
+        // 5. Refresh data
+        toast.success('Penerimaan berhasil dibatalkan.', {
+            description: 'Catatan retur dibuat dan status PO telah dikembalikan ke "ISSUED".'
+        });
+        console.log('--- PROSES PEMBATALAN & RETUR SUKSES ---');
+        fetchReceiptHistory();
+        fetchOpenPOs();
+
+    } catch (error: any) {
+        toast.error('Pembatalan Gagal', { description: error.message });
+        console.error('--- PROSES PEMBATALAN & RETUR GAGAL TOTAL ---', error);
+    } finally {
+        setLoading(false);
+    }
+  };
       fetchOpenPOs(); // Refresh the open POs list
 
     } catch (error: any) {
