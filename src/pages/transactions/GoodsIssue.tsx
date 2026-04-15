@@ -445,6 +445,15 @@ export default function GoodsIssuePage() {
 
         if (!goodsId && matchedGood?.id) goodsId = matchedGood.id;
 
+        // --- FIX: Smart match by name if ID is missing ---
+        if (!goodsId && est.name) {
+          const bestMatch = pickBestByName(est.name, goodsList);
+          if (bestMatch) {
+            goodsId = bestMatch.id;
+          }
+        }
+        // --- END FIX ---
+
         const estQty = Number(est.qty || 0);
         const stock = Number(matchedGood?.current_stock || 0);
         const isInventory = String(matchedGood?.item_type || '').toUpperCase() === 'PERSEDIAAN';
