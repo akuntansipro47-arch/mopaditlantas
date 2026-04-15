@@ -571,16 +571,6 @@ export default function GoodsReceipt() {
         setLoading(false);
     }
   };
-      fetchOpenPOs(); // Refresh the open POs list
-
-    } catch (error: any) {
-      console.error('Terjadi kesalahan fatal saat pembatalan:', error);
-      toast.error('Terjadi kesalahan saat pembatalan: ' + error.message);
-      console.log('--- PROSES PEMBATALAN GAGAL TOTAL ---');
-    } finally {
-      setLoading(false);
-    }
-  };
 
   async function fetchReceiptHistory() {
     setLoading(true);
