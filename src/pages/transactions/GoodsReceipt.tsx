@@ -619,7 +619,7 @@ export default function GoodsReceipt() {
 
       // Add search filter logic
       if (historySearch) {
-        query = query.or(`receipt_number.ilike.%${historySearch}%,purchase_orders.po_number.ilike.%${historySearch}%`);
+        query = query.ilike('receipt_number', `%${historySearch}%`);
       }
 
       const { data, error } = await query;
