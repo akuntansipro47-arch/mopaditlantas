@@ -58,7 +58,7 @@ export default function PurchaseOrder() {
   // Form State
   const [formData, setFormData] = useState({
     supplier_id: '',
-    work_order_id: 'NONE', // Optional
+    work_order_id: '', // Optional
     po_date: new Date().toISOString().split('T')[0],
   });
 
@@ -174,14 +174,14 @@ export default function PurchaseOrder() {
   const handlePoTypeChange = (type: 'WO' | 'STOCK') => {
     setPoType(type);
     if (type === 'STOCK') {
-      setFormData(prev => ({ ...prev, work_order_id: 'NONE' }));
+      setFormData(prev => ({ ...prev, work_order_id: '' }));
     }
   };
 
   const resetForm = () => {
     setFormData({ 
       supplier_id: '', 
-      work_order_id: 'NONE',
+      work_order_id: '',
       po_date: new Date().toISOString().split('T')[0]
     });
     setPoItems([{ goods_id: '', brand: '', quantity: 1, unit_price: 0 }]);
@@ -241,7 +241,7 @@ export default function PurchaseOrder() {
       // Fill Form
       setFormData({
         supplier_id: po.supplier_id || '',
-        work_order_id: po.work_order_id || 'NONE',
+        work_order_id: po.work_order_id || '',
         po_date: po.po_date || new Date().toISOString().split('T')[0],
       });
       
@@ -279,7 +279,7 @@ export default function PurchaseOrder() {
           .from('purchase_orders')
           .update({
             supplier_id: formData.supplier_id,
-            work_order_id: poType === 'WO' && formData.work_order_id !== 'NONE' ? formData.work_order_id : null,
+            work_order_id: poType === 'WO' && formData.work_order_id ? formData.work_order_id : undefined,
             total_amount: calculateTotal(),
             po_date: formData.po_date,
           })
@@ -301,7 +301,7 @@ export default function PurchaseOrder() {
           .from('purchase_orders')
           .insert([{
             supplier_id: formData.supplier_id,
-            work_order_id: poType === 'WO' && formData.work_order_id !== 'NONE' ? formData.work_order_id : null,
+            work_order_id: poType === 'WO' && formData.work_order_id ? formData.work_order_id : undefined,
             status: 'ISSUED',
             total_amount: calculateTotal(),
             po_date: formData.po_date,
@@ -452,7 +452,6 @@ export default function PurchaseOrder() {
                       <Select value={formData.work_order_id} onValueChange={(v) => setFormData({...formData, work_order_id: v})} disabled={isReadOnly}>
                         <SelectTrigger><SelectValue placeholder="Pilih WO (Jika ada)" /></SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="NONE">-- Tidak Ada --</SelectItem>
                           {workOrders.map(w => (
                             <SelectItem key={w.id} value={w.id}>{w.wo_number}</SelectItem>
                           ))}
@@ -647,7 +646,7 @@ export default function PurchaseOrder() {
                 className="text-gray-500 hover:text-gray-700"
               >
                 <Trash2 className="h-4 w-4 hidden" /> {/* Hidden icon to keep alignment, or just an X */}
-                ✕
+                ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã¢â‚¬Å“ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢
               </button>
             </div>
             <div className="p-6 space-y-4 flex-1 overflow-hidden flex flex-col">

@@ -10,6 +10,7 @@ import { formatCurrency, formatDate } from '@/lib/utils';
 import * as XLSX from 'xlsx';
 
 export default function PurchaseOrderReport() {
+  // The throw new Error line for testing has been removed.
   const [data, setData] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -42,14 +43,7 @@ export default function PurchaseOrderReport() {
         .select(`
           *,
           suppliers (name),
-          work_orders (
-            wo_number,
-            vehicle_entries (
-              vehicles (
-                license_plate
-              )
-            )
-          ),
+          work_orders (wo_number),
           items:purchase_order_items (
             quantity,
             unit_price,
@@ -70,7 +64,6 @@ export default function PurchaseOrderReport() {
       }
 
       const { data: result, error } = await query;
-      console.log('DATA MENTAH DARI SUPABASE:', result); // <-- TAMBAHAN UNTUK DEBUGGING
       if (error) throw error;
       setData(result || []);
     } catch (error) {
