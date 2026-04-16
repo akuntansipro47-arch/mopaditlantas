@@ -68,6 +68,7 @@ const PERMISSION_GROUPS: Array<{ title: string; items: Array<{ key: string; labe
       { key: 'reports', label: 'Menu Pusat Laporan' },
       { key: 'report_po', label: 'Laporan Pembelian (PO)' },
       { key: 'report_podetail', label: 'Laporan Rincian Pembelian' },
+      { key: 'report_po_detail_new', label: 'Laporan Rincian Pembelian (Detail)' },
       { key: 'report_receipt', label: 'Laporan Barang Masuk' },
       { key: 'report_stock', label: 'Laporan Stok/Nilai/History' },
       { key: 'report_issue', label: 'Laporan Rekap Barang Keluar' },

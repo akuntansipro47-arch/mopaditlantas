@@ -7,6 +7,7 @@ import PurchaseDetailReport from './reports/PurchaseDetailReport';
 import GoodsReceiptReport from './reports/GoodsReceiptReport';
 import WorkOrderReport from './reports/WorkOrderReport';
 import WorkOrderDetailReport from './reports/WorkOrderDetailReport';
+import PurchaseOrderDetailReport from './reports/PurchaseOrderDetailReport';
 import GoodsIssueReport from './reports/GoodsIssueReport';
 import GoodsIssueDetailReport from './reports/GoodsIssueDetailReport';
 import StockReport from './reports/StockReport';
@@ -52,6 +53,7 @@ export default function Reports() {
   const getDefaultTab = () => {
       if (canAccess('report_po')) return 'po';
       if (canAccess('report_podetail')) return 'podetail';
+      if (canAccess('report_po_detail_new')) return 'po_detail_new'; // Tambahkan key untuk laporan baru
       if (canAccess('report_receipt')) return 'receipt';
       if (canAccess('report_stock')) return 'stock';
       if (canAccess('report_stock')) return 'item_history'; // Reuse stock permission
@@ -130,6 +132,11 @@ export default function Reports() {
               {canAccess('report_podetail') && (
                 <TabsTrigger value="podetail" className="data-[state=active]:bg-indigo-600 data-[state=active]:text-white data-[state=active]:shadow-md border border-slate-200 bg-white px-4 py-2.5 rounded-lg transition-all hover:border-indigo-300">
                   Rincian Pembelian
+                </TabsTrigger>
+              )}
+              {canAccess('report_po_detail_new') && (
+                <TabsTrigger value="po_detail_new" className="data-[state=active]:bg-indigo-600 data-[state=active]:text-white data-[state=active]:shadow-md border border-slate-200 bg-white px-4 py-2.5 rounded-lg transition-all hover:border-indigo-300">
+                  Rincian Pembelian (Detail)
                 </TabsTrigger>
               )}
               {canAccess('report_receipt') && (
@@ -226,6 +233,7 @@ export default function Reports() {
         <div className="mt-6 min-h-[500px]">
           {canAccess('report_po') && <TabsContent value="po"><PurchaseOrderReport /></TabsContent>}
           {canAccess('report_podetail') && <TabsContent value="podetail"><PurchaseDetailReport /></TabsContent>}
+          {canAccess('report_po_detail_new') && <TabsContent value="po_detail_new"><PurchaseOrderDetailReport /></TabsContent>}
           {canAccess('report_receipt') && <TabsContent value="receipt"><GoodsReceiptReport /></TabsContent>}
           {canAccess('report_stock') && <TabsContent value="stock"><StockReport /></TabsContent>}
           {canAccess('report_stock') && <TabsContent value="item_history"><ItemHistoryReport /></TabsContent>}
