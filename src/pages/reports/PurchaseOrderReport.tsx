@@ -42,6 +42,7 @@ export default function PurchaseOrderReport() {
         .select(`
           *,
           suppliers (name),
+          work_orders (wo_number),
           items:purchase_order_items (
             quantity,
             unit_price,
@@ -82,6 +83,7 @@ export default function PurchaseOrderReport() {
     const flattenData = filteredData.flatMap(po => 
       po.items.map((item: any) => ({
         'No. PO': po.po_number,
+        'No. WO': po.work_orders?.wo_number,
         'Tanggal': formatDate(po.po_date),
         'Supplier': po.suppliers?.name,
         'Status': po.status,
@@ -165,6 +167,7 @@ export default function PurchaseOrderReport() {
             <TableHeader>
               <TableRow>
                 <TableHead>No. PO</TableHead>
+                <TableHead>No. WO</TableHead>
                 <TableHead>Tanggal</TableHead>
                 <TableHead>Supplier</TableHead>
                 <TableHead>Status</TableHead>
@@ -173,11 +176,12 @@ export default function PurchaseOrderReport() {
             </TableHeader>
             <TableBody>
               {filteredData.length === 0 ? (
-                <TableRow><TableCell colSpan={5} className="text-center py-8">Tidak ada data.</TableCell></TableRow>
+                <TableRow><TableCell colSpan={6} className="text-center py-8">Tidak ada data.</TableCell></TableRow>
               ) : (
                 filteredData.map((po) => (
                   <TableRow key={po.id}>
                     <TableCell className="font-medium">{po.po_number}</TableCell>
+                    <TableCell>{po.work_orders?.wo_number}</TableCell>
                     <TableCell>{formatDate(po.po_date)}</TableCell>
                     <TableCell>{po.suppliers?.name}</TableCell>
                     <TableCell>
