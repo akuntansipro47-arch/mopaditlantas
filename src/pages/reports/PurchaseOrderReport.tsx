@@ -42,7 +42,14 @@ export default function PurchaseOrderReport() {
         .select(`
           *,
           suppliers (name),
-          work_orders (wo_number),
+          work_orders (
+            wo_number,
+            vehicle_entries (
+              vehicles (
+                license_plate
+              )
+            )
+          ),
           items:purchase_order_items (
             quantity,
             unit_price,
@@ -63,6 +70,7 @@ export default function PurchaseOrderReport() {
       }
 
       const { data: result, error } = await query;
+      console.log('DATA MENTAH DARI SUPABASE:', result); // <-- TAMBAHAN UNTUK DEBUGGING
       if (error) throw error;
       setData(result || []);
     } catch (error) {
