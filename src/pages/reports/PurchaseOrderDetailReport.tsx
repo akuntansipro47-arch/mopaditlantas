@@ -29,7 +29,7 @@ type ReportData = {
   total: number;
 };
 
-export default export default function PurchaseOrderDetailReport() {
+export default function PurchaseOrderDetailReport() {
   const [loading, setLoading] = useState(false);
   const [data, setData] = useState<ReportData[]>([]);
   const [dateRange, setDateRange] = useState<DateRange | undefined>({
