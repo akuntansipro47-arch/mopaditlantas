@@ -51,7 +51,23 @@ export default function PurchaseOrderDetailReport() {
       const startDate = format(dateRange.from, 'yyyy-MM-dd');
       const endDate = format(dateRange.to, 'yyyy-MM-dd');
 
-      // 1. Fetch PO Items with related data
+      // 1. Fetch relevant PO IDs first based on date range
+      const { data: poIdsData, error: poIdsError } = await supabase
+        .from('purchase_orders')
+        .select('id')
+        .gte('po_date', startDate)
+        .lte('po_date', endDate);
+
+      if (poIdsError) throw poIdsError;
+      if (!poIdsData || poIdsData.length === 0) {
+        setData([]);
+        toast.info('Tidak ada data ditemukan untuk rentang tanggal yang dipilih.');
+        return;
+      }
+
+      const poIds = poIdsData.map(po => po.id);
+
+      // 2. Fetch PO Items with related data using the fetched PO IDs
       const { data: poItems, error: poItemsError } = await supabase
         .from('purchase_order_items')
         .select(`
@@ -73,21 +89,21 @@ export default function PurchaseOrderDetailReport() {
             )
           )
         `)
-        .gte('purchase_orders.po_date', startDate)
-        .lte('purchase_orders.po_date', endDate)
+        .in('po_id', poIds)
         .order('po_date', { foreignTable: 'purchase_orders', ascending: false });
 
       if (poItemsError) throw poItemsError;
       if (!poItems || poItems.length === 0) {
         setData([]);
-        toast.info('Tidak ada data ditemukan untuk rentang tanggal yang dipilih.');
+        // This toast is likely redundant now, but kept for safety
+        toast.info('Tidak ada item pembelian yang ditemukan untuk PO dalam rentang tanggal ini.');
         return;
       }
 
       const poItemIds = poItems.map(item => item.id);
-      const poIds = [...new Set(poItems.map(item => item.purchase_orders?.id).filter(Boolean))];
+      // We already have poIds, no need to map again
 
-      // 2. Fetch received quantities
+      // 3. Fetch received quantities
       const { data: receiptItems, error: receiptError } = await supabase
         .from('good_receipt_items')
         .select('purchase_order_item_id, quantity')
@@ -100,7 +116,7 @@ export default function PurchaseOrderDetailReport() {
         receivedQtyMap.set(item.purchase_order_item_id, currentQty + item.quantity);
       });
 
-      // 3. Fetch payment status from invoices
+      // 4. Fetch payment status from invoices
       const { data: invoices, error: invoiceError } = await supabase
         .from('purchase_invoices')
         .select('po_id, status')
