@@ -606,6 +606,7 @@ export default function PurchasePayment() {
                   <TableHeader>
                     <TableRow>
                       <TableHead>Nomor Tagihan</TableHead>
+                      <TableHead>No. PO</TableHead>
                       <TableHead>Supplier</TableHead>
                       <TableHead>Tgl. Tagihan</TableHead>
                       <TableHead>Jatuh Tempo</TableHead>
@@ -619,11 +620,12 @@ export default function PurchasePayment() {
                   <TableBody>
                     {loading ? (
                       <TableRow>
-                        <TableCell colSpan={9} className="text-center">Memuat data...</TableCell>
+                        <TableCell colSpan={10} className="text-center">Memuat data...</TableCell>
                       </TableRow>
                     ) : filteredInvoices.map(invoice => (
                       <TableRow key={invoice.id}>
                         <TableCell>{invoice.invoice_number}</TableCell>
+                        <TableCell>{invoice.purchase_orders?.po_number}</TableCell>
                         <TableCell>{invoice.suppliers?.name}</TableCell>
                         <TableCell>{formatDate(invoice.invoice_date)}</TableCell>
                         <TableCell>{formatDate(invoice.due_date)}</TableCell>
@@ -668,6 +670,7 @@ export default function PurchasePayment() {
                     <TableRow>
                       <TableHead>Tgl. Bayar</TableHead>
                       <TableHead>No. Tagihan</TableHead>
+                      <TableHead>No. PO</TableHead>
                       <TableHead>Supplier</TableHead>
                       <TableHead>Akun Pembayar</TableHead>
                       <TableHead className="text-right">Jumlah</TableHead>
@@ -677,12 +680,13 @@ export default function PurchasePayment() {
                   <TableBody>
                     {loading ? (
                       <TableRow>
-                        <TableCell colSpan={6} className="text-center">Memuat data...</TableCell>
+                        <TableCell colSpan={7} className="text-center">Memuat data...</TableCell>
                       </TableRow>
                     ) : filteredPaymentHistory.map(payment => (
                       <TableRow key={payment.id}>
                         <TableCell>{formatDate(payment.payment_date)}</TableCell>
                         <TableCell>{payment.purchase_invoices?.invoice_number}</TableCell>
+                        <TableCell>{payment.purchase_invoices?.purchase_orders?.po_number}</TableCell>
                         <TableCell>{payment.purchase_invoices?.suppliers?.name}</TableCell>
                         <TableCell>{payment.payment_account?.account_name}</TableCell>
                         <TableCell className="text-right">{formatCurrency(payment.amount)}</TableCell>
