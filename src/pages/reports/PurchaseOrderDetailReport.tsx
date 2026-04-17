@@ -16,7 +16,8 @@ type ReportData = {
   tgl: string;
   no_po: string;
   supplier: string | null;
-  kendaraan_nopol: string;
+  kendaraan: string;
+  nopol: string;
   no_wo: string;
   tipe: string;
   nama_barang: string | null;
@@ -146,7 +147,8 @@ export default function PurchaseOrderDetailReport() {
         if (!po) return null;
 
         const vehicle = po.work_orders?.vehicle_entries?.vehicles;
-        const nopol = vehicle ? `${vehicle.brand_type} / ${vehicle.license_plate}` : 'Stok Gudang';
+        const kendaraan = vehicle ? vehicle.brand_type : 'Stok Gudang';
+        const nopol = vehicle ? vehicle.license_plate : '-';
         const paymentStatus = paymentStatusMap.get(po.id);
 
         let statusBayar = 'Belum Ditagih';
@@ -166,7 +168,8 @@ export default function PurchaseOrderDetailReport() {
           tgl: po.po_date,
           no_po: po.po_number,
           supplier: po.suppliers?.name || '-',
-          kendaraan_nopol: nopol,
+          kendaraan: kendaraan,
+          nopol: nopol,
           no_wo: po.work_orders?.wo_number || '-',
           tipe: item.goods?.name || '-',
           nama_barang: item.goods?.name || '-',
@@ -260,32 +263,34 @@ export default function PurchaseOrderDetailReport() {
         if (!po) return null;
   
         const vehicle = po.work_orders?.vehicle_entries?.vehicles;
-        const nopol = vehicle ? `${vehicle.brand_type} / ${vehicle.license_plate}` : 'Stok Gudang';
-        const paymentStatus = paymentStatusMap.get(po.id);
-  
-        let statusBayar = 'Belum Ditagih';
-        if (paymentStatus === 'PAID') statusBayar = 'Lunas';
-        else if (paymentStatus === 'PARTIAL') statusBayar = 'Bayar Sebagian';
-        else if (paymentStatus) statusBayar = 'Belum Lunas';
-  
-        const receivedQtyKey = `${po.id}-${item.goods_id}`;
-        const receivedQty = receivedQtyMap.get(receivedQtyKey) || 0;
-  
-        return {
-          id: item.id,
-          tgl: po.po_date,
-          no_po: po.po_number,
-          supplier: po.suppliers?.name || '-',
-          kendaraan_nopol: nopol,
-          no_wo: po.work_orders?.wo_number || '-',
-          tipe: item.goods?.name || '-',
-          nama_barang: item.goods?.name || '-',
-          qty: item.quantity,
-          diterima: receivedQty,
-          status_bayar: statusBayar,
-          harga_satuan: item.unit_price,
-          total: item.total_price,
-        };
+      const kendaraan = vehicle ? vehicle.brand_type : 'Stok Gudang';
+      const nopol = vehicle ? vehicle.license_plate : '-';
+      const paymentStatus = paymentStatusMap.get(po.id);
+
+      let statusBayar = 'Belum Ditagih';
+      if (paymentStatus === 'PAID') statusBayar = 'Lunas';
+      else if (paymentStatus === 'PARTIAL') statusBayar = 'Bayar Sebagian';
+      else if (paymentStatus) statusBayar = 'Belum Lunas';
+
+      const receivedQtyKey = `${po.id}-${item.goods_id}`;
+      const receivedQty = receivedQtyMap.get(receivedQtyKey) || 0;
+
+      return {
+        id: item.id,
+        tgl: po.po_date,
+        no_po: po.po_number,
+        supplier: po.suppliers?.name || '-',
+        kendaraan: kendaraan,
+        nopol: nopol,
+        no_wo: po.work_orders?.wo_number || '-',
+        tipe: item.goods?.name || '-',
+        nama_barang: item.goods?.name || '-',
+        qty: item.quantity,
+        diterima: receivedQty,
+        status_bayar: statusBayar,
+        harga_satuan: item.unit_price,
+        total: item.total_price,
+      };
       }).filter(Boolean) as ReportData[];
   
       return combinedData;
@@ -323,7 +328,8 @@ export default function PurchaseOrderDetailReport() {
       'Tanggal': format(parseISO(item.tgl), 'dd-MM-yyyy'),
       'No. PO': item.no_po,
       'Supplier': item.supplier,
-      'Kendaraan/Nopol': item.kendaraan_nopol,
+      'Kendaraan': item.kendaraan,
+      'Nopol': item.nopol,
       'No. WO': item.no_wo,
       'Tipe': item.tipe,
       'Nama Barang': item.nama_barang,
@@ -391,7 +397,8 @@ export default function PurchaseOrderDetailReport() {
                     <TableHead className="w-[100px]">Tgl</TableHead>
                     <TableHead className="min-w-[150px]">No. PO</TableHead>
                     <TableHead className="min-w-[200px]">Supplier</TableHead>
-                    <TableHead className="min-w-[180px]">Kendaraan/Nopol</TableHead>
+                    <TableHead className="min-w-[150px]">Kendaraan</TableHead>
+                    <TableHead className="min-w-[120px]">Nopol</TableHead>
                     <TableHead className="min-w-[150px]">No. WO</TableHead>
                     <TableHead className="min-w-[250px]">Nama Barang</TableHead>
                     <TableHead className="w-[80px] text-right">Qty</TableHead>
@@ -408,7 +415,8 @@ export default function PurchaseOrderDetailReport() {
                         <TableCell>{format(parseISO(item.tgl), 'dd-MM-yy', { locale: localeID })}</TableCell>
                         <TableCell>{item.no_po}</TableCell>
                         <TableCell>{item.supplier}</TableCell>
-                        <TableCell>{item.kendaraan_nopol}</TableCell>
+                        <TableCell>{item.kendaraan}</TableCell>
+                        <TableCell>{item.nopol}</TableCell>
                         <TableCell>{item.no_wo}</TableCell>
                         <TableCell>{item.nama_barang}</TableCell>
                         <TableCell className="text-right">{item.qty}</TableCell>
@@ -429,7 +437,7 @@ export default function PurchaseOrderDetailReport() {
                     ))
                   ) : (
                     <TableRow>
-                      <TableCell colSpan={11} className="text-center h-24">
+                      <TableCell colSpan={12} className="text-center h-24">
                         Tidak ada data.
                       </TableCell>
                     </TableRow>
