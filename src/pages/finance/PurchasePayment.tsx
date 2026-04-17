@@ -727,22 +727,16 @@ export default function PurchasePayment() {
   );
 
   return (
-    <div className="space-y-6">
-        {AccountSelector()}
-        {FeeAccountSelector()}
-      <div className="flex items-center justify-between">
-        <h2 className="text-3xl font-bold tracking-tight">Pembayaran Pembelian & Hutang</h2>
-        <div className="flex items-center gap-2">
-            <Button 
-              variant="outline" 
-              onClick={() => trackSpecificInvoice('INV-1775104628401')}
-              className="bg-yellow-400 hover:bg-yellow-500 text-black"
-            >
-              
-        </div>
-      </div>
-
-      <Tabs value={activeTab} onValueChange={setActiveTab}>
+    <div className="flex items-center space-x-2">
+      <Button 
+        variant="outline" 
+        onClick={handleSyncInvoices} 
+        disabled={isSyncing}
+      >
+        {isSyncing ? 'Menyinkronkan...' : <RefreshCw className="mr-2 h-4 w-4" />}
+        Sinkronisasi Tagihan Lama
+      </Button>
+    </div>
           <TabsList>
               <TabsTrigger value="invoices">Tagihan (Invoices)</TabsTrigger>
               <TabsTrigger value="history">Riwayat Pembayaran</TabsTrigger>
