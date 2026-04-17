@@ -133,17 +133,40 @@ const WorkOrderDetailReport = () => {
                 query = query.eq('status', statusFilter);
             }
 
-            // New: Handle vehicle group filter on the server-side for reliability
+            // New: Robust server-side vehicle group filter
             if (vehicleGroupFilter !== 'semua') {
-                // First, get all vehicle_entry_ids that belong to the selected group
+                // Step 1: Get all vehicle IDs for the selected group.
+                const { data: vehiclesInGroup, error: vError } = await supabase
+                    .from('vehicles')
+                    .select('id')
+                    .eq('vehicle_group_id', vehicleGroupFilter);
+
+                if (vError) throw new Error(`Failed to fetch vehicles for group: ${vError.message}`);
+                
+                if (!vehiclesInGroup || vehiclesInGroup.length === 0) {
+                    // If no vehicles in group, no work orders will match.
+                    setReportData([]);
+                    setLoading(false);
+                    return; // Exit early
+                }
+                const vehicleIds = vehiclesInGroup.map(v => v.id);
+
+                // Step 2: Use the vehicle IDs to get the relevant vehicle_entry_ids.
                 const { data: vehicleEntries, error: veError } = await supabase
                     .from('vehicle_entries')
                     .select('id')
-                    .eq('vehicles.vehicle_group_id', vehicleGroupFilter);
-
+                    .in('vehicle_id', vehicleIds);
+                
                 if (veError) throw new Error(`Failed to fetch vehicle entries for group: ${veError.message}`);
 
+                if (!vehicleEntries || vehicleEntries.length === 0) {
+                    setReportData([]);
+                    setLoading(false);
+                    return; // Exit early
+                }
                 const vehicleEntryIds = vehicleEntries.map(ve => ve.id);
+
+                // Step 3: Filter the main work_orders query by the vehicle_entry_ids.
                 query = query.in('vehicle_entry_id', vehicleEntryIds);
             }
 
