@@ -567,6 +567,47 @@ export default function PurchasePayment() {
 
   const [isAccountSelectOpen, setIsAccountSelectOpen] = useState(false); // For custom dialog
   const [isFeeAccountSelectOpen, setIsFeeAccountSelectOpen] = useState(false);
+
+  async function trackSpecificInvoice(invoiceNumber: string) {
+    toast.info(`Mencari data untuk invoice: ${invoiceNumber}...`);
+    
+    // 1. Find the invoice
+    const { data: invoice, error: invError } = await supabase
+      .from('purchase_invoices')
+      .select('*, suppliers(name), purchase_orders(*)')
+      .eq('invoice_number', invoiceNumber)
+      .single();
+
+    if (invError || !invoice) {
+      toast.error(`Invoice ${invoiceNumber} tidak ditemukan.`);
+      console.error('Error finding invoice:', invError);
+      return;
+    }
+
+    console.log('--- DATA INVOICE & PO TERKAIT ---');
+    console.log(invoice);
+    toast.success('Data Invoice ditemukan, cek konsol (F12).');
+
+    // 2. Find related payments
+    const { data: payments, error: payError } = await supabase
+      .from('purchase_payments')
+      .select('*')
+      .eq('invoice_id', invoice.id);
+
+    if (payError) {
+      toast.error('Gagal mencari data pembayaran terkait.');
+      console.error('Error finding payments:', payError);
+      return;
+    }
+
+    if (payments.length === 0) {
+      toast.warning('Tidak ditemukan data pembayaran untuk invoice ini di tabel purchase_payments.');
+    } else {
+      console.log('--- DATA PEMBAYARAN TERKAIT ---');
+      console.log(payments);
+      toast.success(`${payments.length} data pembayaran ditemukan, cek konsol (F12).`);
+    }
+  }
   const [feeAccountSearch, setFeeAccountSearch] = useState('');
 
   const handleDeleteInvoice = async (invoiceId: string) => {
@@ -732,10 +773,19 @@ export default function PurchasePayment() {
         {FeeAccountSelector()}
       <div className="flex items-center justify-between">
         <h2 className="text-3xl font-bold tracking-tight">Pembayaran Pembelian & Hutang</h2>
-        <Button variant="outline" onClick={handleSyncInvoices} disabled={isSyncing}>
-            <RefreshCw className={`mr-2 h-4 w-4 ${isSyncing ? 'animate-spin' : ''}`} />
-            Sinkronisasi Tagihan PO
-        </Button>
+        <div className="flex items-center gap-2">
+            <Button 
+              variant="outline" 
+              onClick={() => trackSpecificInvoice('INV-1775104628401')}
+              className="bg-yellow-400 hover:bg-yellow-500 text-black"
+            >
+              Track INV-1775104628401
+            </Button>
+            <Button variant="outline" onClick={handleSyncInvoices} disabled={isSyncing}>
+                <RefreshCw className={`mr-2 h-4 w-4 ${isSyncing ? 'animate-spin' : ''}`} />
+                Sinkronisasi Tagihan PO
+            </Button>
+        </div>
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
