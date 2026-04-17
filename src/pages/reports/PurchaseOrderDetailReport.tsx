@@ -59,9 +59,11 @@ export default function PurchaseOrderDetailReport() {
         .lte('po_date', endDate);
 
       if (poIdsError) throw poIdsError;
+
       if (!poIdsData || poIdsData.length === 0) {
         setData([]);
-        toast.info('Tidak ada data ditemukan untuk rentang tanggal yang dipilih.');
+        toast.info('Tidak ada data PO ditemukan untuk rentang tanggal yang dipilih.');
+        setLoading(false);
         return;
       }
 
@@ -76,7 +78,7 @@ export default function PurchaseOrderDetailReport() {
           unit_price,
           total_price,
           goods ( name ),
-          purchase_orders (
+          purchase_orders!inner (
             id,
             po_date,
             po_number,
@@ -93,21 +95,22 @@ export default function PurchaseOrderDetailReport() {
         .order('po_date', { foreignTable: 'purchase_orders', ascending: false });
 
       if (poItemsError) throw poItemsError;
+
       if (!poItems || poItems.length === 0) {
         setData([]);
-        // This toast is likely redundant now, but kept for safety
         toast.info('Tidak ada item pembelian yang ditemukan untuk PO dalam rentang tanggal ini.');
+        setLoading(false);
         return;
       }
 
       const poItemIds = poItems.map(item => item.id);
-      // We already have poIds, no need to map again
 
       // 3. Fetch received quantities
       const { data: receiptItems, error: receiptError } = await supabase
         .from('good_receipt_items')
         .select('purchase_order_item_id, quantity')
         .in('purchase_order_item_id', poItemIds);
+
       if (receiptError) throw receiptError;
 
       const receivedQtyMap = new Map<number, number>();
@@ -121,6 +124,7 @@ export default function PurchaseOrderDetailReport() {
         .from('purchase_invoices')
         .select('po_id, status')
         .in('po_id', poIds);
+
       if (invoiceError) throw invoiceError;
 
       const paymentStatusMap = new Map<number, string>();
