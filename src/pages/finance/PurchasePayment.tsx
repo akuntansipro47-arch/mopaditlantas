@@ -252,7 +252,7 @@ export default function PurchasePayment() {
             status
           )
         `)
-        .in('purchase_orders.status', ['RECEIVED_FULL', 'RECEIVED_PART'])
+        .in('purchase_orders.status', ['RECEIVED_FULL', 'RECEIVED_PART', 'RETUR'])
         .order('created_at', { ascending: false });
 
       if (error) throw error;
