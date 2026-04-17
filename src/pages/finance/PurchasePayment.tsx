@@ -571,24 +571,27 @@ export default function PurchasePayment() {
   async function trackSpecificInvoice(invoiceNumber: string) {
     toast.info(`Mencari data untuk invoice: ${invoiceNumber}...`);
     
-    // 1. Find the invoice (simplified query to avoid 406 error)
+    // ULTIMATE TEST: Simplest possible query, no joins.
+    // This will confirm if the invoice number exists at all.
     const { data: invoice, error: invError } = await supabase
       .from('purchase_invoices')
-      .select('*, suppliers(name)') // Temporarily removed purchase_orders(*)
+      .select('*') // NO JOINS
       .eq('invoice_number', invoiceNumber)
       .single();
 
     if (invError || !invoice) {
-      toast.error(`Invoice ${invoiceNumber} tidak ditemukan.`);
-      console.error('Error finding invoice:', invError);
+      toast.error(`Invoice ${invoiceNumber} tidak ditemukan (Tes Final).`);
+      console.error('Error finding invoice (Final Test):', invError);
+      // Also log the raw error object from supabase
+      if(invError) console.error('Supabase Error Object:', invError);
       return;
     }
 
-    console.log('--- DATA INVOICE ---');
+    console.log('--- DATA INVOICE DITEMUKAN (Tanpa Join) ---');
     console.log(invoice);
-    toast.success('Data Invoice ditemukan, cek konsol (F12).');
+    toast.success('Data Invoice dasar ditemukan! Cek konsol (F12).');
 
-    // Let's try to get PO info in a separate query
+    // Now we can try to get other data separately if the above was successful
     if (invoice.po_id) {
         const { data: po, error: poError } = await supabase
             .from('purchase_orders')
@@ -597,32 +600,25 @@ export default function PurchasePayment() {
             .single();
         
         if (po) {
-            console.log('--- DATA PO TERKAIT (dari query terpisah) ---');
+            console.log('--- DATA PO TERKAIT ---');
             console.log(po);
         } else {
             console.error('Gagal mengambil data PO terkait:', poError);
         }
     }
-
-
-    // 2. Find related payments
-    const { data: payments, error: payError } = await supabase
-      .from('purchase_payments')
-      .select('*')
-      .eq('invoice_id', invoice.id);
-
-    if (payError) {
-      toast.error('Gagal mencari data pembayaran terkait.');
-      console.error('Error finding payments:', payError);
-      return;
-    }
-
-    if (payments.length === 0) {
-      toast.warning('Tidak ditemukan data pembayaran untuk invoice ini di tabel purchase_payments.');
-    } else {
-      console.log('--- DATA PEMBAYARAN TERKAIT ---');
-      console.log(payments);
-      toast.success(`${payments.length} data pembayaran ditemukan, cek konsol (F12).`);
+     if (invoice.supplier_id) {
+        const { data: supplier, error: supplierError } = await supabase
+            .from('suppliers')
+            .select('*')
+            .eq('id', invoice.supplier_id)
+            .single();
+        
+        if (supplier) {
+            console.log('--- DATA SUPPLIER TERKAIT ---');
+            console.log(supplier);
+        } else {
+            console.error('Gagal mengambil data supplier terkait:', supplierError);
+        }
     }
   }
   const [feeAccountSearch, setFeeAccountSearch] = useState('');
