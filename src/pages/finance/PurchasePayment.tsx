@@ -20,7 +20,6 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useRealtimeRefetch } from '@/hooks/useRealtimeRefetch';
 
 export default function PurchasePayment() {
-  // Trigger deployment update
   const [activeTab, setActiveTab] = useState('invoices');
   const [invoices, setInvoices] = useState<any[]>([]);
   const [paymentHistory, setPaymentHistory] = useState<any[]>([]);
@@ -29,14 +28,12 @@ export default function PurchasePayment() {
   const [historySearch, setHistorySearch] = useState('');
   const [isSyncing, setIsSyncing] = useState(false);
   
-  // Filters
   const [dateFilter, setDateFilter] = useState({
     startDate: new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0],
     endDate: new Date().toISOString().split('T')[0]
   });
-  const [statusFilter, setStatusFilter] = useState('ALL'); // ALL, UNPAID, PARTIAL, PAID
+  const [statusFilter, setStatusFilter] = useState('ALL');
 
-  // Payment Dialog
   const [isPayOpen, setIsPayOpen] = useState(false);
   const [selectedInvoice, setSelectedInvoice] = useState<any>(null);
   const [editingPaymentId, setEditingPaymentId] = useState<string | null>(null);
@@ -55,7 +52,10 @@ export default function PurchasePayment() {
 
   const [cashBankAccounts, setCashBankAccounts] = useState<any[]>([]);
   const [expenseAccounts, setExpenseAccounts] = useState<any[]>([]);
-  const [apAccount, setApAccount] = useState<any>(null); // Accounts Payable (Hutang Usaha)
+  const [apAccount, setApAccount] = useState<any>(null);
+
+  const [isAccountSelectOpen, setIsAccountSelectOpen] = useState(false);
+  const [isFeeAccountSelectOpen, setIsFeeAccountSelectOpen] = useState(false);
 
   useEffect(() => {
     fetchInvoices();
@@ -98,11 +98,6 @@ export default function PurchasePayment() {
 
   async function fetchApAccount() {
     try {
-        // Find ACCOUNT (Detail) that is Accounts Payable
-        // Strategy: 
-        // 1. Check account_type='DETAIL' AND (name contains 'Hutang Usaha' or 'Hutang Dagang')
-        // 2. Or sub_category='HUTANG' AND account_type='DETAIL'
-        
         const { data } = await supabase
             .from('chart_of_accounts')
             .select('id, account_code, account_name')
@@ -114,7 +109,6 @@ export default function PurchasePayment() {
         if (data) {
             setApAccount(data);
         } else {
-            // Fallback: any detail account in HUTANG subcategory
             const { data: data2 } = await supabase
                 .from('chart_of_accounts')
                 .select('id, account_code, account_name')
@@ -138,7 +132,6 @@ export default function PurchasePayment() {
             .eq('category', 'AKTIVA')
             .order('account_code');
         
-        // Filter in JS to be safe: Must be AKTIVA LANCAR or name contains kas/bank
         const filtered = data?.filter(a => 
             a.sub_category === 'AKTIVA_LANCAR' || 
             a.account_name.toLowerCase().includes('kas') || 
@@ -189,7 +182,6 @@ export default function PurchasePayment() {
   async function handleSyncInvoices() {
     setIsSyncing(true);
     try {
-        // 1. Get all RECEIVED_FULL or RECEIVED_PART POs
         const { data: pos } = await supabase
             .from('purchase_orders')
             .select('id, po_number, supplier_id, total_amount, created_at')
@@ -200,14 +192,12 @@ export default function PurchasePayment() {
             return;
         }
 
-        // 2. Get all existing Invoices
         const { data: invoices } = await supabase
             .from('purchase_invoices')
             .select('po_id');
         
         const existingPoIds = new Set(invoices?.map(inv => inv.po_id));
 
-        // 3. Find missing
         const missingPos = pos.filter(p => !existingPoIds.has(p.id));
 
         if (missingPos.length === 0) {
@@ -215,7 +205,6 @@ export default function PurchasePayment() {
             return;
         }
 
-        // 4. Create missing invoices
         const newInvoices = missingPos.map(p => ({
             invoice_number: `INV-${p.po_number}`,
             po_id: p.id,
@@ -298,7 +287,7 @@ export default function PurchasePayment() {
     setEditingPayment(null);
     setOriginalPaymentAmount(0);
     setPaymentData({
-      amount: invoice.total_amount - (invoice.paid_amount || 0), // Default full pay
+      amount: invoice.total_amount - (invoice.paid_amount || 0),
       transfer_fee: 0,
       fee_account_id: '',
       payment_date: new Date().toISOString().split('T')[0],
@@ -394,14 +383,12 @@ export default function PurchasePayment() {
         return;
       }
       
-      // Validation for Overpayment
-      // If editing: Available space = (Total - Paid) + OriginalPayment
       const currentPaid = selectedInvoice.paid_amount || 0;
       const availableSpace = editingPaymentId 
         ? (selectedInvoice.total_amount - currentPaid + originalPaymentAmount)
         : (selectedInvoice.total_amount - currentPaid);
 
-      if (amount > availableSpace + 100) { // +100 tolerance for rounding
+      if (amount > availableSpace + 100) {
         toast.error("Pembayaran melebihi sisa tagihan!");
         return;
       }
@@ -419,7 +406,6 @@ export default function PurchasePayment() {
       let paymentId = editingPaymentId;
 
       if (editingPaymentId) {
-          // --- UPDATE EXISTING PAYMENT ---
           const { error: updateError } = await supabase
             .from('purchase_payments')
             .update({
@@ -435,7 +421,6 @@ export default function PurchasePayment() {
           
           if (updateError) throw updateError;
 
-          // Revert old payment from Invoice Paid Amount
           const adjustedPaidAmount = currentPaid - originalPaymentAmount + amount;
           const newStatus = adjustedPaidAmount >= selectedInvoice.total_amount ? 'PAID' : 'PARTIAL';
 
@@ -444,12 +429,9 @@ export default function PurchasePayment() {
             .update({ paid_amount: adjustedPaidAmount, status: newStatus })
             .eq('id', selectedInvoice.id);
             
-          // Update Journal Entry (Delete old by reference and create new, or update)
-          // Easiest is delete by reference and recreate
           await supabase.from('journal_entries').delete().eq('reference', editingPaymentId);
           
       } else {
-          // --- CREATE NEW PAYMENT ---
           const { data: newPay, error: payError } = await supabase
             .from('purchase_payments')
             .insert([{
@@ -468,7 +450,6 @@ export default function PurchasePayment() {
           if (payError) throw payError;
           paymentId = newPay.id;
 
-          // Update Invoice
           const newPaidAmount = currentPaid + amount;
           const newStatus = newPaidAmount >= selectedInvoice.total_amount ? 'PAID' : 'PARTIAL';
           await supabase
@@ -477,10 +458,6 @@ export default function PurchasePayment() {
             .eq('id', selectedInvoice.id);
       }
 
-      // --- CREATE JOURNAL ENTRY (GL) ---
-      // Dr: Hutang Usaha
-      // Dr: Biaya Admin/Transfer (jika ada)
-      // Cr: Kas/Bank
       if (apAccount && paymentData.payment_account_id && paymentId) {
           const cashOut = amount + transferFee;
           const { data: entry, error: entryError } = await supabase
@@ -491,7 +468,7 @@ export default function PurchasePayment() {
                 description: `Pembayaran Hutang ${selectedInvoice.invoice_number} (${selectedInvoice.suppliers?.name || ''}) - ${paymentData.notes}`,
                 entry_type: 'PAYMENT',
                 total_amount: cashOut,
-                reference: paymentId // Link to payment
+                reference: paymentId
             }])
             .select()
             .single();
@@ -500,7 +477,7 @@ export default function PurchasePayment() {
              const itemsPayload: any[] = [
                  {
                      journal_entry_id: entry.id,
-                     account_id: apAccount.id, // Hutang Usaha
+                     account_id: apAccount.id,
                      debit: amount,
                      credit: 0,
                      description: 'Pelunasan Hutang'
@@ -519,7 +496,7 @@ export default function PurchasePayment() {
 
              itemsPayload.push({
                journal_entry_id: entry.id,
-               account_id: paymentData.payment_account_id, // Kas/Bank
+               account_id: paymentData.payment_account_id,
                debit: 0,
                credit: cashOut,
                description: 'Pengeluaran Kas/Bank'
@@ -546,8 +523,6 @@ export default function PurchasePayment() {
                         inv.suppliers?.name.toLowerCase().includes(search.toLowerCase());
     const matchStatus = statusFilter === 'ALL' ? true : inv.status === statusFilter;
     
-    // Date filter for Invoices (Usually based on Invoice Date or Due Date)
-    // Here let's use Invoice Date
     const invDate = new Date(inv.invoice_date);
     const start = new Date(dateFilter.startDate);
     const end = new Date(dateFilter.endDate);
@@ -565,489 +540,229 @@ export default function PurchasePayment() {
     return invoiceNo.includes(q) || supplierName.includes(q) || poNo.includes(q);
   });
 
-  const [isAccountSelectOpen, setIsAccountSelectOpen] = useState(false); // For custom dialog
-  const [isFeeAccountSelectOpen, setIsFeeAccountSelectOpen] = useState(false);
-  const [feeAccountSearch, setFeeAccountSearch] = useState('');
+  return (
+    <div className="p-4 md:p-6">
+      <Card>
+        <CardHeader>
+          <CardTitle>Pembayaran Hutang Pembelian</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
+            <Input 
+              placeholder="Cari No. Tagihan / Supplier..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="md:col-span-2"
+            />
+            <Input 
+              type="date"
+              value={dateFilter.startDate}
+              onChange={(e) => setDateFilter(prev => ({...prev, startDate: e.target.value}))}
+            />
+            <Input 
+              type="date"
+              value={dateFilter.endDate}
+              onChange={(e) => setDateFilter(prev => ({...prev, endDate: e.target.value}))}
+            />
+            <Select value={statusFilter} onValueChange={setStatusFilter}>
+              <SelectTrigger>
+                <SelectValue placeholder="Filter Status" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="ALL">Semua Status</SelectItem>
+                <SelectItem value="UNPAID">Belum Dibayar</SelectItem>
+                <SelectItem value="PARTIAL">Dibayar Sebagian</SelectItem>
+                <SelectItem value="PAID">Lunas</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
 
-  const handleDeleteInvoice = async (invoiceId: string) => {
-      const ok = window.confirm('Anda yakin ingin menghapus tagihan ini? Data pembayaran dan jurnal terkait (jika ada) juga akan terhapus.');
-      if (!ok) return;
+          <div className="flex items-center space-x-2 mb-4">
+            <Button 
+              variant="outline" 
+              onClick={handleSyncInvoices} 
+              disabled={isSyncing}
+            >
+              {isSyncing ? 'Menyinkronkan...' : <RefreshCw className="mr-2 h-4 w-4" />}
+              Sinkronisasi Tagihan Lama
+            </Button>
+          </div>
 
-      setLoading(true);
-      try {
-          // 1. Check if there are payments
-          const { data: payments } = await supabase.from('purchase_payments').select('id, journal_entry_id').eq('invoice_id', invoiceId);
-          
-          if (payments && payments.length > 0) {
-              // Delete journals
-              const journalIds = payments.map(p => p.journal_entry_id).filter(Boolean);
-              if (journalIds.length > 0) {
-                  await supabase.from('journal_entry_items').delete().in('journal_entry_id', journalIds);
-                  await supabase.from('journal_entries').delete().in('id', journalIds);
-              }
-              // Delete payments
-              await supabase.from('purchase_payments').delete().eq('invoice_id', invoiceId);
-          }
-
-          // 2. Delete invoice items (if any, though in this app it might be empty/non-existent table)
-          try { await supabase.from('purchase_invoice_items').delete().eq('invoice_id', invoiceId); } catch(e) {}
-
-          // 3. Delete invoice
-          const { error } = await supabase.from('purchase_invoices').delete().eq('id', invoiceId);
-          if (error) throw error;
-
-          toast.success("Tagihan berhasil dihapus.");
-          fetchInvoices();
-      } catch (error: any) {
-          toast.error("Gagal menghapus tagihan: " + error.message);
-      } finally {
-          setLoading(false);
-      }
-  };
-
-  const handleSelectAccount = (acc: any) => {
-    setPaymentData({...paymentData, payment_account_id: acc.id});
-    setIsAccountSelectOpen(false);
-  };
-
-  const handleSelectFeeAccount = (acc: any) => {
-    setPaymentData({ ...paymentData, fee_account_id: acc.id });
-    setIsFeeAccountSelectOpen(false);
-    setFeeAccountSearch('');
-  };
-  
-  // Custom Table Selector for Account
-  const AccountSelector = () => (
-      <Dialog open={isAccountSelectOpen} onOpenChange={setIsAccountSelectOpen}>
-          <DialogContent className="max-w-3xl">
-              <DialogHeader>
-                  <DialogTitle>Pilih Akun Kas/Bank Pembayar</DialogTitle>
-                  <DialogDescription>
-                    Pilih akun dari daftar Aktiva Lancar / Kas & Bank di bawah ini.
-                  </DialogDescription>
-              </DialogHeader>
-              <div className="max-h-[400px] overflow-auto border rounded-md">
+          <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+            <TabsList className="grid w-full grid-cols-2">
+              <TabsTrigger value="invoices">Daftar Tagihan</TabsTrigger>
+              <TabsTrigger value="history">Riwayat Pembayaran</TabsTrigger>
+            </TabsList>
+            <TabsContent value="invoices">
+              <div className="mt-4">
                 <Table>
-                    <TableHeader className="bg-slate-100 sticky top-0">
-                        <TableRow>
-                            <TableHead className="w-[120px] font-bold text-black">Kode Akun</TableHead>
-                            <TableHead className="font-bold text-black">Nama Akun</TableHead>
-                            <TableHead className="w-[150px] font-bold text-black">Kategori</TableHead>
-                            <TableHead className="w-[80px]"></TableHead>
-                        </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                        {cashBankAccounts.length === 0 ? (
-                            <TableRow><TableCell colSpan={4} className="text-center py-8">Tidak ada akun Kas/Bank ditemukan.</TableCell></TableRow>
-                        ) : (
-                            cashBankAccounts.map(acc => (
-                                <TableRow key={acc.id} className="cursor-pointer hover:bg-blue-50 transition-colors" onClick={() => handleSelectAccount(acc)}>
-                                    <TableCell className="font-mono font-bold text-blue-700">{acc.account_code}</TableCell>
-                                    <TableCell className="font-medium">{acc.account_name}</TableCell>
-                                    <TableCell className="text-xs text-gray-500">
-                                        <span className="bg-slate-100 px-2 py-1 rounded border">
-                                            {acc.sub_category?.replace('_', ' ')}
-                                        </span>
-                                    </TableCell>
-                                    <TableCell>
-                                        <Button size="sm" variant="ghost" className="text-blue-600 hover:text-blue-800">Pilih</Button>
-                                    </TableCell>
-                                </TableRow>
-                            ))
-                        )}
-                    </TableBody>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Nomor Tagihan</TableHead>
+                      <TableHead>Supplier</TableHead>
+                      <TableHead>Tgl. Tagihan</TableHead>
+                      <TableHead>Jatuh Tempo</TableHead>
+                      <TableHead className="text-right">Total</TableHead>
+                      <TableHead className="text-right">Dibayar</TableHead>
+                      <TableHead className="text-right">Sisa</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead>Aksi</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {loading ? (
+                      <TableRow>
+                        <TableCell colSpan={9} className="text-center">Memuat data...</TableCell>
+                      </TableRow>
+                    ) : filteredInvoices.map(invoice => (
+                      <TableRow key={invoice.id}>
+                        <TableCell>{invoice.invoice_number}</TableCell>
+                        <TableCell>{invoice.suppliers?.name}</TableCell>
+                        <TableCell>{formatDate(invoice.invoice_date)}</TableCell>
+                        <TableCell>{formatDate(invoice.due_date)}</TableCell>
+                        <TableCell className="text-right">{formatCurrency(invoice.total_amount)}</TableCell>
+                        <TableCell className="text-right">{formatCurrency(invoice.paid_amount)}</TableCell>
+                        <TableCell className="text-right font-semibold">{formatCurrency(invoice.total_amount - invoice.paid_amount)}</TableCell>
+                        <TableCell>
+                          <span className={`px-2 py-1 rounded-full text-xs ${
+                            invoice.status === 'PAID' ? 'bg-green-200 text-green-800' :
+                            invoice.status === 'PARTIAL' ? 'bg-yellow-200 text-yellow-800' :
+                            'bg-red-200 text-red-800'
+                          }`}>
+                            {invoice.status}
+                          </span>
+                        </TableCell>
+                        <TableCell>
+                          <Button 
+                            size="sm" 
+                            onClick={() => handlePayClick(invoice)} 
+                            disabled={invoice.status === 'PAID'}
+                          >
+                            <Wallet className="mr-2 h-4 w-4" /> Bayar
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
                 </Table>
               </div>
-          </DialogContent>
-      </Dialog>
-  );
-
-  const filteredExpenseAccounts = expenseAccounts.filter((a) => {
-    const q = feeAccountSearch.toLowerCase().trim();
-    if (!q) return true;
-    return (
-      String(a.account_code || '').toLowerCase().includes(q) ||
-      String(a.account_name || '').toLowerCase().includes(q)
-    );
-  });
-
-  const FeeAccountSelector = () => (
-    <Dialog open={isFeeAccountSelectOpen} onOpenChange={setIsFeeAccountSelectOpen}>
-      <DialogContent className="max-w-3xl">
-        <DialogHeader>
-          <DialogTitle>Pilih Akun Biaya Admin/Transfer</DialogTitle>
-          <DialogDescription>
-            Pilih akun beban untuk mencatat biaya admin/transfer bank.
-          </DialogDescription>
-        </DialogHeader>
-        <div className="relative">
-          <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
-          <Input
-            placeholder="Cari kode atau nama akun..."
-            className="pl-8"
-            value={feeAccountSearch}
-            onChange={(e) => setFeeAccountSearch(e.target.value)}
-            autoFocus
-          />
-        </div>
-        <div className="max-h-[400px] overflow-auto border rounded-md">
-          <Table>
-            <TableHeader className="bg-slate-100 sticky top-0">
-              <TableRow>
-                <TableHead className="w-[120px] font-bold text-black">Kode Akun</TableHead>
-                <TableHead className="font-bold text-black">Nama Akun</TableHead>
-                <TableHead className="w-[150px] font-bold text-black">Kategori</TableHead>
-                <TableHead className="w-[80px]"></TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {filteredExpenseAccounts.length === 0 ? (
-                <TableRow><TableCell colSpan={4} className="text-center py-8">Tidak ada akun ditemukan.</TableCell></TableRow>
-              ) : (
-                filteredExpenseAccounts.map((acc) => (
-                  <TableRow key={acc.id} className="cursor-pointer hover:bg-blue-50 transition-colors" onClick={() => handleSelectFeeAccount(acc)}>
-                    <TableCell className="font-mono font-bold text-blue-700">{acc.account_code}</TableCell>
-                    <TableCell className="font-medium">{acc.account_name}</TableCell>
-                    <TableCell className="text-xs text-gray-500">
-                      <span className="bg-slate-100 px-2 py-1 rounded border">
-                        {String(acc.category || '').toUpperCase()} {acc.sub_category ? `- ${String(acc.sub_category).replace('_', ' ')}` : ''}
-                      </span>
-                    </TableCell>
-                    <TableCell>
-                      <Button size="sm" variant="ghost" className="text-blue-600 hover:text-blue-800">Pilih</Button>
-                    </TableCell>
-                  </TableRow>
-                ))
-              )}
-            </TableBody>
-          </Table>
-        </div>
-      </DialogContent>
-    </Dialog>
-  );
-
-  return (
-          <div className="flex items-center space-x-2">
-        <Button 
-          variant="outline" 
-          onClick={handleSyncInvoices} 
-          disabled={isSyncing}
-        >
-          {isSyncing ? 'Menyinkronkan...' : <RefreshCw className="mr-2 h-4 w-4" />}
-          Sinkronisasi Tagihan Lama
-        </Button>
-      </div>
-      <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-        <TabsList className="grid w-full grid-cols-2">
-          <TabsTrigger value="invoices">Daftar Tagihan</TabsTrigger>
-          <TabsTrigger value="history">Riwayat Pembayaran</TabsTrigger>
-        </TabsList>
-        <TabsContent value="invoices">
-          {/* Invoice List Content */}
-          <div className="mt-4">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Nomor Tagihan</TableHead>
-                  <TableHead>Supplier</TableHead>
-                  <TableHead>Tgl. Tagihan</TableHead>
-                  <TableHead>Jatuh Tempo</TableHead>
-                  <TableHead className="text-right">Total</TableHead>
-                  <TableHead className="text-right">Dibayar</TableHead>
-                  <TableHead className="text-right">Sisa</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Aksi</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {loading ? (
-                  <TableRow>
-                    <TableCell colSpan={9} className="text-center">Memuat data...</TableCell>
-                  </TableRow>
-                ) : filteredInvoices.map(invoice => (
-                  <TableRow key={invoice.id}>
-                    <TableCell>{invoice.invoice_number}</TableCell>
-                    <TableCell>{invoice.suppliers?.name}</TableCell>
-                    <TableCell>{formatDate(invoice.invoice_date)}</TableCell>
-                    <TableCell>{formatDate(invoice.due_date)}</TableCell>
-                    <TableCell className="text-right">{formatCurrency(invoice.total_amount)}</TableCell>
-                    <TableCell className="text-right">{formatCurrency(invoice.paid_amount)}</TableCell>
-                    <TableCell className="text-right font-semibold">{formatCurrency(invoice.total_amount - invoice.paid_amount)}</TableCell>
-                    <TableCell>
-                      <span className={`px-2 py-1 rounded-full text-xs ${
-                        invoice.status === 'PAID' ? 'bg-green-200 text-green-800' :
-                        invoice.status === 'PARTIAL' ? 'bg-yellow-200 text-yellow-800' :
-                        'bg-red-200 text-red-800'
-                      }`}>
-                        {invoice.status}
-                      </span>
-                    </TableCell>
-                    <TableCell>
-                      <Button 
-                        size="sm" 
-                        onClick={() => handlePayClick(invoice)} 
-                        disabled={invoice.status === 'PAID'}
-                      >
-                        <Wallet className="mr-2 h-4 w-4" /> Bayar
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
-        </TabsContent>+
-
-
-            <Card>
-                <CardHeader className="pb-3">
-                    <div className="flex justify-between">
-                        <CardTitle>Daftar Tagihan Supplier</CardTitle>
-                        <div className="relative w-64">
-                            <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
-                            <Input placeholder="Cari Invoice / Supplier..." className="pl-8" value={search} onChange={e => setSearch(e.target.value)} />
-                        </div>
-                    </div>
-                </CardHeader>
-                <CardContent>
-                    <Table>
-                        <TableHeader>
-                            <TableRow>
-                                <TableHead>No. Invoice</TableHead>
-                                <TableHead>No. PO</TableHead>
-                                <TableHead>Tanggal</TableHead>
-                                <TableHead>Jatuh Tempo</TableHead>
-                                <TableHead>Supplier</TableHead>
-                                <TableHead>Total Tagihan</TableHead>
-                                <TableHead>Sudah Dibayar</TableHead>
-                                <TableHead>Sisa</TableHead>
-                                <TableHead>Status</TableHead>
-                                <TableHead className="text-right">Aksi</TableHead>
-                            </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                            {filteredInvoices.length === 0 ? (
-                                <TableRow><TableCell colSpan={10} className="text-center py-8">Tidak ada tagihan sesuai filter.</TableCell></TableRow>
-                            ) : (
-                                filteredInvoices.map(inv => {
-                                    const remaining = inv.total_amount - (inv.paid_amount || 0);
-                                    return (
-                                        <TableRow key={inv.id}>
-                                            <TableCell className="font-medium">{inv.invoice_number}</TableCell>
-                                            <TableCell className="text-slate-600">{inv.purchase_orders?.po_number || '-'}</TableCell>
-                                            <TableCell>{formatDate(inv.invoice_date)}</TableCell>
-                                            <TableCell className={new Date(inv.due_date) < new Date() && inv.status !== 'PAID' ? 'text-red-600 font-bold' : ''}>
-                                                {formatDate(inv.due_date)}
-                                            </TableCell>
-                                            <TableCell>{inv.suppliers?.name}</TableCell>
-                                            <TableCell>{formatCurrency(inv.total_amount)}</TableCell>
-                                            <TableCell className="text-green-600">{formatCurrency(inv.paid_amount || 0)}</TableCell>
-                                            <TableCell className="font-bold text-red-600">{formatCurrency(remaining)}</TableCell>
-                                            <TableCell>
-                                                <span className={`px-2 py-1 rounded text-xs font-semibold 
-                                                    ${inv.status === 'PAID' ? 'bg-green-100 text-green-800' : 
-                                                    inv.status === 'PARTIAL' ? 'bg-yellow-100 text-yellow-800' : 'bg-red-100 text-red-800'}`}>
-                                                    {inv.status === 'PAID' ? 'LUNAS' : inv.status === 'PARTIAL' ? 'SEBAGIAN' : 'BELUM BAYAR'}
-                                                </span>
-                                            </TableCell>
-                                            <TableCell className="text-right">
-                                                <div className="flex justify-end gap-2">
-                                                    {inv.status !== 'PAID' && (
-                                                        <Button size="sm" onClick={() => handlePayClick(inv)}>
-                                                            <Wallet className="mr-2 h-4 w-4" /> Bayar
-                                                        </Button>
-                                                    )}
-                                                    <Button variant="destructive" size="sm" onClick={() => handleDeleteInvoice(inv.id)}>
-                                                        <X className="h-4 w-4" />
-                                                    </Button>
-                                                </div>
-                                            </TableCell>
-                                        </TableRow>
-                                    );
-                                })
-                            )}
-                        </TableBody>
-                    </Table>
-                </CardContent>
-            </Card>
-          </TabsContent>
-          
-          <TabsContent value="history">
-              <Card>
-                  <CardHeader>
-                      <div className="flex justify-between">
-                          <CardTitle>Riwayat Pembayaran</CardTitle>
-                          <div className="relative w-72">
-                              <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
-                              <Input
-                                placeholder="Cari Invoice / PO / Supplier..."
-                                className="pl-8"
-                                value={historySearch}
-                                onChange={e => setHistorySearch(e.target.value)}
-                              />
+            </TabsContent>
+            <TabsContent value="history">
+              <div className="mt-4">
+                <Input 
+                  placeholder="Cari di riwayat..."
+                  value={historySearch}
+                  onChange={(e) => setHistorySearch(e.target.value)}
+                  className="mb-4"
+                />
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Tgl. Bayar</TableHead>
+                      <TableHead>No. Tagihan</TableHead>
+                      <TableHead>Supplier</TableHead>
+                      <TableHead>Akun Pembayar</TableHead>
+                      <TableHead className="text-right">Jumlah</TableHead>
+                      <TableHead>Aksi</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {loading ? (
+                      <TableRow>
+                        <TableCell colSpan={6} className="text-center">Memuat data...</TableCell>
+                      </TableRow>
+                    ) : filteredPaymentHistory.map(payment => (
+                      <TableRow key={payment.id}>
+                        <TableCell>{formatDate(payment.payment_date)}</TableCell>
+                        <TableCell>{payment.purchase_invoices?.invoice_number}</TableCell>
+                        <TableCell>{payment.purchase_invoices?.suppliers?.name}</TableCell>
+                        <TableCell>{payment.payment_account?.account_name}</TableCell>
+                        <TableCell className="text-right">{formatCurrency(payment.amount)}</TableCell>
+                        <TableCell>
+                          <div className="flex items-center space-x-2">
+                            <Button size="sm" variant="outline" onClick={() => handleEditClick(payment)}>
+                              <Edit className="h-4 w-4" />
+                            </Button>
+                            <Button size="sm" variant="destructive" onClick={() => handleCancelPayment(payment)}>
+                              <X className="h-4 w-4" />
+                            </Button>
                           </div>
-                      </div>
-                  </CardHeader>
-                  <CardContent>
-                      <Table>
-                          <TableHeader>
-                              <TableRow>
-                                  <TableHead>Tanggal Bayar</TableHead>
-                                  <TableHead>No. Invoice</TableHead>
-                                  <TableHead>No. PO</TableHead>
-                                  <TableHead>Supplier</TableHead>
-                                  <TableHead>Akun Pembayar</TableHead>
-                                  <TableHead>Jumlah Bayar</TableHead>
-                                  <TableHead>Biaya Admin</TableHead>
-                                  <TableHead>Catatan</TableHead>
-                                  <TableHead className="text-right">Aksi</TableHead>
-                              </TableRow>
-                          </TableHeader>
-                          <TableBody>
-                              {filteredPaymentHistory.length === 0 ? (
-                                  <TableRow><TableCell colSpan={9} className="text-center py-8">Belum ada riwayat pembayaran.</TableCell></TableRow>
-                              ) : (
-                                  filteredPaymentHistory.map(pay => (
-                                      <TableRow key={pay.id}>
-                                          <TableCell>{formatDate(pay.payment_date)}</TableCell>
-                                          <TableCell className="font-mono">{pay.purchase_invoices?.invoice_number}</TableCell>
-                                          <TableCell className="font-mono text-slate-600">{pay.purchase_invoices?.purchase_orders?.po_number || '-'}</TableCell>
-                                          <TableCell>{pay.purchase_invoices?.suppliers?.name}</TableCell>
-                                          <TableCell>{pay.payment_account?.account_name || '-'}</TableCell>
-                                          <TableCell className="font-bold">{formatCurrency(pay.amount)}</TableCell>
-                                          <TableCell className="font-semibold text-slate-600">{formatCurrency(pay.transfer_fee || 0)}</TableCell>
-                                          <TableCell>{pay.notes}</TableCell>
-                                          <TableCell className="text-right">
-                                              <div className="flex justify-end gap-2">
-                                                  <Button variant="outline" size="sm" onClick={() => handleEditClick(pay)}>
-                                                      <Edit className="h-4 w-4 mr-2" /> Edit
-                                                  </Button>
-                                                  <Button variant="destructive" size="sm" onClick={() => handleCancelPayment(pay)} disabled={loading}>
-                                                      <X className="h-4 w-4 mr-2" /> Batal Bayar
-                                                  </Button>
-                                              </div>
-                                          </TableCell>
-                                      </TableRow>
-                                  ))
-                              )}
-                          </TableBody>
-                      </Table>
-                  </CardContent>
-              </Card>
-          </TabsContent>
-      </Tabs>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            </TabsContent>
+          </Tabs>
+        </CardContent>
+      </Card>
 
-      <Dialog open={isPayOpen} onOpenChange={setIsPayOpen}>
-        <DialogContent>
+      {isPayOpen && (
+        <Dialog open={isPayOpen} onOpenChange={setIsPayOpen}>
+          <DialogContent className="sm:max-w-[625px]">
             <DialogHeader>
-                <DialogTitle>{editingPaymentId ? 'Edit Pembayaran' : 'Proses Pembayaran'}</DialogTitle>
-                <DialogDescription>
-                    {editingPaymentId ? 'Koreksi pembayaran untuk' : 'Pembayaran untuk'} Invoice: <b>{selectedInvoice?.invoice_number}</b><br/>
-                    Supplier: {selectedInvoice?.suppliers?.name}
-                </DialogDescription>
+              <DialogTitle>{editingPaymentId ? 'Edit Pembayaran' : 'Proses Pembayaran'}</DialogTitle>
+              <DialogDescription>
+                Tagihan: {selectedInvoice?.invoice_number} ({selectedInvoice?.suppliers?.name})
+                <br />
+                Sisa Tagihan: {formatCurrency(selectedInvoice?.total_amount - (selectedInvoice?.paid_amount || 0) + (editingPaymentId ? originalPaymentAmount : 0))}
+              </DialogDescription>
             </DialogHeader>
             <div className="grid gap-4 py-4">
-                <div className="space-y-2">
-                    <Label>Jumlah Bayar</Label>
-                    <Input 
-                        type="text"
-                        inputMode="numeric"
-                        pattern="[0-9]*"
-                        value={String(paymentData.amount ?? '')}
-                        onChange={e => {
-                          const digits = String(e.target.value || '').replace(/[^0-9]/g, '');
-                          setPaymentData({ ...paymentData, amount: digits ? Number(digits) : 0 });
-                        }}
-                    />
-                    <p className="text-xs text-gray-500">
-                        Sisa Tagihan: {formatCurrency(
-                            editingPaymentId 
-                            ? (selectedInvoice?.total_amount - (selectedInvoice?.paid_amount || 0) + originalPaymentAmount)
-                            : (selectedInvoice ? selectedInvoice.total_amount - (selectedInvoice.paid_amount || 0) : 0)
-                        )}
-                    </p>
+              <div className="grid grid-cols-4 items-center gap-4">
+                <Label htmlFor="payment_date" className="text-right">Tgl. Bayar</Label>
+                <Input id="payment_date" type="date" value={paymentData.payment_date} onChange={e => setPaymentData({...paymentData, payment_date: e.target.value})} className="col-span-3" />
+              </div>
+              <div className="grid grid-cols-4 items-center gap-4">
+                <Label htmlFor="amount" className="text-right">Jumlah Bayar</Label>
+                <Input id="amount" type="number" value={paymentData.amount} onChange={e => setPaymentData({...paymentData, amount: Number(e.target.value)})} className="col-span-3" />
+              </div>
+              <div className="grid grid-cols-4 items-center gap-4">
+                <Label htmlFor="payment_account_id" className="text-right">Akun Pembayar</Label>
+                <Select value={paymentData.payment_account_id} onValueChange={value => setPaymentData({...paymentData, payment_account_id: value})}>
+                    <SelectTrigger className="col-span-3">
+                        <SelectValue placeholder="Pilih Akun Kas/Bank" />
+                    </SelectTrigger>
+                    <SelectContent>
+                        {cashBankAccounts.map(acc => (
+                            <SelectItem key={acc.id} value={acc.id}>{acc.account_code} - {acc.account_name}</SelectItem>
+                        ))}
+                    </SelectContent>
+                </Select>
+              </div>
+              <div className="grid grid-cols-4 items-center gap-4">
+                <Label htmlFor="transfer_fee" className="text-right">Biaya Admin</Label>
+                <Input id="transfer_fee" type="number" value={paymentData.transfer_fee} onChange={e => setPaymentData({...paymentData, transfer_fee: Number(e.target.value)})} className="col-span-3" />
+              </div>
+              {paymentData.transfer_fee > 0 && (
+                <div className="grid grid-cols-4 items-center gap-4">
+                    <Label htmlFor="fee_account_id" className="text-right">Akun Biaya</Label>
+                    <Select value={paymentData.fee_account_id} onValueChange={value => setPaymentData({...paymentData, fee_account_id: value})}>
+                        <SelectTrigger className="col-span-3">
+                            <SelectValue placeholder="Pilih Akun Biaya" />
+                        </SelectTrigger>
+                        <SelectContent>
+                            {expenseAccounts.map(acc => (
+                                <SelectItem key={acc.id} value={acc.id}>{acc.account_code} - {acc.account_name}</SelectItem>
+                            ))}
+                        </SelectContent>
+                    </Select>
                 </div>
-                <div className="space-y-2">
-                    <Label>Biaya Admin / Transfer (Opsional)</Label>
-                    <Input
-                        type="text"
-                        inputMode="numeric"
-                        pattern="[0-9]*"
-                        value={String(paymentData.transfer_fee ?? '')}
-                        onChange={e => {
-                          const digits = String(e.target.value || '').replace(/[^0-9]/g, '');
-                          setPaymentData({ ...paymentData, transfer_fee: digits ? Number(digits) : 0 });
-                        }}
-                    />
-                    <p className="text-xs text-gray-500">
-                      Total Keluar Kas/Bank: {formatCurrency(Number(paymentData.amount || 0) + Number(paymentData.transfer_fee || 0))}
-                    </p>
-                </div>
-                <div className="space-y-2">
-                    <Label>Tanggal Bayar</Label>
-                    <Input type="date" value={paymentData.payment_date} onChange={e => setPaymentData({...paymentData, payment_date: e.target.value})} />
-                </div>
-                <div className="space-y-2">
-                    <Label>Kas/Bank Pembayar</Label>
-                    <div className="flex gap-2">
-                        <Input 
-                            readOnly 
-                            value={cashBankAccounts.find(a => a.id === paymentData.payment_account_id)?.account_code || ''} 
-                            placeholder="Kode Akun"
-                            className="w-[120px] bg-gray-50 font-mono font-bold"
-                        />
-                        <Input 
-                            readOnly 
-                            value={cashBankAccounts.find(a => a.id === paymentData.payment_account_id)?.account_name || ''} 
-                            placeholder="Nama Akun (Klik Pilih)"
-                            className="flex-1 bg-gray-50 cursor-pointer"
-                            onClick={() => setIsAccountSelectOpen(true)}
-                        />
-                        <Button variant="outline" onClick={() => setIsAccountSelectOpen(true)}>Pilih</Button>
-                    </div>
-                    {!apAccount && (
-                        <p className="text-xs text-red-500 mt-1">
-                            Warning: Akun 'Hutang Usaha' tidak ditemukan di COA. Jurnal mungkin tidak lengkap.
-                        </p>
-                    )}
-                </div>
-                {Number(paymentData.transfer_fee || 0) > 0 && (
-                  <div className="space-y-2">
-                      <Label>Akun Biaya (Admin/Ongkir)</Label>
-                      <div className="flex gap-2">
-                          <Input 
-                              readOnly 
-                              value={expenseAccounts.find(a => a.id === paymentData.fee_account_id)?.account_code || ''} 
-                              placeholder="Kode Akun"
-                              className="w-[120px] bg-gray-50 font-mono font-bold"
-                          />
-                          <Input 
-                              readOnly 
-                              value={expenseAccounts.find(a => a.id === paymentData.fee_account_id)?.account_name || ''} 
-                              placeholder="Nama Akun (Klik Pilih)"
-                              className="flex-1 bg-gray-50 cursor-pointer"
-                              onClick={() => setIsFeeAccountSelectOpen(true)}
-                          />
-                          <Button variant="outline" onClick={() => setIsFeeAccountSelectOpen(true)}>Pilih</Button>
-                      </div>
-                  </div>
-                )}
-                <div className="space-y-2">
-                    <Label>Catatan</Label>
-                    <Input value={paymentData.notes} onChange={e => setPaymentData({...paymentData, notes: e.target.value})} placeholder="Ref Transfer, dll..." />
-                </div>
+              )}
+              <div className="grid grid-cols-4 items-center gap-4">
+                <Label htmlFor="notes" className="text-right">Catatan</Label>
+                <Input id="notes" value={paymentData.notes} onChange={e => setPaymentData({...paymentData, notes: e.target.value})} className="col-span-3" />
+              </div>
             </div>
             <DialogFooter>
-                {editingPaymentId && editingPayment && (
-                    <Button variant="destructive" onClick={() => handleCancelPayment(editingPayment)} disabled={loading}>
-                        <X className="h-4 w-4 mr-2" /> Batalkan Pembayaran
-                    </Button>
-                )}
-                <Button variant="outline" onClick={() => setIsPayOpen(false)}>Batal</Button>
-                <Button onClick={handleProcessPayment} disabled={loading}>{loading ? 'Memproses...' : (editingPaymentId ? 'Simpan Perubahan' : 'Bayar Sekarang')}</Button>
+              <Button onClick={handleProcessPayment} disabled={loading}>
+                {loading ? 'Memproses...' : (editingPaymentId ? 'Simpan Perubahan' : 'Proses Pembayaran')}
+              </Button>
             </DialogFooter>
-        </DialogContent>
-      </Dialog>
+          </DialogContent>
+        </Dialog>
+      )}
     </div>
   );
 }
