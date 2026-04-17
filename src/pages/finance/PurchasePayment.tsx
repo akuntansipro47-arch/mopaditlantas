@@ -727,50 +727,78 @@ export default function PurchasePayment() {
   );
 
   return (
-    <div className="flex items-center space-x-2">
-      <Button 
-        variant="outline" 
-        onClick={handleSyncInvoices} 
-        disabled={isSyncing}
-      >
-        {isSyncing ? 'Menyinkronkan...' : <RefreshCw className="mr-2 h-4 w-4" />}
-        Sinkronisasi Tagihan Lama
-      </Button>
-    </div>
-          <TabsList>
-              <TabsTrigger value="invoices">Tagihan (Invoices)</TabsTrigger>
-              <TabsTrigger value="history">Riwayat Pembayaran</TabsTrigger>
-          </TabsList>
-          
-          <div className="my-4 flex flex-col md:flex-row gap-4 items-end md:items-center bg-slate-50 p-4 rounded-lg border">
-              <div className="space-y-1">
-                  <Label>Filter Tanggal</Label>
-                  <div className="flex items-center gap-2">
-                    <Input type="date" value={dateFilter.startDate} onChange={e => setDateFilter({...dateFilter, startDate: e.target.value})} className="bg-white" />
-                    <span>-</span>
-                    <Input type="date" value={dateFilter.endDate} onChange={e => setDateFilter({...dateFilter, endDate: e.target.value})} className="bg-white" />
-                  </div>
-              </div>
-              
-              {activeTab === 'invoices' && (
-                  <div className="space-y-1 min-w-[200px]">
-                      <Label>Status</Label>
-                      <Select value={statusFilter} onValueChange={setStatusFilter}>
-                          <SelectTrigger className="bg-white">
-                              <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                              <SelectItem value="ALL">Semua Status</SelectItem>
-                              <SelectItem value="UNPAID">Belum Bayar (Unpaid)</SelectItem>
-                              <SelectItem value="PARTIAL">Sebagian (Partial)</SelectItem>
-                              <SelectItem value="PAID">Lunas (Paid)</SelectItem>
-                          </SelectContent>
-                      </Select>
-                  </div>
-              )}
+          <div className="flex items-center space-x-2">
+        <Button 
+          variant="outline" 
+          onClick={handleSyncInvoices} 
+          disabled={isSyncing}
+        >
+          {isSyncing ? 'Menyinkronkan...' : <RefreshCw className="mr-2 h-4 w-4" />}
+          Sinkronisasi Tagihan Lama
+        </Button>
+      </div>
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+        <TabsList className="grid w-full grid-cols-2">
+          <TabsTrigger value="invoices">Daftar Tagihan</TabsTrigger>
+          <TabsTrigger value="history">Riwayat Pembayaran</TabsTrigger>
+        </TabsList>
+        <TabsContent value="invoices">
+          {/* Invoice List Content */}
+          <div className="mt-4">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Nomor Tagihan</TableHead>
+                  <TableHead>Supplier</TableHead>
+                  <TableHead>Tgl. Tagihan</TableHead>
+                  <TableHead>Jatuh Tempo</TableHead>
+                  <TableHead className="text-right">Total</TableHead>
+                  <TableHead className="text-right">Dibayar</TableHead>
+                  <TableHead className="text-right">Sisa</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Aksi</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {loading ? (
+                  <TableRow>
+                    <TableCell colSpan={9} className="text-center">Memuat data...</TableCell>
+                  </TableRow>
+                ) : filteredInvoices.map(invoice => (
+                  <TableRow key={invoice.id}>
+                    <TableCell>{invoice.invoice_number}</TableCell>
+                    <TableCell>{invoice.suppliers?.name}</TableCell>
+                    <TableCell>{formatDate(invoice.invoice_date)}</TableCell>
+                    <TableCell>{formatDate(invoice.due_date)}</TableCell>
+                    <TableCell className="text-right">{formatCurrency(invoice.total_amount)}</TableCell>
+                    <TableCell className="text-right">{formatCurrency(invoice.paid_amount)}</TableCell>
+                    <TableCell className="text-right font-semibold">{formatCurrency(invoice.total_amount - invoice.paid_amount)}</TableCell>
+                    <TableCell>
+                      <span className={`px-2 py-1 rounded-full text-xs ${
+                        invoice.status === 'PAID' ? 'bg-green-200 text-green-800' :
+                        invoice.status === 'PARTIAL' ? 'bg-yellow-200 text-yellow-800' :
+                        'bg-red-200 text-red-800'
+                      }`}>
+                        {invoice.status}
+                      </span>
+                    </TableCell>
+                    <TableCell>
+                      <Button 
+                        size="sm" 
+                        onClick={() => handlePayClick(invoice)} 
+                        disabled={invoice.status === 'PAID'}
+                      >
+                        <Wallet className="mr-2 h-4 w-4" /> Bayar
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
           </div>
+        </TabsContent>+
 
-          <TabsContent value="invoices">
+
             <Card>
                 <CardHeader className="pb-3">
                     <div className="flex justify-between">
