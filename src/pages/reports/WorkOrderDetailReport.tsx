@@ -133,21 +133,28 @@ const WorkOrderDetailReport = () => {
                 query = query.eq('status', statusFilter);
             }
 
+            // New: Handle vehicle group filter on the server-side for reliability
+            if (vehicleGroupFilter !== 'semua') {
+                // First, get all vehicle_entry_ids that belong to the selected group
+                const { data: vehicleEntries, error: veError } = await supabase
+                    .from('vehicle_entries')
+                    .select('id')
+                    .eq('vehicles.vehicle_group_id', vehicleGroupFilter);
+
+                if (veError) throw new Error(`Failed to fetch vehicle entries for group: ${veError.message}`);
+
+                const vehicleEntryIds = vehicleEntries.map(ve => ve.id);
+                query = query.in('vehicle_entry_id', vehicleEntryIds);
+            }
+
             const { data: workOrders, error: woError } = await query;
 
             if (woError) throw woError;
 
-            let filteredWorkOrders = workOrders;
-            if (vehicleGroupFilter !== 'semua') {
-                filteredWorkOrders = workOrders.filter(wo =>
-                    String(wo.vehicle_entries?.vehicles?.vehicle_group_id) === vehicleGroupFilter
-                );
-            }
-
             // Get all unique goods_ids and job_type_ids from billings for HPP lookup
             const allGoodsIds = new Set<string>();
             const allJobTypeIds = new Set<string>();
-            filteredWorkOrders.forEach(wo => {
+            workOrders.forEach(wo => {
                 wo.work_order_billings.forEach((bill: any) => {
                     if (bill.item_type === 'PART' && bill.goods_id) {
                         allGoodsIds.add(String(bill.goods_id));
@@ -197,7 +204,7 @@ const WorkOrderDetailReport = () => {
                         name
                     )
                 `)
-                .in('work_order_id', filteredWorkOrders.map(wo => wo.id));
+                .in('work_order_id', workOrders.map(wo => wo.id));
 
             if (allGiError) throw allGiError;
 
@@ -211,7 +218,7 @@ const WorkOrderDetailReport = () => {
             });
 
 
-            const processedData = filteredWorkOrders.map(wo => {
+            const processedData = workOrders.map(wo => {
                 let mergedBillings = [...(wo.work_order_billings || [])];
                 
                 const billedGoodsIds = new Set(
