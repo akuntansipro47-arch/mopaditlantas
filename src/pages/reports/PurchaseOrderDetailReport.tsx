@@ -29,6 +29,7 @@ type ReportData = {
 
 export default function PurchaseOrderDetailReport() {
   const [loading, setLoading] = useState(false);
+  const [exporting, setExporting] = useState(false);
   const [data, setData] = useState<ReportData[]>([]);
   const [dateRange, setDateRange] = useState({
     start: format(subDays(new Date(), 29), 'yyyy-MM-dd'),
@@ -187,13 +188,138 @@ export default function PurchaseOrderDetailReport() {
     }
   }
 
-  const handleExport = () => {
-    if (data.length === 0) {
-      toast.warning('Tidak ada data untuk diekspor.');
+  async function fetchAllDataForExport() {
+    if (!dateRange?.start || !dateRange?.end) {
+      toast.error('Silakan pilih rentang tanggal terlebih dahulu.');
+      return null;
+    }
+  
+    try {
+      const { data: poItems, error: poItemsError } = await supabase
+        .from('purchase_order_items')
+        .select(`
+          id,
+          goods_id,
+          quantity,
+          unit_price,
+          total_price,
+          goods ( name ),
+          purchase_orders!inner (
+            id,
+            po_date,
+            po_number,
+            suppliers ( name ),
+            work_orders (
+              wo_number,
+              vehicle_entries (
+                vehicles ( license_plate, brand_type )
+              )
+            )
+          )
+        `)
+        .gte('purchase_orders.po_date', dateRange.start)
+        .lte('purchase_orders.po_date', dateRange.end)
+        .order('po_date', { foreignTable: 'purchase_orders', ascending: false });
+  
+      if (poItemsError) throw poItemsError;
+      if (!poItems || poItems.length === 0) return [];
+  
+      const poIds = [...new Set(poItems.map(item => item.purchase_orders.id))];
+  
+      const { data: receipts, error: receiptError } = await supabase
+        .from('goods_receipts')
+        .select('po_id, items:goods_receipt_items(goods_id, quantity_received)')
+        .in('po_id', poIds);
+  
+      if (receiptError) throw receiptError;
+  
+      const receivedQtyMap = new Map<string, number>();
+      receipts?.forEach(receipt => {
+        if (!receipt.po_id) return;
+        receipt.items.forEach(item => {
+          const key = `${receipt.po_id}-${item.goods_id}`;
+          const currentQty = receivedQtyMap.get(key) || 0;
+          receivedQtyMap.set(key, currentQty + item.quantity_received);
+        });
+      });
+  
+      const { data: invoices, error: invoiceError } = await supabase
+        .from('purchase_invoices')
+        .select('po_id, status')
+        .in('po_id', poIds);
+  
+      if (invoiceError) throw invoiceError;
+  
+      const paymentStatusMap = new Map<number, string>();
+      invoices?.forEach(inv => {
+        paymentStatusMap.set(inv.po_id, inv.status);
+      });
+  
+      const combinedData = poItems.map(item => {
+        const po = item.purchase_orders;
+        if (!po) return null;
+  
+        const vehicle = po.work_orders?.vehicle_entries?.vehicles;
+        const nopol = vehicle ? `${vehicle.brand_type} / ${vehicle.license_plate}` : 'Stok Gudang';
+        const paymentStatus = paymentStatusMap.get(po.id);
+  
+        let statusBayar = 'Belum Ditagih';
+        if (paymentStatus === 'PAID') statusBayar = 'Lunas';
+        else if (paymentStatus === 'PARTIAL') statusBayar = 'Bayar Sebagian';
+        else if (paymentStatus) statusBayar = 'Belum Lunas';
+  
+        const receivedQtyKey = `${po.id}-${item.goods_id}`;
+        const receivedQty = receivedQtyMap.get(receivedQtyKey) || 0;
+  
+        return {
+          id: item.id,
+          tgl: po.po_date,
+          no_po: po.po_number,
+          supplier: po.suppliers?.name || '-',
+          kendaraan_nopol: nopol,
+          no_wo: po.work_orders?.wo_number || '-',
+          tipe: item.goods?.name || '-',
+          nama_barang: item.goods?.name || '-',
+          qty: item.quantity,
+          diterima: receivedQty,
+          status_bayar: statusBayar,
+          harga_satuan: item.unit_price,
+          total: item.total_price,
+        };
+      }).filter(Boolean) as ReportData[];
+  
+      return combinedData;
+  
+    } catch (error: any) {
+      console.error("Error fetching all data for export:", error);
+      toast.error('Gagal mengambil data untuk ekspor: ' + error.message);
+      return null;
+    }
+  }
+
+  const handleExport = async () => {
+    if (data.length === 0 && totalPages === 0) {
+      toast.warning('Tidak ada data untuk diekspor pada rentang tanggal ini.');
       return;
     }
 
-    const formattedData = data.map(item => ({
+    setExporting(true);
+    toast.info('Mempersiapkan data untuk ekspor... Ini mungkin memakan waktu beberapa saat.');
+
+    const allData = await fetchAllDataForExport();
+
+    if (allData === null) {
+      setExporting(false);
+      return;
+    }
+
+    if (allData.length === 0) {
+        toast.warning('Tidak ada data untuk diekspor.');
+        setExporting(false);
+        return;
+    }
+
+    const formattedData = allData.map(item => ({
       'Tanggal': format(parseISO(item.tgl), 'dd-MM-yyyy'),
       'No. PO': item.no_po,
       'Supplier': item.supplier,
@@ -212,13 +338,13 @@ export default function PurchaseOrderDetailReport() {
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, worksheet, 'Rincian Pembelian Detail');
 
-    // Auto-fit columns
     const colWidths = Object.keys(formattedData[0]).map(key => ({
       wch: Math.max(key.length, ...formattedData.map(row => String(row[key as keyof typeof row]).length)) + 2
     }));
     worksheet['!cols'] = colWidths;
 
-    XLSX.writeFile(workbook, 'Laporan_Rincian_Pembelian_Detail.xlsx');
+    XLSX.writeFile(workbook, 'Laporan_Rincian_Pembelian_Detail_Lengkap.xlsx');
+    setExporting(false);
   };
 
   const totalPembelian = useMemo(() => {
@@ -244,15 +370,15 @@ export default function PurchaseOrderDetailReport() {
               {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               Tampilkan
             </Button>
-            <Button onClick={handleExport} variant="outline" disabled={data.length === 0} className="w-full sm:w-auto">
-              <FileDown className="mr-2 h-4 w-4" />
-              Ekspor
+            <Button onClick={handleExport} variant="outline" disabled={exporting || (data.length === 0 && totalPages === 0)} className="w-full sm:w-auto">
+              {exporting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <FileDown className="mr-2 h-4 w-4" />}
+              Ekspor Semua
             </Button>
           </div>
         </div>
       </CardHeader>
       <CardContent>
-        {loading ? (
+        {loading && currentPage === 1 ? (
           <div className="flex justify-center items-center h-64">
             <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
           </div>
