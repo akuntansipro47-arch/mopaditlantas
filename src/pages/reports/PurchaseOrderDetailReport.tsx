@@ -36,43 +36,32 @@ export default function PurchaseOrderDetailReport() {
     from: subDays(new Date(), 29),
     to: new Date(),
   });
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(0);
+  const ITEMS_PER_PAGE = 50;
 
-  async function fetchData() {
+  async function fetchData(page = 1) {
     if (!dateRange?.from || !dateRange?.to) {
       toast.error('Silakan pilih rentang tanggal terlebih dahulu.');
       return;
     }
 
-    // Fetch data from Supabase
     setLoading(true);
-    setData([]);
+    setCurrentPage(page);
+    if (page === 1) {
+      setData([]);
+      setTotalPages(0);
+    }
 
     try {
       const startDate = format(dateRange.from, 'yyyy-MM-dd');
       const endDate = format(dateRange.to, 'yyyy-MM-dd');
-      console.log('Mencari data untuk rentang:', { startDate, endDate });
 
-      // 1. Fetch relevant PO IDs first based on date range
-      const { data: poIdsData, error: poIdsError } = await supabase
-        .from('purchase_orders')
-        .select('id')
-        .gte('po_date', startDate)
-        .lte('po_date', endDate);
+      const from = (page - 1) * ITEMS_PER_PAGE;
+      const to = from + ITEMS_PER_PAGE - 1;
 
-      console.log('Hasil dari query purchase_orders:', { poIdsData, poIdsError });
-      if (poIdsError) throw poIdsError;
-
-      if (!poIdsData || poIdsData.length === 0) {
-        setData([]);
-        toast.info('Tidak ada data PO ditemukan untuk rentang tanggal yang dipilih.');
-        setLoading(false);
-        return;
-      }
-
-      const poIds = poIdsData.map(po => po.id);
-
-      // 2. Fetch PO Items with related data using the fetched PO IDs
-      const { data: poItems, error: poItemsError } = await supabase
+      // 1. Fetch a PAGE of PO Items and get the TOTAL COUNT in the same query
+      const { data: poItems, error: poItemsError, count: totalCount } = await supabase
         .from('purchase_order_items')
         .select(`
           id,
@@ -93,20 +82,35 @@ export default function PurchaseOrderDetailReport() {
               )
             )
           )
-        `)
-        .in('po_id', poIds)
-        .order('po_date', { foreignTable: 'purchase_orders', ascending: false });
+        `, { count: 'exact' })
+        .gte('purchase_orders.po_date', startDate)
+        .lte('purchase_orders.po_date', endDate)
+        .order('po_date', { foreignTable: 'purchase_orders', ascending: false })
+        .range(from, to);
 
       if (poItemsError) throw poItemsError;
 
+      if (page === 1) {
+        if (totalCount) {
+          setTotalPages(Math.ceil(totalCount / ITEMS_PER_PAGE));
+        } else {
+          setTotalPages(0);
+        }
+      }
+
       if (!poItems || poItems.length === 0) {
-        setData([]);
-        toast.info('Tidak ada item pembelian yang ditemukan untuk PO dalam rentang tanggal ini.');
+        if (page === 1) {
+          setData([]);
+          toast.info('Tidak ada data ditemukan untuk rentang tanggal yang dipilih.');
+        }
         setLoading(false);
         return;
       }
 
-      // 3. Fetch goods receipts and their items separately. This is the correct, robust way.
+      // 2. Gather IDs from the CURRENT PAGE's items only
+      const poIds = [...new Set(poItems.map(item => item.purchase_orders.id))];
+
+      // 3. Fetch goods receipts for these specific POs
       const { data: receipts, error: receiptError } = await supabase
         .from('goods_receipts')
         .select('po_id, items:goods_receipt_items(goods_id, quantity_received)')
@@ -114,10 +118,9 @@ export default function PurchaseOrderDetailReport() {
 
       if (receiptError) throw receiptError;
 
-      // Map received quantities using a composite key 'poId-goodsId'
       const receivedQtyMap = new Map<string, number>();
       receipts?.forEach(receipt => {
-        if (!receipt.po_id) return; // Skip if a receipt somehow has no PO ID
+        if (!receipt.po_id) return;
         receipt.items.forEach(item => {
           const key = `${receipt.po_id}-${item.goods_id}`;
           const currentQty = receivedQtyMap.get(key) || 0;
@@ -125,7 +128,7 @@ export default function PurchaseOrderDetailReport() {
         });
       });
 
-      // 4. Fetch payment status from invoices
+      // 4. Fetch payment status from invoices for these specific POs
       const { data: invoices, error: invoiceError } = await supabase
         .from('purchase_invoices')
         .select('po_id, status')
@@ -156,7 +159,6 @@ export default function PurchaseOrderDetailReport() {
           statusBayar = 'Belum Lunas';
         }
 
-        // Look up received quantity using the composite key
         const receivedQtyKey = `${po.id}-${item.goods_id}`;
         const receivedQty = receivedQtyMap.get(receivedQtyKey) || 0;
 
@@ -170,7 +172,7 @@ export default function PurchaseOrderDetailReport() {
           tipe: item.goods?.name || '-',
           nama_barang: item.goods?.name || '-',
           qty: item.quantity,
-          diterima: receivedQty, // Use the mapped quantity
+          diterima: receivedQty,
           status_bayar: statusBayar,
           harga_satuan: item.unit_price,
           total: item.total_price,
@@ -235,7 +237,7 @@ export default function PurchaseOrderDetailReport() {
           </div>
           <div className="flex flex-col sm:flex-row items-center gap-2 w-full md:w-auto">
             <DatePickerWithRange date={dateRange} setDate={setDateRange} className="w-full sm:w-auto" />
-            <Button onClick={fetchData} disabled={loading} className="w-full sm:w-auto">
+            <Button onClick={() => fetchData(1)} disabled={loading} className="w-full sm:w-auto">
               {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               Tampilkan
             </Button>
@@ -306,6 +308,31 @@ export default function PurchaseOrderDetailReport() {
                 </TableBody>
               </Table>
             </div>
+            {totalPages > 1 && (
+              <div className="flex items-center justify-between mt-4">
+                <div className="text-sm text-muted-foreground">
+                  Halaman {currentPage} dari {totalPages}
+                </div>
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => fetchData(currentPage - 1)}
+                    disabled={currentPage <= 1 || loading}
+                  >
+                    Sebelumnya
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => fetchData(currentPage + 1)}
+                    disabled={currentPage >= totalPages || loading}
+                  >
+                    Berikutnya
+                  </Button>
+                </div>
+              </div>
+            )}
             {data.length > 0 && (
               <div className="flex justify-end mt-4">
                 <div className="text-right font-bold">
