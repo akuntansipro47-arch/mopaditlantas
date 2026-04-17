@@ -1,13 +1,12 @@
 import { useState, useEffect, useMemo } from 'react';
 import { supabase } from '@/lib/supabase';
-import { DateRange } from 'react-day-picker';
 import { subDays } from 'date-fns';
 import { toast } from 'sonner';
 import * as XLSX from 'xlsx';
 
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { DatePickerWithRange } from '@/components/DatePickerWithRange';
+import { SingleDatePicker } from '@/components/SingleDatePicker';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { format, parseISO } from 'date-fns';
 import { id as localeID } from 'date-fns/locale';
@@ -32,7 +31,7 @@ type ReportData = {
 export default function PurchaseOrderDetailReport() {
   const [loading, setLoading] = useState(false);
   const [data, setData] = useState<ReportData[]>([]);
-  const [dateRange, setDateRange] = useState<DateRange | undefined>({
+  const [dateRange, setDateRange] = useState<{ from: Date | undefined, to: Date | undefined }>({
     from: subDays(new Date(), 29),
     to: new Date(),
   });
@@ -236,7 +235,11 @@ export default function PurchaseOrderDetailReport() {
             <p className="text-sm text-muted-foreground mt-1">Menampilkan semua item dari setiap Purchase Order.</p>
           </div>
           <div className="flex flex-col sm:flex-row items-center gap-2 w-full md:w-auto">
-            <DatePickerWithRange date={dateRange} setDate={setDateRange} className="w-full sm:w-auto" />
+            <div className="flex items-center gap-2 w-full sm:w-auto">
+              <SingleDatePicker date={dateRange?.from} setDate={(date) => setDateRange(prev => ({ ...prev!, from: date }))} />
+              <span className="text-muted-foreground">s/d</span>
+              <SingleDatePicker date={dateRange?.to} setDate={(date) => setDateRange(prev => ({ ...prev!, to: date }))} />
+            </div>
             <Button onClick={() => fetchData(1)} disabled={loading} className="w-full sm:w-auto">
               {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               Tampilkan
