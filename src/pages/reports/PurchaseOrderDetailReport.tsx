@@ -63,6 +63,7 @@ export default function PurchaseOrderDetailReport() {
             id,
             po_date,
             po_number,
+            po_type,
             suppliers ( name ),
             work_orders (
               wo_number,
