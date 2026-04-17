@@ -568,24 +568,7 @@ export default function PurchasePayment() {
   const [isAccountSelectOpen, setIsAccountSelectOpen] = useState(false); // For custom dialog
   const [isFeeAccountSelectOpen, setIsFeeAccountSelectOpen] = useState(false);
 
-  async function trackSpecificInvoice(invoiceNumber: string) {
-    toast.info(`Mencari data untuk invoice: ${invoiceNumber}...`);
-    
-    // ULTIMATE TEST: Simplest possible query, no joins.
-    // This will confirm if the invoice number exists at all.
-    const { data: invoice, error: invError } = await supabase
-      .from('purchase_invoices')
-      .select('*') // NO JOINS
-      .eq('invoice_number', invoiceNumber)
-      .single();
-
-    if (invError || !invoice) {
-      toast.error(`Invoice ${invoiceNumber} tidak ditemukan (Tes Final).`);
-      console.error('Error finding invoice (Final Test):', invError);
-      // Also log the raw error object from supabase
-      if(invError) console.error('Supabase Error Object:', invError);
-      return;
-    }
+  
 
     console.log('--- DATA INVOICE DITEMUKAN (Tanpa Join) ---');
     console.log(invoice);
@@ -792,12 +775,7 @@ export default function PurchasePayment() {
               onClick={() => trackSpecificInvoice('INV-1775104628401')}
               className="bg-yellow-400 hover:bg-yellow-500 text-black"
             >
-              Track INV-1775104628401
-            </Button>
-            <Button variant="outline" onClick={handleSyncInvoices} disabled={isSyncing}>
-                <RefreshCw className={`mr-2 h-4 w-4 ${isSyncing ? 'animate-spin' : ''}`} />
-                Sinkronisasi Tagihan PO
-            </Button>
+              
         </div>
       </div>
 
