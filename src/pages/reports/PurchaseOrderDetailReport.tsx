@@ -43,6 +43,7 @@ export default function PurchaseOrderDetailReport() {
       return;
     }
 
+    // Fetch data from Supabase
     setLoading(true);
     setData([]);
 
