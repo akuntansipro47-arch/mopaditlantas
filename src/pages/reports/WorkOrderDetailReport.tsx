@@ -1,844 +1,533 @@
-import { useState, useEffect } from 'react';
-import { supabase } from '@/lib/supabase';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Badge } from '@/components/ui/badge';
-import { Download, Calendar, Filter, RefreshCw } from 'lucide-react';
-import { formatCurrency, formatDate } from '@/lib/utils';
+import { useState, useEffect, useMemo } from 'react';
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { DateRangePicker } from "@/components/ui/date-range-picker";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { supabase } from '@/supabaseClient';
+import { toast } from 'sonner';
+import { format, subDays } from 'date-fns';
+import { DateRange } from 'react-day-picker';
 import * as XLSX from 'xlsx';
+import { ScrollArea } from '@/components/ui/scroll-area';
 
-export default function WorkOrderDetailReport() {
-  const [loading, setLoading] = useState(false);
-  const [data, setData] = useState<any[]>([]);
-  const [search, setSearch] = useState('');
-  const [serverSearch, setServerSearch] = useState('');
-  const [partHppMap, setPartHppMap] = useState<Record<string, number>>({});
-  const [jobHppMap, setJobHppMap] = useState<Record<string, number>>({});
+// Helper function to format currency
+const formatCurrency = (value: number | null | undefined) => {
+    if (value === null || value === undefined) return 'Rp 0';
+    return new Intl.NumberFormat('id-ID', {
+        style: 'currency',
+        currency: 'IDR',
+        minimumFractionDigits: 0,
+        maximumFractionDigits: 0
+    }).format(value);
+};
 
-  const normalizeText = (v: string) =>
-    String(v || '')
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, ' ')
-      .trim()
-      .replace(/\s+/g, ' ');
-
-  const isNameMatch = (a: string, b: string) => {
-    const aa = normalizeText(a);
-    const bb = normalizeText(b);
-    if (!aa || !bb) return false;
-    if (aa === bb) return true;
-    return aa.includes(bb) || bb.includes(aa);
-  };
-
-  const getDisplayPrices = (wo: any, bill: any) => {
-    const qty = Number(bill?.qty || 0);
-    const rawUnit = Number(bill?.unit_price || 0);
-    let unitPrice = Number.isFinite(rawUnit) ? rawUnit : 0;
-    let totalPrice = Number(bill?.total_price);
-    if (!Number.isFinite(totalPrice)) totalPrice = unitPrice * qty;
-
-    const type = String(bill?.item_type || '').toUpperCase();
-    if (type !== 'PART') return { unitPrice, totalPrice };
-
-    if (unitPrice > 0 && totalPrice > 0) return { unitPrice, totalPrice };
-
-    const entryParts = Array.isArray(wo?.vehicle_entries?.vehicle_entry_spareparts)
-      ? wo.vehicle_entries.vehicle_entry_spareparts
-      : [];
-
-    const billName = String(bill?.item_name || '').replace(/^Penggantian\s+/i, '').trim();
-    const goodsName = String(bill?.goods?.name || '').trim();
-
-    const matched = entryParts.find((ep: any) => {
-      const epName = String(ep?.item_name || '');
-      return isNameMatch(epName, goodsName || billName);
-    });
-
-    const ep = Number(matched?.estimated_price || 0);
-    const q = Number(matched?.qty || qty || 0);
-    if (ep > 0 && q > 0) {
-      unitPrice = ep;
-      totalPrice = ep * q;
-    }
-
-    return { unitPrice, totalPrice };
-  };
-  
-  // Filters
-  // Fix timezone issue by manually adjusting date
-  const today = new Date();
-  const firstDay = new Date(today.getFullYear(), today.getMonth(), 1);
-  
-  const formatDateForInput = (date: Date) => {
-      const offset = date.getTimezoneOffset();
-      const localDate = new Date(date.getTime() - (offset * 60 * 1000));
-      return localDate.toISOString().split('T')[0];
-  };
-
-  const [dateRange, setDateRange] = useState({
-    start: formatDateForInput(firstDay),
-    end: formatDateForInput(today)
-  });
-  const [statusFilter, setStatusFilter] = useState('ALL');
-  const [groupFilter, setGroupFilter] = useState('ALL');
-  const [errorMsg, setErrorMsg] = useState('');
-
-  useEffect(() => {
-    fetchData();
-  }, [dateRange, statusFilter]);
-
-  const loadHppMaps = async (wos: any[]) => {
-    const goodsIds = new Set<string>();
-    const jobTypeIds = new Set<string>();
-
-    (wos || []).forEach((wo: any) => {
-      const bills = wo.merged_billings || wo.work_order_billings || [];
-      bills.forEach((b: any) => {
-        if (b?.item_type === 'PART' && b?.goods_id) goodsIds.add(String(b.goods_id));
-        if (b?.item_type === 'JOB' && b?.job_type_id) jobTypeIds.add(String(b.job_type_id));
-      });
-    });
-
-    const goodsToFetch = Array.from(goodsIds).filter((id) => partHppMap[id] === undefined);
-    if (goodsToFetch.length > 0) {
-      const nextPartMap: Record<string, number> = {};
-      const { data: poItems } = await supabase
-        .from('purchase_order_items')
-        .select('goods_id, unit_price, created_at')
-        .in('goods_id', goodsToFetch)
-        .order('created_at', { ascending: false });
-      if (poItems) {
-        poItems.forEach((it: any) => {
-          const gid = String(it.goods_id || '');
-          if (gid && nextPartMap[gid] === undefined) nextPartMap[gid] = Number(it.unit_price || 0);
-        });
-      }
-      setPartHppMap((prev) => ({ ...prev, ...nextPartMap }));
-    }
-
-    const jobsToFetch = Array.from(jobTypeIds).filter((id) => jobHppMap[id] === undefined);
-    if (jobsToFetch.length > 0) {
-      try {
-        const nextJobMap: Record<string, number> = {};
-        const { data: jobs } = await supabase.from('job_types').select('id, hpp').in('id', jobsToFetch);
-        if (jobs) {
-          jobs.forEach((j: any) => {
-            nextJobMap[String(j.id)] = Number(j.hpp || 0);
-          });
-        }
-        setJobHppMap((prev) => ({ ...prev, ...nextJobMap }));
-      } catch {
-        setJobHppMap((prev) => prev);
-      }
-    }
-  };
-
-  async function fetchData() {
-    setLoading(true);
-    setErrorMsg('');
+// Helper function to format date
+const formatDate = (dateString: string | null | undefined) => {
+    if (!dateString) return '-';
     try {
-      let query = supabase
-        .from('work_orders')
-        .select(`
-          *,
-          vehicle_entries (
-            nota_dinas_number,
-            service_group,
-            vehicles (license_plate, brand_type, vehicle_type),
-            vehicle_entry_jobs (
-                job_type_id,
-                job_types (
-                    job_name,
-                    job_group,
-                    selling_price
-                )
-            ),
-            vehicle_entry_spareparts (
-                item_name,
-                qty,
-                estimated_price
-            )
-          ),
-          mechanics (name),
-          work_order_billings (
-            item_type,
-            item_name,
-            qty,
-            unit_price,
-            total_price,
-            job_group,
-            goods_id,
-            job_type_id
-          )
-        `)
-        .order('work_date', { ascending: false });
+        const date = new Date(dateString);
+        return format(date, 'dd MMM yyyy');
+    } catch (error) {
+        console.error("Invalid date format:", dateString, error);
+        return 'Invalid Date';
+    }
+};
 
-      // Only apply date filter if valid dates are present
-      if (dateRange.start) {
-          // Start of the day (00:00:00)
-          query = query.gte('work_date', `${dateRange.start} 00:00:00`);
-      }
-      if (dateRange.end) {
-          // End of the day (23:59:59) - Fix missing data on the last day
-          query = query.lte('work_date', `${dateRange.end} 23:59:59`);
-      }
+const getStatusBadge = (status: string) => {
+    const statusMap: { [key: string]: { text: string; className: string } } = {
+        OPEN: { text: 'Open', className: 'bg-blue-100 text-blue-800' },
+        IN_PROGRESS: { text: 'In Progress', className: 'bg-yellow-100 text-yellow-800' },
+        COMPLETED: { text: 'Completed', className: 'bg-green-100 text-green-800' },
+        INVOICED: { text: 'Invoiced', className: 'bg-purple-100 text-purple-800' },
+        PAID: { text: 'Paid', className: 'bg-pink-100 text-pink-800' },
+        CANCELLED: { text: 'Cancelled', className: 'bg-gray-100 text-gray-800' },
+    };
+    const { text, className } = statusMap[status] || { text: status, className: 'bg-gray-100 text-gray-800' };
+    return <span className={`px-2 py-1 text-xs font-medium rounded-full ${className}`}>{text}</span>;
+};
 
-      if (statusFilter !== 'ALL') {
-        query = query.eq('status', statusFilter);
-      }
+const WorkOrderDetailReport = () => {
+    const [dateRange, setDateRange] = useState<DateRange | undefined>({
+        from: subDays(new Date(), 29),
+        to: new Date(),
+    });
+    const [statusFilter, setStatusFilter] = useState<string>('semua');
+    const [vehicleGroupFilter, setVehicleGroupFilter] = useState<string>('semua');
+    const [reportData, setReportData] = useState<any[]>([]);
+    const [loading, setLoading] = useState(false);
+    const [vehicleGroups, setVehicleGroups] = useState<any[]>([]);
 
-      const { data: wos, error } = await query;
-
-      if (error) {
-          console.error("Supabase Error fetching Detail WO:", error);
-          throw error;
-      }
-      
-      const woIds = (wos || []).map((wo: any) => wo.id).filter(Boolean);
-      const issuesByWoId = new Map<string, any[]>();
-      if (woIds.length > 0) {
-        const { data: issues, error: issueErr } = await supabase
-          .from('goods_issues')
-          .select('id, work_order_id')
-          .in('work_order_id', woIds);
-
-        if (issueErr) {
-          console.error('Supabase Error fetching goods issues headers for Detail WO:', issueErr);
-        } else {
-          const issueIdToWoId = new Map<string, string>();
-          const issueIds: string[] = [];
-          (issues || []).forEach((gi: any) => {
-            const issueId = String(gi.id || '');
-            const woId = String(gi.work_order_id || '');
-            if (!issueId || !woId) return;
-            issueIdToWoId.set(issueId, woId);
-            issueIds.push(issueId);
-          });
-
-          if (issueIds.length > 0) {
-            const { data: issueItems, error: itemsErr } = await supabase
-              .from('goods_issue_items')
-              .select(`
-                issue_id,
-                quantity,
-                is_info_only,
-                value_only,
-                goods (id, name, selling_price)
-              `)
-              .in('issue_id', issueIds);
-
-            if (itemsErr) {
-              console.error('Supabase Error fetching goods issue items for Detail WO:', itemsErr);
+    useEffect(() => {
+        const fetchVehicleGroups = async () => {
+            const { data, error } = await supabase
+                .from('vehicle_groups')
+                .select('id, group_name');
+            if (error) {
+                console.error('Error fetching vehicle groups:', error);
             } else {
-              (issueItems || []).forEach((it: any) => {
-                const issueId = String(it.issue_id || '');
-                const woId = issueIdToWoId.get(issueId);
-                if (!woId) return;
-                const prev = issuesByWoId.get(woId) || [];
-                issuesByWoId.set(woId, [...prev, it]);
-              });
+                setVehicleGroups(data);
             }
-          }
-        }
-      }
+        };
+        fetchVehicleGroups();
+    }, []);
 
-      // Process WOs to map billings or fallback to estimates
-      const processedWOs = wos?.map((wo: any) => {
-          let mergedBillings = wo.work_order_billings || [];
-          const goodsIdInBilling = new Set<string>(
-            (mergedBillings || [])
-              .filter((b: any) => b?.item_type === 'PART' && b?.goods_id)
-              .map((b: any) => String(b.goods_id))
-          );
-          
-          // If no billings yet (e.g. status OPEN/IN_PROGRESS), use estimation data from entry
-          if (mergedBillings.length === 0 && wo.vehicle_entries) {
-              const entryJobs = wo.vehicle_entries.vehicle_entry_jobs || [];
-              const entryParts = wo.vehicle_entries.vehicle_entry_spareparts || [];
-              
-              const estimatedJobs = entryJobs.map((ej: any) => ({
-                  item_type: 'JOB',
-                  job_type_id: ej.job_type_id,
-                  item_name: ej.job_types?.job_name || 'Pekerjaan',
-                  qty: 1,
-                  unit_price: ej.job_types?.selling_price || 0,
-                  total_price: ej.job_types?.selling_price || 0,
-                  job_group: ej.job_types?.job_group || 'Umum',
-                  is_estimation: true
-              }));
-              
-              const estimatedParts = entryParts.map((ep: any) => ({
-                  item_type: 'PART',
-                  item_name: ep.item_name || 'Sparepart',
-                  qty: ep.qty || 1,
-                  unit_price: ep.estimated_price || 0,
-                  total_price: (ep.qty || 1) * (ep.estimated_price || 0),
-                  job_group: 'Sparepart',
-                  is_estimation: true
-              }));
-              
-              mergedBillings = [...estimatedJobs, ...estimatedParts];
-          }
-
-          const issueItems = (issuesByWoId.get(String(wo.id)) || [])
-            .filter((it: any) => it?.goods?.id);
-
-          if (issueItems.length > 0) {
-            const injected = issueItems
-              .filter((it: any) => !goodsIdInBilling.has(String(it.goods.id)))
-              .map((it: any) => {
-                const qty = Number(it.quantity || 0);
-                let unit = Number(it.goods?.selling_price || 0);
-                if (!unit) {
-                  const entryParts = wo.vehicle_entries?.vehicle_entry_spareparts || [];
-                  const matched = entryParts.find((ep: any) => isNameMatch(ep?.item_name || '', it.goods?.name || ''));
-                  const ep = Number(matched?.estimated_price || 0);
-                  if (ep > 0) unit = ep;
-                }
-                return {
-                  item_type: 'PART',
-                  item_name: `Penggantian ${it.goods?.name || 'Sparepart'}`,
-                  qty,
-                  unit_price: unit,
-                  total_price: unit * qty,
-                  job_group: 'PERBAIKAN',
-                  goods_id: it.goods.id,
-                  source: 'GOODS_ISSUE'
-                };
-              });
-            mergedBillings = [...mergedBillings, ...injected];
-          }
-          
-          return {
-              ...wo,
-              merged_billings: mergedBillings
-          };
-      });
-
-      console.log("Fetched WOs for Detail Report:", processedWOs?.length, "Range:", dateRange);
-      await loadHppMaps((processedWOs as any[]) || []);
-      setData(processedWOs || []);
-
-    } catch (error: any) {
-      console.error('Error fetching WO Detail report:', error);
-      setErrorMsg(error.message || 'Gagal mengambil data.');
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  const fetchByWoNumber = async () => {
-    const q = serverSearch.trim();
-    if (!q) return;
-    setLoading(true);
-    setErrorMsg('');
-    try {
-      const { data: wos, error } = await supabase
-        .from('work_orders')
-        .select(`
-          *,
-          vehicle_entries (
-            nota_dinas_number,
-            service_group,
-            vehicles (license_plate, brand_type, vehicle_type),
-            vehicle_entry_jobs (
-                job_type_id,
-                job_types (
-                    job_name,
-                    job_group,
-                    selling_price
-                )
-            ),
-            vehicle_entry_spareparts (
-                item_name,
-                qty,
-                estimated_price
-            )
-          ),
-          mechanics (name),
-          work_order_billings (
-            item_type,
-            item_name,
-            qty,
-            unit_price,
-            total_price,
-            job_group,
-            goods_id,
-            job_type_id
-          )
-        `)
-        .ilike('wo_number', `%${q}%`)
-        .order('work_date', { ascending: false })
-        .limit(20);
-
-      if (error) throw error;
-
-      const woIds = (wos || []).map((wo: any) => wo.id).filter(Boolean);
-      const issuesByWoId = new Map<string, any[]>();
-      if (woIds.length > 0) {
-        const { data: issues } = await supabase
-          .from('goods_issues')
-          .select('id, work_order_id')
-          .in('work_order_id', woIds);
-
-        const issueIdToWoId = new Map<string, string>();
-        const issueIds: string[] = [];
-        (issues || []).forEach((gi: any) => {
-          const issueId = String(gi.id || '');
-          const woId = String(gi.work_order_id || '');
-          if (!issueId || !woId) return;
-          issueIdToWoId.set(issueId, woId);
-          issueIds.push(issueId);
-        });
-
-        if (issueIds.length > 0) {
-          const { data: issueItems } = await supabase
-            .from('goods_issue_items')
-            .select(`
-              issue_id,
-              quantity,
-              is_info_only,
-              value_only,
-              goods (id, name, selling_price)
-            `)
-            .in('issue_id', issueIds);
-
-          (issueItems || []).forEach((it: any) => {
-            const issueId = String(it.issue_id || '');
-            const woId = issueIdToWoId.get(issueId);
-            if (!woId) return;
-            const prev = issuesByWoId.get(woId) || [];
-            issuesByWoId.set(woId, [...prev, it]);
-          });
-        }
-      }
-
-      const processed = (wos || []).map((wo: any) => {
-        let mergedBillings = wo.work_order_billings || [];
-        const goodsIdInBilling = new Set<string>(
-          (mergedBillings || [])
-            .filter((b: any) => b?.item_type === 'PART' && b?.goods_id)
-            .map((b: any) => String(b.goods_id))
-        );
-
-        if (mergedBillings.length === 0 && wo.vehicle_entries) {
-          const entryJobs = wo.vehicle_entries.vehicle_entry_jobs || [];
-          const entryParts = wo.vehicle_entries.vehicle_entry_spareparts || [];
-
-          const estimatedJobs = entryJobs.map((ej: any) => ({
-            item_type: 'JOB',
-            job_type_id: ej.job_type_id,
-            item_name: ej.job_types?.job_name || 'Pekerjaan',
-            qty: 1,
-            unit_price: ej.job_types?.selling_price || 0,
-            total_price: ej.job_types?.selling_price || 0,
-            job_group: ej.job_types?.job_group || 'Umum',
-            is_estimation: true,
-          }));
-
-          const estimatedParts = entryParts.map((ep: any) => ({
-            item_type: 'PART',
-            item_name: ep.item_name || 'Sparepart',
-            qty: ep.qty || 1,
-            unit_price: ep.estimated_price || 0,
-            total_price: (ep.qty || 1) * (ep.estimated_price || 0),
-            job_group: 'Sparepart',
-            is_estimation: true,
-          }));
-
-          mergedBillings = [...estimatedJobs, ...estimatedParts];
+    const fetchReportData = async () => {
+        if (!dateRange?.from || !dateRange?.to) {
+            toast.error("Silakan pilih rentang tanggal.");
+            return;
         }
 
-        const issueItems = (issuesByWoId.get(String(wo.id)) || []).filter((it: any) => it?.goods?.id);
+        setLoading(true);
+        try {
+            const fromDate = format(dateRange.from, 'yyyy-MM-dd');
+            const toDate = format(dateRange.to, 'yyyy-MM-dd');
 
-        if (issueItems.length > 0) {
-          const injected = issueItems
-            .filter((it: any) => !goodsIdInBilling.has(String(it.goods.id)))
-            .map((it: any) => {
-              const qty = Number(it.quantity || 0);
-              let unit = Number(it.goods?.selling_price || 0);
-              if (!unit) {
-                const entryParts = wo.vehicle_entries?.vehicle_entry_spareparts || [];
-                const matched = entryParts.find((ep: any) => isNameMatch(ep?.item_name || '', it.goods?.name || ''));
-                const ep = Number(matched?.estimated_price || 0);
-                if (ep > 0) unit = ep;
-              }
-              return {
-                item_type: 'PART',
-                item_name: `Penggantian ${it.goods?.name || 'Sparepart'}`,
-                qty,
-                unit_price: unit,
-                total_price: unit * qty,
-                job_group: 'PERBAIKAN',
-                goods_id: it.goods.id,
-                source: 'GOODS_ISSUE',
-              };
-            });
-          mergedBillings = [...mergedBillings, ...injected];
-        }
+            let query = supabase
+                .from('work_orders')
+                .select(`
+                    id,
+                    wo_number,
+                    work_date,
+                    status,
+                    vehicle_entry_id,
+                    vehicle_entries (
+                        id,
+                        vehicle_id,
+                        vehicles (
+                            id,
+                            license_plate,
+                            brand_type,
+                            vehicle_group_id
+                        ),
+                        vehicle_entry_jobs (
+                            job_type_id,
+                            job_types (
+                                job_name,
+                                selling_price,
+                                job_group
+                            )
+                        ),
+                        vehicle_entry_spareparts (
+                            item_name,
+                            qty,
+                            estimated_price
+                        )
+                    ),
+                    work_order_billings (
+                        id,
+                        item_type,
+                        item_name,
+                        qty,
+                        unit_price,
+                        total_price,
+                        job_type_id,
+                        goods_id
+                    )
+                `)
+                .gte('work_date', fromDate)
+                .lte('work_date', toDate)
+                .order('work_date', { ascending: false });
 
-        return { ...wo, merged_billings: mergedBillings };
-      });
+            if (statusFilter !== 'semua') {
+                query = query.eq('status', statusFilter);
+            }
 
-      const existingIds = new Set((data || []).map((x: any) => String(x.id)));
-      const merged = [...(data || [])];
-      processed.forEach((wo: any) => {
-        const id = String(wo.id);
-        if (!existingIds.has(id)) merged.unshift(wo);
-      });
-      await loadHppMaps(processed);
-      setData(merged);
-    } catch (e: any) {
-      setErrorMsg(e.message || 'Gagal mencari WO.');
-    } finally {
-      setLoading(false);
-    }
-  };
+            const { data: workOrders, error: woError } = await query;
 
-  const getVehicleGroupLabel = (wo: any) => {
-      const sg = String(wo.vehicle_entries?.service_group || '').toUpperCase();
-      if (sg.includes('R2_KECIL') || sg.includes('R2 KECIL') || sg.includes('KECIL')) return 'R2 Kecil';
-      if (sg.includes('R4')) return 'R4';
-      if (sg.includes('R2')) return 'R2';
+            if (woError) throw woError;
 
-      const billingsToCheck = wo.merged_billings || wo.work_order_billings || [];
-      const hasServiceItem = billingsToCheck.some((b: any) => {
-          const name = (b.item_name || '').toUpperCase();
-          return name.includes('TUNE UP') || name.includes('SERVICE') || name.includes('SERVIS');
-      });
+            let filteredWorkOrders = workOrders;
+            if (vehicleGroupFilter !== 'semua') {
+                filteredWorkOrders = workOrders.filter(wo =>
+                    String(wo.vehicle_entries?.vehicles?.vehicle_group_id) === vehicleGroupFilter
+                );
+            }
 
-      const vType = String(wo.vehicle_entries?.vehicles?.vehicle_type || '').toUpperCase();
-      if (vType.includes('R2_KECIL') || vType.includes('R2 KECIL') || vType.includes('KECIL')) return 'R2 Kecil';
-      if (vType === 'R4' || vType.includes('R4') || vType.includes('MOBIL')) return hasServiceItem ? 'R4' : 'R4';
-      if (vType === 'R2' || vType.includes('R2') || vType.includes('MOTOR')) return hasServiceItem ? 'R2' : 'R2';
-      return hasServiceItem ? '-' : '-';
-  };
-
-  const getVehicleGroupKey = (wo: any) => {
-      const label = getVehicleGroupLabel(wo);
-      if (label === 'R2') return 'R2';
-      if (label === 'R4') return 'R4';
-      if (label === 'R2 Kecil') return 'R2_KECIL';
-      return '';
-  };
-
-  const filteredWos = data.filter(wo => {
-      if (!(groupFilter === 'ALL' ? true : getVehicleGroupKey(wo) === groupFilter)) return false;
-      const s = search.trim().toLowerCase();
-      if (!s) return true;
-      const woNumber = String(wo.wo_number || '').toLowerCase();
-      const nopol = String(wo.vehicle_entries?.vehicles?.license_plate || '').toLowerCase();
-      const nota = String(wo.vehicle_entries?.nota_dinas_number || '').toLowerCase();
-      const merk = String(wo.vehicle_entries?.vehicles?.brand_type || '').toLowerCase();
-      const itemText = (wo.merged_billings || wo.work_order_billings || [])
-        .map((b: any) => String(b?.item_name || ''))
-        .join(' ')
-        .toLowerCase();
-      return woNumber.includes(s) || nopol.includes(s) || nota.includes(s) || merk.includes(s) || itemText.includes(s);
-  });
-
-  const exportToExcel = () => {
-    // Flatten data for Excel
-    const rows: any[] = [];
-    
-    filteredWos.forEach(wo => {
-        const groupName = getVehicleGroupLabel(wo);
-        const billingsToExport = wo.merged_billings || wo.work_order_billings || [];
-
-        // If WO has no billings, still show one row
-        if (billingsToExport.length === 0) {
-            rows.push({
-                'No. WO': wo.wo_number,
-                'Tanggal': formatDate(wo.work_date),
-                'Status': wo.status,
-                'No. Polisi': wo.vehicle_entries?.vehicles?.license_plate || '-',
-                'Kendaraan': wo.vehicle_entries?.vehicles?.brand_type || '-',
-                'Tipe': wo.vehicle_entries?.vehicles?.vehicle_type || '-',
-                'Group': groupName,
-                'Mekanik': wo.mechanics?.name || '-',
-                'Item': '-',
-                'Tipe Item': '-',
-                'Qty': 0,
-                'Harga Satuan': 0,
-                'Total Harga': 0
-            });
-        } else {
-            billingsToExport.forEach((bill: any) => {
-                const { unitPrice, totalPrice } = getDisplayPrices(wo, bill);
-                const qty = Number(bill.qty || 0);
-                let hppSatuan = 0;
-                if (bill.item_type === 'PART' && bill.goods_id) {
-                    hppSatuan = partHppMap[String(bill.goods_id)] || 0;
-                } else if (bill.item_type === 'JOB' && bill.job_type_id) {
-                    hppSatuan = jobHppMap[String(bill.job_type_id)] || 0;
-                }
-                const realisasi = hppSatuan * qty;
-                rows.push({
-                    'No. WO': wo.wo_number,
-                    'Tanggal': formatDate(wo.work_date),
-                    'Status': wo.status,
-                    'No. Polisi': wo.vehicle_entries?.vehicles?.license_plate || '-',
-                    'Kendaraan': wo.vehicle_entries?.vehicles?.brand_type || '-',
-                    'Tipe': wo.vehicle_entries?.vehicles?.vehicle_type || '-',
-                    'Group': groupName,
-                    'Mekanik': wo.mechanics?.name || '-',
-                    'Item': bill.item_name,
-                    'Tipe Item': bill.item_type,
-                    'Qty': bill.qty,
-                    'Harga Satuan': unitPrice,
-                    'Total Harga': totalPrice,
-                    'Realisasi': realisasi,
-                    'Selisih': totalPrice - realisasi
+            // Get all unique goods_ids and job_type_ids from billings for HPP lookup
+            const allGoodsIds = new Set<string>();
+            const allJobTypeIds = new Set<string>();
+            filteredWorkOrders.forEach(wo => {
+                wo.work_order_billings.forEach((bill: any) => {
+                    if (bill.item_type === 'PART' && bill.goods_id) {
+                        allGoodsIds.add(String(bill.goods_id));
+                    }
+                    if (bill.item_type === 'JOB' && bill.job_type_id) {
+                        allJobTypeIds.add(String(bill.job_type_id));
+                    }
                 });
             });
-        }
-    });
 
-    const ws = XLSX.utils.json_to_sheet(rows);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Detail WO");
-    XLSX.writeFile(wb, `Laporan_Detail_WO_${dateRange.start}_${dateRange.end}.xlsx`);
-  };
+            // Fetch HPP for parts from goods_issues
+            const { data: goodsIssues, error: giError } = await supabase
+                .from('goods_issues')
+                .select('goods_id, hpp')
+                .in('goods_id', Array.from(allGoodsIds));
 
-  const getStatusBadge = (status: string) => {
-    switch (status) {
-      case 'OPEN': return <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200">Open</Badge>;
-      case 'IN_PROGRESS': return <Badge variant="outline" className="bg-yellow-50 text-yellow-700 border-yellow-200">Proses</Badge>;
-      case 'COMPLETED': return <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">Selesai</Badge>;
-      case 'CLOSED': return <Badge variant="outline" className="bg-gray-50 text-gray-700 border-gray-200">Tutup</Badge>;
-      case 'CANCELLED': return <Badge variant="destructive">Batal</Badge>;
-      default: return <Badge variant="outline">{status}</Badge>;
-    }
-  };
+            if (giError) throw giError;
 
-  return (
-    <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row justify-between gap-4">
-        <div>
-          <h2 className="text-3xl font-bold tracking-tight">Laporan Detail Work Order (Revisi)</h2>
-          <p className="text-muted-foreground">Laporan rinci transaksi WO per item pekerjaan/barang.</p>
-          <p className="text-xs text-blue-600 font-medium mt-1">Total Data: {filteredWos.length} WO ditemukan</p>
-          {errorMsg && (
-            <div className="mt-2 p-3 bg-red-100 border border-red-200 text-red-700 rounded-md">
-                Error: {errorMsg}
-            </div>
-          )}
-        </div>
-        <div className="flex gap-2">
-           <Button variant="outline" onClick={exportToExcel} disabled={filteredWos.length === 0}>
-             <Download className="mr-2 h-4 w-4" /> Export Excel
-           </Button>
-        </div>
-      </div>
+            const partHppMap: { [key: string]: number } = {};
+            goodsIssues.forEach(gi => {
+                partHppMap[String(gi.goods_id)] = gi.hpp || 0;
+            });
 
-      <Card>
-        <CardHeader className="pb-3">
-            <div className="flex flex-wrap items-center gap-4 bg-slate-50 p-4 rounded-md border">
-                <div className="flex items-center gap-2">
-                    <span className="font-medium text-sm text-gray-500">Cari:</span>
-                    <Input
-                        value={search}
-                        onChange={e => setSearch(e.target.value)}
-                        placeholder="No WO / Nopol / Nota Dinas / Item..."
-                        className="w-[260px] bg-white"
-                    />
-                </div>
-                <div className="flex items-center gap-2">
-                    <span className="font-medium text-sm text-gray-500">Cari WO (server):</span>
-                    <Input
-                        value={serverSearch}
-                        onChange={e => setServerSearch(e.target.value)}
-                        placeholder="WO-2026..."
-                        className="w-[220px] bg-white"
-                    />
-                    <Button variant="outline" size="sm" onClick={fetchByWoNumber} disabled={loading || !serverSearch.trim()}>
-                        Cari
-                    </Button>
-                </div>
-                <div className="flex items-center gap-2">
-                    <span className="font-medium text-sm text-gray-500"><Filter className="h-4 w-4 inline mr-1"/> Filter:</span>
-                    <Input 
-                        type="date" 
-                        value={dateRange.start} 
-                        onChange={e => setDateRange({...dateRange, start: e.target.value})} 
-                        className="w-auto bg-white"
-                    />
-                    <span className="text-gray-400">-</span>
-                    <Input 
-                        type="date" 
-                        value={dateRange.end} 
-                        onChange={e => setDateRange({...dateRange, end: e.target.value})} 
-                        className="w-auto bg-white"
-                    />
-                </div>
+            // Fetch HPP for jobs from job_types
+            const { data: jobTypes, error: jtError } = await supabase
+                .from('job_types')
+                .select('id, capital_price')
+                .in('id', Array.from(allJobTypeIds));
+
+            if (jtError) throw jtError;
+
+            const jobHppMap: { [key: string]: number } = {};
+            jobTypes.forEach(jt => {
+                jobHppMap[String(jt.id)] = jt.capital_price || 0;
+            });
+            
+            // Fetch all goods issues within the date range to find items not in billings
+            const { data: allGoodsIssues, error: allGiError } = await supabase
+                .from('goods_issues')
+                .select(`
+                    id,
+                    work_order_id,
+                    goods_id,
+                    qty,
+                    hpp,
+                    goods (
+                        name
+                    )
+                `)
+                .in('work_order_id', filteredWorkOrders.map(wo => wo.id));
+
+            if (allGiError) throw allGiError;
+
+            const issuesByWoId = new Map<string, any[]>();
+            allGoodsIssues.forEach(issue => {
+                const woId = String(issue.work_order_id);
+                if (!issuesByWoId.has(woId)) {
+                    issuesByWoId.set(woId, []);
+                }
+                issuesByWoId.get(woId)?.push(issue);
+            });
+
+
+            const processedData = filteredWorkOrders.map(wo => {
+                let mergedBillings = [...(wo.work_order_billings || [])];
                 
-                <div className="flex items-center gap-2">
-                    <span className="font-medium text-sm text-gray-500">Status:</span>
-                    <Select value={statusFilter} onValueChange={setStatusFilter}>
-                        <SelectTrigger className="w-[150px] bg-white"><SelectValue /></SelectTrigger>
-                        <SelectContent>
-                            <SelectItem value="ALL">Semua Status</SelectItem>
-                            <SelectItem value="OPEN">Open</SelectItem>
-                            <SelectItem value="IN_PROGRESS">In Progress</SelectItem>
-                            <SelectItem value="COMPLETED">Completed</SelectItem>
-                            <SelectItem value="CLOSED">Closed</SelectItem>
-                            <SelectItem value="CANCELLED">Cancelled</SelectItem>
-                        </SelectContent>
-                    </Select>
-                </div>
+                const billedGoodsIds = new Set(
+                    mergedBillings
+                        .filter((b: any) => b.item_type === 'PART' && b.goods_id)
+                        .map((b: any) => String(b.goods_id))
+                );
+                
+                // START: Logic to add non-realized estimations for control
+                if (wo.vehicle_entries) {
+                  const realizedJobIds = new Set(mergedBillings.filter(b => b.item_type === 'JOB' && b.job_type_id).map(b => String(b.job_type_id)));
+                  
+                  const missingEstimatedJobs = (wo.vehicle_entries.vehicle_entry_jobs || [])
+                    .filter((ej: any) => ej.job_type_id && !realizedJobIds.has(String(ej.job_type_id)))
+                    .map((ej: any) => ({
+                      item_type: 'JOB',
+                      job_type_id: ej.job_type_id,
+                      goods_id: null,
+                      item_name: `(Estimasi) ${ej.job_types?.job_name || 'Pekerjaan'}`,
+                      qty: 1,
+                      unit_price: ej.job_types?.selling_price || 0,
+                      total_price: ej.job_types?.selling_price || 0, // Show estimated price
+                      job_group: ej.job_types?.job_group || 'LAINNYA',
+                      source: 'ESTIMATE_ONLY', // Flag for rendering
+                    }));
+      
+                  // Note: Matching estimated parts (by name) to realized parts (by goods_id) is unreliable.
+                  // For now, we only add missing estimated jobs to avoid creating confusing duplicate part entries.
+      
+                  if (missingEstimatedJobs.length > 0) {
+                    mergedBillings = [...mergedBillings, ...missingEstimatedJobs];
+                  }
+                }
+                // END: Logic to add non-realized estimations
+      
+                // Inject goods issue items that are not already in billings
+                const injected = (issuesByWoId.get(String(wo.id)) || [])
+                    .filter(issue => !billedGoodsIds.has(String(issue.goods_id)))
+                    .map(issue => ({
+                        item_type: 'PART',
+                        item_name: `(Unbilled) ${issue.goods?.name || 'Part'}`,
+                        qty: issue.qty,
+                        unit_price: 0, // Not billed, so price is 0
+                        total_price: 0,
+                        goods_id: issue.goods_id,
+                        source: 'UNBILLED_ISSUE'
+                    }));
+                
+                if (injected.length > 0) {
+                    mergedBillings = [...mergedBillings, ...injected];
+                }
 
-                <div className="flex items-center gap-2">
-                    <span className="font-medium text-sm text-gray-500">Group:</span>
-                    <Select value={groupFilter} onValueChange={setGroupFilter}>
-                        <SelectTrigger className="w-[140px] bg-white"><SelectValue /></SelectTrigger>
-                        <SelectContent>
-                            <SelectItem value="ALL">Semua</SelectItem>
-                            <SelectItem value="R2">R2</SelectItem>
-                            <SelectItem value="R4">R4</SelectItem>
-                            <SelectItem value="R2_KECIL">R2 Kecil</SelectItem>
-                        </SelectContent>
-                    </Select>
-                </div>
+                return {
+                    ...wo,
+                    billings: mergedBillings,
+                    partHppMap,
+                    jobHppMap,
+                };
+            });
 
-                <Button variant="ghost" size="sm" onClick={fetchData} disabled={loading} className="ml-auto">
-                    <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
-                </Button>
-            </div>
-        </CardHeader>
-        <CardContent>
-            <div className="rounded-md border overflow-hidden">
-                <div className="max-h-[600px] overflow-auto">
-                <Table className="whitespace-nowrap">
-                    <TableHeader className="bg-slate-100 sticky top-0 z-10 shadow-sm">
-                        <TableRow>
-                            <TableHead>No. WO</TableHead>
-                            <TableHead>Tanggal</TableHead>
-                            <TableHead>Status</TableHead>
-                            <TableHead>Kendaraan</TableHead>
-                            <TableHead>Group</TableHead>
-                            <TableHead>Item Pekerjaan / Barang</TableHead>
-                            <TableHead className="text-center">Qty</TableHead>
-                            <TableHead className="text-right">Harga</TableHead>
-                            <TableHead className="text-right">Total</TableHead>
-                            <TableHead className="text-right bg-gray-50">Realisasi</TableHead>
-                            <TableHead className="text-right bg-green-50">Selisih</TableHead>
-                        </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                        {loading ? (
-                            <TableRow><TableCell colSpan={11} className="text-center h-32">Memuat data...</TableCell></TableRow>
-                        ) : filteredWos.length === 0 ? (
-                            <TableRow><TableCell colSpan={11} className="text-center h-32 text-muted-foreground">Tidak ada data ditemukan.</TableCell></TableRow>
-                        ) : (
-                            filteredWos.map((wo) => {
-                                const billings = wo.merged_billings || wo.work_order_billings || [];
-                                const rowSpan = billings.length > 0 ? billings.length : 1;
-                                
-                                return (
-                                    <>
-                                    {billings.length > 0 ? (
-                                        billings.map((bill: any, idx: number) => (
-                                            <TableRow key={`${wo.id}-${idx}`} className="hover:bg-slate-50">
-                                                {/* Parent Columns - Render only on first row */}
-                                                {idx === 0 && (
-                                                    <>
-                                                        <TableCell rowSpan={rowSpan} className="font-medium align-top border-r bg-white">
-                                                            {wo.wo_number}
-                                                            <div className="text-xs text-gray-400 mt-1">{wo.mechanics?.name || 'No Mechanic'}</div>
-                                                        </TableCell>
-                                                        <TableCell rowSpan={rowSpan} className="align-top border-r bg-white">{formatDate(wo.work_date)}</TableCell>
-                                                        <TableCell rowSpan={rowSpan} className="align-top border-r bg-white">{getStatusBadge(wo.status)}</TableCell>
-                                                        <TableCell rowSpan={rowSpan} className="align-top border-r bg-white">
-                                                            <div className="font-bold">{wo.vehicle_entries?.vehicles?.license_plate}</div>
-                                                            <div className="text-xs text-gray-500">{wo.vehicle_entries?.vehicles?.brand_type}</div>
-                                                        </TableCell>
-                                                        <TableCell rowSpan={rowSpan} className="align-top border-r bg-white text-xs">
-                                                            <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-slate-100 text-slate-700">
-                                                                {getVehicleGroupLabel(wo)}
-                                                            </span>
-                                                        </TableCell>
-                                                    </>
-                                                )}
-                                                
-                                                {/* Child Columns */}
-                                                <TableCell className="py-2">
-                                                    <div className="flex items-center gap-2">
-                                                        <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${bill.item_type === 'JOB' ? 'bg-blue-100 text-blue-700' : 'bg-orange-100 text-orange-700'}`}>
-                                                            {bill.item_type}
-                                                        </span>
-                                                        <span>{bill.item_name}</span>
-                                                    </div>
+            setReportData(processedData);
+
+        } catch (error: any) {
+            console.error("Error fetching report data:", error);
+            toast.error("Gagal mengambil data laporan: " + error.message);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const handleExport = () => {
+        if (reportData.length === 0) {
+            toast.info("Tidak ada data untuk diekspor.");
+            return;
+        }
+    
+        const wb = XLSX.utils.book_new();
+        const ws_data: any[][] = [];
+    
+        // Header
+        ws_data.push([
+            "Laporan Detail Work Order",
+            "", "", "", "", "", "", "", "", "", ""
+        ]);
+        ws_data.push([
+            `Periode: ${dateRange?.from ? formatDate(dateRange.from.toISOString()) : ''} - ${dateRange?.to ? formatDate(dateRange.to.toISOString()) : ''}`,
+            "", "", "", "", "", "", "", "", "", ""
+        ]);
+        ws_data.push([]); // Spacer
+    
+        // Table Header
+        ws_data.push([
+            "No. WO",
+            "Tgl WO",
+            "Status",
+            "No. Polisi",
+            "Grup Kendaraan",
+            "Item/Jasa",
+            "Qty",
+            "Harga Satuan",
+            "Total Harga",
+            "Realisasi (HPP)",
+            "Selisih"
+        ]);
+    
+        // Table Body
+        reportData.forEach(wo => {
+            const { billings, partHppMap, jobHppMap } = wo;
+            const vehicleGroup = vehicleGroups.find(g => String(g.id) === String(wo.vehicle_entries?.vehicles?.vehicle_group_id))?.group_name || 'Umum';
+    
+            if (billings && billings.length > 0) {
+                billings.forEach((bill: any, idx: number) => {
+                    const unitPrice = Number(bill.unit_price || 0);
+                    const totalPrice = Number(bill.total_price || 0);
+                    const qty = Number(bill.qty || 0);
+                    let hppSatuan = 0;
+    
+                    if (bill.source === 'ESTIMATE_ONLY') {
+                        hppSatuan = 0; // No real cost for estimate-only items
+                    } else if (bill.item_type === 'PART' && bill.goods_id) {
+                        hppSatuan = partHppMap[String(bill.goods_id)] || 0;
+                    } else if (bill.item_type === 'JOB' && bill.job_type_id) {
+                        hppSatuan = jobHppMap[String(bill.job_type_id)] || 0;
+                    }
+    
+                    const realisasi = hppSatuan * qty;
+                    const selisih = totalPrice - realisasi;
+    
+                    const row = [
+                        idx === 0 ? wo.wo_number : "",
+                        idx === 0 ? formatDate(wo.work_date) : "",
+                        idx === 0 ? wo.status : "",
+                        idx === 0 ? wo.vehicle_entries?.vehicles?.license_plate : "",
+                        idx === 0 ? vehicleGroup : "",
+                        bill.item_name,
+                        bill.qty,
+                        unitPrice,
+                        totalPrice,
+                        bill.source === 'ESTIMATE_ONLY' ? '-' : realisasi,
+                        bill.source === 'ESTIMATE_ONLY' ? '-' : selisih,
+                    ];
+                    ws_data.push(row);
+                });
+            } else {
+                // Show WO even if it has no billings (e.g., only estimations)
+                const vehicleGroup = vehicleGroups.find(g => String(g.id) === String(wo.vehicle_entries?.vehicles?.vehicle_group_id))?.group_name || 'Umum';
+                ws_data.push([
+                    wo.wo_number,
+                    formatDate(wo.work_date),
+                    wo.status,
+                    wo.vehicle_entries?.vehicles?.license_plate,
+                    vehicleGroup,
+                    "(Belum ada realisasi/estimasi)",
+                    "", "", "", "", ""
+                ]);
+            }
+        });
+    
+        const ws = XLSX.utils.aoa_to_sheet(ws_data);
+    
+        // Styling (basic width)
+        ws['!cols'] = [
+            { wch: 15 }, { wch: 12 }, { wch: 12 }, { wch: 15 }, { wch: 15 },
+            { wch: 40 }, { wch: 5 }, { wch: 15 }, { wch: 15 }, { wch: 15 }, { wch: 15 }
+        ];
+    
+        XLSX.utils.book_append_sheet(wb, ws, "Detail WO");
+        XLSX.writeFile(wb, `Laporan_Detail_WO_${format(new Date(), 'yyyyMMdd')}.xlsx`);
+    };
+
+    const getVehicleGroupLabel = (wo: any) => {
+        if (!wo.vehicle_entries?.vehicles?.vehicle_group_id) return 'Umum';
+        const group = vehicleGroups.find(g => String(g.id) === String(wo.vehicle_entries.vehicles.vehicle_group_id));
+        return group ? group.group_name : 'Umum';
+    };
+
+    const memoizedReportData = useMemo(() => reportData, [reportData]);
+
+    return (
+        <div className="p-4 md:p-6">
+            <Card>
+                <CardHeader>
+                    <CardTitle>Laporan Detail Work Order</CardTitle>
+                </CardHeader>
+                <CardContent>
+                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
+                        <DateRangePicker
+                            date={dateRange}
+                            onDateChange={setDateRange}
+                        />
+                        <Select value={statusFilter} onValueChange={setStatusFilter}>
+                            <SelectTrigger>
+                                <SelectValue placeholder="Filter Status" />
+                            </SelectTrigger>
+                            <SelectContent>
+                                <SelectItem value="semua">Semua Status</SelectItem>
+                                <SelectItem value="OPEN">Open</SelectItem>
+                                <SelectItem value="IN_PROGRESS">In Progress</SelectItem>
+                                <SelectItem value="COMPLETED">Completed</SelectItem>
+                                <SelectItem value="INVOICED">Invoiced</SelectItem>
+                                <SelectItem value="PAID">Paid</SelectItem>
+                                <SelectItem value="CANCELLED">Cancelled</SelectItem>
+                            </SelectContent>
+                        </Select>
+                        <Select value={vehicleGroupFilter} onValueChange={setVehicleGroupFilter}>
+                            <SelectTrigger>
+                                <SelectValue placeholder="Filter Grup Kendaraan" />
+                            </SelectTrigger>
+                            <SelectContent>
+                                <SelectItem value="semua">Semua Grup</SelectItem>
+                                {vehicleGroups.map(group => (
+                                    <SelectItem key={group.id} value={String(group.id)}>{group.group_name}</SelectItem>
+                                ))}
+                            </SelectContent>
+                        </Select>
+                        <div className="flex items-center gap-2">
+                            <Button onClick={fetchReportData} disabled={loading}>
+                                {loading ? 'Memuat...' : 'Tampilkan'}
+                            </Button>
+                            <Button onClick={handleExport} variant="outline" disabled={loading || reportData.length === 0}>
+                                Ekspor ke Excel
+                            </Button>
+                        </div>
+                    </div>
+
+                    <ScrollArea style={{ height: 'calc(100vh - 300px)' }}>
+                        <Table>
+                            <TableHeader className="sticky top-0 bg-background z-10">
+                                <TableRow>
+                                    <TableHead>No. WO</TableHead>
+                                    <TableHead>Tgl WO</TableHead>
+                                    <TableHead>Status</TableHead>
+                                    <TableHead>No. Polisi</TableHead>
+                                    <TableHead>Grup Kendaraan</TableHead>
+                                    <TableHead>Item/Jasa</TableHead>
+                                    <TableHead className="text-center">Qty</TableHead>
+                                    <TableHead className="text-right">Harga Satuan</TableHead>
+                                    <TableHead className="text-right">Total Harga</TableHead>
+                                    <TableHead className="text-right">Realisasi (HPP)</TableHead>
+                                    <TableHead className="text-right">Selisih</TableHead>
+                                </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                                {loading ? (
+                                    <TableRow>
+                                        <TableCell colSpan={11} className="text-center">Memuat data...</TableCell>
+                                    </TableRow>
+                                ) : memoizedReportData.length > 0 ? (
+                                    memoizedReportData.map(wo => {
+                                        const { billings, partHppMap, jobHppMap } = wo;
+                                        return (billings && billings.length > 0) ? billings.map((bill: any, idx: number) => {
+                                            const unitPrice = Number(bill.unit_price || 0);
+                                            const totalPrice = Number(bill.total_price || 0);
+                                            const qty = Number(bill.qty || 0);
+                                            let hppSatuan = 0;
+                                            if (bill.item_type === 'PART' && bill.goods_id) {
+                                             hppSatuan = partHppMap[String(bill.goods_id)] || 0;
+                                            } else if (bill.item_type === 'JOB' && bill.job_type_id) {
+                                             hppSatuan = jobHppMap[String(bill.job_type_id)] || 0;
+                                            }
+                                            const realisasi = hppSatuan * qty;
+                           
+                                            return (
+                                               <TableRow key={`${wo.id}-${idx}`} className={bill.source === 'ESTIMATE_ONLY' ? 'bg-gray-50/50 text-gray-500' : ''}>
+                                                    {idx === 0 && (
+                                                        <>
+                                                            <TableCell rowSpan={billings.length} className="align-top border-r">{wo.wo_number}</TableCell>
+                                                            <TableCell rowSpan={billings.length} className="align-top border-r">{formatDate(wo.work_date)}</TableCell>
+                                                            <TableCell rowSpan={billings.length} className="align-top border-r">{getStatusBadge(wo.status)}</TableCell>
+                                                            <TableCell rowSpan={billings.length} className="align-top border-r">
+                                                                <div className="font-medium">{wo.vehicle_entries?.vehicles?.license_plate}</div>
+                                                                <div className="text-xs text-muted-foreground">{wo.vehicle_entries?.vehicles?.brand_type}</div>
+                                                            </TableCell>
+                                                            <TableCell rowSpan={billings.length} className="align-top border-r">{getVehicleGroupLabel(wo)}</TableCell>
+                                                        </>
+                                                    )}
+                                                    <TableCell>{bill.item_name}</TableCell>
+                                                    <TableCell className="text-center">{bill.qty}</TableCell>
+                                                    <TableCell className="text-right">{formatCurrency(unitPrice)}</TableCell>
+                                                    <TableCell className="text-right">{formatCurrency(totalPrice)}</TableCell>
+                                                   <TableCell className="text-right bg-gray-100">
+                                                     {bill.source === 'ESTIMATE_ONLY' ? '-' : formatCurrency(realisasi)}
+                                                   </TableCell>
+                                                   <TableCell className="text-right bg-green-50/50">
+                                                     {bill.source === 'ESTIMATE_ONLY' ? '-' : formatCurrency(totalPrice - realisasi)}
+                                                   </TableCell>
+                                                </TableRow>
+                                            )
+                                        }) : (
+                                            <TableRow key={wo.id}>
+                                                <TableCell className="border-r">{wo.wo_number}</TableCell>
+                                                <TableCell className="border-r">{formatDate(wo.work_date)}</TableCell>
+                                                <TableCell className="border-r">{getStatusBadge(wo.status)}</TableCell>
+                                                <TableCell className="border-r">
+                                                    <div className="font-medium">{wo.vehicle_entries?.vehicles?.license_plate}</div>
+                                                    <div className="text-xs text-muted-foreground">{wo.vehicle_entries?.vehicles?.brand_type}</div>
                                                 </TableCell>
-                                                {(() => {
-                                                  const { unitPrice, totalPrice } = getDisplayPrices(wo, bill);
-                                                  return (
-                                                    <>
-                                                      <TableCell className="text-center py-2">{bill.qty}</TableCell>
-                                                      <TableCell className="text-right py-2 text-gray-500">{formatCurrency(unitPrice)}</TableCell>
-                                                      <TableCell className="text-right py-2 font-medium">{formatCurrency(totalPrice)}</TableCell>
-                                                      <TableCell className="text-right py-2 bg-gray-50">
-                                                        {(() => {
-                                                          const qty = Number(bill.qty || 0);
-                                                          let hppSatuan = 0;
-                                                          if (bill.item_type === 'PART' && bill.goods_id) {
-                                                            hppSatuan = partHppMap[String(bill.goods_id)] || 0;
-                                                          } else if (bill.item_type === 'JOB' && bill.job_type_id) {
-                                                            hppSatuan = jobHppMap[String(bill.job_type_id)] || 0;
-                                                          }
-                                                          return formatCurrency(hppSatuan * qty);
-                                                        })()}
-                                                      </TableCell>
-                                                      <TableCell className="text-right py-2 bg-green-50 font-medium">
-                                                        {(() => {
-                                                          const qty = Number(bill.qty || 0);
-                                                          let hppSatuan = 0;
-                                                          if (bill.item_type === 'PART' && bill.goods_id) {
-                                                            hppSatuan = partHppMap[String(bill.goods_id)] || 0;
-                                                          } else if (bill.item_type === 'JOB' && bill.job_type_id) {
-                                                            hppSatuan = jobHppMap[String(bill.job_type_id)] || 0;
-                                                          }
-                                                          const realisasi = hppSatuan * qty;
-                                                          return formatCurrency(totalPrice - realisasi);
-                                                        })()}
-                                                      </TableCell>
-                                                    </>
-                                                  );
-                                                })()}
+                                                <TableCell className="border-r">{getVehicleGroupLabel(wo)}</TableCell>
+                                                <TableCell colSpan={6} className="text-center text-muted-foreground italic">
+                                                    Belum ada realisasi/estimasi yang tercatat.
+                                                </TableCell>
                                             </TableRow>
-                                        ))
-                                    ) : (
-                                        <TableRow key={wo.id}>
-                                            <TableCell className="font-medium border-r">{wo.wo_number}</TableCell>
-                                            <TableCell className="border-r">{formatDate(wo.work_date)}</TableCell>
-                                            <TableCell className="border-r">{getStatusBadge(wo.status)}</TableCell>
-                                            <TableCell className="border-r">
-                                                <div className="font-bold">{wo.vehicle_entries?.vehicles?.license_plate}</div>
-                                                <div className="text-xs text-gray-500">{wo.vehicle_entries?.vehicles?.brand_type}</div>
-                                            </TableCell>
-                                            <TableCell className="border-r text-xs">
-                                                <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-slate-100 text-slate-700">
-                                                    {getVehicleGroupLabel(wo)}
-                                                </span>
-                                            </TableCell>
-                                            <TableCell colSpan={6} className="text-center text-gray-400 italic">Belum ada rincian biaya</TableCell>
-                                        </TableRow>
-                                    )}
-                                    
-                                    {/* Separator Row */}
-                                    {/* <TableRow className="h-2 bg-gray-50 border-t"><TableCell colSpan={9}></TableCell></TableRow> */}
-                                    </>
-                                );
-                            })
-                        )}
-                    </TableBody>
-                </Table>
-                </div>
-            </div>
-        </CardContent>
-      </Card>
-    </div>
-  );
-}
+                                        );
+                                    })
+                                ) : (
+                                    <TableRow>
+                                        <TableCell colSpan={11} className="text-center">Tidak ada data untuk ditampilkan.</TableCell>
+                                    </TableRow>
+                                )}
+                            </TableBody>
+                        </Table>
+                    </ScrollArea>
+                </CardContent>
+            </Card>
+        </div>
+    );
+};
+
+export default WorkOrderDetailReport;
