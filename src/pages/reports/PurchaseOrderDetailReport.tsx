@@ -1,16 +1,15 @@
 import { useState, useEffect, useMemo } from 'react';
 import { supabase } from '@/lib/supabase';
-import { subDays } from 'date-fns';
+import { subDays, format, parseISO } from 'date-fns';
 import { toast } from 'sonner';
 import * as XLSX from 'xlsx';
 
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { SingleDatePicker } from '@/components/SingleDatePicker';
+import { Input } from '@/components/ui/input';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { format, parseISO } from 'date-fns';
 import { id as localeID } from 'date-fns/locale';
-import { Loader2, FileDown } from 'lucide-react';
+import { Loader2, FileDown, Calendar } from 'lucide-react';
 
 type ReportData = {
   id: number;
@@ -31,16 +30,16 @@ type ReportData = {
 export default function PurchaseOrderDetailReport() {
   const [loading, setLoading] = useState(false);
   const [data, setData] = useState<ReportData[]>([]);
-  const [dateRange, setDateRange] = useState<{ from: Date | undefined, to: Date | undefined }>({
-    from: subDays(new Date(), 29),
-    to: new Date(),
+  const [dateRange, setDateRange] = useState({
+    start: format(subDays(new Date(), 29), 'yyyy-MM-dd'),
+    end: format(new Date(), 'yyyy-MM-dd'),
   });
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(0);
   const ITEMS_PER_PAGE = 50;
 
   async function fetchData(page = 1) {
-    if (!dateRange?.from || !dateRange?.to) {
+    if (!dateRange?.start || !dateRange?.end) {
       toast.error('Silakan pilih rentang tanggal terlebih dahulu.');
       return;
     }
@@ -53,8 +52,8 @@ export default function PurchaseOrderDetailReport() {
     }
 
     try {
-      const startDate = format(dateRange.from, 'yyyy-MM-dd');
-      const endDate = format(dateRange.to, 'yyyy-MM-dd');
+      const startDate = dateRange.start;
+      const endDate = dateRange.end;
 
       const from = (page - 1) * ITEMS_PER_PAGE;
       const to = from + ITEMS_PER_PAGE - 1;
@@ -235,10 +234,11 @@ export default function PurchaseOrderDetailReport() {
             <p className="text-sm text-muted-foreground mt-1">Menampilkan semua item dari setiap Purchase Order.</p>
           </div>
           <div className="flex flex-col sm:flex-row items-center gap-2 w-full md:w-auto">
-            <div className="flex items-center gap-2 w-full sm:w-auto">
-              <SingleDatePicker date={dateRange?.from} setDate={(date) => setDateRange(prev => ({ ...prev!, from: date }))} />
-              <span className="text-muted-foreground">s/d</span>
-              <SingleDatePicker date={dateRange?.to} setDate={(date) => setDateRange(prev => ({ ...prev!, to: date }))} />
+            <div className="flex items-center gap-2 bg-white border border-gray-300 p-1.5 rounded-md shadow-sm">
+               <Calendar className="h-4 w-4 text-gray-500 ml-2" />
+               <Input type="date" className="border-0 h-9 w-36 focus-visible:ring-0 cursor-pointer" value={dateRange.start} onChange={e => setDateRange({...dateRange, start: e.target.value})} />
+               <span className="text-gray-400 font-medium">-</span>
+               <Input type="date" className="border-0 h-9 w-36 focus-visible:ring-0 cursor-pointer" value={dateRange.end} onChange={e => setDateRange({...dateRange, end: e.target.value})} />
             </div>
             <Button onClick={() => fetchData(1)} disabled={loading} className="w-full sm:w-auto">
               {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
