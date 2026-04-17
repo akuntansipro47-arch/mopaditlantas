@@ -398,10 +398,9 @@ const WorkOrderDetailReport = () => {
                 </CardHeader>
                 <CardContent>
                     <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
-                        {/* {/* <DateRangePicker
-    date={dateRange}
-    onDateChange={setDateRange}
-/> */}
+                        {/* <DateRangePicker
+                            date={dateRange}
+                            onDateChange={setDateRange}
                         /> */}
                         <Select value={statusFilter} onValueChange={setStatusFilter}>
                             <SelectTrigger>
