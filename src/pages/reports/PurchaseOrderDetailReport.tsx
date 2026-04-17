@@ -64,7 +64,6 @@ export default function PurchaseOrderDetailReport() {
             id,
             po_date,
             po_number,
-            po_type,
             suppliers ( name ),
             work_orders (
               wo_number,
@@ -138,7 +137,6 @@ export default function PurchaseOrderDetailReport() {
           supplier: po.suppliers?.name || '-',
           kendaraan_nopol: nopol,
           no_wo: po.work_orders?.wo_number || '-',
-          tipe: po.po_type === 'WO' ? 'Project' : 'Stok',
           nama_barang: item.goods?.name || '-',
           qty: item.quantity,
           diterima: receivedQtyMap.get(item.id) || 0,
@@ -233,7 +231,6 @@ export default function PurchaseOrderDetailReport() {
                     <TableHead>Supplier</TableHead>
                     <TableHead>Kendaraan/Nopol</TableHead>
                     <TableHead>No. WO</TableHead>
-                    <TableHead>Tipe</TableHead>
                     <TableHead>Nama Barang</TableHead>
                     <TableHead className="text-right">Qty</TableHead>
                     <TableHead className="text-right">Diterima</TableHead>
@@ -251,7 +248,6 @@ export default function PurchaseOrderDetailReport() {
                         <TableCell>{item.supplier}</TableCell>
                         <TableCell>{item.kendaraan_nopol}</TableCell>
                         <TableCell>{item.no_wo}</TableCell>
-                        <TableCell>{item.tipe}</TableCell>
                         <TableCell>{item.nama_barang}</TableCell>
                         <TableCell className="text-right">{item.qty}</TableCell>
                         <TableCell className="text-right">{item.diterima}</TableCell>
