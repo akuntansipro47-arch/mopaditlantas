@@ -376,6 +376,13 @@ export default function PurchasePayment() {
     if (!selectedInvoice) return;
     setLoading(true);
     try {
+      if (selectedInvoice.purchase_orders?.status === 'RETUR') {
+        toast.error("Tidak dapat memproses pembayaran. PO terkait sudah diretur.");
+        setIsPayOpen(false);
+        setLoading(false);
+        return;
+      }
+
       const amount = Number(paymentData.amount);
       const transferFee = Math.max(0, Number(paymentData.transfer_fee || 0));
       if (amount <= 0) {
@@ -624,19 +631,20 @@ export default function PurchasePayment() {
                         <TableCell className="text-right">{formatCurrency(invoice.paid_amount)}</TableCell>
                         <TableCell className="text-right font-semibold">{formatCurrency(invoice.total_amount - invoice.paid_amount)}</TableCell>
                         <TableCell>
-                          <span className={`px-2 py-1 rounded-full text-xs ${
+                          <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                            invoice.purchase_orders?.status === 'RETUR' ? 'bg-gray-200 text-gray-800' :
                             invoice.status === 'PAID' ? 'bg-green-200 text-green-800' :
                             invoice.status === 'PARTIAL' ? 'bg-yellow-200 text-yellow-800' :
                             'bg-red-200 text-red-800'
                           }`}>
-                            {invoice.status}
+                            {invoice.purchase_orders?.status === 'RETUR' ? 'DIRETUR' : invoice.status}
                           </span>
                         </TableCell>
                         <TableCell>
                           <Button 
                             size="sm" 
                             onClick={() => handlePayClick(invoice)} 
-                            disabled={invoice.status === 'PAID'}
+                            disabled={invoice.status === 'PAID' || invoice.purchase_orders?.status === 'RETUR'}
                           >
                             <Wallet className="mr-2 h-4 w-4" /> Bayar
                           </Button>
