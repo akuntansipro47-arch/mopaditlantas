@@ -567,43 +567,6 @@ export default function PurchasePayment() {
 
   const [isAccountSelectOpen, setIsAccountSelectOpen] = useState(false); // For custom dialog
   const [isFeeAccountSelectOpen, setIsFeeAccountSelectOpen] = useState(false);
-
-  
-
-    console.log('--- DATA INVOICE DITEMUKAN (Tanpa Join) ---');
-    console.log(invoice);
-    toast.success('Data Invoice dasar ditemukan! Cek konsol (F12).');
-
-    // Now we can try to get other data separately if the above was successful
-    if (invoice.po_id) {
-        const { data: po, error: poError } = await supabase
-            .from('purchase_orders')
-            .select('*')
-            .eq('id', invoice.po_id)
-            .single();
-        
-        if (po) {
-            console.log('--- DATA PO TERKAIT ---');
-            console.log(po);
-        } else {
-            console.error('Gagal mengambil data PO terkait:', poError);
-        }
-    }
-     if (invoice.supplier_id) {
-        const { data: supplier, error: supplierError } = await supabase
-            .from('suppliers')
-            .select('*')
-            .eq('id', invoice.supplier_id)
-            .single();
-        
-        if (supplier) {
-            console.log('--- DATA SUPPLIER TERKAIT ---');
-            console.log(supplier);
-        } else {
-            console.error('Gagal mengambil data supplier terkait:', supplierError);
-        }
-    }
-  }
   const [feeAccountSearch, setFeeAccountSearch] = useState('');
 
   const handleDeleteInvoice = async (invoiceId: string) => {
