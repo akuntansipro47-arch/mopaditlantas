@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { DatePickerWithRange as DateRangePicker } from "@/components/ui/date-picker-with-range";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { supabase } from '@/supabaseClient';
+import { supabase } from '@/supabaseClient.ts';
 import { toast } from 'sonner';
 import { format, subDays } from 'date-fns';
 import { DateRange } from 'react-day-picker';
