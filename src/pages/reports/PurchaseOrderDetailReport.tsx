@@ -262,17 +262,17 @@ export default function PurchaseOrderDetailReport() {
               <Table>
                 <TableHeader className="bg-slate-50">
                   <TableRow>
-                    <TableHead>Tgl</TableHead>
-                    <TableHead>No. PO</TableHead>
-                    <TableHead>Supplier</TableHead>
-                    <TableHead>Kendaraan/Nopol</TableHead>
-                    <TableHead>No. WO</TableHead>
-                    <TableHead>Nama Barang</TableHead>
-                    <TableHead className="text-right">Qty</TableHead>
-                    <TableHead className="text-right">Diterima</TableHead>
-                    <TableHead>Status Bayar</TableHead>
-                    <TableHead className="text-right">Harga Satuan</TableHead>
-                    <TableHead className="text-right">Total</TableHead>
+                    <TableHead className="w-[100px]">Tgl</TableHead>
+                    <TableHead className="min-w-[150px]">No. PO</TableHead>
+                    <TableHead className="min-w-[200px]">Supplier</TableHead>
+                    <TableHead className="min-w-[180px]">Kendaraan/Nopol</TableHead>
+                    <TableHead className="min-w-[150px]">No. WO</TableHead>
+                    <TableHead className="min-w-[250px]">Nama Barang</TableHead>
+                    <TableHead className="w-[80px] text-right">Qty</TableHead>
+                    <TableHead className="w-[80px] text-right">Diterima</TableHead>
+                    <TableHead className="w-[120px]">Status Bayar</TableHead>
+                    <TableHead className="w-[150px] text-right">Harga Satuan</TableHead>
+                    <TableHead className="w-[150px] text-right">Total</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -303,7 +303,7 @@ export default function PurchaseOrderDetailReport() {
                     ))
                   ) : (
                     <TableRow>
-                      <TableCell colSpan={12} className="text-center h-24">
+                      <TableCell colSpan={11} className="text-center h-24">
                         Tidak ada data.
                       </TableCell>
                     </TableRow>
