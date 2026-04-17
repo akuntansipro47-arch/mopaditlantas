@@ -571,10 +571,10 @@ export default function PurchasePayment() {
   async function trackSpecificInvoice(invoiceNumber: string) {
     toast.info(`Mencari data untuk invoice: ${invoiceNumber}...`);
     
-    // 1. Find the invoice
+    // 1. Find the invoice (simplified query to avoid 406 error)
     const { data: invoice, error: invError } = await supabase
       .from('purchase_invoices')
-      .select('*, suppliers(name), purchase_orders(*)')
+      .select('*, suppliers(name)') // Temporarily removed purchase_orders(*)
       .eq('invoice_number', invoiceNumber)
       .single();
 
@@ -584,9 +584,26 @@ export default function PurchasePayment() {
       return;
     }
 
-    console.log('--- DATA INVOICE & PO TERKAIT ---');
+    console.log('--- DATA INVOICE ---');
     console.log(invoice);
     toast.success('Data Invoice ditemukan, cek konsol (F12).');
+
+    // Let's try to get PO info in a separate query
+    if (invoice.po_id) {
+        const { data: po, error: poError } = await supabase
+            .from('purchase_orders')
+            .select('*')
+            .eq('id', invoice.po_id)
+            .single();
+        
+        if (po) {
+            console.log('--- DATA PO TERKAIT (dari query terpisah) ---');
+            console.log(po);
+        } else {
+            console.error('Gagal mengambil data PO terkait:', poError);
+        }
+    }
+
 
     // 2. Find related payments
     const { data: payments, error: payError } = await supabase
