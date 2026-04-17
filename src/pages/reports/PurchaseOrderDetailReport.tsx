@@ -106,23 +106,23 @@ export default function PurchaseOrderDetailReport() {
         return;
       }
 
-      // 3. Fetch received quantities for all relevant POs
-      const { data: receiptItems, error: receiptError } = await supabase
-        .from('goods_receipt_items')
-        .select('quantity, purchase_order_items!inner(po_id, goods_id)')
-        .in('purchase_order_items.po_id', poIds);
+      // 3. Fetch goods receipts and their items separately. This is the correct, robust way.
+      const { data: receipts, error: receiptError } = await supabase
+        .from('goods_receipts')
+        .select('po_id, items:goods_receipt_items(goods_id, quantity_received)')
+        .in('po_id', poIds);
 
       if (receiptError) throw receiptError;
 
       // Map received quantities using a composite key 'poId-goodsId'
       const receivedQtyMap = new Map<string, number>();
-      receiptItems?.forEach(item => {
-        const poItem = item.purchase_order_items;
-        if (poItem) {
-          const key = `${poItem.po_id}-${poItem.goods_id}`;
+      receipts?.forEach(receipt => {
+        if (!receipt.po_id) return; // Skip if a receipt somehow has no PO ID
+        receipt.items.forEach(item => {
+          const key = `${receipt.po_id}-${item.goods_id}`;
           const currentQty = receivedQtyMap.get(key) || 0;
-          receivedQtyMap.set(key, currentQty + item.quantity);
-        }
+          receivedQtyMap.set(key, currentQty + item.quantity_received);
+        });
       });
 
       // 4. Fetch payment status from invoices
