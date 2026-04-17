@@ -76,6 +76,7 @@ export default function PurchaseOrderDetailReport() {
         .from('purchase_order_items')
         .select(`
           id,
+          goods_id,
           quantity,
           unit_price,
           total_price,
@@ -105,20 +106,23 @@ export default function PurchaseOrderDetailReport() {
         return;
       }
 
-      const poItemIds = poItems.map(item => item.id);
-
-      // 3. Fetch received quantities
+      // 3. Fetch received quantities for all relevant POs
       const { data: receiptItems, error: receiptError } = await supabase
         .from('goods_receipt_items')
-        .select('purchase_order_item_id, quantity')
-        .in('purchase_order_item_id', poItemIds);
+        .select('quantity, purchase_order_items!inner(po_id, goods_id)')
+        .in('purchase_order_items.po_id', poIds);
 
       if (receiptError) throw receiptError;
 
-      const receivedQtyMap = new Map<number, number>();
+      // Map received quantities using a composite key 'poId-goodsId'
+      const receivedQtyMap = new Map<string, number>();
       receiptItems?.forEach(item => {
-        const currentQty = receivedQtyMap.get(item.purchase_order_item_id) || 0;
-        receivedQtyMap.set(item.purchase_order_item_id, currentQty + item.quantity);
+        const poItem = item.purchase_order_items;
+        if (poItem) {
+          const key = `${poItem.po_id}-${poItem.goods_id}`;
+          const currentQty = receivedQtyMap.get(key) || 0;
+          receivedQtyMap.set(key, currentQty + item.quantity);
+        }
       });
 
       // 4. Fetch payment status from invoices
@@ -134,7 +138,7 @@ export default function PurchaseOrderDetailReport() {
         paymentStatusMap.set(inv.po_id, inv.status);
       });
 
-      // 4. Combine all data
+      // 5. Combine all data
       const combinedData = poItems.map(item => {
         const po = item.purchase_orders;
         if (!po) return null;
@@ -152,6 +156,10 @@ export default function PurchaseOrderDetailReport() {
           statusBayar = 'Belum Lunas';
         }
 
+        // Look up received quantity using the composite key
+        const receivedQtyKey = `${po.id}-${item.goods_id}`;
+        const receivedQty = receivedQtyMap.get(receivedQtyKey) || 0;
+
         return {
           id: item.id,
           tgl: po.po_date,
@@ -162,7 +170,7 @@ export default function PurchaseOrderDetailReport() {
           tipe: item.goods?.name || '-',
           nama_barang: item.goods?.name || '-',
           qty: item.quantity,
-          diterima: receivedQtyMap.get(item.id) || 0,
+          diterima: receivedQty, // Use the mapped quantity
           status_bayar: statusBayar,
           harga_satuan: item.unit_price,
           total: item.total_price,
