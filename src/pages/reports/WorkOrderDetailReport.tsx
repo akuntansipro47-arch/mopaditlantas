@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { DateRangePicker } from "@/components/ui/date-range-picker";
+// import { DatePickerWithRange as DateRangePicker } from "@/components/ui/date-picker-with-range";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { supabase } from '@/supabaseClient';
@@ -398,10 +398,11 @@ const WorkOrderDetailReport = () => {
                 </CardHeader>
                 <CardContent>
                     <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
-                        <DateRangePicker
-                            date={dateRange}
-                            onDateChange={setDateRange}
-                        />
+                        {/* {/* <DateRangePicker
+    date={dateRange}
+    onDateChange={setDateRange}
+/> */}
+                        /> */}
                         <Select value={statusFilter} onValueChange={setStatusFilter}>
                             <SelectTrigger>
                                 <SelectValue placeholder="Filter Status" />
