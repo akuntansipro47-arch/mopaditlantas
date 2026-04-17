@@ -50,6 +50,7 @@ export default function PurchaseOrderDetailReport() {
     try {
       const startDate = format(dateRange.from, 'yyyy-MM-dd');
       const endDate = format(dateRange.to, 'yyyy-MM-dd');
+      console.log('Mencari data untuk rentang:', { startDate, endDate });
 
       // 1. Fetch relevant PO IDs first based on date range
       const { data: poIdsData, error: poIdsError } = await supabase
@@ -58,6 +59,7 @@ export default function PurchaseOrderDetailReport() {
         .gte('po_date', startDate)
         .lte('po_date', endDate);
 
+      console.log('Hasil dari query purchase_orders:', { poIdsData, poIdsError });
       if (poIdsError) throw poIdsError;
 
       if (!poIdsData || poIdsData.length === 0) {
