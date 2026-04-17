@@ -109,7 +109,7 @@ export default function PurchaseOrderDetailReport() {
 
       // 3. Fetch received quantities
       const { data: receiptItems, error: receiptError } = await supabase
-        .from('good_receipt_items')
+        .from('goods_receipt_items')
         .select('purchase_order_item_id, quantity')
         .in('purchase_order_item_id', poItemIds);
 
@@ -159,6 +159,7 @@ export default function PurchaseOrderDetailReport() {
           supplier: po.suppliers?.name || '-',
           kendaraan_nopol: nopol,
           no_wo: po.work_orders?.wo_number || '-',
+          tipe: item.goods?.name || '-',
           nama_barang: item.goods?.name || '-',
           qty: item.quantity,
           diterima: receivedQtyMap.get(item.id) || 0,
