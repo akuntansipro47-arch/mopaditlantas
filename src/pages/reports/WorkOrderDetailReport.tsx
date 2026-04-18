@@ -121,7 +121,7 @@ const WorkOrderDetailReport = () => {
                 allEntryJobs = jobsData;
 
                 const { data: partsData, error: partsError } = await supabase
-                    .from('vehicle_entry_parts')
+                    .from('vehicle_entry_spareparts')
                     .select(`vehicle_entry_id, goods_id, qty, goods ( name, selling_price )`)
                     .in('vehicle_entry_id', vehicleEntryIds);
                 if (partsError) throw partsError;
