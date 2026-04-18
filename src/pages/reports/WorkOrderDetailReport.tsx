@@ -80,16 +80,14 @@ const WorkOrderDetailReport = () => {
             const { data: vehicleEntries, error: veError } = await supabase.from('vehicle_entries').select('id, vehicle_id, service_group').in('id', workOrders.map(wo => wo.vehicle_entry_id).filter(Boolean));
             if (veError) throw veError;
             
-            // CORRECTED: Select owner_name directly, remove customer_id
             const { data: vehicles, error: vError } = await supabase.from('vehicles').select('id, license_plate, vehicle_type, owner_name').in('id', vehicleEntries.map(ve => ve.vehicle_id).filter(Boolean));
             if (vError) throw vError;
-
-            // REMOVED: No longer need to fetch from 'customers' table
 
             const { data: goodsIssues, error: giError } = await supabase.from('goods_issues').select('id, work_order_id').in('work_order_id', workOrderIds);
             if (giError) throw giError;
 
-            const { data: goodsIssueDetails, error: gidError } = await supabase.from('goods_issue_details').select('*, goods(id, name)').in('goods_issue_id', goodsIssues.map(gi => gi.id));
+            // CORRECTED: Table name changed from goods_issue_details to goods_issue_items
+            const { data: goodsIssueItems, error: gidError } = await supabase.from('goods_issue_items').select('*, goods(id, name)').in('goods_issue_id', goodsIssues.map(gi => gi.id));
             if (gidError) throw gidError;
 
             const { data: serviceBillings, error: sbError } = await supabase.from('service_billings').select('id, work_order_id').in('work_order_id', workOrderIds);
@@ -98,7 +96,7 @@ const WorkOrderDetailReport = () => {
             const { data: serviceBillingDetails, error: sbdError } = await supabase.from('service_billing_details').select('*, job_types(id, job_name)').in('service_billing_id', serviceBillings.map(sb => sb.id));
             if (sbdError) throw sbdError;
 
-            const allGoodsIds = goodsIssueDetails.map(d => d.goods?.id).filter(Boolean);
+            const allGoodsIds = goodsIssueItems.map(d => d.goods?.id).filter(Boolean);
             const allJobTypeIds = serviceBillingDetails.map(d => d.job_types?.id).filter(Boolean);
 
             const { data: poItems, error: poError } = await supabase.from('purchase_order_items').select('goods_id, price').in('goods_id', allGoodsIds).order('created_at', { ascending: false });
@@ -122,11 +120,12 @@ const WorkOrderDetailReport = () => {
             // 3. Create Maps for efficient data stitching
             const vehicleEntryMap = new Map(vehicleEntries.map(ve => [ve.id, ve]));
             const vehicleMap = new Map(vehicles.map(v => [v.id, v]));
-            // REMOVED: customerMap is no longer needed
-            const detailsByIssueId = goodsIssueDetails.reduce((acc, detail) => {
-                (acc[detail.goods_issue_id] = acc[detail.goods_issue_id] || []).push(detail);
+            
+            const itemsByIssueId = goodsIssueItems.reduce((acc, item) => {
+                (acc[item.goods_issue_id] = acc[item.goods_issue_id] || []).push(item);
                 return acc;
-            }, {} as Record<string, typeof goodsIssueDetails>);
+            }, {} as Record<string, typeof goodsIssueItems>);
+
             const detailsByBillingId = serviceBillingDetails.reduce((acc, detail) => {
                 (acc[detail.service_billing_id] = acc[detail.service_billing_id] || []).push(detail);
                 return acc;
@@ -141,13 +140,12 @@ const WorkOrderDetailReport = () => {
             const processedData = workOrders.map(wo => {
                 const vehicleEntry = wo.vehicle_entry_id ? vehicleEntryMap.get(wo.vehicle_entry_id) : null;
                 const vehicle = vehicleEntry ? vehicleMap.get(vehicleEntry.vehicle_id) : null;
-                // CORRECTED: Get customer name directly from vehicle.owner_name
                 const customerName = vehicle?.owner_name || 'N/A';
 
                 const woGoodsIssues = goodsIssues.filter(gi => gi.work_order_id === wo.id);
                 const woServiceBillings = serviceBillings.filter(sb => sb.work_order_id === wo.id);
 
-                const realizedParts = woGoodsIssues.flatMap(gi => (detailsByIssueId[gi.id] || []).map(gid => {
+                const realizedParts = woGoodsIssues.flatMap(gi => (itemsByIssueId[gi.id] || []).map(gid => {
                     const hpp = hppGoodsMap.get(gid.goods?.id) || 0;
                     const total_price = (gid.qty || 0) * (gid.unit_price || 0);
                     const total_hpp = (gid.qty || 0) * hpp;
