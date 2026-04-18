@@ -86,8 +86,8 @@ const WorkOrderDetailReport = () => {
             const { data: goodsIssues, error: giError } = await supabase.from('goods_issues').select('id, work_order_id').in('work_order_id', workOrderIds);
             if (giError) throw giError;
 
-            // CORRECTED: Table name changed from goods_issue_details to goods_issue_items
-            const { data: goodsIssueItems, error: gidError } = await supabase.from('goods_issue_items').select('*, goods(id, name)').in('goods_issue_id', goodsIssues.map(gi => gi.id));
+            // DEFINITIVE CORRECTION: Foreign key is 'issue_id' based on screenshot
+            const { data: goodsIssueItems, error: gidError } = await supabase.from('goods_issue_items').select('*, goods(id, name)').in('issue_id', goodsIssues.map(gi => gi.id));
             if (gidError) throw gidError;
 
             const { data: serviceBillings, error: sbError } = await supabase.from('service_billings').select('id, work_order_id').in('work_order_id', workOrderIds);
@@ -121,8 +121,9 @@ const WorkOrderDetailReport = () => {
             const vehicleEntryMap = new Map(vehicleEntries.map(ve => [ve.id, ve]));
             const vehicleMap = new Map(vehicles.map(v => [v.id, v]));
             
+            // DEFINITIVE CORRECTION: Key for reduction is 'issue_id' based on screenshot
             const itemsByIssueId = goodsIssueItems.reduce((acc, item) => {
-                (acc[item.goods_issue_id] = acc[item.goods_issue_id] || []).push(item);
+                (acc[item.issue_id] = acc[item.issue_id] || []).push(item);
                 return acc;
             }, {} as Record<string, typeof goodsIssueItems>);
 
