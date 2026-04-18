@@ -87,7 +87,6 @@ export default function ItemHistoryReport() {
         if (!selectedGood) return;
         setLoading(true);
         // setDebugInfo(null);
-        // setDiagnostic({ loading: true, good_id: selectedGood.id, good_code: selectedGood.item_code });
         
         try {
             // DIAGNOSTIC STEP REMOVED
