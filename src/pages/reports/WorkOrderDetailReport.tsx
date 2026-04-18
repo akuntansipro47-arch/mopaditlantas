@@ -89,7 +89,7 @@ const WorkOrderDetailReport = () => {
                 supabase.from('work_order_billings').select('*').in('work_order_id', workOrders.map(wo => wo.id)),
                 supabase.from('goods_issues').select('id, work_order_id, goods_issue_items(id, quantity, goods_id)').in('work_order_id', workOrders.map(wo => wo.id)),
                 supabase.from('vehicle_entry_jobs').select('vehicle_entry_id, job_type_id').in('vehicle_entry_id', vehicleEntryIds),
-                supabase.from('vehicle_entry_spareparts').select('vehicle_entry_id, goods_id, quantity').in('vehicle_entry_id', vehicleEntryIds)
+                supabase.from('vehicle_entry_spareparts').select('vehicle_entry_id, item_id, quantity').in('vehicle_entry_id', vehicleEntryIds)
             ]);
 
             if (veError || wbError || giError || vejError || vepError) {
@@ -100,7 +100,7 @@ const WorkOrderDetailReport = () => {
             const allGoodsIds = [
                 ...new Set(woBillings.map(item => item.goods_id)),
                 ...new Set(goodsIssues.flatMap(gi => gi.goods_issue_items.map(item => item.goods_id))),
-                ...new Set(vehicleEntryParts.map(item => item.goods_id))
+                ...new Set(vehicleEntryParts.map(item => item.item_id))
             ].filter(id => id);
             const allJobTypeIds = [...new Set(vehicleEntryJobs.map(j => j.job_type_id).filter(id => id))];
 
@@ -203,14 +203,14 @@ const WorkOrderDetailReport = () => {
                     });
 
                     estimationParts.forEach(estPart => {
-                        if (!realizedItems.has(`PART-${estPart.goods_id}`)) {
+                        if (!realizedItems.has(`PART-${estPart.item_id}`)) {
                             allItems.push({
                                 item_type: 'PART',
-                                item_name: goodsMap.get(estPart.goods_id)?.name || 'Unknown Part',
+                                item_name: goodsMap.get(estPart.item_id)?.name || 'Unknown Part',
                                 qty: estPart.quantity,
-                                unit_price: goodsMap.get(estPart.goods_id)?.selling_price || 0,
-                                total_price: (estPart.quantity || 0) * (goodsMap.get(estPart.goods_id)?.selling_price || 0),
-                                hpp: hppGoodsMap.get(estPart.goods_id) || 0,
+                                unit_price: goodsMap.get(estPart.item_id)?.selling_price || 0,
+                                total_price: (estPart.quantity || 0) * (goodsMap.get(estPart.item_id)?.selling_price || 0),
+                                hpp: hppGoodsMap.get(estPart.item_id) || 0,
                                 profit: 0,
                                 source: 'ESTIMATE_ONLY',
                             });
