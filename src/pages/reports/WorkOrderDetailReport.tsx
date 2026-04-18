@@ -48,7 +48,7 @@ const WorkOrderDetailReport = () => {
         }
 
         setLoading(true);
-setError(null);
+        setError(null);
 
         try {
             const startDate = format(dateRange.from, 'yyyy-MM-dd');
@@ -83,22 +83,20 @@ setError(null);
             const { data: vehicles, error: vError } = await supabase.from('vehicles').select('id, license_plate, vehicle_type, owner_name').in('id', vehicleEntries.map(ve => ve.vehicle_id).filter(Boolean));
             if (vError) throw vError;
 
-            // DEFINITIVE CORRECTION: Fetch from the single, correct 'work_order_billings' table
             const { data: workOrderBillings, error: wobError } = await supabase.from('work_order_billings').select('*').in('work_order_id', workOrderIds);
             if (wobError) throw wobError;
-
-            // REMOVED: All incorrect queries to goods_issues, goods_issue_items, service_billings, service_billing_details are gone.
 
             const allGoodsIds = workOrderBillings.filter(b => b.item_type === 'PART' && b.goods_id).map(b => b.goods_id);
             const allJobTypeIds = workOrderBillings.filter(b => b.item_type === 'JOB' && b.job_type_id).map(b => b.job_type_id);
 
-            const { data: poItems, error: poError } = await supabase.from('purchase_order_items').select('goods_id, price').in('goods_id', allGoodsIds).order('created_at', { ascending: false });
+            // DEFINITIVE CORRECTION for HPP based on the final screenshot
+            const { data: poItems, error: poError } = await supabase.from('purchase_order_items').select('goods_id, unit_price').in('goods_id', allGoodsIds).order('created_at', { ascending: false });
             if (poError) throw poError;
 
             const { data: jobsHpp, error: jobsHppError } = await supabase.from('job_types').select('id, hpp, job_name').in('id', allJobTypeIds);
             if(jobsHppError) throw jobsHppError;
 
-            // Estimation Data (This part was correct)
+            // Estimation Data
             let allEntryJobs: any[] = [], allEntryParts: any[] = [];
             if (statusFilter === 'semua') {
                 const { data: jobsData, error: jobsError } = await supabase.from('vehicle_entry_jobs').select('*, job_types(job_name, selling_price)').in('vehicle_entry_id', workOrders.map(wo => wo.vehicle_entry_id).filter(Boolean));
@@ -117,8 +115,11 @@ setError(null);
                 (acc[bill.work_order_id] = acc[bill.work_order_id] || []).push(bill);
                 return acc;
             }, {} as Record<string, typeof workOrderBillings>);
+            
+            // DEFINITIVE CORRECTION for HPP mapping
             const hppGoodsMap = new Map<string, number>();
-            poItems.forEach(item => { if (!hppGoodsMap.has(item.goods_id)) hppGoodsMap.set(item.goods_id, item.price || 0); });
+            poItems.forEach(item => { if (!hppGoodsMap.has(item.goods_id)) hppGoodsMap.set(item.goods_id, item.unit_price || 0); });
+            
             const hppJobsMap = new Map(jobsHpp.map(j => [j.id, { hpp: j.hpp || 0, name: j.job_name }]));
             const jobsByEntryId = allEntryJobs.reduce((acc, job) => { (acc[job.vehicle_entry_id] = acc[job.vehicle_entry_id] || []).push(job); return acc; }, {});
             const partsByEntryId = allEntryParts.reduce((acc, part) => { (acc[part.vehicle_entry_id] = acc[part.vehicle_entry_id] || []).push(part); return acc; }, {});
