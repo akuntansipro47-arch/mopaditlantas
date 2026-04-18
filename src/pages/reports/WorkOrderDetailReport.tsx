@@ -1,13 +1,26 @@
 import { useState, useEffect, useMemo } from 'react';
 import { supabase } from '@/lib/supabase';
-import { Button } from "@/components/ui/button";
-import { DatePickerWithRange } from "@/components/ui/date-picker-with-range";
-import { DateRange } from "react-day-picker";
-import { addDays, format } from 'date-fns';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { ScrollArea } from "@/components/ui/scroll-area";
+import { DateRange } from 'react-day-picker';
+import { format, startOfMonth, endOfMonth, parseISO } from 'date-fns';
+import { Button } from '@/components/ui/button';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Table, TableBody, TableCell, TableFooter, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Calendar, Download, Loader2 } from 'lucide-react';
+import { toast } from 'sonner';
 import * as XLSX from 'xlsx';
+import { Input } from "@/components/ui/input";
+import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
+
+type ReportDataItem = {
+    item_type: 'JOB' | 'PART';
+    item_name: string;
+    qty: number;
+    unit_price: number;
+    total_price: number;
+    hpp: number;
+    profit: number;
+    source: 'REALIZED' | 'ESTIMATE_ONLY';
+};
 
 type ReportData = {
     work_order_id: string;
@@ -15,161 +28,222 @@ type ReportData = {
     vehicle_plat_number: string;
     vehicle_type_name: string;
     customer_name: string;
+    items: ReportDataItem[];
     total_billing: number;
     total_hpp: number;
     profit: number;
-    items: {
-        item_type: 'PART' | 'JOB';
-        item_name: string;
-        qty: number;
-        unit_price: number;
-        total_price: number;
-        hpp: number;
-        profit: number;
-        source: 'REALIZED' | 'ESTIMATE_ONLY';
-    }[];
 };
 
 const WorkOrderDetailReport = () => {
     const [dateRange, setDateRange] = useState<DateRange | undefined>({
-        from: addDays(new Date(), -30),
-        to: new Date(),
+        from: startOfMonth(new Date()),
+        to: endOfMonth(new Date()),
     });
     const [statusFilter, setStatusFilter] = useState('semua');
     const [vehicleGroupFilter, setVehicleGroupFilter] = useState('semua');
     const [reportData, setReportData] = useState<ReportData[]>([]);
     const [loading, setLoading] = useState(false);
-    const [error, setError] = useState<string | null>(null);
 
     const fetchReportData = async () => {
         if (!dateRange?.from || !dateRange?.to) {
-            setError("Silakan pilih rentang tanggal.");
+            toast.error('Silakan pilih rentang tanggal.');
             return;
         }
 
         setLoading(true);
-        setError(null);
+        setReportData([]);
 
         try {
             const startDate = format(dateRange.from, 'yyyy-MM-dd');
             const endDate = format(dateRange.to, 'yyyy-MM-dd');
 
-            // 1. Get base Work Orders
+            // 1. Fetch Work Orders
             let woQuery = supabase
                 .from('work_orders')
-                .select('id, wo_number, created_at, vehicle_entry_id')
+                .select('id, wo_number, created_at, status, vehicle_entry_id')
                 .gte('created_at', startDate)
-                .lte('created_at', endDate)
-                .order('created_at', { ascending: false });
+                .lte('created_at', `${endDate} 23:59:59`);
 
             if (statusFilter !== 'semua') {
-                woQuery = woQuery.eq('status', statusFilter);
+                woQuery = woQuery.eq('status', statusFilter.toUpperCase());
             }
-            
+
             const { data: workOrders, error: woError } = await woQuery;
             if (woError) throw woError;
             if (!workOrders || workOrders.length === 0) {
                 setReportData([]);
-                setLoading(false);
                 return;
             }
 
-            const workOrderIds = workOrders.map(wo => wo.id);
-            
-            // 2. Fetch all related data based on the CORRECT schema from screenshots
-            const { data: vehicleEntries, error: veError } = await supabase.from('vehicle_entries').select('id, vehicle_id, service_group').in('id', workOrders.map(wo => wo.vehicle_entry_id).filter(Boolean));
-            if (veError) throw veError;
-            
-            const { data: vehicles, error: vError } = await supabase.from('vehicles').select('id, license_plate, vehicle_type, owner_name').in('id', vehicleEntries.map(ve => ve.vehicle_id).filter(Boolean));
-            if (vError) throw vError;
+            const vehicleEntryIds = [...new Set(workOrders.map(wo => wo.vehicle_entry_id).filter(id => id))];
 
-            const { data: workOrderBillings, error: wobError } = await supabase.from('work_order_billings').select('*').in('work_order_id', workOrderIds);
-            if (wobError) throw wobError;
+            // 2. Fetch related data in parallel
+            const [
+                { data: vehicleEntries, error: veError },
+                { data: woBillings, error: wbError },
+                { data: goodsIssues, error: giError },
+                { data: vehicleEntryJobs, error: vejError },
+                { data: vehicleEntryParts, error: vepError }
+            ] = await Promise.all([
+                supabase.from('vehicle_entries').select('id, vehicle_id, service_group').in('id', vehicleEntryIds),
+                supabase.from('work_order_billings').select('*').in('work_order_id', workOrders.map(wo => wo.id)),
+                supabase.from('goods_issues').select('id, work_order_id, goods_issue_items(id, quantity, goods_id)').in('work_order_id', workOrders.map(wo => wo.id)),
+                supabase.from('vehicle_entry_jobs').select('vehicle_entry_id, job_type_id, price').in('vehicle_entry_id', vehicleEntryIds),
+                supabase.from('vehicle_entry_spareparts').select('vehicle_entry_id, goods_id, quantity, price').in('vehicle_entry_id', vehicleEntryIds)
+            ]);
 
-            const allGoodsIds = workOrderBillings.filter(b => b.item_type === 'PART' && b.goods_id).map(b => b.goods_id);
-            const allJobTypeIds = workOrderBillings.filter(b => b.item_type === 'JOB' && b.job_type_id).map(b => b.job_type_id);
-
-            const { data: poItems, error: poError } = await supabase.from('purchase_order_items').select('goods_id, unit_price').in('goods_id', allGoodsIds).order('created_at', { ascending: false });
-            if (poError) throw poError;
-
-            const { data: jobsHpp, error: jobsHppError } = await supabase.from('job_types').select('id, hpp, job_name').in('id', allJobTypeIds);
-            if(jobsHppError) throw jobsHppError;
-
-            // Estimation Data
-            let allEntryJobs: any[] = [], allEntryParts: any[] = [];
-            if (statusFilter === 'semua') {
-                const { data: jobsData, error: jobsError } = await supabase.from('vehicle_entry_jobs').select('*, job_types(job_name, selling_price)').in('vehicle_entry_id', workOrders.map(wo => wo.vehicle_entry_id).filter(Boolean));
-                if (jobsError) throw jobsError;
-                allEntryJobs = jobsData || [];
-
-                const { data: partsData, error: partsError } = await supabase.from('vehicle_entry_spareparts').select('*').in('vehicle_entry_id', workOrders.map(wo => wo.vehicle_entry_id).filter(Boolean));
-                if (partsError) throw partsError;
-                allEntryParts = partsData || [];
+            if (veError || wbError || giError || vejError || vepError) {
+                throw veError || wbError || giError || vejError || vepError;
             }
 
-            // 3. Create Maps for efficient data stitching
-            const vehicleEntryMap = new Map(vehicleEntries.map(ve => [ve.id, ve]));
+            const vehicleIds = [...new Set(vehicleEntries.map(ve => ve.vehicle_id).filter(id => id))];
+            const allGoodsIds = [
+                ...new Set(woBillings.map(item => item.goods_id)),
+                ...new Set(goodsIssues.flatMap(gi => gi.goods_issue_items.map(item => item.goods_id))),
+                ...new Set(vehicleEntryParts.map(item => item.goods_id))
+            ].filter(id => id);
+            const allJobTypeIds = [...new Set(vehicleEntryJobs.map(j => j.job_type_id).filter(id => id))];
+
+            const [
+                { data: vehicles, error: vError },
+                { data: goods, error: gError },
+                { data: jobTypes, error: jtError },
+                { data: poItems, error: poError }
+            ] = await Promise.all([
+                supabase.from('vehicles').select('id, license_plate, owner_name, vehicle_type').in('id', vehicleIds),
+                supabase.from('goods').select('id, name').in('id', allGoodsIds),
+                supabase.from('job_types').select('id, name, hpp').in('id', allJobTypeIds),
+                supabase.from('purchase_order_items').select('goods_id, unit_price').in('goods_id', allGoodsIds).order('created_at', { ascending: false })
+            ]);
+
+            if (vError || gError || jtError || poError) {
+                throw vError || gError || jtError || poError;
+            }
+
+            // 3. Create Maps for efficient lookup
             const vehicleMap = new Map(vehicles.map(v => [v.id, v]));
-            const billingsByWoId = workOrderBillings.reduce((acc, bill) => {
-                (acc[bill.work_order_id] = acc[bill.work_order_id] || []).push(bill);
-                return acc;
-            }, {} as Record<string, typeof workOrderBillings>);
-            
+            const vehicleEntryMap = new Map(vehicleEntries.map(ve => [ve.id, ve]));
+            const goodsMap = new Map(goods.map(g => [g.id, g.name]));
+            const jobTypeMap = new Map(jobTypes.map(jt => [jt.id, { name: jt.name, hpp: jt.hpp || 0 }]));
             const hppGoodsMap = new Map<string, number>();
             poItems.forEach(item => { if (!hppGoodsMap.has(item.goods_id)) hppGoodsMap.set(item.goods_id, item.unit_price || 0); });
-            
-            const hppJobsMap = new Map(jobsHpp.map(j => [j.id, { hpp: j.hpp || 0, name: j.job_name }]));
-            const jobsByEntryId = allEntryJobs.reduce((acc, job) => { (acc[job.vehicle_entry_id] = acc[job.vehicle_entry_id] || []).push(job); return acc; }, {});
-            const partsByEntryId = allEntryParts.reduce((acc, part) => { (acc[part.vehicle_entry_id] = acc[part.vehicle_entry_id] || []).push(part); return acc; }, {});
 
-            // 4. Process and combine data
-            const processedData = workOrders.map(wo => {
-                const vehicleEntry = wo.vehicle_entry_id ? vehicleEntryMap.get(wo.vehicle_entry_id) : null;
+            // 4. Process Data
+            const finalReportData = workOrders.map(wo => {
+                const vehicleEntry = vehicleEntryMap.get(wo.vehicle_entry_id);
                 const vehicle = vehicleEntry ? vehicleMap.get(vehicleEntry.vehicle_id) : null;
-                const customerName = vehicle?.owner_name || 'N/A';
+                
+                let allItems: ReportDataItem[] = [];
 
-                const realizedItems = (billingsByWoId[wo.id] || []).map(bill => {
-                    if (bill.item_type === 'JOB') {
-                        const jobInfo = hppJobsMap.get(bill.job_type_id);
-                        const hpp = jobInfo?.hpp || 0;
-                        const total_hpp = (bill.qty || 0) * hpp;
-                        return { item_type: 'JOB' as const, item_name: jobInfo?.name || bill.item_name || 'N/A', qty: bill.qty || 0, unit_price: bill.unit_price || 0, total_price: bill.total_price || 0, hpp: total_hpp, profit: (bill.total_price || 0) - total_hpp, source: 'REALIZED' as const };
-                    } else { // 'PART'
-                        const hpp = hppGoodsMap.get(bill.goods_id) || 0;
-                        const total_hpp = (bill.qty || 0) * hpp;
-                        return { item_type: 'PART' as const, item_name: bill.item_name || 'N/A', qty: bill.qty || 0, unit_price: bill.unit_price || 0, total_price: bill.total_price || 0, hpp: total_hpp, profit: (bill.total_price || 0) - total_hpp, source: 'REALIZED' as const };
-                    }
-                });
+                // a. Get Realized Items from Goods Issues (Parts) and WO Billings (Jobs)
+                const realizedItems = new Map<string, ReportDataItem>();
 
-                let mergedBillings = [...realizedItems];
+                goodsIssues
+                    .filter(gi => gi.work_order_id === wo.id)
+                    .flatMap(gi => gi.goods_issue_items)
+                    .forEach(item => {
+                        const key = `PART-${item.goods_id}`;
+                        const existing = realizedItems.get(key);
+                        const billingItem = woBillings.find(b => b.goods_id === item.goods_id && b.work_order_id === wo.id);
+                        const unit_price = billingItem?.unit_price || 0;
+                        
+                        if (existing) {
+                            existing.qty += item.quantity;
+                            existing.total_price += item.quantity * unit_price;
+                        } else {
+                            realizedItems.set(key, {
+                                item_type: 'PART',
+                                item_name: goodsMap.get(item.goods_id) || 'Unknown Part',
+                                qty: item.quantity,
+                                unit_price: unit_price,
+                                total_price: item.quantity * unit_price,
+                                hpp: hppGoodsMap.get(item.goods_id) || 0,
+                                profit: 0, // will calculate later
+                                source: 'REALIZED',
+                            });
+                        }
+                    });
 
-                if (statusFilter === 'semua' && wo.vehicle_entry_id) {
-                    const estimatedJobs = (jobsByEntryId[wo.vehicle_entry_id] || []).map((ej: any) => ({ item_type: 'JOB' as const, item_name: `(Estimasi) ${ej.job_types?.job_name || 'Pekerjaan'}`, qty: 1, unit_price: ej.job_types?.selling_price || 0, total_price: ej.job_types?.selling_price || 0, hpp: 0, profit: ej.job_types?.selling_price || 0, source: 'ESTIMATE_ONLY' as const }));
-                    const estimatedParts = (partsByEntryId[wo.vehicle_entry_id] || []).map((ep: any) => ({ item_type: 'PART' as const, item_name: `(Estimasi) ${ep.item_name || 'Sparepart'}`, qty: ep.qty || 1, unit_price: ep.estimated_price || 0, total_price: (ep.qty || 1) * (ep.estimated_price || 0), hpp: 0, profit: (ep.qty || 1) * (ep.estimated_price || 0), source: 'ESTIMATE_ONLY' as const }));
-                    mergedBillings.push(...estimatedJobs, ...estimatedParts);
+                woBillings
+                    .filter(b => b.work_order_id === wo.id && b.item_type === 'JOB')
+                    .forEach(item => {
+                        const key = `JOB-${item.job_type_id}`;
+                        realizedItems.set(key, {
+                            item_type: 'JOB',
+                            item_name: jobTypeMap.get(item.job_type_id)?.name || 'Unknown Job',
+                            qty: item.qty,
+                            unit_price: item.unit_price,
+                            total_price: item.total_price,
+                            hpp: jobTypeMap.get(item.job_type_id)?.hpp || 0,
+                            profit: 0, // will calculate later
+                            source: 'REALIZED',
+                        });
+                    });
+                
+                allItems = Array.from(realizedItems.values());
+
+                // b. If status is 'semua', add non-realized estimation items
+                if (statusFilter === 'semua') {
+                    const estimationJobs = vehicleEntryJobs.filter(j => j.vehicle_entry_id === wo.vehicle_entry_id);
+                    const estimationParts = vehicleEntryParts.filter(p => p.vehicle_entry_id === wo.vehicle_entry_id);
+
+                    estimationJobs.forEach(estJob => {
+                        if (!realizedItems.has(`JOB-${estJob.job_type_id}`)) {
+                            allItems.push({
+                                item_type: 'JOB',
+                                item_name: jobTypeMap.get(estJob.job_type_id)?.name || 'Unknown Job',
+                                qty: 1, // Estimation qty is typically 1 for jobs
+                                unit_price: estJob.price || 0,
+                                total_price: estJob.price || 0,
+                                hpp: jobTypeMap.get(estJob.job_type_id)?.hpp || 0,
+                                profit: 0,
+                                source: 'ESTIMATE_ONLY',
+                            });
+                        }
+                    });
+
+                    estimationParts.forEach(estPart => {
+                        if (!realizedItems.has(`PART-${estPart.goods_id}`)) {
+                            allItems.push({
+                                item_type: 'PART',
+                                item_name: goodsMap.get(estPart.goods_id) || 'Unknown Part',
+                                qty: estPart.quantity,
+                                unit_price: estPart.price || 0,
+                                total_price: (estPart.quantity || 0) * (estPart.price || 0),
+                                hpp: hppGoodsMap.get(estPart.goods_id) || 0,
+                                profit: 0,
+                                source: 'ESTIMATE_ONLY',
+                            });
+                        }
+                    });
                 }
 
-                const total_billing = mergedBillings.reduce((sum, item) => sum + item.total_price, 0);
-                const total_hpp = mergedBillings.reduce((sum, item) => sum + item.hpp, 0);
+                // c. Calculate totals and profit
+                allItems.forEach(item => {
+                    item.profit = item.total_price - (item.hpp * item.qty);
+                });
+
+                const total_billing = allItems.reduce((sum, item) => sum + item.total_price, 0);
+                const total_hpp = allItems.reduce((sum, item) => sum + (item.hpp * item.qty), 0);
 
                 return {
                     work_order_id: wo.wo_number,
                     work_order_date: format(new Date(wo.created_at), 'dd-MM-yyyy'),
-                    vehicle_plat_number: vehicle?.license_plate || 'N/A',
+                    vehicle_plat_number: vehicle?.license_plate || '-',
                     vehicle_type_name: getVehicleGroupLabel(vehicle?.vehicle_type, vehicleEntry?.service_group),
-                    customer_name: customerName,
+                    customer_name: vehicle?.owner_name || 'N/A',
+                    items: allItems,
                     total_billing,
                     total_hpp,
                     profit: total_billing - total_hpp,
-                    items: mergedBillings,
                 };
             });
 
-            setReportData(processedData);
+            setReportData(finalReportData);
 
-        } catch (err: any) {
-            console.error("Error fetching report data:", err);
-            setError(`Gagal mengambil data laporan: ${err.message}`);
+        } catch (error: any) {
+            toast.error('Gagal mengambil data laporan: ' + error.message);
+            console.error(error);
         } finally {
             setLoading(false);
         }
@@ -231,16 +305,31 @@ const WorkOrderDetailReport = () => {
     return (
         <div className="p-4">
             <h1 className="text-2xl font-bold mb-4">Laporan Detail Work Order</h1>
-            <div className="flex flex-wrap gap-4 mb-4 p-4 border rounded-md">
-                <DatePickerWithRange date={dateRange} onDateChange={setDateRange} />
+            <div className="flex flex-wrap gap-4 mb-4 p-4 border rounded-md items-center">
+                <div className="flex items-center gap-2 bg-white border border-gray-300 p-1.5 rounded-md shadow-sm">
+                    <Calendar className="h-4 w-4 text-gray-500 ml-2" />
+                    <Input 
+                        type="date" 
+                        className="border-0 h-9 w-36 focus-visible:ring-0 cursor-pointer" 
+                        value={dateRange?.from ? format(dateRange.from, 'yyyy-MM-dd') : ''} 
+                        onChange={e => setDateRange(prev => ({ ...prev, from: e.target.value ? parseISO(e.target.value) : undefined }))}
+                    />
+                    <span className="text-gray-400 font-medium">-</span>
+                    <Input 
+                        type="date" 
+                        className="border-0 h-9 w-36 focus-visible:ring-0 cursor-pointer" 
+                        value={dateRange?.to ? format(dateRange.to, 'yyyy-MM-dd') : ''}
+                        onChange={e => setDateRange(prev => ({ ...prev, to: e.target.value ? parseISO(e.target.value) : undefined }))}
+                    />
+                </div>
                 <Select value={statusFilter} onValueChange={setStatusFilter}>
                     <SelectTrigger className="w-[180px]">
                         <SelectValue placeholder="Filter Status" />
                     </SelectTrigger>
                     <SelectContent>
-                        <SelectItem value="semua">Semua Status</SelectItem>
-                        <SelectItem value="open">Open</SelectItem>
-                        <SelectItem value="closed">Closed</SelectItem>
+                        <SelectItem value="semua">Semua (Estimasi vs Realisasi)</SelectItem>
+                        <SelectItem value="OPEN">Open</SelectItem>
+                        <SelectItem value="CLOSED">Closed</SelectItem>
                     </SelectContent>
                 </Select>
                 <Select value={vehicleGroupFilter} onValueChange={setVehicleGroupFilter}>
@@ -256,72 +345,93 @@ const WorkOrderDetailReport = () => {
                     </SelectContent>
                 </Select>
                 <Button onClick={fetchReportData} disabled={loading}>
-                    {loading ? 'Memuat...' : 'Tampilkan Laporan'}
+                    {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                    Tampilkan
                 </Button>
-                <Button onClick={handleExport} disabled={reportData.length === 0}>
-                    Export ke Excel
+                <Button onClick={handleExport} variant="outline" disabled={reportData.length === 0}>
+                    <Download className="mr-2 h-4 w-4" />
+                    Export
                 </Button>
             </div>
 
-            {error && <p className="text-red-500">{error}</p>}
-
-            <ScrollArea style={{ height: '60vh', width: '100%' }}>
-                <div className="border rounded-md">
-                    <Table>
-                        <TableHeader>
-                            <TableRow>
-                                <TableHead className="min-w-[150px]">No. WO</TableHead>
-                                <TableHead className="min-w-[120px]">Tanggal</TableHead>
-                                <TableHead className="min-w-[120px]">No. Polisi</TableHead>
-                                <TableHead className="min-w-[150px]">Grup Kendaraan</TableHead>
-                                <TableHead className="min-w-[200px]">Customer</TableHead>
-                                <TableHead className="min-w-[250px]">Nama Item</TableHead>
-                                <TableHead className="text-right min-w-[80px]">Qty</TableHead>
-                                <TableHead className="text-right min-w-[120px]">Harga Satuan</TableHead>
-                                <TableHead className="text-right min-w-[120px]">Total</TableHead>
-                                <TableHead className="text-right min-w-[120px]">HPP</TableHead>
-                                <TableHead className="text-right min-w-[120px]">Profit</TableHead>
+            <ScrollArea className="w-full whitespace-nowrap rounded-md border">
+                <Table className="w-full">
+                    <TableHeader>
+                        <TableRow>
+                            <TableHead className="min-w-[150px]">No. WO</TableHead>
+                            <TableHead className="min-w-[120px]">Tanggal</TableHead>
+                            <TableHead className="min-w-[120px]">No. Polisi</TableHead>
+                            <TableHead className="min-w-[150px]">Grup Kendaraan</TableHead>
+                            <TableHead className="min-w-[200px]">Customer</TableHead>
+                            <TableHead className="min-w-[150px]">Tipe Item</TableHead>
+                            <TableHead className="min-w-[250px]">Nama Item</TableHead>
+                            <TableHead className="text-right min-w-[80px]">Qty</TableHead>
+                            <TableHead className="text-right min-w-[120px]">Harga Satuan</TableHead>
+                            <TableHead className="text-right min-w-[120px]">Total</TableHead>
+                            <TableHead className="text-right min-w-[120px]">HPP</TableHead>
+                            <TableHead className="text-right min-w-[120px]">Profit</TableHead>
+                        </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                        {loading ? (
+                             <TableRow>
+                                <TableCell colSpan={12} className="text-center h-24">
+                                    <Loader2 className="mx-auto h-8 w-8 animate-spin text-muted-foreground" />
+                                </TableCell>
                             </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                            {filteredReportData.length > 0 ? (
-                                filteredReportData.map((wo) => (
-                                    <>
-                                        {wo.items.map((item, itemIndex) => (
-                                            <TableRow key={`${wo.work_order_id}-${itemIndex}`} className={item.source === 'ESTIMATE_ONLY' ? 'bg-gray-100' : ''}>
-                                                {itemIndex === 0 ? (
-                                                    <>
-                                                        <TableCell rowSpan={wo.items.length} className="font-semibold align-top border-b">{wo.work_order_id}</TableCell>
-                                                        <TableCell rowSpan={wo.items.length} className="align-top border-b">{wo.work_order_date}</TableCell>
-                                                        <TableCell rowSpan={wo.items.length} className="align-top border-b">{wo.vehicle_plat_number}</TableCell>
-                                                        <TableCell rowSpan={wo.items.length} className="align-top border-b">{wo.vehicle_type_name}</TableCell>
-                                                        <TableCell rowSpan={wo.items.length} className="align-top border-b">{wo.customer_name}</TableCell>
-                                                    </>
-                                                ) : null}
-                                                <TableCell>{item.item_name}</TableCell>
-                                                <TableCell className="text-right">{item.qty}</TableCell>
-                                                <TableCell className="text-right">{item.unit_price.toLocaleString()}</TableCell>
-                                                <TableCell className="text-right">{item.total_price.toLocaleString()}</TableCell>
-                                                <TableCell className="text-right">{item.hpp.toLocaleString()}</TableCell>
-                                                <TableCell className="text-right">{item.profit.toLocaleString()}</TableCell>
-                                            </TableRow>
-                                        ))}
-                                        <TableRow className="font-bold bg-slate-50">
-                                            <TableCell colSpan={8} className="text-right">Subtotal</TableCell>
-                                            <TableCell className="text-right">{wo.total_billing.toLocaleString()}</TableCell>
-                                            <TableCell className="text-right">{wo.total_hpp.toLocaleString()}</TableCell>
-                                            <TableCell className="text-right">{wo.profit.toLocaleString()}</TableCell>
+                        ) : filteredReportData.length > 0 ? (
+                            filteredReportData.map((wo) => (
+                                <>
+                                    {wo.items.map((item, itemIndex) => (
+                                        <TableRow key={`${wo.work_order_id}-${itemIndex}`} className={item.source === 'ESTIMATE_ONLY' ? 'bg-yellow-50' : ''}>
+                                            {itemIndex === 0 ? (
+                                                <>
+                                                    <TableCell rowSpan={wo.items.length} className="font-semibold align-top border-b">{wo.work_order_id}</TableCell>
+                                                    <TableCell rowSpan={wo.items.length} className="align-top border-b">{wo.work_order_date}</TableCell>
+                                                    <TableCell rowSpan={wo.items.length} className="align-top border-b">{wo.vehicle_plat_number}</TableCell>
+                                                    <TableCell rowSpan={wo.items.length} className="align-top border-b">{wo.vehicle_type_name}</TableCell>
+                                                    <TableCell rowSpan={wo.items.length} className="align-top border-b">{wo.customer_name}</TableCell>
+                                                </>
+                                            ) : null}
+                                            <TableCell className={item.source === 'ESTIMATE_ONLY' ? 'text-yellow-700' : ''}>
+                                                {item.source === 'ESTIMATE_ONLY' ? '(Estimasi) ' : ''}{item.item_type === 'JOB' ? 'Jasa' : 'Sparepart'}
+                                            </TableCell>
+                                            <TableCell>{item.item_name}</TableCell>
+                                            <TableCell className="text-right">{item.qty}</TableCell>
+                                            <TableCell className="text-right">{new Intl.NumberFormat('id-ID').format(item.unit_price)}</TableCell>
+                                            <TableCell className="text-right">{new Intl.NumberFormat('id-ID').format(item.total_price)}</TableCell>
+                                            <TableCell className="text-right">{new Intl.NumberFormat('id-ID').format(item.hpp * item.qty)}</TableCell>
+                                            <TableCell className="text-right">{new Intl.NumberFormat('id-ID').format(item.profit)}</TableCell>
                                         </TableRow>
-                                    </>
-                                ))
-                            ) : (
-                                <TableRow>
-                                    <TableCell colSpan={11} className="text-center">Tidak ada data untuk ditampilkan.</TableCell>
-                                </TableRow>
-                            )}
-                        </TableBody>
-                    </Table>
-                </div>
+                                    ))}
+                                    <TableRow className="bg-gray-200 font-bold">
+                                        <TableCell colSpan={9} className="text-right">Subtotal</TableCell>
+                                        <TableCell className="text-right">{new Intl.NumberFormat('id-ID').format(wo.total_billing)}</TableCell>
+                                        <TableCell className="text-right">{new Intl.NumberFormat('id-ID').format(wo.total_hpp)}</TableCell>
+                                        <TableCell className="text-right">{new Intl.NumberFormat('id-ID').format(wo.profit)}</TableCell>
+                                    </TableRow>
+                                </>
+                            ))
+                        ) : (
+                            <TableRow>
+                                <TableCell colSpan={12} className="text-center h-24">
+                                    Tidak ada data untuk ditampilkan.
+                                </TableCell>
+                            </TableRow>
+                        )}
+                    </TableBody>
+                    {!loading && filteredReportData.length > 0 && (
+                        <TableFooter>
+                            <TableRow className="bg-gray-300 font-bold text-lg">
+                                <TableCell colSpan={9} className="text-right">Grand Total</TableCell>
+                                <TableCell className="text-right">{new Intl.NumberFormat('id-ID').format(filteredReportData.reduce((sum, wo) => sum + wo.total_billing, 0))}</TableCell>
+                                <TableCell className="text-right">{new Intl.NumberFormat('id-ID').format(filteredReportData.reduce((sum, wo) => sum + wo.total_hpp, 0))}</TableCell>
+                                <TableCell className="text-right">{new Intl.NumberFormat('id-ID').format(filteredReportData.reduce((sum, wo) => sum + wo.profit, 0))}</TableCell>
+                            </TableRow>
+                        </TableFooter>
+                    )}
+                </Table>
+                <ScrollBar orientation="horizontal" />
             </ScrollArea>
         </div>
     );
