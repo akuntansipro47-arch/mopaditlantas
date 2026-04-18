@@ -316,77 +316,97 @@ const WorkOrderDetailReport = () => {
                         </div>
                     </div>
 
-                    <ScrollArea style={{ height: 'calc(100vh - 300px)' }}>
+                    <ScrollArea className="w-full whitespace-nowrap" style={{ height: 'calc(100vh - 350px)' }}>
                         <Table>
                             <TableHeader className="sticky top-0 bg-background z-10">
                                 <TableRow>
-                                    <TableHead>No. WO</TableHead>
-                                    <TableHead>Tgl WO</TableHead>
-                                    <TableHead>No. Polisi</TableHead>
-                                    <TableHead>Grup Kendaraan</TableHead>
-                                    <TableHead>Status</TableHead>
-                                    <TableHead>Item/Jasa</TableHead>
+                                    <TableHead style={{ minWidth: '150px' }}>No. WO</TableHead>
+                                    <TableHead style={{ minWidth: '100px' }}>Tgl WO</TableHead>
+                                    <TableHead style={{ minWidth: '120px' }}>No. Polisi</TableHead>
+                                    <TableHead style={{ minWidth: '120px' }}>Grup Kendaraan</TableHead>
+                                    <TableHead style={{ minWidth: '120px' }}>Status</TableHead>
+                                    <TableHead style={{ minWidth: '300px' }}>Item/Jasa</TableHead>
                                     <TableHead style={{ minWidth: '50px' }}>Qty</TableHead>
-                                    <TableHead>Harga Satuan</TableHead>
-                                    <TableHead>Total Harga</TableHead>
-                                    <TableHead>Realisasi (HPP)</TableHead>
-                                    <TableHead>Selisih</TableHead>
+                                    <TableHead style={{ minWidth: '150px' }}>Harga Satuan</TableHead>
+                                    <TableHead style={{ minWidth: '150px' }}>Total Harga</TableHead>
+                                    <TableHead style={{ minWidth: '150px' }}>Realisasi (HPP)</TableHead>
+                                    <TableHead style={{ minWidth: '150px' }}>Selisih</TableHead>
                                 </TableRow>
                             </TableHeader>
                             <TableBody>
-                                {memoizedReportData.map(wo => (
-                                    <>
-                                     <TableRow key={wo.id}>
-                                         <TableCell rowSpan={wo.billings.length || 1}>{wo.wo_number}</TableCell>
-                                         <TableCell rowSpan={wo.billings.length || 1}>{formatDate(wo.work_date)}</TableCell>
-                                         <TableCell rowSpan={wo.billings.length || 1}>{wo.license_plate}</TableCell>
-                                         <TableCell rowSpan={wo.billings.length || 1}>{wo.group_name}</TableCell>
-                                         <TableCell rowSpan={wo.billings.length || 1}>{getStatusBadge(wo.status)}</TableCell>
-                                         {wo.billings.length === 0 && (
-                                            <>
-                                                <TableCell colSpan={6} className="text-center text-muted-foreground">
-                                                    (Belum ada realisasi)
-                                                </TableCell>
-                                            </>
-                                         )}
-                                     </TableRow>
-                                     {wo.billings.length > 0 && (
-                                         wo.billings.map((bill: any, billIdx: number) => {
-                                            const unitPrice = Number(bill.unit_price || 0);
-                                            const totalPrice = Number(bill.total_price || 0);
-                                            const qty = Number(bill.qty || 0);
-                                            let hppSatuan = 0;
-                            
-                                            if (bill.item_type === 'PART' && bill.goods_id) {
-                                                hppSatuan = wo.partHppMap[String(bill.goods_id)] || 0;
-                                            } else if (bill.item_type === 'JOB' && bill.job_type_id) {
-                                                hppSatuan = wo.jobHppMap[String(bill.job_type_id)] || 0;
-                                            }
-                            
-                                            const realisasi = hppSatuan * qty;
-                                            const selisih = totalPrice - realisasi;
-
-                                            return (
-                                                <TableRow key={`${wo.id}-${bill.id || billIdx}`}>
-                                                    {billIdx > 0 && <TableCell colSpan={5}></TableCell>}
-                                                    <TableCell>{bill.item_name}</TableCell>
-                                                    <TableCell>{bill.qty}</TableCell>
-                                                    <TableCell>{formatCurrency(unitPrice)}</TableCell>
-                                                    <TableCell>{formatCurrency(totalPrice)}</TableCell>
-                                                    <TableCell>{formatCurrency(realisasi)}</TableCell>
-                                                    <TableCell>{formatCurrency(selisih)}</TableCell>
-                                                </TableRow>
-                                            )
-                                         })
-                                     )}
-                                    </>
-                                ))}
-                                {!loading && reportData.length === 0 && (
+                                {loading ? (
+                                    <TableRow>
+                                        <TableCell colSpan={11} className="h-24 text-center">
+                                            Memuat data...
+                                        </TableCell>
+                                    </TableRow>
+                                ) : memoizedReportData.length === 0 ? (
                                     <TableRow>
                                         <TableCell colSpan={11} className="h-24 text-center">
                                             Tidak ada data untuk ditampilkan.
                                         </TableCell>
                                     </TableRow>
+                                ) : (
+                                    memoizedReportData.map(wo => {
+                                        if (wo.billings.length === 0) {
+                                            return (
+                                                <TableRow key={wo.id}>
+                                                    <TableCell>{wo.wo_number}</TableCell>
+                                                    <TableCell>{formatDate(wo.work_date)}</TableCell>
+                                                    <TableCell>{wo.license_plate}</TableCell>
+                                                    <TableCell>{wo.group_name}</TableCell>
+                                                    <TableCell>{getStatusBadge(wo.status)}</TableCell>
+                                                    <TableCell colSpan={6} className="text-center text-muted-foreground">(Belum ada realisasi)</TableCell>
+                                                </TableRow>
+                                            );
+                                        } else {
+                                            return wo.billings.map((bill: any, billIdx: number) => {
+                                                const unitPrice = Number(bill.unit_price || 0);
+                                                const totalPrice = Number(bill.total_price || 0);
+                                                const qty = Number(bill.qty || 0);
+                                                let hppSatuan = 0;
+                                
+                                                if (bill.item_type === 'PART' && bill.goods_id) {
+                                                    hppSatuan = wo.partHppMap[String(bill.goods_id)] || 0;
+                                                } else if (bill.item_type === 'JOB' && bill.job_type_id) {
+                                                    hppSatuan = wo.jobHppMap[String(bill.job_type_id)] || 0;
+                                                }
+                                
+                                                const realisasi = hppSatuan * qty;
+                                                const selisih = totalPrice - realisasi;
+
+                                                if (billIdx === 0) {
+                                                    return (
+                                                        <TableRow key={`${wo.id}-${bill.id || billIdx}`}>
+                                                            <TableCell rowSpan={wo.billings.length} className="align-top">{wo.wo_number}</TableCell>
+                                                            <TableCell rowSpan={wo.billings.length} className="align-top">{formatDate(wo.work_date)}</TableCell>
+                                                            <TableCell rowSpan={wo.billings.length} className="align-top">{wo.license_plate}</TableCell>
+                                                            <TableCell rowSpan={wo.billings.length} className="align-top">{wo.group_name}</TableCell>
+                                                            <TableCell rowSpan={wo.billings.length} className="align-top">{getStatusBadge(wo.status)}</TableCell>
+                                                            
+                                                            <TableCell>{bill.item_name}</TableCell>
+                                                            <TableCell className="text-right">{bill.qty}</TableCell>
+                                                            <TableCell className="text-right">{formatCurrency(unitPrice)}</TableCell>
+                                                            <TableCell className="text-right">{formatCurrency(totalPrice)}</TableCell>
+                                                            <TableCell className="text-right">{formatCurrency(realisasi)}</TableCell>
+                                                            <TableCell className="text-right">{formatCurrency(selisih)}</TableCell>
+                                                        </TableRow>
+                                                    );
+                                                } else {
+                                                    return (
+                                                        <TableRow key={`${wo.id}-${bill.id || billIdx}`}>
+                                                            <TableCell>{bill.item_name}</TableCell>
+                                                            <TableCell className="text-right">{bill.qty}</TableCell>
+                                                            <TableCell className="text-right">{formatCurrency(unitPrice)}</TableCell>
+                                                            <TableCell className="text-right">{formatCurrency(totalPrice)}</TableCell>
+                                                            <TableCell className="text-right">{formatCurrency(realisasi)}</TableCell>
+                                                            <TableCell className="text-right">{formatCurrency(selisih)}</TableCell>
+                                                        </TableRow>
+                                                    );
+                                                }
+                                            });
+                                        }
+                                    })
                                 )}
                             </TableBody>
                         </Table>
