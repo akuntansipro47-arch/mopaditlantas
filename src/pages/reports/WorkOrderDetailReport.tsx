@@ -80,7 +80,7 @@ const WorkOrderDetailReport = () => {
             const { data: vehicleEntries, error: veError } = await supabase.from('vehicle_entries').select('id, vehicle_id').in('id', workOrders.map(wo => wo.vehicle_entry_id).filter(Boolean));
             if (veError) throw veError;
             
-            const { data: vehicles, error: vError } = await supabase.from('vehicles').select('id, plat_number, vehicle_type, service_group, customer_id').in('id', vehicleEntries.map(ve => ve.vehicle_id).filter(Boolean));
+            const { data: vehicles, error: vError } = await supabase.from('vehicles').select('id, license_plate, vehicle_type, service_group, customer_id').in('id', vehicleEntries.map(ve => ve.vehicle_id).filter(Boolean));
             if (vError) throw vError;
 
             const { data: customers, error: cError } = await supabase.from('customers').select('id, name').in('id', vehicles.map(v => v.customer_id).filter(Boolean));
@@ -174,7 +174,7 @@ const WorkOrderDetailReport = () => {
                 return {
                     work_order_id: wo.wo_number,
                     work_order_date: format(new Date(wo.created_at), 'dd-MM-yyyy'),
-                    vehicle_plat_number: vehicle?.plat_number || 'N/A',
+                    vehicle_plat_number: vehicle?.license_plate || 'N/A',
                     vehicle_type_name: getVehicleGroupLabel(vehicle?.vehicle_type, vehicle?.service_group),
                     customer_name: customerName,
                     total_billing,
