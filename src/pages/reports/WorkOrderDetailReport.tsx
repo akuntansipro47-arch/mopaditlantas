@@ -89,7 +89,6 @@ const WorkOrderDetailReport = () => {
             const allGoodsIds = workOrderBillings.filter(b => b.item_type === 'PART' && b.goods_id).map(b => b.goods_id);
             const allJobTypeIds = workOrderBillings.filter(b => b.item_type === 'JOB' && b.job_type_id).map(b => b.job_type_id);
 
-            // DEFINITIVE CORRECTION for HPP based on the final screenshot
             const { data: poItems, error: poError } = await supabase.from('purchase_order_items').select('goods_id, unit_price').in('goods_id', allGoodsIds).order('created_at', { ascending: false });
             if (poError) throw poError;
 
@@ -116,7 +115,6 @@ const WorkOrderDetailReport = () => {
                 return acc;
             }, {} as Record<string, typeof workOrderBillings>);
             
-            // DEFINITIVE CORRECTION for HPP mapping
             const hppGoodsMap = new Map<string, number>();
             poItems.forEach(item => { if (!hppGoodsMap.has(item.goods_id)) hppGoodsMap.set(item.goods_id, item.unit_price || 0); });
             
@@ -178,11 +176,16 @@ const WorkOrderDetailReport = () => {
     };
 
     const getVehicleGroupLabel = (vehicleType: string | null | undefined, serviceGroup: string | null | undefined): string => {
-        if (vehicleType === 'mobil') {
-            return serviceGroup === 'pribadi' ? 'Mobil Pribadi' : 'Mobil Travel';
-        } else if (vehicleType === 'motor') {
-            return 'Motor';
-        }
+        const sg = String(serviceGroup || '').toUpperCase();
+        if (sg.includes('R2_KECIL') || sg.includes('R2 KECIL') || sg.includes('KECIL')) return 'R2 Kecil';
+        if (sg.includes('R4')) return 'R4';
+        if (sg.includes('R2')) return 'R2';
+        
+        const vt = String(vehicleType || '').toUpperCase();
+        if (vt.includes('R2_KECIL') || vt.includes('R2 KECIL') || vt.includes('KECIL')) return 'R2 Kecil';
+        if (vt === 'R4' || vt.includes('R4') || vt.includes('MOBIL')) return 'R4';
+        if (vt === 'R2' || vt.includes('R2') || vt.includes('MOTOR')) return 'R2';
+        
         return 'Lainnya';
     };
 
@@ -246,9 +249,10 @@ const WorkOrderDetailReport = () => {
                     </SelectTrigger>
                     <SelectContent>
                         <SelectItem value="semua">Semua Grup</SelectItem>
-                        <SelectItem value="Mobil Pribadi">Mobil Pribadi</SelectItem>
-                        <SelectItem value="Mobil Travel">Mobil Travel</SelectItem>
-                        <SelectItem value="Motor">Motor</SelectItem>
+                        <SelectItem value="R4">R4</SelectItem>
+                        <SelectItem value="R2">R2</SelectItem>
+                        <SelectItem value="R2 Kecil">R2 Kecil</SelectItem>
+                        <SelectItem value="Lainnya">Lainnya</SelectItem>
                     </SelectContent>
                 </Select>
                 <Button onClick={fetchReportData} disabled={loading}>
