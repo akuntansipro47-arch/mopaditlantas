@@ -154,14 +154,14 @@ const WorkOrderDetailReport = () => {
 
             const { data: jobTypes, error: jtError } = await supabase
                 .from('job_types')
-                .select('id, capital_price')
+                .select('id, hpp')
                 .in('id', Array.from(allJobTypeIds));
 
             if (jtError) throw jtError;
 
             const jobHppMap: { [key: string]: number } = {};
             jobTypes.forEach(jt => {
-                jobHppMap[String(jt.id)] = jt.capital_price || 0;
+                jobHppMap[String(jt.id)] = jt.hpp || 0;
             });
             
             let processedData = workOrders.map(wo => {
