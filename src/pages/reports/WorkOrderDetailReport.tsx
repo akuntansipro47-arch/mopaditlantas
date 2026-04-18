@@ -57,7 +57,7 @@ const WorkOrderDetailReport = () => {
             // 1. Get base Work Orders (flat)
             let woQuery = supabase
                 .from('work_orders')
-                .select('id, work_order_number, created_at, vehicle_entry_id')
+                .select('id, wo_number, created_at, vehicle_entry_id')
                 .gte('created_at', startDate)
                 .lte('created_at', endDate)
                 .order('created_at', { ascending: false });
@@ -172,7 +172,7 @@ const WorkOrderDetailReport = () => {
                 const total_hpp = mergedBillings.reduce((sum, item) => sum + item.hpp, 0);
 
                 return {
-                    work_order_id: wo.work_order_number,
+                    work_order_id: wo.wo_number,
                     work_order_date: format(new Date(wo.created_at), 'dd-MM-yyyy'),
                     vehicle_plat_number: vehicle?.plat_number || 'N/A',
                     vehicle_type_name: getVehicleGroupLabel(vehicle?.vehicle_type, vehicle?.service_group),
