@@ -310,7 +310,7 @@ const WorkOrderDetailReport = () => {
         <div className="p-4 md:p-6">
             <Card>
                 <CardHeader>
-                    <CardTitle>Laporan Detail Work Order</CardTitle>
+                    <CardTitle>Laporan Detail WO (VERSI TES)</CardTitle>
                 </CardHeader>
                 <CardContent>
                     <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
