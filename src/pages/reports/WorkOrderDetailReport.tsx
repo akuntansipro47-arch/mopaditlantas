@@ -88,8 +88,8 @@ const WorkOrderDetailReport = () => {
                 supabase.from('vehicle_entries').select('id, vehicle_id, service_group').in('id', vehicleEntryIds),
                 supabase.from('work_order_billings').select('*').in('work_order_id', workOrders.map(wo => wo.id)),
                 supabase.from('goods_issues').select('id, work_order_id, goods_issue_items(id, quantity, goods_id)').in('work_order_id', workOrders.map(wo => wo.id)),
-                supabase.from('vehicle_entry_jobs').select('vehicle_entry_id, job_type_id, price').in('vehicle_entry_id', vehicleEntryIds),
-                supabase.from('vehicle_entry_spareparts').select('vehicle_entry_id, goods_id, quantity, price').in('vehicle_entry_id', vehicleEntryIds)
+                supabase.from('vehicle_entry_jobs').select('vehicle_entry_id, job_type_id').in('vehicle_entry_id', vehicleEntryIds),
+                supabase.from('vehicle_entry_spareparts').select('vehicle_entry_id, goods_id, quantity').in('vehicle_entry_id', vehicleEntryIds)
             ]);
 
             if (veError || wbError || giError || vejError || vepError) {
@@ -111,8 +111,8 @@ const WorkOrderDetailReport = () => {
                 { data: poItems, error: poError }
             ] = await Promise.all([
                 supabase.from('vehicles').select('id, license_plate, owner_name, vehicle_type').in('id', vehicleIds),
-                supabase.from('goods').select('id, name').in('id', allGoodsIds),
-                supabase.from('job_types').select('id, name, hpp').in('id', allJobTypeIds),
+                supabase.from('goods').select('id, name, selling_price').in('id', allGoodsIds),
+                supabase.from('job_types').select('id, name, hpp, price').in('id', allJobTypeIds),
                 supabase.from('purchase_order_items').select('goods_id, unit_price').in('goods_id', allGoodsIds).order('created_at', { ascending: false })
             ]);
 
@@ -123,8 +123,8 @@ const WorkOrderDetailReport = () => {
             // 3. Create Maps for efficient lookup
             const vehicleMap = new Map(vehicles.map(v => [v.id, v]));
             const vehicleEntryMap = new Map(vehicleEntries.map(ve => [ve.id, ve]));
-            const goodsMap = new Map(goods.map(g => [g.id, g.name]));
-            const jobTypeMap = new Map(jobTypes.map(jt => [jt.id, { name: jt.name, hpp: jt.hpp || 0 }]));
+            const goodsMap = new Map(goods.map(g => [g.id, { name: g.name, selling_price: g.selling_price || 0 }]));
+            const jobTypeMap = new Map(jobTypes.map(jt => [jt.id, { name: jt.name, hpp: jt.hpp || 0, price: jt.price || 0 }]));
             const hppGoodsMap = new Map<string, number>();
             poItems.forEach(item => { if (!hppGoodsMap.has(item.goods_id)) hppGoodsMap.set(item.goods_id, item.unit_price || 0); });
 
@@ -153,7 +153,7 @@ const WorkOrderDetailReport = () => {
                         } else {
                             realizedItems.set(key, {
                                 item_type: 'PART',
-                                item_name: goodsMap.get(item.goods_id) || 'Unknown Part',
+                                item_name: goodsMap.get(item.goods_id)?.name || 'Unknown Part',
                                 qty: item.quantity,
                                 unit_price: unit_price,
                                 total_price: item.quantity * unit_price,
@@ -193,8 +193,8 @@ const WorkOrderDetailReport = () => {
                                 item_type: 'JOB',
                                 item_name: jobTypeMap.get(estJob.job_type_id)?.name || 'Unknown Job',
                                 qty: 1, // Estimation qty is typically 1 for jobs
-                                unit_price: estJob.price || 0,
-                                total_price: estJob.price || 0,
+                                unit_price: jobTypeMap.get(estJob.job_type_id)?.price || 0,
+                                total_price: jobTypeMap.get(estJob.job_type_id)?.price || 0,
                                 hpp: jobTypeMap.get(estJob.job_type_id)?.hpp || 0,
                                 profit: 0,
                                 source: 'ESTIMATE_ONLY',
@@ -206,10 +206,10 @@ const WorkOrderDetailReport = () => {
                         if (!realizedItems.has(`PART-${estPart.goods_id}`)) {
                             allItems.push({
                                 item_type: 'PART',
-                                item_name: goodsMap.get(estPart.goods_id) || 'Unknown Part',
+                                item_name: goodsMap.get(estPart.goods_id)?.name || 'Unknown Part',
                                 qty: estPart.quantity,
-                                unit_price: estPart.price || 0,
-                                total_price: (estPart.quantity || 0) * (estPart.price || 0),
+                                unit_price: goodsMap.get(estPart.goods_id)?.selling_price || 0,
+                                total_price: (estPart.quantity || 0) * (goodsMap.get(estPart.goods_id)?.selling_price || 0),
                                 hpp: hppGoodsMap.get(estPart.goods_id) || 0,
                                 profit: 0,
                                 source: 'ESTIMATE_ONLY',
