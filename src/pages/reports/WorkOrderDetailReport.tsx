@@ -48,7 +48,7 @@ const WorkOrderDetailReport = () => {
         }
 
         setLoading(true);
-        setError(null);
+setError(null);
 
         try {
             const startDate = format(dateRange.from, 'yyyy-MM-dd');
@@ -76,36 +76,29 @@ const WorkOrderDetailReport = () => {
 
             const workOrderIds = workOrders.map(wo => wo.id);
             
-            // 2. Fetch all related data in separate, flat queries based on actual schema
+            // 2. Fetch all related data based on the CORRECT schema from screenshots
             const { data: vehicleEntries, error: veError } = await supabase.from('vehicle_entries').select('id, vehicle_id, service_group').in('id', workOrders.map(wo => wo.vehicle_entry_id).filter(Boolean));
             if (veError) throw veError;
             
             const { data: vehicles, error: vError } = await supabase.from('vehicles').select('id, license_plate, vehicle_type, owner_name').in('id', vehicleEntries.map(ve => ve.vehicle_id).filter(Boolean));
             if (vError) throw vError;
 
-            const { data: goodsIssues, error: giError } = await supabase.from('goods_issues').select('id, work_order_id').in('work_order_id', workOrderIds);
-            if (giError) throw giError;
+            // DEFINITIVE CORRECTION: Fetch from the single, correct 'work_order_billings' table
+            const { data: workOrderBillings, error: wobError } = await supabase.from('work_order_billings').select('*').in('work_order_id', workOrderIds);
+            if (wobError) throw wobError;
 
-            // DEFINITIVE CORRECTION: Foreign key is 'issue_id' based on screenshot
-            const { data: goodsIssueItems, error: gidError } = await supabase.from('goods_issue_items').select('*, goods(id, name)').in('issue_id', goodsIssues.map(gi => gi.id));
-            if (gidError) throw gidError;
+            // REMOVED: All incorrect queries to goods_issues, goods_issue_items, service_billings, service_billing_details are gone.
 
-            const { data: serviceBillings, error: sbError } = await supabase.from('service_billings').select('id, work_order_id').in('work_order_id', workOrderIds);
-            if (sbError) throw sbError;
-
-            const { data: serviceBillingDetails, error: sbdError } = await supabase.from('service_billing_details').select('*, job_types(id, job_name)').in('service_billing_id', serviceBillings.map(sb => sb.id));
-            if (sbdError) throw sbdError;
-
-            const allGoodsIds = goodsIssueItems.map(d => d.goods?.id).filter(Boolean);
-            const allJobTypeIds = serviceBillingDetails.map(d => d.job_types?.id).filter(Boolean);
+            const allGoodsIds = workOrderBillings.filter(b => b.item_type === 'PART' && b.goods_id).map(b => b.goods_id);
+            const allJobTypeIds = workOrderBillings.filter(b => b.item_type === 'JOB' && b.job_type_id).map(b => b.job_type_id);
 
             const { data: poItems, error: poError } = await supabase.from('purchase_order_items').select('goods_id, price').in('goods_id', allGoodsIds).order('created_at', { ascending: false });
             if (poError) throw poError;
 
-            const { data: jobsHpp, error: jobsHppError } = await supabase.from('job_types').select('id, hpp').in('id', allJobTypeIds);
+            const { data: jobsHpp, error: jobsHppError } = await supabase.from('job_types').select('id, hpp, job_name').in('id', allJobTypeIds);
             if(jobsHppError) throw jobsHppError;
 
-            // Estimation Data
+            // Estimation Data (This part was correct)
             let allEntryJobs: any[] = [], allEntryParts: any[] = [];
             if (statusFilter === 'semua') {
                 const { data: jobsData, error: jobsError } = await supabase.from('vehicle_entry_jobs').select('*, job_types(job_name, selling_price)').in('vehicle_entry_id', workOrders.map(wo => wo.vehicle_entry_id).filter(Boolean));
@@ -120,20 +113,13 @@ const WorkOrderDetailReport = () => {
             // 3. Create Maps for efficient data stitching
             const vehicleEntryMap = new Map(vehicleEntries.map(ve => [ve.id, ve]));
             const vehicleMap = new Map(vehicles.map(v => [v.id, v]));
-            
-            // DEFINITIVE CORRECTION: Key for reduction is 'issue_id' based on screenshot
-            const itemsByIssueId = goodsIssueItems.reduce((acc, item) => {
-                (acc[item.issue_id] = acc[item.issue_id] || []).push(item);
+            const billingsByWoId = workOrderBillings.reduce((acc, bill) => {
+                (acc[bill.work_order_id] = acc[bill.work_order_id] || []).push(bill);
                 return acc;
-            }, {} as Record<string, typeof goodsIssueItems>);
-
-            const detailsByBillingId = serviceBillingDetails.reduce((acc, detail) => {
-                (acc[detail.service_billing_id] = acc[detail.service_billing_id] || []).push(detail);
-                return acc;
-            }, {} as Record<string, typeof serviceBillingDetails>);
+            }, {} as Record<string, typeof workOrderBillings>);
             const hppGoodsMap = new Map<string, number>();
             poItems.forEach(item => { if (!hppGoodsMap.has(item.goods_id)) hppGoodsMap.set(item.goods_id, item.price || 0); });
-            const hppJobsMap = new Map(jobsHpp.map(j => [j.id, j.hpp || 0]));
+            const hppJobsMap = new Map(jobsHpp.map(j => [j.id, { hpp: j.hpp || 0, name: j.job_name }]));
             const jobsByEntryId = allEntryJobs.reduce((acc, job) => { (acc[job.vehicle_entry_id] = acc[job.vehicle_entry_id] || []).push(job); return acc; }, {});
             const partsByEntryId = allEntryParts.reduce((acc, part) => { (acc[part.vehicle_entry_id] = acc[part.vehicle_entry_id] || []).push(part); return acc; }, {});
 
@@ -143,24 +129,20 @@ const WorkOrderDetailReport = () => {
                 const vehicle = vehicleEntry ? vehicleMap.get(vehicleEntry.vehicle_id) : null;
                 const customerName = vehicle?.owner_name || 'N/A';
 
-                const woGoodsIssues = goodsIssues.filter(gi => gi.work_order_id === wo.id);
-                const woServiceBillings = serviceBillings.filter(sb => sb.work_order_id === wo.id);
+                const realizedItems = (billingsByWoId[wo.id] || []).map(bill => {
+                    if (bill.item_type === 'JOB') {
+                        const jobInfo = hppJobsMap.get(bill.job_type_id);
+                        const hpp = jobInfo?.hpp || 0;
+                        const total_hpp = (bill.qty || 0) * hpp;
+                        return { item_type: 'JOB' as const, item_name: jobInfo?.name || bill.item_name || 'N/A', qty: bill.qty || 0, unit_price: bill.unit_price || 0, total_price: bill.total_price || 0, hpp: total_hpp, profit: (bill.total_price || 0) - total_hpp, source: 'REALIZED' as const };
+                    } else { // 'PART'
+                        const hpp = hppGoodsMap.get(bill.goods_id) || 0;
+                        const total_hpp = (bill.qty || 0) * hpp;
+                        return { item_type: 'PART' as const, item_name: bill.item_name || 'N/A', qty: bill.qty || 0, unit_price: bill.unit_price || 0, total_price: bill.total_price || 0, hpp: total_hpp, profit: (bill.total_price || 0) - total_hpp, source: 'REALIZED' as const };
+                    }
+                });
 
-                const realizedParts = woGoodsIssues.flatMap(gi => (itemsByIssueId[gi.id] || []).map(gid => {
-                    const hpp = hppGoodsMap.get(gid.goods?.id) || 0;
-                    const total_price = (gid.qty || 0) * (gid.unit_price || 0);
-                    const total_hpp = (gid.qty || 0) * hpp;
-                    return { item_type: 'PART' as const, item_name: gid.goods?.name || 'N/A', qty: gid.qty || 0, unit_price: gid.unit_price || 0, total_price, hpp: total_hpp, profit: total_price - total_hpp, source: 'REALIZED' as const };
-                }));
-
-                const realizedJobs = woServiceBillings.flatMap(sb => (detailsByBillingId[sb.id] || []).map(sbd => {
-                    const hpp = hppJobsMap.get(sbd.job_types?.id) || 0;
-                    const total_price = (sbd.qty || 0) * (sbd.unit_price || 0);
-                    const total_hpp = (sbd.qty || 0) * hpp;
-                    return { item_type: 'JOB' as const, item_name: sbd.job_types?.job_name || 'N/A', qty: sbd.qty || 0, unit_price: sbd.unit_price || 0, total_price, hpp: total_hpp, profit: total_price - total_hpp, source: 'REALIZED' as const };
-                }));
-
-                let mergedBillings = [...realizedParts, ...realizedJobs];
+                let mergedBillings = [...realizedItems];
 
                 if (statusFilter === 'semua' && wo.vehicle_entry_id) {
                     const estimatedJobs = (jobsByEntryId[wo.vehicle_entry_id] || []).map((ej: any) => ({ item_type: 'JOB' as const, item_name: `(Estimasi) ${ej.job_types?.job_name || 'Pekerjaan'}`, qty: 1, unit_price: ej.job_types?.selling_price || 0, total_price: ej.job_types?.selling_price || 0, hpp: 0, profit: ej.job_types?.selling_price || 0, source: 'ESTIMATE_ONLY' as const }));
