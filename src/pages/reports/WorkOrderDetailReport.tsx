@@ -34,6 +34,15 @@ const formatDate = (dateString: string | null | undefined) => {
     }
 };
 
+// CORRECT LOGIC: Found in other report files
+const getVehicleGroupLabel = (vehicleType: string | null | undefined) => {
+    const vt = String(vehicleType || '').toUpperCase();
+    if (vt.includes('R2_KECIL') || vt.includes('R2 KECIL') || vt.includes('KECIL')) return 'R2 Kecil';
+    if (vt === 'R4' || vt.includes('R4') || vt.includes('MOBIL')) return 'R4';
+    if (vt === 'R2' || vt.includes('R2') || vt.includes('MOTOR')) return 'R2';
+    return 'Umum';
+};
+
 const getStatusBadge = (status: string) => {
     const statusMap: { [key: string]: { text: string; className: string } } = {
         OPEN: { text: 'Open', className: 'bg-blue-100 text-blue-800' },
@@ -56,21 +65,6 @@ const WorkOrderDetailReport = () => {
     const [vehicleGroupFilter, setVehicleGroupFilter] = useState<string>('semua');
     const [reportData, setReportData] = useState<any[]>([]);
     const [loading, setLoading] = useState(false);
-    const [vehicleGroups, setVehicleGroups] = useState<any[]>([]);
-
-    useEffect(() => {
-        const fetchVehicleGroups = async () => {
-            const { data, error } = await supabase
-                .from('vehicle_groups')
-                .select('id, group_name');
-            if (error) {
-                console.error('Error fetching vehicle groups:', error);
-            } else {
-                setVehicleGroups(data);
-            }
-        };
-        fetchVehicleGroups();
-    }, []);
 
     const fetchReportData = async () => {
         if (!dateRange?.from || !dateRange?.to) {
@@ -93,7 +87,11 @@ const WorkOrderDetailReport = () => {
                     vehicle_entry_id,
                     vehicle_entries (
                         id,
-                        vehicle_id
+                        vehicle_id,
+                        vehicles (
+                            license_plate,
+                            vehicle_type
+                        )
                     ),
                     work_order_billings (
                         id,
@@ -113,60 +111,14 @@ const WorkOrderDetailReport = () => {
             if (statusFilter !== 'semua') {
                 query = query.eq('status', statusFilter);
             }
-
+            
             if (vehicleGroupFilter !== 'semua') {
-                const { data: vehiclesInGroup, error: vError } = await supabase
-                    .from('vehicles')
-                    .select('id')
-                    .eq('vehicle_group_id', vehicleGroupFilter);
-
-                if (vError) throw new Error(`Failed to fetch vehicles for group: ${vError.message}`);
-                
-                if (!vehiclesInGroup || vehiclesInGroup.length === 0) {
-                    setReportData([]);
-                    setLoading(false);
-                    return;
-                }
-                const vehicleIds = vehiclesInGroup.map(v => v.id);
-
-                const { data: vehicleEntries, error: veError } = await supabase
-                    .from('vehicle_entries')
-                    .select('id')
-                    .in('vehicle_id', vehicleIds);
-                
-                if (veError) throw new Error(`Failed to fetch vehicle entries for group: ${veError.message}`);
-
-                if (!vehicleEntries || vehicleEntries.length === 0) {
-                    setReportData([]);
-                    setLoading(false);
-                    return;
-                }
-                const vehicleEntryIds = vehicleEntries.map(ve => ve.id);
-                query = query.in('vehicle_entry_id', vehicleEntryIds);
+                // This filter is now applied client-side after fetching
             }
 
             const { data: workOrders, error: woError } = await query;
 
             if (woError) throw woError;
-
-            const vehicleIds = workOrders
-                .map(wo => wo.vehicle_entries?.vehicle_id)
-                .filter((id): id is string => id !== null && id !== undefined);
-
-            // Definitive Fix: Query vehicles and groups separately
-            const { data: vehicleDetails, error: vehicleError } = await supabase
-                .from('vehicles')
-                .select('id, license_plate, vehicle_group_id') // Step 1: Get ID only
-                .in('id', [...new Set(vehicleIds)]);
-
-            if (vehicleError) throw new Error(`Failed to fetch vehicle details: ${vehicleError.message}`);
-
-            const groupMap = new Map(vehicleGroups.map(g => [g.id, g.group_name])); // Step 2: Create a map from existing groups data
-
-            const vehicleDetailMap = new Map(vehicleDetails.map(v => [v.id, {
-                license_plate: v.license_plate,
-                group_name: groupMap.get(v.vehicle_group_id) || 'Umum' // Step 3: Look up the name from the map
-            }]));
 
             const allGoodsIds = new Set<string>();
             const allJobTypeIds = new Set<string>();
@@ -205,18 +157,22 @@ const WorkOrderDetailReport = () => {
                 jobHppMap[String(jt.id)] = jt.capital_price || 0;
             });
             
-            const processedData = workOrders.map(wo => {
-                let mergedBillings = [...(wo.work_order_billings || [])];
-                
+            let processedData = workOrders.map(wo => {
+                const vehicleType = wo.vehicle_entries?.vehicles?.vehicle_type;
                 return {
                     ...wo,
-                    license_plate: vehicleDetailMap.get(wo.vehicle_entries?.vehicle_id)?.license_plate || '-',
-                    group_name: vehicleDetailMap.get(wo.vehicle_entries?.vehicle_id)?.group_name || 'Umum',
-                    billings: mergedBillings,
+                    license_plate: wo.vehicle_entries?.vehicles?.license_plate || '-',
+                    group_name: getVehicleGroupLabel(vehicleType),
+                    vehicle_type: vehicleType,
+                    billings: [...(wo.work_order_billings || [])],
                     partHppMap,
                     jobHppMap,
                 };
             });
+
+            if (vehicleGroupFilter !== 'semua') {
+                processedData = processedData.filter(wo => wo.vehicle_type === vehicleGroupFilter);
+            }
 
             setReportData(processedData);
 
@@ -310,7 +266,7 @@ const WorkOrderDetailReport = () => {
         <div className="p-4 md:p-6">
             <Card>
                 <CardHeader>
-                    <CardTitle>Laporan Detail WO (VERSI TES)</CardTitle>
+                    <CardTitle>Laporan Detail Work Order</CardTitle>
                 </CardHeader>
                 <CardContent>
                     <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
@@ -338,9 +294,9 @@ const WorkOrderDetailReport = () => {
                             </SelectTrigger>
                             <SelectContent>
                                 <SelectItem value="semua">Semua Grup</SelectItem>
-                                {vehicleGroups.map(group => (
-                                    <SelectItem key={group.id} value={String(group.id)}>{group.group_name}</SelectItem>
-                                ))}
+                                <SelectItem value="R4">R4</SelectItem>
+                                <SelectItem value="R2">R2</SelectItem>
+                                <SelectItem value="R2_KECIL">R2 Kecil</SelectItem>
                             </SelectContent>
                         </Select>
                         <div className="flex items-center gap-2">
