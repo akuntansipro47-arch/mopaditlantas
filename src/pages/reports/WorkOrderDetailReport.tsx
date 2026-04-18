@@ -153,16 +153,19 @@ const WorkOrderDetailReport = () => {
                 .map(wo => wo.vehicle_entries?.vehicle_id)
                 .filter((id): id is string => id !== null && id !== undefined);
 
+            // Definitive Fix: Query vehicles and groups separately
             const { data: vehicleDetails, error: vehicleError } = await supabase
                 .from('vehicles')
-                .select('id, license_plate, vehicle_groups(group_name)')
+                .select('id, license_plate, vehicle_group_id') // Step 1: Get ID only
                 .in('id', [...new Set(vehicleIds)]);
 
             if (vehicleError) throw new Error(`Failed to fetch vehicle details: ${vehicleError.message}`);
 
+            const groupMap = new Map(vehicleGroups.map(g => [g.id, g.group_name])); // Step 2: Create a map from existing groups data
+
             const vehicleDetailMap = new Map(vehicleDetails.map(v => [v.id, {
                 license_plate: v.license_plate,
-                group_name: v.vehicle_groups?.group_name || 'Umum'
+                group_name: groupMap.get(v.vehicle_group_id) || 'Umum' // Step 3: Look up the name from the map
             }]));
 
             const allGoodsIds = new Set<string>();
