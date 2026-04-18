@@ -83,21 +83,7 @@ const WorkOrderDetailReport = () => {
                     status,
                     vehicle_entry_id,
                     vehicle_entries (
-                        id,
-                        vehicle_id,
-                        vehicles (
-                            license_plate,
-                            vehicle_type
-                        ),
-                        vehicle_entry_jobs (
-                            job_type_id,
-                            job_types ( job_name, selling_price, job_group )
-                        ),
-                        vehicle_entry_parts (
-                            goods_id,
-                            qty,
-                            goods ( name, selling_price )
-                        )
+                        id, vehicle_id, vehicles ( license_plate, vehicle_type )
                     ),
                     work_order_billings (
                         id,
@@ -121,6 +107,36 @@ const WorkOrderDetailReport = () => {
             const { data: workOrders, error: woError } = await query;
 
             if (woError) throw woError;
+
+            const vehicleEntryIds = workOrders.map(wo => wo.vehicle_entry_id).filter(Boolean);
+            let allEntryJobs: any[] = [];
+            let allEntryParts: any[] = [];
+
+            if (vehicleEntryIds.length > 0) {
+                const { data: jobsData, error: jobsError } = await supabase
+                    .from('vehicle_entry_jobs')
+                    .select(`vehicle_entry_id, job_type_id, job_types ( job_name, selling_price, job_group )`)
+                    .in('vehicle_entry_id', vehicleEntryIds);
+                if (jobsError) throw jobsError;
+                allEntryJobs = jobsData;
+
+                const { data: partsData, error: partsError } = await supabase
+                    .from('vehicle_entry_parts')
+                    .select(`vehicle_entry_id, goods_id, qty, goods ( name, selling_price )`)
+                    .in('vehicle_entry_id', vehicleEntryIds);
+                if (partsError) throw partsError;
+                allEntryParts = partsData;
+            }
+
+            const jobsByEntryId = new Map<string, any[]>();
+            allEntryJobs.forEach(job => {
+                jobsByEntryId.set(job.vehicle_entry_id, [...(jobsByEntryId.get(job.vehicle_entry_id) || []), job]);
+            });
+
+            const partsByEntryId = new Map<string, any[]>();
+            allEntryParts.forEach(part => {
+                partsByEntryId.set(part.vehicle_entry_id, [...(partsByEntryId.get(part.vehicle_entry_id) || []), part]);
+            });
 
             const allGoodsIds = new Set<string>();
             const allJobTypeIds = new Set<string>();
@@ -159,11 +175,14 @@ const WorkOrderDetailReport = () => {
                 let mergedBillings = [...(wo.work_order_billings || [])].map(b => ({ ...b, source: 'REALIZED' }));
 
                 // Logic to add non-realized estimations
-                if (statusFilter === 'semua' && wo.vehicle_entries) {
+                if (statusFilter === 'semua' && wo.vehicle_entry_id) {
                     const realizedJobIds = new Set(mergedBillings.filter(b => b.item_type === 'JOB' && b.job_type_id).map(b => String(b.job_type_id)));
                     const realizedPartIds = new Set(mergedBillings.filter(b => b.item_type === 'PART' && b.goods_id).map(b => String(b.goods_id)));
 
-                    const missingEstimatedJobs = (wo.vehicle_entries.vehicle_entry_jobs || [])
+                    const estimatedJobs = jobsByEntryId.get(wo.vehicle_entry_id) || [];
+                    const estimatedParts = partsByEntryId.get(wo.vehicle_entry_id) || [];
+
+                    const missingEstimatedJobs = estimatedJobs
                         .filter((ej: any) => ej.job_type_id && !realizedJobIds.has(String(ej.job_type_id)))
                         .map((ej: any) => ({
                             item_type: 'JOB',
@@ -175,7 +194,7 @@ const WorkOrderDetailReport = () => {
                             source: 'ESTIMATE_ONLY',
                         }));
 
-                    const missingEstimatedParts = (wo.vehicle_entries.vehicle_entry_parts || [])
+                    const missingEstimatedParts = estimatedParts
                         .filter((ep: any) => ep.goods_id && !realizedPartIds.has(String(ep.goods_id)))
                         .map((ep: any) => ({
                             item_type: 'PART',
