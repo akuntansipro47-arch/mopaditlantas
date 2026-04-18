@@ -80,11 +80,11 @@ const WorkOrderDetailReport = () => {
             const { data: vehicleEntries, error: veError } = await supabase.from('vehicle_entries').select('id, vehicle_id, service_group').in('id', workOrders.map(wo => wo.vehicle_entry_id).filter(Boolean));
             if (veError) throw veError;
             
-            const { data: vehicles, error: vError } = await supabase.from('vehicles').select('id, license_plate, vehicle_type, customer_id').in('id', vehicleEntries.map(ve => ve.vehicle_id).filter(Boolean));
+            // CORRECTED: Select owner_name directly, remove customer_id
+            const { data: vehicles, error: vError } = await supabase.from('vehicles').select('id, license_plate, vehicle_type, owner_name').in('id', vehicleEntries.map(ve => ve.vehicle_id).filter(Boolean));
             if (vError) throw vError;
 
-            const { data: customers, error: cError } = await supabase.from('customers').select('id, name').in('id', vehicles.map(v => v.customer_id).filter(Boolean));
-            if (cError) throw cError;
+            // REMOVED: No longer need to fetch from 'customers' table
 
             const { data: goodsIssues, error: giError } = await supabase.from('goods_issues').select('id, work_order_id').in('work_order_id', workOrderIds);
             if (giError) throw giError;
@@ -122,7 +122,7 @@ const WorkOrderDetailReport = () => {
             // 3. Create Maps for efficient data stitching
             const vehicleEntryMap = new Map(vehicleEntries.map(ve => [ve.id, ve]));
             const vehicleMap = new Map(vehicles.map(v => [v.id, v]));
-            const customerMap = new Map(customers.map(c => [c.id, c.name]));
+            // REMOVED: customerMap is no longer needed
             const detailsByIssueId = goodsIssueDetails.reduce((acc, detail) => {
                 (acc[detail.goods_issue_id] = acc[detail.goods_issue_id] || []).push(detail);
                 return acc;
@@ -141,7 +141,8 @@ const WorkOrderDetailReport = () => {
             const processedData = workOrders.map(wo => {
                 const vehicleEntry = wo.vehicle_entry_id ? vehicleEntryMap.get(wo.vehicle_entry_id) : null;
                 const vehicle = vehicleEntry ? vehicleMap.get(vehicleEntry.vehicle_id) : null;
-                const customerName = vehicle ? customerMap.get(vehicle.customer_id) || 'N/A' : 'N/A';
+                // CORRECTED: Get customer name directly from vehicle.owner_name
+                const customerName = vehicle?.owner_name || 'N/A';
 
                 const woGoodsIssues = goodsIssues.filter(gi => gi.work_order_id === wo.id);
                 const woServiceBillings = serviceBillings.filter(sb => sb.work_order_id === wo.id);
@@ -231,7 +232,7 @@ const WorkOrderDetailReport = () => {
         const grandTotal = {
             'No WO': 'GRAND TOTAL',
             'Total Harga': filteredReportData.reduce((sum, wo) => sum + wo.total_billing, 0),
-            'HPP': filteredReportData.reduce((sum, wo) => sum + wo.total_hpp,.0),
+            'HPP': filteredReportData.reduce((sum, wo) => sum + wo.total_hpp, 0),
             'Profit': filteredReportData.reduce((sum, wo) => sum + wo.profit, 0),
         };
 
