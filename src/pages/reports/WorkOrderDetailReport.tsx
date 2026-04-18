@@ -122,10 +122,36 @@ const WorkOrderDetailReport = () => {
 
                 const { data: partsData, error: partsError } = await supabase
                     .from('vehicle_entry_spareparts')
-                    .select(`vehicle_entry_id, goods_id, qty, goods ( name, selling_price )`)
+                    .select(`vehicle_entry_id, goods_id, qty, item_name, estimated_price`)
                     .in('vehicle_entry_id', vehicleEntryIds);
                 if (partsError) throw partsError;
-                allEntryParts = partsData;
+
+                const goodsIdsFromEstimates = new Set<string>();
+                if (partsData) {
+                    partsData.forEach(p => { if (p.goods_id) goodsIdsFromEstimates.add(p.goods_id); });
+                }
+
+                const goodsMap = new Map<string, { name: string, selling_price: number }>();
+                if (goodsIdsFromEstimates.size > 0) {
+                    const { data: goodsData, error: goodsError } = await supabase
+                        .from('goods')
+                        .select('id, name, selling_price')
+                        .in('id', Array.from(goodsIdsFromEstimates));
+                    if (goodsError) throw goodsError;
+                    if (goodsData) {
+                        goodsData.forEach(g => goodsMap.set(String(g.id), { name: g.name, selling_price: g.selling_price || 0 }));
+                    }
+                }
+
+                allEntryParts = partsData ? partsData.map(p => {
+                    const goodInfo = p.goods_id ? goodsMap.get(String(p.goods_id)) : null;
+                    return {
+                        ...p,
+                        goods: goodInfo 
+                            ? { name: goodInfo.name, selling_price: goodInfo.selling_price } 
+                            : { name: p.item_name, selling_price: p.estimated_price || 0 },
+                    };
+                }) : [];
             }
 
             const jobsByEntryId = new Map<string, any[]>();
