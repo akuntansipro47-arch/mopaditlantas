@@ -67,7 +67,7 @@ const WorkOrderDetailReport = () => {
                             plat_number,
                             vehicle_type,
                             service_group,
-                            customers ( name )
+                            customer_id
                         )
                     ),
                     goods_issues (
@@ -97,6 +97,22 @@ const WorkOrderDetailReport = () => {
 
             const { data: workOrders, error: woError } = await query;
             if (woError) throw woError;
+
+            const customerIds = new Set<string>();
+            workOrders.forEach(wo => {
+                const customerId = wo.vehicle_entries?.vehicles?.customer_id;
+                if (customerId) customerIds.add(customerId);
+            });
+
+            const customerMap = new Map<string, string>();
+            if (customerIds.size > 0) {
+                const { data: customers, error: customerError } = await supabase
+                    .from('customers')
+                    .select('id, name')
+                    .in('id', Array.from(customerIds));
+                if (customerError) throw customerError;
+                customers.forEach(c => customerMap.set(c.id, c.name));
+            }
 
             const vehicleEntryIds = workOrders.map(wo => wo.vehicle_entry_id).filter(id => id);
             let allEntryJobs: any[] = [];
@@ -255,6 +271,7 @@ const WorkOrderDetailReport = () => {
 
                 const vehicleType = wo.vehicle_entries?.vehicles?.vehicle_type;
                 const serviceGroup = wo.vehicle_entries?.vehicles?.service_group;
+                const customerId = wo.vehicle_entries?.vehicles?.customer_id;
                 
                 const total_billing = mergedBillings.reduce((sum, item) => sum + item.total_price, 0);
                 const total_hpp = mergedBillings.reduce((sum, item) => sum + item.hpp, 0);
@@ -264,7 +281,7 @@ const WorkOrderDetailReport = () => {
                     work_order_date: format(new Date(wo.created_at), 'dd-MM-yyyy'),
                     vehicle_plat_number: wo.vehicle_entries?.vehicles?.plat_number || 'N/A',
                     vehicle_type_name: getVehicleGroupLabel(vehicleType, serviceGroup),
-                    customer_name: wo.vehicle_entries?.vehicles?.customers?.name || 'N/A',
+                    customer_name: customerId ? customerMap.get(customerId) || 'N/A' : 'N/A',
                     total_billing,
                     total_hpp,
                     profit: total_billing - total_hpp,
