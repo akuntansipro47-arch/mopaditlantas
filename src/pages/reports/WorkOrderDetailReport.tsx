@@ -133,17 +133,24 @@ const WorkOrderDetailReport = () => {
                 });
             });
 
-            const { data: goodsIssues, error: giError } = await supabase
-                .from('goods_issues')
-                .select('goods_id, hpp')
-                .in('goods_id', Array.from(allGoodsIds));
+            const partHppMap: Record<string, number> = {};
+            if (allGoodsIds.size > 0) {
+                const { data: poItems, error: poError } = await supabase
+                    .from('purchase_order_items')
+                    .select('goods_id, unit_price, created_at')
+                    .in('goods_id', Array.from(allGoodsIds))
+                    .order('created_at', { ascending: false });
 
-            if (giError) throw giError;
-
-            const partHppMap: { [key: string]: number } = {};
-            goodsIssues.forEach(gi => {
-                partHppMap[String(gi.goods_id)] = gi.hpp || 0;
-            });
+                if (poError) throw poError;
+                
+                if (poItems) {
+                    poItems.forEach(item => {
+                        if (item.goods_id && partHppMap[item.goods_id] === undefined) {
+                            partHppMap[item.goods_id] = item.unit_price || 0;
+                        }
+                    });
+                }
+            }
 
             const { data: jobTypes, error: jtError } = await supabase
                 .from('job_types')
