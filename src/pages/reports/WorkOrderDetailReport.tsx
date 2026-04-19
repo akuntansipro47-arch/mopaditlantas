@@ -21,6 +21,7 @@ type ReportData = {
     service_group: string | null;
     customer_name: string;
     total_realized: number;
+    total_hpp: number;
     total_profit: number;
     items: ReportItem[];
 };
@@ -120,83 +121,120 @@ const WorkOrderDetailReport = () => {
             const workOrderIds = woData.map(wo => wo.id);
             const vehicleEntryIds = woData.map(wo => wo.vehicle_entry_id).filter(Boolean) as string[];
 
-            // Step 2: Fetch Harga Jual (Billings) and data for linking
+            // Step 2: Fetch Billings (Harga Jual) and Vehicle Entries
             const [
                 { data: billingsData, error: billingsError },
-                { data: poData, error: poError },
                 { data: vehicleEntriesData, error: entriesError },
             ] = await Promise.all([
-                supabase.from('work_order_billings').select('*').in('work_order_id', workOrderIds),
-                supabase.from('purchase_orders').select('id, work_order_id').in('work_order_id', workOrderIds),
+                supabase.from('work_order_billings').select('*, goods_id').in('work_order_id', workOrderIds),
                 supabase.from('vehicle_entries').select('id, entry_date, vehicle_id').in('id', vehicleEntryIds),
             ]);
 
             if (billingsError) throw new Error(`Gagal mengambil data tagihan (billings): ${billingsError.message}`);
-            if (poError) throw new Error(`Gagal mengambil data purchase orders: ${poError.message}`);
             if (entriesError) throw new Error(`Gagal mengambil data vehicle entries: ${entriesError.message}`);
 
-            // Step 3: Fetch HPP (PO Items) and Vehicle Details
-            const poIds = poData?.map(po => po.id).filter(Boolean) || [];
-            const vehicleIds = vehicleEntriesData?.map(ve => ve.vehicle_id).filter(Boolean) || [];
+            // Step 3: Fetch HPP data sources
+            const goodsIdsForHpp = billingsData?.filter(b => b.item_type === 'PART' && b.goods_id).map(b => b.goods_id) || [];
 
             const [
-                { data: poItemsData, error: poItemsError },
+                // HPP Source 1: POs linked to our WOs
+                { data: woLinkedPos, error: woPoError },
+                // HPP Source 2: Latest POs for all involved goods
+                { data: latestPoItems, error: latestPoError },
+                // Vehicle Details
                 { data: vehiclesData, error: vehiclesError },
             ] = await Promise.all([
-                supabase.from('purchase_order_items').select('po_id, total_price').in('po_id', poIds),
-                supabase.from('vehicles').select('id, license_plate, brand_type, vehicle_type, owner_name').in('id', vehicleIds),
+                supabase
+                    .from('purchase_orders')
+                    .select('work_order_id, status, purchase_order_items(goods_id, unit_price)')
+                    .in('work_order_id', workOrderIds)
+                    .in('status', ['RECEIVED_PART', 'RECEIVED_FULL']),
+                supabase
+                    .from('purchase_order_items')
+                    .select('goods_id, unit_price, purchase_orders!inner(created_at, status)')
+                    .in('goods_id', goodsIdsForHpp)
+                    .in('purchase_orders.status', ['RECEIVED_PART', 'RECEIVED_FULL'])
+                    .order('created_at', { foreignTable: 'purchase_orders', ascending: false }),
+                supabase
+                    .from('vehicles')
+                    .select('id, license_plate, brand_type, vehicle_type, owner_name')
+                    .in('id', vehicleEntriesData?.map(ve => ve.vehicle_id).filter(Boolean) || []),
             ]);
 
-            if (poItemsError) throw new Error(`Gagal mengambil data item PO (HPP): ${poItemsError.message}`);
+            if (woPoError) throw new Error(`Gagal mengambil HPP P1: ${woPoError.message}`);
+            if (latestPoError) throw new Error(`Gagal mengambil HPP P2: ${latestPoError.message}`);
             if (vehiclesError) throw new Error(`Gagal mengambil data kendaraan: ${vehiclesError.message}`);
 
-            // Step 4: Create maps for efficient data processing
+            // Step 4: Pre-process HPP data into fast-lookup maps
+            const hppP1Map = new Map<string, Map<string, number>>(); // wo_id -> goods_id -> price
+            woLinkedPos?.forEach(po => {
+                if (po.work_order_id && !hppP1Map.has(po.work_order_id)) {
+                    hppP1Map.set(po.work_order_id, new Map());
+                }
+                const goodsMap = hppP1Map.get(po.work_order_id!);
+                (po.purchase_order_items as any[]).forEach(item => {
+                    goodsMap?.set(item.goods_id, item.unit_price);
+                });
+            });
+
+            const hppP2Map = new Map<string, number>(); // goods_id -> latest price
+            latestPoItems?.forEach(item => {
+                if (item.goods_id && !hppP2Map.has(item.goods_id)) {
+                    hppP2Map.set(item.goods_id, item.unit_price);
+                }
+            });
+
+            // Step 5: Create maps for vehicle data
             const vehicleEntryMap = new Map(vehicleEntriesData?.map(e => [e.id, e]));
             const vehicleMap = new Map(vehiclesData?.map(v => [v.id, v]));
 
-            // Create a map for total HPP per Work Order
-            const hppMap = new Map<string, number>();
-            const poIdToWoIdMap = new Map(poData?.map(po => [po.id, po.work_order_id]));
-            poItemsData?.forEach(item => {
-                const woId = poIdToWoIdMap.get(item.po_id);
-                if (woId) {
-                    const currentHpp = hppMap.get(woId) || 0;
-                    hppMap.set(woId, currentHpp + (item.total_price || 0));
-                }
-            });
-
-            // Create a map for billing items per Work Order
-            const billingsMap = new Map<string, any[]>();
+            // Step 6: Group items by WO and calculate HPP/Profit per item
+            const reportItemsByWo = new Map<string, ReportItem[]>();
             billingsData?.forEach(billing => {
                 const woId = billing.work_order_id;
-                if (!billingsMap.has(woId)) {
-                    billingsMap.set(woId, []);
+                let hpp = 0;
+                if (billing.item_type === 'PART' && billing.goods_id) {
+                    const p1Price = hppP1Map.get(woId)?.get(billing.goods_id);
+                    if (p1Price !== undefined) {
+                        hpp = p1Price;
+                    } else {
+                        const p2Price = hppP2Map.get(billing.goods_id);
+                        if (p2Price !== undefined) {
+                            hpp = p2Price;
+                        }
+                    }
                 }
-                billingsMap.get(woId)?.push(billing);
+
+                const sellingPrice = billing.unit_price || 0;
+                const qty = billing.qty || 0;
+
+                const reportItem: ReportItem = {
+                    item_type: billing.item_type,
+                    item_name: billing.item_name,
+                    qty: qty,
+                    unit_price: sellingPrice,
+                    total_price: sellingPrice * qty,
+                    hpp: hpp,
+                    profit: (sellingPrice * qty) - (hpp * qty),
+                    source: 'REALIZED',
+                };
+
+                if (!reportItemsByWo.has(woId)) {
+                    reportItemsByWo.set(woId, []);
+                }
+                reportItemsByWo.get(woId)?.push(reportItem);
             });
 
-            // Step 5: Combine all data into the final report structure
+            // Step 7: Combine all data into the final report structure
             const finalReportData = woData.map(wo => {
                 const vehicleEntry = vehicleEntryMap.get(wo.vehicle_entry_id);
                 const vehicle = vehicleEntry ? vehicleMap.get(vehicleEntry.vehicle_id) : undefined;
                 
-                const woBillings = billingsMap.get(wo.id) || [];
+                const items = reportItemsByWo.get(wo.id) || [];
                 
-                const total_realized = woBillings.reduce((sum, item) => sum + (item.total_price || 0), 0);
-                const total_hpp = hppMap.get(wo.id) || 0;
-                const total_profit = total_realized - total_hpp;
-
-                // For now, HPP and Profit per item is complex. We will show total per WO.
-                const allItems: ReportItem[] = woBillings.map(billing => ({
-                    item_type: billing.item_type,
-                    item_name: billing.item_name,
-                    qty: billing.qty,
-                    unit_price: billing.unit_price, // Harga Jual
-                    total_price: billing.total_price, // Total Harga Jual
-                    hpp: 0, // HPP per item is not calculated yet
-                    profit: 0, // Profit per item is not calculated yet
-                    source: 'REALIZED',
-                }));
+                const total_realized = items.reduce((sum, item) => sum + item.total_price, 0);
+                const total_hpp = items.reduce((sum, item) => sum + (item.hpp * item.qty), 0);
+                const total_profit = items.reduce((sum, item) => sum + item.profit, 0);
 
                 return {
                     wo_id: wo.id,
@@ -209,8 +247,9 @@ const WorkOrderDetailReport = () => {
                     service_group: vehicle?.vehicle_type || null, // FIX: Use vehicle_type for Group
                     customer_name: vehicle?.owner_name || 'N/A',
                     total_realized,
+                    total_hpp,
                     total_profit,
-                    items: allItems,
+                    items: items,
                 };
             });
 
@@ -400,7 +439,7 @@ const WorkOrderDetailReport = () => {
                                                     <TableCell className="text-right">{item.qty}</TableCell>
                                                     <TableCell className="text-right">{item.unit_price.toLocaleString('id-ID')}</TableCell>
                                                     <TableCell className="text-right">{item.total_price.toLocaleString('id-ID')}</TableCell>
-                                                    <TableCell className="text-right">{item.hpp.toLocaleString('id-ID')}</TableCell>
+                                                    <TableCell className="text-right">{(item.hpp * item.qty).toLocaleString('id-ID')}</TableCell>
                                                     <TableCell className="text-right">{item.profit.toLocaleString('id-ID')}</TableCell>
                                                 </TableRow>
                                             ))
