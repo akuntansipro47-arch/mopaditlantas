@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -16,6 +16,7 @@ type ReportData = {
     entry_date: string;
     wo_number: string;
     plate_number: string;
+    brand_type: string | null;
     vehicle_type: string | null;
     service_group: string | null;
     customer_name: string;
@@ -35,6 +36,59 @@ type ReportItem = {
     source: 'REALIZED' | 'ESTIMATE_ONLY';
 };
 
+// Custom hook for draggable scroll
+const useDraggableScroll = () => {
+    const ref = useRef<HTMLDivElement>(null);
+
+    useEffect(() => {
+        const el = ref.current;
+        if (!el) return;
+
+        let isDown = false;
+        let startX: number;
+        let scrollLeft: number;
+
+        const onMouseDown = (e: MouseEvent) => {
+            isDown = true;
+            el.classList.add('active');
+            startX = e.pageX - el.offsetLeft;
+            scrollLeft = el.scrollLeft;
+        };
+
+        const onMouseLeave = () => {
+            isDown = false;
+            el.classList.remove('active');
+        };
+
+        const onMouseUp = () => {
+            isDown = false;
+            el.classList.remove('active');
+        };
+
+        const onMouseMove = (e: MouseEvent) => {
+            if (!isDown) return;
+            e.preventDefault();
+            const x = e.pageX - el.offsetLeft;
+            const walk = (x - startX) * 2; // scroll-fast
+            el.scrollLeft = scrollLeft - walk;
+        };
+
+        el.addEventListener('mousedown', onMouseDown);
+        el.addEventListener('mouseleave', onMouseLeave);
+        el.addEventListener('mouseup', onMouseUp);
+        el.addEventListener('mousemove', onMouseMove);
+
+        return () => {
+            el.removeEventListener('mousedown', onMouseDown);
+            el.removeEventListener('mouseleave', onMouseLeave);
+            el.removeEventListener('mouseup', onMouseUp);
+            el.removeEventListener('mousemove', onMouseMove);
+        };
+    }, []);
+
+    return ref;
+};
+
 const WorkOrderDetailReport = () => {
     const [reportData, setReportData] = useState<ReportData[]>([]);
     const [loading, setLoading] = useState(false);
@@ -42,6 +96,8 @@ const WorkOrderDetailReport = () => {
     const [endDate, setEndDate] = useState(format(new Date(), 'yyyy-MM-dd'));
     const [statusFilter, setStatusFilter] = useState('semua');
     const [vehicleGroupFilter, setVehicleGroupFilter] = useState('semua');
+    const [searchTerm, setSearchTerm] = useState('');
+    const scrollContainerRef = useDraggableScroll();
 
     const fetchReportData = async () => {
         setLoading(true);
@@ -88,7 +144,7 @@ const WorkOrderDetailReport = () => {
                 { data: vehiclesData, error: vehiclesError },
             ] = await Promise.all([
                 supabase.from('purchase_order_items').select('po_id, total_price').in('po_id', poIds),
-                supabase.from('vehicles').select('id, license_plate, vehicle_type, owner_name').in('id', vehicleIds),
+                supabase.from('vehicles').select('id, license_plate, brand_type, vehicle_type, owner_name').in('id', vehicleIds),
             ]);
 
             if (poItemsError) throw new Error(`Gagal mengambil data item PO (HPP): ${poItemsError.message}`);
@@ -148,6 +204,7 @@ const WorkOrderDetailReport = () => {
                     entry_date: vehicleEntry ? format(new Date(vehicleEntry.entry_date), 'dd-MM-yyyy') : '',
                     wo_number: wo.wo_number,
                     plate_number: vehicle?.license_plate || 'N/A',
+                    brand_type: vehicle?.brand_type || null,
                     vehicle_type: vehicle?.vehicle_type || null,
                     service_group: vehicle?.vehicle_type || null, // FIX: Use vehicle_type for Group
                     customer_name: vehicle?.owner_name || 'N/A',
@@ -180,14 +237,26 @@ const WorkOrderDetailReport = () => {
     };
 
     const filteredReportData = useMemo(() => {
-        if (vehicleGroupFilter === 'semua') {
-            return reportData;
+        let filtered = reportData;
+
+        if (vehicleGroupFilter !== 'semua') {
+            filtered = filtered.filter(entry => {
+                const group = getVehicleGroupLabel(entry.vehicle_type, entry.service_group);
+                return group === vehicleGroupFilter;
+            });
         }
-        return reportData.filter(entry => {
-            const group = getVehicleGroupLabel(entry.vehicle_type, entry.service_group);
-            return group === vehicleGroupFilter;
-        });
-    }, [reportData, vehicleGroupFilter]);
+
+        if (searchTerm) {
+            const lowercasedFilter = searchTerm.toLowerCase();
+            filtered = filtered.filter(item =>
+                item.wo_number?.toLowerCase().includes(lowercasedFilter) ||
+                item.plate_number?.toLowerCase().includes(lowercasedFilter) ||
+                item.brand_type?.toLowerCase().includes(lowercasedFilter)
+            );
+        }
+
+        return filtered;
+    }, [reportData, vehicleGroupFilter, searchTerm]);
 
     const handleExport = () => {
         const dataToExport = filteredReportData.flatMap(entry =>
@@ -283,14 +352,23 @@ const WorkOrderDetailReport = () => {
                         </Button>
                     </div>
 
-                    <ScrollArea className="w-full whitespace-nowrap rounded-md border">
+                    <div className="mb-4">
+                        <Input
+                            placeholder="Cari No. WO / Nopol / Kendaraan..."
+                            value={searchTerm}
+                            onChange={(e) => setSearchTerm(e.target.value)}
+                            className="max-w-sm"
+                        />
+                    </div>
+
+                    <div ref={scrollContainerRef} className="w-full overflow-x-auto whitespace-nowrap rounded-md border cursor-grab">
                         <div className="relative">
                             <Table>
                                 <TableHeader>
                                     <TableRow>
                                         <TableHead className="sticky left-0 bg-white z-10 w-[200px]">No. WO</TableHead>
                                         <TableHead>Tgl Masuk</TableHead>
-                                        <TableHead>No. Polisi</TableHead>
+                                        <TableHead>Nopol & Kendaraan</TableHead>
                                         <TableHead>Customer</TableHead>
                                         <TableHead>Grup</TableHead>
                                         <TableHead>Tipe Item</TableHead>
@@ -313,7 +391,7 @@ const WorkOrderDetailReport = () => {
                                                         </TableCell>
                                                     )}
                                                     {itemIndex === 0 && <TableCell rowSpan={entry.items.length} className="align-top">{entry.entry_date}</TableCell>}
-                                                    {itemIndex === 0 && <TableCell rowSpan={entry.items.length} className="align-top">{entry.plate_number}</TableCell>}
+                                                    {itemIndex === 0 && <TableCell rowSpan={entry.items.length} className="align-top">{`${entry.plate_number} (${entry.brand_type || ''})`}</TableCell>}
                                                     {itemIndex === 0 && <TableCell rowSpan={entry.items.length} className="align-top">{entry.customer_name}</TableCell>}
                                                     {itemIndex === 0 && <TableCell rowSpan={entry.items.length} className="align-top">{getVehicleGroupLabel(entry.vehicle_type, entry.service_group)}</TableCell>}
                                                     
@@ -337,7 +415,7 @@ const WorkOrderDetailReport = () => {
                                 </TableBody>
                             </Table>
                         </div>
-                    </ScrollArea>
+                    </div>
                 </CardContent>
             </Card>
         </div>
