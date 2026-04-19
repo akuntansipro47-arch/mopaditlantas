@@ -166,21 +166,31 @@ const WorkOrderDetailReport = () => {
             if (vehiclesError) throw new Error(`Gagal mengambil data kendaraan: ${vehiclesError.message}`);
 
             // Step 4: Pre-process HPP data into fast-lookup maps
-            const hppP1Map = new Map<string, Map<string, number>>(); // wo_id -> goods_id -> price
+            const hppP1Map_byGoodsId = new Map<string, Map<string, number>>(); // wo_id -> goods_id -> price
+            const hppP1Map_byItemName = new Map<string, Map<string, number>>(); // wo_id -> item_name -> price
             woLinkedPos?.forEach(po => {
-                if (po.work_order_id && !hppP1Map.has(po.work_order_id)) {
-                    hppP1Map.set(po.work_order_id, new Map());
+                if (po.work_order_id) {
+                    if (!hppP1Map_byGoodsId.has(po.work_order_id)) hppP1Map_byGoodsId.set(po.work_order_id, new Map());
+                    if (!hppP1Map_byItemName.has(po.work_order_id)) hppP1Map_byItemName.set(po.work_order_id, new Map());
+                    
+                    const goodsMap = hppP1Map_byGoodsId.get(po.work_order_id);
+                    const nameMap = hppP1Map_byItemName.get(po.work_order_id);
+
+                    (po.purchase_order_items as any[]).forEach(item => {
+                        if (item.goods_id) goodsMap?.set(item.goods_id, item.unit_price);
+                        if (item.item_name) nameMap?.set(item.item_name, item.unit_price);
+                    });
                 }
-                const goodsMap = hppP1Map.get(po.work_order_id!);
-                (po.purchase_order_items as any[]).forEach(item => {
-                    goodsMap?.set(item.goods_id, item.unit_price);
-                });
             });
 
-            const hppP2Map = new Map<string, number>(); // goods_id -> latest price
+            const hppP2Map_byGoodsId = new Map<string, number>(); // goods_id -> latest price
+            const hppP2Map_byItemName = new Map<string, number>(); // item_name -> latest price
             latestPoItems?.forEach(item => {
-                if (item.goods_id && !hppP2Map.has(item.goods_id)) {
-                    hppP2Map.set(item.goods_id, item.unit_price);
+                if (item.goods_id && !hppP2Map_byGoodsId.has(item.goods_id)) {
+                    hppP2Map_byGoodsId.set(item.goods_id, item.unit_price);
+                }
+                if (item.item_name && !hppP2Map_byItemName.has(item.item_name)) {
+                    hppP2Map_byItemName.set(item.item_name, item.unit_price);
                 }
             });
 
@@ -193,14 +203,36 @@ const WorkOrderDetailReport = () => {
             billingsData?.forEach(billing => {
                 const woId = billing.work_order_id;
                 let hpp = 0;
-                if (billing.item_type === 'PART' && billing.goods_id) {
-                    const p1Price = hppP1Map.get(woId)?.get(billing.goods_id);
-                    if (p1Price !== undefined) {
-                        hpp = p1Price;
-                    } else {
-                        const p2Price = hppP2Map.get(billing.goods_id);
+
+                if (billing.item_type === 'PART') {
+                    // Priority 1: Match by goods_id from WO-linked PO
+                    if (billing.goods_id) {
+                        const p1Price = hppP1Map_byGoodsId.get(woId)?.get(billing.goods_id);
+                        if (p1Price !== undefined) {
+                            hpp = p1Price;
+                        }
+                    }
+                    // Fallback 1.1: Match by item_name from WO-linked PO
+                    if (hpp === 0 && billing.item_name) {
+                        const p1PriceName = hppP1Map_byItemName.get(woId)?.get(billing.item_name);
+                        if (p1PriceName !== undefined) {
+                            hpp = p1PriceName;
+                        }
+                    }
+                    
+                    // Priority 2 (if P1 fails): Match by goods_id from latest PO
+                    if (hpp === 0 && billing.goods_id) {
+                        const p2Price = hppP2Map_byGoodsId.get(billing.goods_id);
                         if (p2Price !== undefined) {
                             hpp = p2Price;
+                        }
+                    }
+                    
+                    // Fallback 2.1: Match by item_name from latest PO
+                    if (hpp === 0 && billing.item_name) {
+                        const p2PriceName = hppP2Map_byItemName.get(billing.item_name);
+                        if (p2PriceName !== undefined) {
+                            hpp = p2PriceName;
                         }
                     }
                 }
