@@ -53,11 +53,11 @@ const WorkOrderDetailReport = () => {
                     vehicle_entry:vehicle_entry_id (
                         id,
                         entry_date,
-                        vehicle:vehicle_id (
+                        vehicle_info:vehicle_id (
                             plate_number,
                             vehicle_type,
                             owner_name
-                        ),                        
+                        ),
                         service_group
                     )
                 `)
@@ -117,10 +117,10 @@ const WorkOrderDetailReport = () => {
                 id: wo.vehicle_entry?.id || '',
                 entry_date: wo.vehicle_entry?.entry_date ? format(new Date(wo.vehicle_entry.entry_date), 'dd-MM-yyyy') : '',
                 wo_number: wo.wo_number,
-                plate_number: wo.vehicle_entry?.vehicle?.plate_number || 'N/A',
-                vehicle_type: wo.vehicle_entry?.vehicle?.vehicle_type || null,
+                plate_number: wo.vehicle_entry?.vehicle_info?.plate_number || 'N/A',
+                vehicle_type: wo.vehicle_entry?.vehicle_info?.vehicle_type || null,
                 service_group: wo.vehicle_entry?.service_group || null,
-                customer_name: wo.vehicle_entry?.vehicle?.owner_name || 'N/A',
+                customer_name: wo.vehicle_entry?.vehicle_info?.owner_name || 'N/A',
                 total_realized: 0,
                 total_profit: 0,
                 items: [],
