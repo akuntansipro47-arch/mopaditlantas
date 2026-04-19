@@ -47,10 +47,10 @@ const WorkOrderDetailReport = () => {
         try {
             const { data: woData, error: woError } = await supabase
                 .from('work_orders')
-                .select('id, wo_number, wo_date, vehicle_entry_id')
-                .gte('wo_date', startDate)
-                .lte('wo_date', endDate)
-                .order('wo_date', { ascending: true });
+                .select('id, wo_number, work_date, vehicle_entry_id')
+                .gte('work_date', startDate)
+                .lte('work_date', endDate)
+                .order('work_date', { ascending: true });
 
             if (woError) throw woError;
             if (!woData) {
