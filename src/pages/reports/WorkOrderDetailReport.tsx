@@ -11,7 +11,8 @@ import * as XLSX from 'xlsx';
 import { format } from 'date-fns';
 
 type ReportData = {
-    id: string;
+    wo_id: string;
+    vehicle_entry_id: string;
     entry_date: string;
     wo_number: string;
     plate_number: string;
@@ -45,6 +46,7 @@ const WorkOrderDetailReport = () => {
     const fetchReportData = async () => {
         setLoading(true);
         try {
+            // Step 1: Fetch base Work Orders
             const { data: woData, error: woError } = await supabase
                 .from('work_orders')
                 .select('id, wo_number, work_date, vehicle_entry_id')
@@ -53,173 +55,144 @@ const WorkOrderDetailReport = () => {
                 .order('work_date', { ascending: true });
 
             if (woError) throw woError;
-            if (!woData) {
+            if (!woData || woData.length === 0) {
                 setReportData([]);
                 toast.info("Tidak ada data pada rentang tanggal yang dipilih.");
                 return;
             }
 
+            const workOrderIds = woData.map(wo => wo.id);
             const vehicleEntryIds = woData.map(wo => wo.vehicle_entry_id).filter(Boolean) as string[];
-            if (vehicleEntryIds.length === 0) {
-                setReportData([]);
-                return;
-            }
 
-            const { data: vehicleEntriesData, error: entriesError } = await supabase
-                .from('vehicle_entries')
-                .select('id, entry_date, service_group, vehicle_id')
-                .in('id', vehicleEntryIds);
-
-            if (entriesError) throw entriesError;
-
-            const vehicleIds = vehicleEntriesData.map(ve => ve.vehicle_id).filter(Boolean) as string[];
-
-            const { data: vehiclesData, error: vehiclesError } = await supabase
-                .from('vehicles')
-                .select('id, license_plate, vehicle_type, owner_name')
-                .in('id', vehicleIds);
-
-            if (vehiclesError) throw vehiclesError;
-
-            // Fetch all related data in parallel
+            // Step 2: Fetch related primary entities in parallel
             const [
-                { data: realizedJobs, error: realizedJobsError },
-                { data: realizedParts, error: realizedPartsError },
+                { data: vehicleEntriesData, error: entriesError },
+                { data: poData, error: poError },
                 { data: estimationJobs, error: estimationJobsError },
-                { data: estimationParts, error: estimationPartsError },
-                { data: jobTypes, error: jobTypesError },
-                { data: goods, error: goodsError }
             ] = await Promise.all([
-                supabase.from('work_order_billings').select('vehicle_entry_id, job_type_id, price').eq('item_type', 'JOB').in('vehicle_entry_id', vehicleEntryIds),
-                supabase.from('work_order_billings').select('vehicle_entry_id, goods_id, quantity, price').eq('item_type', 'PART').in('vehicle_entry_id', vehicleEntryIds),
-                supabase.from('vehicle_entry_jobs').select('vehicle_entry_id, job_type_id').in('vehicle_entry_id', vehicleEntryIds),
-                supabase.from('vehicle_entry_spareparts').select('vehicle_entry_id, goods_id, quantity').in('vehicle_entry_id', vehicleEntryIds),
-                supabase.from('job_types').select('id, job_name, price'),
-                supabase.from('goods').select('id, name, selling_price')
+                supabase.from('vehicle_entries').select('id, entry_date, service_group, vehicle_id').in('id', vehicleEntryIds),
+                supabase.from('purchase_orders').select('id, work_order_id').in('work_order_id', workOrderIds),
+                supabase.from('vehicle_entry_jobs').select('vehicle_entry_id, job_type_id').in('id', vehicleEntryIds),
             ]);
 
-            const allGoodsIds = [...new Set([...(realizedParts || []).map(p => p.goods_id), ...(estimationParts || []).map(p => p.goods_id)])].filter(Boolean);
-            
-            const { data: hppData, error: hppError } = await supabase
-                .from('goods_issue_items')
-                .select('goods_id, hpp')
-                .in('goods_id', allGoodsIds);
-
-            if (realizedJobsError) throw new Error(`Gagal mengambil data realisasi jasa: ${realizedJobsError.message}`);
-            if (realizedPartsError) throw new Error(`Gagal mengambil data realisasi sparepart: ${realizedPartsError.message}`);
+            if (entriesError) throw new Error(`Gagal mengambil data vehicle entries: ${entriesError.message}`);
+            if (poError) throw new Error(`Gagal mengambil data purchase orders: ${poError.message}`);
             if (estimationJobsError) throw new Error(`Gagal mengambil data estimasi jasa: ${estimationJobsError.message}`);
-            if (estimationPartsError) throw new Error(`Gagal mengambil data estimasi sparepart: ${estimationPartsError.message}`);
-            if (jobTypesError) throw new Error(`Gagal mengambil data master jasa: ${jobTypesError.message}`);
+
+            // Step 3: Fetch dependent entities based on results from Step 2
+            const vehicleIds = vehicleEntriesData?.map(ve => ve.vehicle_id).filter(Boolean) || [];
+            const poIds = poData?.map(po => po.id).filter(Boolean) || [];
+
+            const [
+                { data: vehiclesData, error: vehiclesError },
+                { data: poItemsData, error: poItemsError },
+            ] = await Promise.all([
+                supabase.from('vehicles').select('id, license_plate, vehicle_type, owner_name').in('id', vehicleIds),
+                supabase.from('purchase_order_items').select('id, po_id, goods_id, quantity, unit_price').in('po_id', poIds),
+            ]);
+
+            if (vehiclesError) throw new Error(`Gagal mengambil data kendaraan: ${vehiclesError.message}`);
+            if (poItemsError) throw new Error(`Gagal mengambil data item PO: ${poItemsError.message}`);
+
+            // Step 4: Fetch master data (goods and job types)
+            const allGoodsIds = poItemsData?.map(item => item.goods_id).filter(Boolean) || [];
+            const allJobTypeIds = estimationJobs?.map(job => job.job_type_id).filter(Boolean) || [];
+            
+            const [
+                { data: goods, error: goodsError },
+                { data: jobTypes, error: jobTypesError },
+            ] = await Promise.all([
+                supabase.from('goods').select('id, name, unit').in('id', allGoodsIds),
+                supabase.from('job_types').select('id, job_name, price').in('id', allJobTypeIds),
+            ]);
+
             if (goodsError) throw new Error(`Gagal mengambil data master barang: ${goodsError.message}`);
-            if (hppError) throw new Error(`Gagal mengambil data HPP: ${hppError.message}`);
+            if (jobTypesError) throw new Error(`Gagal mengambil data master jasa: ${jobTypesError.message}`);
 
-            // Create maps for efficient data lookup
-            const jobTypesMap = new Map(jobTypes.map(j => [j.id, j]));
-            const goodsMap = new Map(goods.map(g => [g.id, g]));
-            const hppGoodsMap = new Map<string, number>();
-            const vehicleEntryMap = new Map(vehicleEntriesData.map(entry => [entry.id, entry]));
-            const vehicleMap = new Map(vehiclesData.map(v => [v.id, v]));
-            hppData.forEach(item => hppGoodsMap.set(item.goods_id, item.hpp));
+            // Step 5: Create maps for efficient data processing
+            const vehicleMap = new Map(vehiclesData?.map(v => [v.id, v]));
+            const vehicleEntryMap = new Map(vehicleEntriesData?.map(e => [e.id, e]));
+            const goodsMap = new Map(goods?.map(g => [g.id, g]));
+            const jobTypesMap = new Map(jobTypes?.map(j => [j.id, j]));
+            
+            const woToPoItemsMap = new Map<string, any[]>();
+            const poIdToWoIdMap = new Map(poData?.map(po => [po.id, po.work_order_id]));
+            poItemsData?.forEach(item => {
+                const woId = poIdToWoIdMap.get(item.po_id);
+                if (woId) {
+                    if (!woToPoItemsMap.has(woId)) {
+                        woToPoItemsMap.set(woId, []);
+                    }
+                    woToPoItemsMap.get(woId)?.push(item);
+                }
+            });
 
-            const initialReportData = woData.map(wo => {
+            const entryToEstJobsMap = new Map<string, any[]>();
+            estimationJobs?.forEach(job => {
+                const entryId = job.vehicle_entry_id;
+                if (!entryToEstJobsMap.has(entryId)) {
+                    entryToEstJobsMap.set(entryId, []);
+                }
+                entryToEstJobsMap.get(entryId)?.push(job);
+            });
+
+            // Step 6: Combine all data into the final report structure
+            const finalReportData = woData.map(wo => {
                 const vehicleEntry = vehicleEntryMap.get(wo.vehicle_entry_id);
                 const vehicle = vehicleEntry ? vehicleMap.get(vehicleEntry.vehicle_id) : undefined;
+                
+                const allItems: ReportItem[] = [];
+                
+                // Add Realized Items from Purchase Orders
+                const realizedPoItems = woToPoItemsMap.get(wo.id) || [];
+                realizedPoItems.forEach(item => {
+                    const good = goodsMap.get(item.goods_id);
+                    const hpp = item.unit_price || 0;
+                    const total_price = hpp * item.quantity; // Assuming selling price is HPP for now
+                    allItems.push({
+                        item_type: 'PART',
+                        item_name: good?.name || 'Unknown Part',
+                        qty: item.quantity,
+                        unit_price: hpp,
+                        total_price: total_price,
+                        hpp: hpp,
+                        profit: 0, // Profit logic needs clarification
+                        source: 'REALIZED',
+                    });
+                });
+
+                // Add Estimated Jobs
+                const estimatedJobsForEntry = entryToEstJobsMap.get(wo.vehicle_entry_id) || [];
+                estimatedJobsForEntry.forEach(estJob => {
+                    const jobType = jobTypesMap.get(estJob.job_type_id);
+                    allItems.push({
+                        item_type: 'JOB',
+                        item_name: jobType?.job_name || 'Unknown Job',
+                        qty: 1,
+                        unit_price: jobType?.price || 0,
+                        total_price: jobType?.price || 0,
+                        hpp: 0, // HPP for jobs is 0 for now
+                        profit: 0,
+                        source: 'ESTIMATE_ONLY',
+                    });
+                });
+
+                const total_realized = allItems.filter(i => i.source === 'REALIZED').reduce((sum, item) => sum + item.total_price, 0);
+                const total_profit = allItems.filter(i => i.source === 'REALIZED').reduce((sum, item) => sum + item.profit, 0);
+
                 return {
-                    id: vehicleEntry?.id || '',
-                    entry_date: vehicleEntry?.entry_date ? format(new Date(vehicleEntry.entry_date), 'dd-MM-yyyy') : '',
+                    wo_id: wo.id,
+                    vehicle_entry_id: wo.vehicle_entry_id,
+                    entry_date: vehicleEntry ? format(new Date(vehicleEntry.entry_date), 'dd-MM-yyyy') : '',
                     wo_number: wo.wo_number,
                     plate_number: vehicle?.license_plate || 'N/A',
                     vehicle_type: vehicle?.vehicle_type || null,
                     service_group: vehicleEntry?.service_group || null,
                     customer_name: vehicle?.owner_name || 'N/A',
-                    total_realized: 0,
-                    total_profit: 0,
-                    items: [],
+                    total_realized,
+                    total_profit,
+                    items: allItems,
                 };
-            });
-
-            // Map realized items for quick lookup
-            const realizedItems = new Set<string>();
-            realizedJobs.forEach(job => realizedItems.add(`JOB-${job.job_type_id}`));
-            realizedParts.forEach(part => realizedItems.add(`PART-${part.goods_id}`));
-
-            const finalReportData = initialReportData.map(entry => {
-                const allItems: ReportItem[] = [];
-
-                // Add realized jobs and parts first
-                const entryRealizedJobs = realizedJobs.filter(j => j.vehicle_entry_id === entry.id);
-                const entryRealizedParts = realizedParts.filter(p => p.vehicle_entry_id === entry.id);
-
-                entryRealizedJobs.forEach(job => {
-                    allItems.push({
-                        item_type: 'JOB',
-                        item_name: jobTypesMap.get(job.job_type_id)?.job_name || 'Unknown Job',
-                        qty: 1,
-                        unit_price: job.price,
-                        total_price: job.price,
-                        hpp: 0,
-                        profit: 0,
-                        source: 'REALIZED',
-                    });
-                });
-
-                entryRealizedParts.forEach(part => {
-                    const unit_price = part.price;
-                    const total_price = unit_price * part.quantity;
-                    const hpp = hppGoodsMap.get(part.goods_id) || 0;
-                    const profit = total_price - (hpp * part.quantity);
-                    allItems.push({
-                        item_type: 'PART',
-                        item_name: goodsMap.get(part.goods_id)?.name || 'Unknown Part',
-                        qty: part.quantity,
-                        unit_price: unit_price,
-                        total_price: total_price,
-                        hpp: hpp,
-                        profit: profit,
-                        source: 'REALIZED',
-                    });
-                });
-
-                // If status is "semua", add estimation-only items
-                if (statusFilter === 'semua') {
-                    const entryEstimationJobs = estimationJobs.filter(j => j.vehicle_entry_id === entry.id);
-                    const entryEstimationParts = estimationParts.filter(p => p.vehicle_entry_id === entry.id);
-
-                    entryEstimationJobs.forEach(estJob => {
-                        if (!realizedItems.has(`JOB-${estJob.job_type_id}`)) {
-                            allItems.push({
-                                item_type: 'JOB',
-                                item_name: jobTypesMap.get(estJob.job_type_id)?.job_name || 'Unknown Job',
-                                qty: 1,
-                                unit_price: jobTypesMap.get(estJob.job_type_id)?.price || 0,
-                                total_price: jobTypesMap.get(estJob.job_type_id)?.price || 0,
-                                hpp: 0,
-                                profit: 0,
-                                source: 'ESTIMATE_ONLY',
-                            });
-                        }
-                    });
-
-                    entryEstimationParts.forEach(estPart => {
-                        if (!realizedItems.has(`PART-${estPart.goods_id}`)) {
-                            allItems.push({
-                                item_type: 'PART',
-                                item_name: goodsMap.get(estPart.goods_id)?.name || 'Unknown Part',
-                                qty: estPart.quantity,
-                                unit_price: goodsMap.get(estPart.goods_id)?.selling_price || 0,
-                                total_price: (estPart.quantity || 0) * (goodsMap.get(estPart.goods_id)?.selling_price || 0),
-                                hpp: hppGoodsMap.get(estPart.goods_id) || 0,
-                                profit: 0,
-                                source: 'ESTIMATE_ONLY',
-                            });
-                        }
-                    });
-                }
-
-                const total_realized = allItems.filter(i => i.source === 'REALIZED').reduce((sum, item) => sum + item.total_price, 0);
-                const total_profit = allItems.filter(i => i.source === 'REALIZED').reduce((sum, item) => sum + item.profit, 0);
-
-                return { ...entry, items: allItems, total_realized, total_profit };
             });
 
             setReportData(finalReportData);
@@ -371,7 +344,7 @@ const WorkOrderDetailReport = () => {
                                     {filteredReportData.length > 0 ? (
                                         filteredReportData.map((entry, entryIndex) => (
                                             entry.items.map((item, itemIndex) => (
-                                                <TableRow key={`${entry.id}-${itemIndex}`} className={item.source === 'ESTIMATE_ONLY' ? 'bg-yellow-100' : ''}>
+                                                <TableRow key={`${entry.wo_id}-${itemIndex}`} className={item.source === 'ESTIMATE_ONLY' ? 'bg-yellow-100' : ''}>
                                                     {itemIndex === 0 && (
                                                         <TableCell rowSpan={entry.items.length} className="sticky left-0 bg-white z-10 font-medium align-top w-[200px]">
                                                             {entry.wo_number}
