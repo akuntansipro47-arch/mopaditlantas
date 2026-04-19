@@ -88,19 +88,22 @@ const WorkOrderDetailReport = () => {
                 { data: estimationJobs, error: estimationJobsError },
                 { data: estimationParts, error: estimationPartsError },
                 { data: jobTypes, error: jobTypesError },
-                { data: goods, error: goodsError },
-                { data: hppData, error: hppError }
+                { data: goods, error: goodsError }
             ] = await Promise.all([
                 supabase.from('work_order_billings').select('vehicle_entry_id, job_type_id, price').eq('item_type', 'JOB').in('vehicle_entry_id', vehicleEntryIds),
                 supabase.from('work_order_billings').select('vehicle_entry_id, goods_id, quantity, price').eq('item_type', 'PART').in('vehicle_entry_id', vehicleEntryIds),
                 supabase.from('vehicle_entry_jobs').select('vehicle_entry_id, job_type_id').in('vehicle_entry_id', vehicleEntryIds),
                 supabase.from('vehicle_entry_spareparts').select('vehicle_entry_id, goods_id, quantity').in('vehicle_entry_id', vehicleEntryIds),
                 supabase.from('job_types').select('id, job_name, price'),
-                supabase.from('goods').select('id, name, selling_price'),
-                supabase.from('goods_issue_items').select('goods_id, hpp').in('goods_id', 
-                    [...new Set([...(realizedParts || []).map(p => p.goods_id), ...(estimationParts || []).map(p => p.goods_id)])].filter(Boolean)
-                )
+                supabase.from('goods').select('id, name, selling_price')
             ]);
+
+            const allGoodsIds = [...new Set([...(realizedParts || []).map(p => p.goods_id), ...(estimationParts || []).map(p => p.goods_id)])].filter(Boolean);
+            
+            const { data: hppData, error: hppError } = await supabase
+                .from('goods_issue_items')
+                .select('goods_id, hpp')
+                .in('goods_id', allGoodsIds);
 
             if (realizedJobsError) throw new Error(`Gagal mengambil data realisasi jasa: ${realizedJobsError.message}`);
             if (realizedPartsError) throw new Error(`Gagal mengambil data realisasi sparepart: ${realizedPartsError.message}`);
