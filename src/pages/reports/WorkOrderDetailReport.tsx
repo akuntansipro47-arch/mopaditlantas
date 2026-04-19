@@ -56,8 +56,8 @@ const WorkOrderDetailReport = () => {
                         vehicle:vehicle_id (
                             plate_number,
                             vehicle_type,
-                            customer:customer_id ( name )
-                        ),
+                            owner_name
+                        ),                        
                         service_group
                     )
                 `)
@@ -120,7 +120,7 @@ const WorkOrderDetailReport = () => {
                 plate_number: wo.vehicle_entry?.vehicle?.plate_number || 'N/A',
                 vehicle_type: wo.vehicle_entry?.vehicle?.vehicle_type || null,
                 service_group: wo.vehicle_entry?.service_group || null,
-                customer_name: wo.vehicle_entry?.vehicle?.customer?.name || 'N/A',
+                customer_name: wo.vehicle_entry?.vehicle?.owner_name || 'N/A',
                 total_realized: 0,
                 total_profit: 0,
                 items: [],
