@@ -47,20 +47,7 @@ const WorkOrderDetailReport = () => {
         try {
             const { data: woData, error: woError } = await supabase
                 .from('work_orders')
-                .select(`
-                    id,
-                    wo_number,
-                    vehicle_entries (
-                        id,
-                        entry_date,
-                        service_group,
-                        vehicles (
-                            plate_number,
-                            vehicle_type,
-                            owner_name
-                        )
-                    )
-                `)
+                .select('id, wo_number, wo_date, vehicle_entry_id')
                 .gte('wo_date', startDate)
                 .lte('wo_date', endDate)
                 .order('wo_date', { ascending: true });
@@ -72,11 +59,27 @@ const WorkOrderDetailReport = () => {
                 return;
             }
 
-            const vehicleEntryIds = woData.map(wo => wo.vehicle_entries?.id).filter(Boolean) as string[];
+            const vehicleEntryIds = woData.map(wo => wo.vehicle_entry_id).filter(Boolean) as string[];
             if (vehicleEntryIds.length === 0) {
                 setReportData([]);
                 return;
             }
+
+            const { data: vehicleEntriesData, error: entriesError } = await supabase
+                .from('vehicle_entries')
+                .select(`
+                    id,
+                    entry_date,
+                    service_group,
+                    vehicles (
+                        plate_number,
+                        vehicle_type,
+                        owner_name
+                    )
+                `)
+                .in('id', vehicleEntryIds);
+
+            if (entriesError) throw entriesError;
 
             // Fetch all related data in parallel
             const [
@@ -111,20 +114,24 @@ const WorkOrderDetailReport = () => {
             const jobTypesMap = new Map(jobTypes.map(j => [j.id, j]));
             const goodsMap = new Map(goods.map(g => [g.id, g]));
             const hppGoodsMap = new Map<string, number>();
+            const vehicleEntryMap = new Map(vehicleEntriesData.map(entry => [entry.id, entry]));
             hppData.forEach(item => hppGoodsMap.set(item.goods_id, item.hpp));
 
-            const initialReportData = woData.map(wo => ({
-                id: wo.vehicle_entries?.id || '',
-                entry_date: wo.vehicle_entries?.entry_date ? format(new Date(wo.vehicle_entries.entry_date), 'dd-MM-yyyy') : '',
-                wo_number: wo.wo_number,
-                plate_number: wo.vehicle_entries?.vehicles?.plate_number || 'N/A',
-                vehicle_type: wo.vehicle_entries?.vehicles?.vehicle_type || null,
-                service_group: wo.vehicle_entries?.service_group || null,
-                customer_name: wo.vehicle_entries?.vehicles?.owner_name || 'N/A',
-                total_realized: 0,
-                total_profit: 0,
-                items: [],
-            }));
+            const initialReportData = woData.map(wo => {
+                const vehicleEntry = vehicleEntryMap.get(wo.vehicle_entry_id);
+                return {
+                    id: vehicleEntry?.id || '',
+                    entry_date: vehicleEntry?.entry_date ? format(new Date(vehicleEntry.entry_date), 'dd-MM-yyyy') : '',
+                    wo_number: wo.wo_number,
+                    plate_number: vehicleEntry?.vehicles?.plate_number || 'N/A',
+                    vehicle_type: vehicleEntry?.vehicles?.vehicle_type || null,
+                    service_group: vehicleEntry?.service_group || null,
+                    customer_name: vehicleEntry?.vehicles?.owner_name || 'N/A',
+                    total_realized: 0,
+                    total_profit: 0,
+                    items: [],
+                };
+            });
 
             // Map realized items for quick lookup
             const realizedItems = new Set<string>();
