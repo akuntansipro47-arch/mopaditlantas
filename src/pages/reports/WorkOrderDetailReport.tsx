@@ -50,15 +50,15 @@ const WorkOrderDetailReport = () => {
                 .select(`
                     id,
                     wo_number,
-                    vehicle_entry:vehicle_entry_id (
+                    vehicle_entries (
                         id,
                         entry_date,
-                        vehicle_info:vehicle_id (
+                        service_group,
+                        vehicles (
                             plate_number,
                             vehicle_type,
                             owner_name
-                        ),
-                        service_group
+                        )
                     )
                 `)
                 .gte('wo_date', startDate)
@@ -72,7 +72,7 @@ const WorkOrderDetailReport = () => {
                 return;
             }
 
-            const vehicleEntryIds = woData.map(wo => wo.vehicle_entry?.id).filter(Boolean) as string[];
+            const vehicleEntryIds = woData.map(wo => wo.vehicle_entries?.id).filter(Boolean) as string[];
             if (vehicleEntryIds.length === 0) {
                 setReportData([]);
                 return;
@@ -114,13 +114,13 @@ const WorkOrderDetailReport = () => {
             hppData.forEach(item => hppGoodsMap.set(item.goods_id, item.hpp));
 
             const initialReportData = woData.map(wo => ({
-                id: wo.vehicle_entry?.id || '',
-                entry_date: wo.vehicle_entry?.entry_date ? format(new Date(wo.vehicle_entry.entry_date), 'dd-MM-yyyy') : '',
+                id: wo.vehicle_entries?.id || '',
+                entry_date: wo.vehicle_entries?.entry_date ? format(new Date(wo.vehicle_entries.entry_date), 'dd-MM-yyyy') : '',
                 wo_number: wo.wo_number,
-                plate_number: wo.vehicle_entry?.vehicle_info?.plate_number || 'N/A',
-                vehicle_type: wo.vehicle_entry?.vehicle_info?.vehicle_type || null,
-                service_group: wo.vehicle_entry?.service_group || null,
-                customer_name: wo.vehicle_entry?.vehicle_info?.owner_name || 'N/A',
+                plate_number: wo.vehicle_entries?.vehicles?.plate_number || 'N/A',
+                vehicle_type: wo.vehicle_entries?.vehicles?.vehicle_type || null,
+                service_group: wo.vehicle_entries?.service_group || null,
+                customer_name: wo.vehicle_entries?.vehicles?.owner_name || 'N/A',
                 total_realized: 0,
                 total_profit: 0,
                 items: [],
