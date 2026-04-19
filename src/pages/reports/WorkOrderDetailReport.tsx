@@ -66,75 +66,59 @@ const WorkOrderDetailReport = () => {
 
             // Step 2: Fetch related primary entities in parallel
             const [
-                { data: vehicleEntriesData, error: entriesError },
-                { data: poData, error: poError },
-                { data: estimationJobs, error: estimationJobsError },
-            ] = await Promise.all([
-                supabase.from('vehicle_entries').select('id, entry_date, service_group, vehicle_id').in('id', vehicleEntryIds),
-                supabase.from('purchase_orders').select('id, work_order_id').in('work_order_id', workOrderIds),
-                supabase.from('vehicle_entry_jobs').select('vehicle_entry_id, job_type_id').in('id', vehicleEntryIds),
-            ]);
+                    { data: vehicleEntriesData, error: entriesError },
+                    { data: poData, error: poError },
+                ] = await Promise.all([
+                    supabase.from('vehicle_entries').select('id, entry_date, service_group, vehicle_id').in('id', vehicleEntryIds),
+                    supabase.from('purchase_orders').select('id, work_order_id').in('work_order_id', workOrderIds),
+                ]);
 
-            if (entriesError) throw new Error(`Gagal mengambil data vehicle entries: ${entriesError.message}`);
-            if (poError) throw new Error(`Gagal mengambil data purchase orders: ${poError.message}`);
-            if (estimationJobsError) throw new Error(`Gagal mengambil data estimasi jasa: ${estimationJobsError.message}`);
+                if (entriesError) throw new Error(`Gagal mengambil data vehicle entries: ${entriesError.message}`);
+                if (poError) throw new Error(`Gagal mengambil data purchase orders: ${poError.message}`);
+                // if (estimationJobsError) throw new Error(`Gagal mengambil data estimasi jasa: ${estimationJobsError.message}`);
 
             // Step 3: Fetch dependent entities based on results from Step 2
             const vehicleIds = vehicleEntriesData?.map(ve => ve.vehicle_id).filter(Boolean) || [];
-            const poIds = poData?.map(po => po.id).filter(Boolean) || [];
+                const poIds = poData?.map(po => po.id).filter(Boolean) || [];
 
-            const [
-                { data: vehiclesData, error: vehiclesError },
-                { data: poItemsData, error: poItemsError },
-            ] = await Promise.all([
-                supabase.from('vehicles').select('id, license_plate, vehicle_type, owner_name').in('id', vehicleIds),
-                supabase.from('purchase_order_items').select('id, po_id, goods_id, quantity, unit_price').in('po_id', poIds),
-            ]);
+                const [
+                    { data: vehiclesData, error: vehiclesError },
+                    { data: poItemsData, error: poItemsError },
+                ] = await Promise.all([
+                    supabase.from('vehicles').select('id, license_plate, vehicle_type, owner_name').in('id', vehicleIds),
+                    supabase.from('purchase_order_items').select('id, po_id, goods_id, quantity, unit_price').in('po_id', poIds),
+                ]);
 
-            if (vehiclesError) throw new Error(`Gagal mengambil data kendaraan: ${vehiclesError.message}`);
-            if (poItemsError) throw new Error(`Gagal mengambil data item PO: ${poItemsError.message}`);
+                if (vehiclesError) throw new Error(`Gagal mengambil data kendaraan: ${vehiclesError.message}`);
+                if (poItemsError) throw new Error(`Gagal mengambil data item PO: ${poItemsError.message}`);
 
-            // Step 4: Fetch master data (goods and job types)
-            const allGoodsIds = poItemsData?.map(item => item.goods_id).filter(Boolean) || [];
-            const allJobTypeIds = estimationJobs?.map(job => job.job_type_id).filter(Boolean) || [];
-            
-            const [
-                { data: goods, error: goodsError },
-                { data: jobTypes, error: jobTypesError },
-            ] = await Promise.all([
-                supabase.from('goods').select('id, name, unit').in('id', allGoodsIds),
-                supabase.from('job_types').select('id, job_name, price').in('id', allJobTypeIds),
-            ]);
+                // Step 4: Fetch master data (goods and job types)
+                const allGoodsIds = poItemsData?.map(item => item.goods_id).filter(Boolean) || [];
+                
+                const [
+                    { data: goods, error: goodsError },
+                ] = await Promise.all([
+                    supabase.from('goods').select('id, name, unit, item_type').in('id', allGoodsIds),
+                ]);
 
-            if (goodsError) throw new Error(`Gagal mengambil data master barang: ${goodsError.message}`);
-            if (jobTypesError) throw new Error(`Gagal mengambil data master jasa: ${jobTypesError.message}`);
+                if (goodsError) throw new Error(`Gagal mengambil data master barang: ${goodsError.message}`);
 
             // Step 5: Create maps for efficient data processing
-            const vehicleMap = new Map(vehiclesData?.map(v => [v.id, v]));
-            const vehicleEntryMap = new Map(vehicleEntriesData?.map(e => [e.id, e]));
-            const goodsMap = new Map(goods?.map(g => [g.id, g]));
-            const jobTypesMap = new Map(jobTypes?.map(j => [j.id, j]));
-            
-            const woToPoItemsMap = new Map<string, any[]>();
-            const poIdToWoIdMap = new Map(poData?.map(po => [po.id, po.work_order_id]));
-            poItemsData?.forEach(item => {
-                const woId = poIdToWoIdMap.get(item.po_id);
-                if (woId) {
-                    if (!woToPoItemsMap.has(woId)) {
-                        woToPoItemsMap.set(woId, []);
+                const vehicleMap = new Map(vehiclesData?.map(v => [v.id, v]));
+                const vehicleEntryMap = new Map(vehicleEntriesData?.map(e => [e.id, e]));
+                const goodsMap = new Map(goods?.map(g => [g.id, g]));
+                
+                const woToPoItemsMap = new Map<string, any[]>();
+                const poIdToWoIdMap = new Map(poData?.map(po => [po.id, po.work_order_id]));
+                poItemsData?.forEach(item => {
+                    const woId = poIdToWoIdMap.get(item.po_id);
+                    if (woId) {
+                        if (!woToPoItemsMap.has(woId)) {
+                            woToPoItemsMap.set(woId, []);
+                        }
+                        woToPoItemsMap.get(woId)?.push(item);
                     }
-                    woToPoItemsMap.get(woId)?.push(item);
-                }
-            });
-
-            const entryToEstJobsMap = new Map<string, any[]>();
-            estimationJobs?.forEach(job => {
-                const entryId = job.vehicle_entry_id;
-                if (!entryToEstJobsMap.has(entryId)) {
-                    entryToEstJobsMap.set(entryId, []);
-                }
-                entryToEstJobsMap.get(entryId)?.push(job);
-            });
+                });
 
             // Step 6: Combine all data into the final report structure
             const finalReportData = woData.map(wo => {
@@ -144,38 +128,22 @@ const WorkOrderDetailReport = () => {
                 const allItems: ReportItem[] = [];
                 
                 // Add Realized Items from Purchase Orders
-                const realizedPoItems = woToPoItemsMap.get(wo.id) || [];
-                realizedPoItems.forEach(item => {
-                    const good = goodsMap.get(item.goods_id);
-                    const hpp = item.unit_price || 0;
-                    const total_price = hpp * item.quantity; // Assuming selling price is HPP for now
-                    allItems.push({
-                        item_type: 'PART',
-                        item_name: good?.name || 'Unknown Part',
-                        qty: item.quantity,
-                        unit_price: hpp,
-                        total_price: total_price,
-                        hpp: hpp,
-                        profit: 0, // Profit logic needs clarification
-                        source: 'REALIZED',
+                    const realizedPoItems = woToPoItemsMap.get(wo.id) || [];
+                    realizedPoItems.forEach(item => {
+                        const good = goodsMap.get(item.goods_id);
+                        const hpp = item.unit_price || 0;
+                        const total_price = hpp * item.quantity; // Assuming selling price is HPP for now
+                        allItems.push({
+                            item_type: good?.item_type === 'NON_PERSEDIAAN' ? 'JASA' : 'PART',
+                            item_name: good?.name || 'Unknown Item',
+                            qty: item.quantity,
+                            unit_price: hpp,
+                            total_price: total_price,
+                            hpp: hpp,
+                            profit: 0, // Profit logic needs clarification
+                            source: 'REALIZED',
+                        });
                     });
-                });
-
-                // Add Estimated Jobs
-                const estimatedJobsForEntry = entryToEstJobsMap.get(wo.vehicle_entry_id) || [];
-                estimatedJobsForEntry.forEach(estJob => {
-                    const jobType = jobTypesMap.get(estJob.job_type_id);
-                    allItems.push({
-                        item_type: 'JOB',
-                        item_name: jobType?.job_name || 'Unknown Job',
-                        qty: 1,
-                        unit_price: jobType?.price || 0,
-                        total_price: jobType?.price || 0,
-                        hpp: 0, // HPP for jobs is 0 for now
-                        profit: 0,
-                        source: 'ESTIMATE_ONLY',
-                    });
-                });
 
                 const total_realized = allItems.filter(i => i.source === 'REALIZED').reduce((sum, item) => sum + item.total_price, 0);
                 const total_profit = allItems.filter(i => i.source === 'REALIZED').reduce((sum, item) => sum + item.profit, 0);
