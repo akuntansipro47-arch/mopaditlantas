@@ -246,8 +246,8 @@ const WorkOrderDetailReport = () => {
                     qty: qty,
                     unit_price: sellingPrice,
                     total_price: sellingPrice * qty,
-                    hpp: hpp,
-                    profit: (sellingPrice * qty) - (hpp * qty),
+                    hpp: hpp, // This is already unit HPP
+                    profit: sellingPrice - hpp, // This is now unit Profit
                     source: 'REALIZED',
                 };
 
@@ -266,7 +266,7 @@ const WorkOrderDetailReport = () => {
                 
                 const total_realized = items.reduce((sum, item) => sum + item.total_price, 0);
                 const total_hpp = items.reduce((sum, item) => sum + (item.hpp * item.qty), 0);
-                const total_profit = items.reduce((sum, item) => sum + item.profit, 0);
+                const total_profit = items.reduce((sum, item) => sum + (item.profit * item.qty), 0);
 
                 return {
                     wo_id: wo.id,
@@ -446,9 +446,8 @@ const WorkOrderDetailReport = () => {
                                         <TableHead>Nama Item</TableHead>
                                         <TableHead className="text-right">Qty</TableHead>
                                         <TableHead className="text-right">Harga Satuan</TableHead>
-                                        <TableHead className="text-right">Total Harga</TableHead>
-                                        <TableHead className="text-right">HPP</TableHead>
-                                        <TableHead className="text-right">Profit</TableHead>
+                                        <TableHead className="text-right">HPP (Unit)</TableHead>
+                                        <TableHead className="text-right">Profit (Unit)</TableHead>
                                     </TableRow>
                                 </TableHeader>
                                 <TableBody>
@@ -470,8 +469,7 @@ const WorkOrderDetailReport = () => {
                                                     <TableCell>{item.item_name}</TableCell>
                                                     <TableCell className="text-right">{item.qty}</TableCell>
                                                     <TableCell className="text-right">{item.unit_price.toLocaleString('id-ID')}</TableCell>
-                                                    <TableCell className="text-right">{item.total_price.toLocaleString('id-ID')}</TableCell>
-                                                    <TableCell className="text-right">{(item.hpp * item.qty).toLocaleString('id-ID')}</TableCell>
+                                                    <TableCell className="text-right">{item.hpp.toLocaleString('id-ID')}</TableCell>
                                                     <TableCell className="text-right">{item.profit.toLocaleString('id-ID')}</TableCell>
                                                 </TableRow>
                                             ))
