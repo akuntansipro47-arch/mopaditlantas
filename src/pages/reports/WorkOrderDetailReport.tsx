@@ -33,6 +33,7 @@ type ReportItem = {
     unit_price: number;
     total_price: number;
     hpp: number;
+    total_hpp: number;
     profit: number;
     source: 'REALIZED' | 'ESTIMATE_ONLY';
 };
@@ -239,15 +240,18 @@ const WorkOrderDetailReport = () => {
 
                 const sellingPrice = billing.unit_price || 0;
                 const qty = billing.qty || 0;
+                const totalSellingPrice = sellingPrice * qty;
+                const totalHpp = hpp * qty;
 
                 const reportItem: ReportItem = {
                     item_type: billing.item_type,
                     item_name: billing.item_name,
                     qty: qty,
                     unit_price: sellingPrice,
-                    total_price: sellingPrice * qty,
-                    hpp: hpp, // This is already unit HPP
-                    profit: sellingPrice - hpp, // This is now unit Profit
+                    total_price: totalSellingPrice,
+                    hpp: hpp, // This is unit HPP
+                    total_hpp: totalHpp,
+                    profit: totalSellingPrice - totalHpp, // This is total profit for the line
                     source: 'REALIZED',
                 };
 
@@ -265,8 +269,8 @@ const WorkOrderDetailReport = () => {
                 const items = reportItemsByWo.get(wo.id) || [];
                 
                 const total_realized = items.reduce((sum, item) => sum + item.total_price, 0);
-                const total_hpp = items.reduce((sum, item) => sum + (item.hpp * item.qty), 0);
-                const total_profit = items.reduce((sum, item) => sum + (item.profit * item.qty), 0);
+                const total_hpp = items.reduce((sum, item) => sum + item.total_hpp, 0);
+                const total_profit = items.reduce((sum, item) => sum + item.profit, 0);
 
                 return {
                     wo_id: wo.id,
@@ -446,8 +450,10 @@ const WorkOrderDetailReport = () => {
                                         <TableHead>Nama Item</TableHead>
                                         <TableHead className="text-right">Qty</TableHead>
                                         <TableHead className="text-right">Harga Satuan</TableHead>
+                                        <TableHead className="text-right">Total Harga</TableHead>
                                         <TableHead className="text-right">HPP (Unit)</TableHead>
-                                        <TableHead className="text-right">Profit (Unit)</TableHead>
+                                        <TableHead className="text-right">Total HPP</TableHead>
+                                        <TableHead className="text-right">Total Profit</TableHead>
                                     </TableRow>
                                 </TableHeader>
                                 <TableBody>
@@ -469,14 +475,16 @@ const WorkOrderDetailReport = () => {
                                                     <TableCell>{item.item_name}</TableCell>
                                                     <TableCell className="text-right">{item.qty}</TableCell>
                                                     <TableCell className="text-right">{item.unit_price.toLocaleString('id-ID')}</TableCell>
+                                                    <TableCell className="text-right">{item.total_price.toLocaleString('id-ID')}</TableCell>
                                                     <TableCell className="text-right">{item.hpp.toLocaleString('id-ID')}</TableCell>
+                                                    <TableCell className="text-right">{item.total_hpp.toLocaleString('id-ID')}</TableCell>
                                                     <TableCell className="text-right">{item.profit.toLocaleString('id-ID')}</TableCell>
                                                 </TableRow>
                                             ))
                                         ))
                                     ) : (
                                         <TableRow>
-                                            <TableCell colSpan={12} className="h-24 text-center">
+                                            <TableCell colSpan={13} className="h-24 text-center">
                                                 Tidak ada data untuk ditampilkan.
                                             </TableCell>
                                         </TableRow>
