@@ -67,19 +67,19 @@ const WorkOrderDetailReport = () => {
 
             const { data: vehicleEntriesData, error: entriesError } = await supabase
                 .from('vehicle_entries')
-                .select(`
-                    id,
-                    entry_date,
-                    service_group,
-                    vehicles (
-                        plate_number,
-                        vehicle_type,
-                        owner_name
-                    )
-                `)
+                .select('id, entry_date, service_group, vehicle_id')
                 .in('id', vehicleEntryIds);
 
             if (entriesError) throw entriesError;
+
+            const vehicleIds = vehicleEntriesData.map(ve => ve.vehicle_id).filter(Boolean) as string[];
+
+            const { data: vehiclesData, error: vehiclesError } = await supabase
+                .from('vehicles')
+                .select('id, plate_number, vehicle_type, owner_name')
+                .in('id', vehicleIds);
+
+            if (vehiclesError) throw vehiclesError;
 
             // Fetch all related data in parallel
             const [
@@ -115,18 +115,20 @@ const WorkOrderDetailReport = () => {
             const goodsMap = new Map(goods.map(g => [g.id, g]));
             const hppGoodsMap = new Map<string, number>();
             const vehicleEntryMap = new Map(vehicleEntriesData.map(entry => [entry.id, entry]));
+            const vehicleMap = new Map(vehiclesData.map(v => [v.id, v]));
             hppData.forEach(item => hppGoodsMap.set(item.goods_id, item.hpp));
 
             const initialReportData = woData.map(wo => {
                 const vehicleEntry = vehicleEntryMap.get(wo.vehicle_entry_id);
+                const vehicle = vehicleEntry ? vehicleMap.get(vehicleEntry.vehicle_id) : undefined;
                 return {
                     id: vehicleEntry?.id || '',
                     entry_date: vehicleEntry?.entry_date ? format(new Date(vehicleEntry.entry_date), 'dd-MM-yyyy') : '',
                     wo_number: wo.wo_number,
-                    plate_number: vehicleEntry?.vehicles?.plate_number || 'N/A',
-                    vehicle_type: vehicleEntry?.vehicles?.vehicle_type || null,
+                    plate_number: vehicle?.plate_number || 'N/A',
+                    vehicle_type: vehicle?.vehicle_type || null,
                     service_group: vehicleEntry?.service_group || null,
-                    customer_name: vehicleEntry?.vehicles?.owner_name || 'N/A',
+                    customer_name: vehicle?.owner_name || 'N/A',
                     total_realized: 0,
                     total_profit: 0,
                     items: [],
