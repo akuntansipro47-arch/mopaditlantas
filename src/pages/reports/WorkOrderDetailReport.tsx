@@ -76,7 +76,7 @@ const WorkOrderDetailReport = () => {
 
             const { data: vehiclesData, error: vehiclesError } = await supabase
                 .from('vehicles')
-                .select('id, plate_number, vehicle_type, owner_name')
+                .select('id, license_plate, vehicle_type, owner_name')
                 .in('id', vehicleIds);
 
             if (vehiclesError) throw vehiclesError;
@@ -125,7 +125,7 @@ const WorkOrderDetailReport = () => {
                     id: vehicleEntry?.id || '',
                     entry_date: vehicleEntry?.entry_date ? format(new Date(vehicleEntry.entry_date), 'dd-MM-yyyy') : '',
                     wo_number: wo.wo_number,
-                    plate_number: vehicle?.plate_number || 'N/A',
+                    plate_number: vehicle?.license_plate || 'N/A',
                     vehicle_type: vehicle?.vehicle_type || null,
                     service_group: vehicleEntry?.service_group || null,
                     customer_name: vehicle?.owner_name || 'N/A',
