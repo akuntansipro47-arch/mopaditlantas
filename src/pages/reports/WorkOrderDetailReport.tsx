@@ -129,8 +129,8 @@ const WorkOrderDetailReport = () => {
                 estJobsResult,
             ] = await Promise.allSettled([
                 supabase.from('vehicle_entries').select('id, entry_date, vehicle_id').in('id', vehicleEntryIds),
-                // Use sparepart_id and alias it to goods_id as per instruction
-                supabase.from('vehicle_entry_spareparts').select('*, goods_id:sparepart_id').in('vehicle_entry_id', vehicleEntryIds),
+                // The 'goods_id' column is confirmed to exist in 'vehicle_entry_spareparts'
+                supabase.from('vehicle_entry_spareparts').select('*').in('vehicle_entry_id', vehicleEntryIds),
                 supabase.from('vehicle_entry_jobs').select('*').in('vehicle_entry_id', vehicleEntryIds),
             ]);
 
