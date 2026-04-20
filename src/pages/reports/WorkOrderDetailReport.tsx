@@ -150,6 +150,9 @@ const WorkOrderDetailReport = () => {
             const estimationParts = checkError(estPartsResult, 'estimasi sparepart');
             const estimationJobs = checkError(estJobsResult, 'estimasi jasa');
 
+            console.log("DEBUG: Raw Estimation Parts Data", JSON.stringify(estimationParts, null, 2));
+            console.log("DEBUG: Raw Estimation Jobs Data", JSON.stringify(estimationJobs, null, 2));
+
             // Step 3: Fetch HPP data sources (only from estimated parts)
             const estimatedGoodsIds = estimationParts?.filter(p => p.goods_id).map(p => p.goods_id) || [];
             const allGoodsIds = [...new Set(estimatedGoodsIds)];
@@ -223,28 +226,43 @@ const WorkOrderDetailReport = () => {
             const jobTypesMap = new Map(jobTypesData?.map(jt => [jt.id, jt.job_name]));
 
             const getHpp = (woId: string, goodsId: string | null, itemName: string | null): number => {
+                console.log(`DEBUG getHpp: Mencari HPP untuk woId=${woId}, goodsId=${goodsId}, itemName=${itemName}`);
+                
                 // Prioritas 1: Harga dari PO yang terikat langsung dengan WO ini
                 const p1MapById = hppP1Map_byGoodsId.get(woId);
                 if (goodsId && p1MapById) {
                     const price = p1MapById.get(goodsId);
-                    if (price !== undefined) return price;
+                    if (price !== undefined) {
+                        console.log(`DEBUG getHpp: Ditemukan P1 by ID: ${price}`);
+                        return price;
+                    }
                 }
                 const p1MapByName = hppP1Map_byItemName.get(woId);
                 if (itemName && p1MapByName) {
                     const price = p1MapByName.get(itemName);
-                    if (price !== undefined) return price;
+                    if (price !== undefined) {
+                        console.log(`DEBUG getHpp: Ditemukan P1 by Name: ${price}`);
+                        return price;
+                    }
                 }
 
                 // Prioritas 2: Harga terakhir dari PO manapun
                 if (goodsId) {
                     const price = hppP2Map_byGoodsId.get(goodsId);
-                    if (price !== undefined) return price;
+                    if (price !== undefined) {
+                        console.log(`DEBUG getHpp: Ditemukan P2 by ID: ${price}`);
+                        return price;
+                    }
                 }
                 if (itemName) {
                     const price = hppP2Map_byItemName.get(itemName);
-                    if (price !== undefined) return price;
+                    if (price !== undefined) {
+                        console.log(`DEBUG getHpp: Ditemukan P2 by Name: ${price}`);
+                        return price;
+                    }
                 }
-
+                
+                console.log("DEBUG getHpp: Tidak ada HPP ditemukan, mengembalikan 0.");
                 return 0;
             };
 
@@ -253,14 +271,22 @@ const WorkOrderDetailReport = () => {
 
             // Process Estimated items
             const processEstimatedItems = (items: any[], type: 'PART' | 'JOB') => {
+                console.log(`DEBUG processEstimatedItems: Memproses ${items.length} item untuk tipe ${type}`);
                 items.forEach(item => {
+                    console.log("DEBUG processEstimatedItems: Memproses item:", item);
                     const woId = woMapByVeId.get(item.vehicle_entry_id);
-                    if (!woId) return; // Just skip if no corresponding WO
+                    if (!woId) {
+                        console.log("DEBUG processEstimatedItems: Lewati item, tidak ada WO ditemukan untuk vehicle_entry_id", item.vehicle_entry_id);
+                        return;
+                    }
 
                     const isPart = type === 'PART';
                     const itemName = isPart ? (goodsMap.get(item.goods_id) || item.item_name) : (jobTypesMap.get(item.job_type_id) || 'Jasa Umum');
                     const hpp = isPart ? getHpp(woId, item.goods_id, goodsMap.get(item.goods_id) || item.item_name) : 0;
                     const sellingPrice = item.estimation_price || 0;
+                    
+                    console.log(`DEBUG processEstimatedItems: Item Name=${itemName}, Qty=${item.qty}, Estimation Price=${item.estimation_price}, Calculated Selling Price=${sellingPrice}, Calculated HPP=${hpp}`);
+
                     const qty = item.qty || (isPart ? 0 : 1);
                     const totalSellingPrice = sellingPrice * qty;
                     const totalHpp = hpp * qty;
