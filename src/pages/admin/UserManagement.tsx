@@ -404,6 +404,11 @@ export default function UserManagement() {
                     {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
                   </button>
                 </div>
+                {editing && (
+                  <p className="text-xs text-muted-foreground pt-1">
+                    Password lama tidak ditampilkan demi keamanan. Biarkan kosong jika tidak ingin mengubah.
+                  </p>
+                )}
               </div>
               <div className="flex items-center gap-2">
                 <Checkbox
