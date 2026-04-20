@@ -9,7 +9,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { id as localeID } from 'date-fns/locale';
-import { Loader2, FileDown, Calendar } from 'lucide-react';
+import { Loader2, FileDown, Calendar, Search } from 'lucide-react';
 
 type ReportData = {
   id: number;
@@ -32,6 +32,7 @@ export default function PurchaseOrderDetailReport() {
   const [loading, setLoading] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [data, setData] = useState<ReportData[]>([]);
+  const [searchQuery, setSearchQuery] = useState('');
   const [dateRange, setDateRange] = useState({
     start: format(subDays(new Date(), 29), 'yyyy-MM-dd'),
     end: format(new Date(), 'yyyy-MM-dd'),
@@ -60,8 +61,7 @@ export default function PurchaseOrderDetailReport() {
       const from = (page - 1) * ITEMS_PER_PAGE;
       const to = from + ITEMS_PER_PAGE - 1;
 
-      // 1. Fetch a PAGE of PO Items and get the TOTAL COUNT in the same query
-      const { data: poItems, error: poItemsError, count: totalCount } = await supabase
+      let query = supabase
         .from('purchase_order_items')
         .select(`
           id,
@@ -84,7 +84,21 @@ export default function PurchaseOrderDetailReport() {
           )
         `, { count: 'exact' })
         .gte('purchase_orders.po_date', startDate)
-        .lte('purchase_orders.po_date', endDate)
+        .lte('purchase_orders.po_date', endDate);
+
+      if (searchQuery) {
+        const q = `%${searchQuery.trim().replace(/ /g, '%')}%`;
+        query = query.or(
+          `purchase_orders.po_number.ilike.${q},` +
+          `purchase_orders.work_orders.wo_number.ilike.${q},` +
+          `purchase_orders.work_orders.vehicle_entries.vehicles.license_plate.ilike.${q},` +
+          `purchase_orders.work_orders.vehicle_entries.vehicles.brand_type.ilike.${q},` +
+          `goods.name.ilike.${q}`
+        );
+      }
+
+      // 1. Fetch a PAGE of PO Items and get the TOTAL COUNT in the same query
+      const { data: poItems, error: poItemsError, count: totalCount } = await query
         .order('po_date', { foreignTable: 'purchase_orders', ascending: false })
         .range(from, to);
 
@@ -198,7 +212,7 @@ export default function PurchaseOrderDetailReport() {
     }
   
     try {
-      const { data: poItems, error: poItemsError } = await supabase
+      let query = supabase
         .from('purchase_order_items')
         .select(`
           id,
@@ -221,7 +235,20 @@ export default function PurchaseOrderDetailReport() {
           )
         `)
         .gte('purchase_orders.po_date', dateRange.start)
-        .lte('purchase_orders.po_date', dateRange.end)
+        .lte('purchase_orders.po_date', dateRange.end);
+
+      if (searchQuery) {
+        const q = `%${searchQuery.trim().replace(/ /g, '%')}%`;
+        query = query.or(
+          `purchase_orders.po_number.ilike.${q},` +
+          `purchase_orders.work_orders.wo_number.ilike.${q},` +
+          `purchase_orders.work_orders.vehicle_entries.vehicles.license_plate.ilike.${q},` +
+          `purchase_orders.work_orders.vehicle_entries.vehicles.brand_type.ilike.${q},` +
+          `goods.name.ilike.${q}`
+        );
+      }
+
+      const { data: poItems, error: poItemsError } = await query
         .order('po_date', { foreignTable: 'purchase_orders', ascending: false });
   
       if (poItemsError) throw poItemsError;
@@ -366,21 +393,32 @@ export default function PurchaseOrderDetailReport() {
             <p className="text-sm text-muted-foreground mt-1">Menampilkan semua item dari setiap Purchase Order.</p>
           </div>
           <div className="flex flex-col sm:flex-row items-center gap-2 w-full md:w-auto">
-            <div className="flex items-center gap-2 bg-white border border-gray-300 p-1.5 rounded-md shadow-sm">
-               <Calendar className="h-4 w-4 text-gray-500 ml-2" />
-               <Input type="date" className="border-0 h-9 w-36 focus-visible:ring-0 cursor-pointer" value={dateRange.start} onChange={e => setDateRange({...dateRange, start: e.target.value})} />
-               <span className="text-gray-400 font-medium">-</span>
-               <Input type="date" className="border-0 h-9 w-36 focus-visible:ring-0 cursor-pointer" value={dateRange.end} onChange={e => setDateRange({...dateRange, end: e.target.value})} />
-            </div>
-            <Button onClick={() => fetchData(1)} disabled={loading} className="w-full sm:w-auto">
-              {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              Tampilkan
-            </Button>
             <Button onClick={handleExport} variant="outline" disabled={exporting || (data.length === 0 && totalPages === 0)} className="w-full sm:w-auto">
               {exporting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <FileDown className="mr-2 h-4 w-4" />}
               Ekspor Semua
             </Button>
           </div>
+        </div>
+        <div className="flex flex-col md:flex-row md:items-center gap-2 mt-4">
+          <div className="flex items-center gap-2 bg-white border border-gray-300 p-1.5 rounded-md shadow-sm flex-grow">
+             <Calendar className="h-4 w-4 text-gray-500 ml-2" />
+             <Input type="date" className="border-0 h-9 w-36 focus-visible:ring-0 cursor-pointer" value={dateRange.start} onChange={e => setDateRange({...dateRange, start: e.target.value})} />
+             <span className="text-gray-400 font-medium">-</span>
+             <Input type="date" className="border-0 h-9 w-36 focus-visible:ring-0 cursor-pointer" value={dateRange.end} onChange={e => setDateRange({...dateRange, end: e.target.value})} />
+          </div>
+          <div className="relative flex-grow">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-500" />
+            <Input
+              placeholder="Cari nopol, no po, no wo, nama kendaraan/barang..."
+              value={searchQuery}
+              onChange={e => setSearchQuery(e.target.value)}
+              className="pl-10 w-full"
+            />
+          </div>
+          <Button onClick={() => fetchData(1)} disabled={loading} className="w-full md:w-auto">
+            {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            Tampilkan
+          </Button>
         </div>
       </CardHeader>
       <CardContent>
