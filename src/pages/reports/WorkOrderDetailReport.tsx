@@ -189,7 +189,8 @@ const WorkOrderDetailReport = () => {
             console.log("DEBUG HPP P2 (latest): Raw data", JSON.stringify(latestPoItems, null, 2));
 
             // Step 4: Pre-process HPP data into fast-lookup maps
-            const goodsMap = new Map(goodsData?.map(g => [g.id, g.name]));
+            const goodsMap = new Map(goodsData.map(g => [g.id, g.name]));
+            const goodsIdByNameMap = new Map(goodsData.map(g => [g.name, g.id]));
             const hppP1Map_byGoodsId = new Map<string, Map<string, number>>();
             const hppP1Map_byItemName = new Map<string, Map<string, number>>();
             woLinkedPos?.forEach(po => {
@@ -288,13 +289,24 @@ const WorkOrderDetailReport = () => {
             const processEstimatedItems = (items: any[], type: 'PART' | 'JOB') => {
                 items.forEach(item => {
                     const woId = woMapByVeId.get(item.vehicle_entry_id);
-                    if (!woId) return; // Just skip if no corresponding WO
+                    if (!woId) return;
 
                     const isPart = type === 'PART';
-                    const itemName = isPart ? (goodsMap.get(item.goods_id) || item.item_name) : (jobTypesMap.get(item.job_type_id) || 'Jasa Umum');
-                    const hpp = isPart ? getHpp(woId, item.goods_id, goodsMap.get(item.goods_id) || item.item_name) : 0;
                     
-                    // The log confirmed 'estimated_price' is the correct column.
+                    let goodsId = isPart ? item.goods_id : null;
+                    const itemName = isPart ? (item.item_name || goodsMap.get(goodsId)) : (jobTypesMap.get(item.job_type_id) || 'Jasa Umum');
+
+                    // Workaround: If goods_id is missing from estimation, try to find it by item_name
+                    if (isPart && !goodsId && itemName) {
+                        const foundGoodsId = goodsIdByNameMap.get(itemName);
+                        if (foundGoodsId) {
+                            goodsId = foundGoodsId;
+                            console.log(`WORKAROUND: Found goods_id '${goodsId}' for item_name '${itemName}'`);
+                        }
+                    }
+
+                    const hpp = isPart ? getHpp(woId, goodsId, itemName) : 0;
+                    
                     const sellingPrice = item.estimated_price || 0;
                     
                     const qty = item.qty || (isPart ? 0 : 1);
@@ -306,7 +318,7 @@ const WorkOrderDetailReport = () => {
                         item_name: itemName,
                         qty, unit_price: sellingPrice, total_price: totalSellingPrice,
                         hpp, total_hpp: totalHpp, profit: totalSellingPrice - totalHpp,
-                        source: 'ESTIMATE_ONLY', // Source is always estimate
+                        source: 'ESTIMATE_ONLY',
                     };
 
                     if (!reportItemsByWo.has(woId)) reportItemsByWo.set(woId, []);
