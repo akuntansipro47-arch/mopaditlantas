@@ -161,12 +161,12 @@ const WorkOrderDetailReport = () => {
             ] = await Promise.all([
                 supabase
                     .from('purchase_orders')
-                    .select('work_order_id, status, purchase_order_items(goods_id, unit_price, item_name)')
+                    .select('work_order_id, status, purchase_order_items(goods_id, unit_price, goods(id, name))')
                     .in('work_order_id', workOrderIds)
                     .in('status', ['RECEIVED_PART', 'RECEIVED_FULL']),
                 supabase
                     .from('purchase_order_items')
-                    .select('goods_id, item_name, unit_price, purchase_orders!inner(created_at, status)')
+                    .select('goods_id, unit_price, goods(id, name), purchase_orders!inner(created_at, status)')
                     .in('goods_id', allGoodsIds)
                     .in('purchase_orders.status', ['RECEIVED_PART', 'RECEIVED_FULL'])
                     .order('created_at', { foreignTable: 'purchase_orders', ascending: false }),
@@ -190,8 +190,9 @@ const WorkOrderDetailReport = () => {
                     const goodsMap = hppP1Map_byGoodsId.get(po.work_order_id);
                     const nameMap = hppP1Map_byItemName.get(po.work_order_id);
                     (po.purchase_order_items as any[]).forEach(item => {
+                        const itemName = item.goods?.name;
                         if (item.goods_id) goodsMap?.set(item.goods_id, item.unit_price);
-                        if (item.item_name) nameMap?.set(item.item_name, item.unit_price);
+                        if (itemName) nameMap?.set(itemName, item.unit_price);
                     });
                 }
             });
@@ -199,11 +200,12 @@ const WorkOrderDetailReport = () => {
             const hppP2Map_byGoodsId = new Map<string, number>();
             const hppP2Map_byItemName = new Map<string, number>();
             latestPoItems?.forEach(item => {
+                const itemName = item.goods?.name;
                 if (item.goods_id && !hppP2Map_byGoodsId.has(item.goods_id)) {
                     hppP2Map_byGoodsId.set(item.goods_id, item.unit_price);
                 }
-                if (item.item_name && !hppP2Map_byItemName.has(item.item_name)) {
-                    hppP2Map_byItemName.set(item.item_name, item.unit_price);
+                if (itemName && !hppP2Map_byItemName.has(itemName)) {
+                    hppP2Map_byItemName.set(itemName, item.unit_price);
                 }
             });
 
