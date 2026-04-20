@@ -62,47 +62,28 @@ export default function PurchaseOrderDetailReport() {
       const to = from + ITEMS_PER_PAGE - 1;
 
       let query = supabase
-        .from('purchase_order_items')
-        .select(`
-          id,
-          goods_id,
-          quantity,
-          unit_price,
-          total_price,
-          goods ( name ),
-          purchase_orders!inner (
-            id,
-            po_date,
-            po_number,
-            suppliers ( name ),
-            work_orders (
-              wo_number,
-              vehicle_entries (
-                vehicles ( license_plate, brand_type )
-              )
-            )
-          )
-        `, { count: 'exact' })
-        .gte('purchase_orders.po_date', startDate)
-        .lte('purchase_orders.po_date', endDate);
+        .from('purchase_order_details_report_view')
+        .select('*', { count: 'exact' })
+        .gte('po_date', startDate)
+        .lte('po_date', endDate);
 
       if (searchQuery) {
         const q = `%${searchQuery.trim().replace(/ /g, '%')}%`;
         query = query.or(
-          `purchase_orders.po_number.ilike.${q},` +
-          `purchase_orders.work_orders.wo_number.ilike.${q},` +
-          `purchase_orders.work_orders.vehicle_entries.vehicles.license_plate.ilike.${q},` +
-          `purchase_orders.work_orders.vehicle_entries.vehicles.brand_type.ilike.${q},` +
-          `goods.name.ilike.${q}`
+          `po_number.ilike.${q},` +
+          `wo_number.ilike.${q},` +
+          `vehicle_license_plate.ilike.${q},` +
+          `vehicle_brand.ilike.${q},` +
+          `goods_name.ilike.${q},` +
+          `supplier_name.ilike.${q}`
         );
       }
 
-      // 1. Fetch a PAGE of PO Items and get the TOTAL COUNT in the same query
-      const { data: poItems, error: poItemsError, count: totalCount } = await query
-        .order('po_date', { foreignTable: 'purchase_orders', ascending: false })
+      const { data: viewData, error: viewError, count: totalCount } = await query
+        .order('po_date', { ascending: false })
         .range(from, to);
 
-      if (poItemsError) throw poItemsError;
+      if (viewError) throw viewError;
 
       if (page === 1) {
         if (totalCount) {
@@ -112,7 +93,7 @@ export default function PurchaseOrderDetailReport() {
         }
       }
 
-      if (!poItems || poItems.length === 0) {
+      if (!viewData || viewData.length === 0) {
         if (page === 1) {
           setData([]);
           toast.info('Tidak ada data ditemukan untuk rentang tanggal yang dipilih.');
@@ -122,7 +103,7 @@ export default function PurchaseOrderDetailReport() {
       }
 
       // 2. Gather IDs from the CURRENT PAGE's items only
-      const poIds = [...new Set(poItems.map(item => item.purchase_orders.id))];
+      const poIds = [...new Set(viewData.map(item => item.po_id))];
 
       // 3. Fetch goods receipts for these specific POs
       const { data: receipts, error: receiptError } = await supabase
@@ -156,14 +137,8 @@ export default function PurchaseOrderDetailReport() {
       });
 
       // 5. Combine all data
-      const combinedData = poItems.map(item => {
-        const po = item.purchase_orders;
-        if (!po) return null;
-
-        const vehicle = po.work_orders?.vehicle_entries?.vehicles;
-        const kendaraan = vehicle ? vehicle.brand_type : 'Stok Gudang';
-        const nopol = vehicle ? vehicle.license_plate : '-';
-        const paymentStatus = paymentStatusMap.get(po.id);
+      const combinedData = viewData.map(item => {
+        const paymentStatus = paymentStatusMap.get(item.po_id);
 
         let statusBayar = 'Belum Ditagih';
         if (paymentStatus === 'PAID') {
@@ -174,19 +149,19 @@ export default function PurchaseOrderDetailReport() {
           statusBayar = 'Belum Lunas';
         }
 
-        const receivedQtyKey = `${po.id}-${item.goods_id}`;
+        const receivedQtyKey = `${item.po_id}-${item.goods_id}`;
         const receivedQty = receivedQtyMap.get(receivedQtyKey) || 0;
 
         return {
-          id: item.id,
-          tgl: po.po_date,
-          no_po: po.po_number,
-          supplier: po.suppliers?.name || '-',
-          kendaraan: kendaraan,
-          nopol: nopol,
-          no_wo: po.work_orders?.wo_number || '-',
-          tipe: item.goods?.name || '-',
-          nama_barang: item.goods?.name || '-',
+          id: item.po_item_id,
+          tgl: item.po_date,
+          no_po: item.po_number,
+          supplier: item.supplier_name || '-',
+          kendaraan: item.vehicle_brand,
+          nopol: item.vehicle_license_plate,
+          no_wo: item.wo_number || '-',
+          tipe: item.goods_name || '-',
+          nama_barang: item.goods_name || '-',
           qty: item.quantity,
           diterima: receivedQty,
           status_bayar: statusBayar,
@@ -213,48 +188,30 @@ export default function PurchaseOrderDetailReport() {
   
     try {
       let query = supabase
-        .from('purchase_order_items')
-        .select(`
-          id,
-          goods_id,
-          quantity,
-          unit_price,
-          total_price,
-          goods ( name ),
-          purchase_orders!inner (
-            id,
-            po_date,
-            po_number,
-            suppliers ( name ),
-            work_orders (
-              wo_number,
-              vehicle_entries (
-                vehicles ( license_plate, brand_type )
-              )
-            )
-          )
-        `)
-        .gte('purchase_orders.po_date', dateRange.start)
-        .lte('purchase_orders.po_date', dateRange.end);
+        .from('purchase_order_details_report_view')
+        .select('*')
+        .gte('po_date', dateRange.start)
+        .lte('po_date', dateRange.end);
 
       if (searchQuery) {
         const q = `%${searchQuery.trim().replace(/ /g, '%')}%`;
         query = query.or(
-          `purchase_orders.po_number.ilike.${q},` +
-          `purchase_orders.work_orders.wo_number.ilike.${q},` +
-          `purchase_orders.work_orders.vehicle_entries.vehicles.license_plate.ilike.${q},` +
-          `purchase_orders.work_orders.vehicle_entries.vehicles.brand_type.ilike.${q},` +
-          `goods.name.ilike.${q}`
+          `po_number.ilike.${q},` +
+          `wo_number.ilike.${q},` +
+          `vehicle_license_plate.ilike.${q},` +
+          `vehicle_brand.ilike.${q},` +
+          `goods_name.ilike.${q},` +
+          `supplier_name.ilike.${q}`
         );
       }
 
-      const { data: poItems, error: poItemsError } = await query
-        .order('po_date', { foreignTable: 'purchase_orders', ascending: false });
+      const { data: viewData, error: viewError } = await query
+        .order('po_date', { ascending: false });
   
-      if (poItemsError) throw poItemsError;
-      if (!poItems || poItems.length === 0) return [];
+      if (viewError) throw viewError;
+      if (!viewData || viewData.length === 0) return [];
   
-      const poIds = [...new Set(poItems.map(item => item.purchase_orders.id))];
+      const poIds = [...new Set(viewData.map(item => item.po_id))];
   
       const { data: receipts, error: receiptError } = await supabase
         .from('goods_receipts')
@@ -285,39 +242,33 @@ export default function PurchaseOrderDetailReport() {
         paymentStatusMap.set(inv.po_id, inv.status);
       });
   
-      const combinedData = poItems.map(item => {
-        const po = item.purchase_orders;
-        if (!po) return null;
-  
-        const vehicle = po.work_orders?.vehicle_entries?.vehicles;
-      const kendaraan = vehicle ? vehicle.brand_type : 'Stok Gudang';
-      const nopol = vehicle ? vehicle.license_plate : '-';
-      const paymentStatus = paymentStatusMap.get(po.id);
+      const combinedData = viewData.map(item => {
+        const paymentStatus = paymentStatusMap.get(item.po_id);
 
-      let statusBayar = 'Belum Ditagih';
-      if (paymentStatus === 'PAID') statusBayar = 'Lunas';
-      else if (paymentStatus === 'PARTIAL') statusBayar = 'Bayar Sebagian';
-      else if (paymentStatus) statusBayar = 'Belum Lunas';
+        let statusBayar = 'Belum Ditagih';
+        if (paymentStatus === 'PAID') statusBayar = 'Lunas';
+        else if (paymentStatus === 'PARTIAL') statusBayar = 'Bayar Sebagian';
+        else if (paymentStatus) statusBayar = 'Belum Lunas';
 
-      const receivedQtyKey = `${po.id}-${item.goods_id}`;
-      const receivedQty = receivedQtyMap.get(receivedQtyKey) || 0;
+        const receivedQtyKey = `${item.po_id}-${item.goods_id}`;
+        const receivedQty = receivedQtyMap.get(receivedQtyKey) || 0;
 
-      return {
-        id: item.id,
-        tgl: po.po_date,
-        no_po: po.po_number,
-        supplier: po.suppliers?.name || '-',
-        kendaraan: kendaraan,
-        nopol: nopol,
-        no_wo: po.work_orders?.wo_number || '-',
-        tipe: item.goods?.name || '-',
-        nama_barang: item.goods?.name || '-',
-        qty: item.quantity,
-        diterima: receivedQty,
-        status_bayar: statusBayar,
-        harga_satuan: item.unit_price,
-        total: item.total_price,
-      };
+        return {
+          id: item.po_item_id,
+          tgl: item.po_date,
+          no_po: item.po_number,
+          supplier: item.supplier_name || '-',
+          kendaraan: item.vehicle_brand,
+          nopol: item.vehicle_license_plate,
+          no_wo: item.wo_number || '-',
+          tipe: item.goods_name || '-',
+          nama_barang: item.goods_name || '-',
+          qty: item.quantity,
+          diterima: receivedQty,
+          status_bayar: statusBayar,
+          harga_satuan: item.unit_price,
+          total: item.total_price,
+        };
       }).filter(Boolean) as ReportData[];
   
       return combinedData;
@@ -409,7 +360,7 @@ export default function PurchaseOrderDetailReport() {
           <div className="relative flex-grow">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-500" />
             <Input
-              placeholder="Cari nopol, no po, no wo, nama kendaraan/barang..."
+              placeholder="Cari nopol, po, wo, kendaraan, barang, supplier..."
               value={searchQuery}
               onChange={e => setSearchQuery(e.target.value)}
               className="pl-10 w-full"
