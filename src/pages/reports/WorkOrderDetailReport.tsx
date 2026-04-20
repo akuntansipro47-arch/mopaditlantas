@@ -252,8 +252,8 @@ const WorkOrderDetailReport = () => {
                     if (!woId) return; // Just skip if no corresponding WO
 
                     const isPart = type === 'PART';
-                    const itemName = isPart ? item.item_name : (jobTypesMap.get(item.job_type_id) || 'Jasa Umum');
-                    const hpp = isPart ? getHpp(woId, item.goods_id, item.item_name) : 0;
+                    const itemName = isPart ? (goodsMap.get(item.goods_id) || item.item_name) : (jobTypesMap.get(item.job_type_id) || 'Jasa Umum');
+                    const hpp = isPart ? getHpp(woId, item.goods_id, goodsMap.get(item.goods_id) || item.item_name) : 0;
                     const sellingPrice = item.estimation_price || 0;
                     const qty = item.qty || (isPart ? 0 : 1);
                     const totalSellingPrice = sellingPrice * qty;
