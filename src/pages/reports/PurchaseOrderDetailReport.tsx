@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
 import { subDays, format, parseISO } from 'date-fns';
 import { toast } from 'sonner';
@@ -40,6 +40,23 @@ export default function PurchaseOrderDetailReport() {
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(0);
   const ITEMS_PER_PAGE = 50;
+  const isInitialMount = useRef(true);
+
+  useEffect(() => {
+    // Skip initial mount, user will click button to load first.
+    if (isInitialMount.current) {
+      isInitialMount.current = false;
+      return;
+    }
+
+    const handler = setTimeout(() => {
+      fetchData(1);
+    }, 500); // Debounce search input
+
+    return () => {
+      clearTimeout(handler);
+    };
+  }, [searchQuery]);
 
   async function fetchData(page = 1) {
     if (!dateRange?.start || !dateRange?.end) {
