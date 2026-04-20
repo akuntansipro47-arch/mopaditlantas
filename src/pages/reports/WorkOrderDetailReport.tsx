@@ -122,16 +122,15 @@ const WorkOrderDetailReport = () => {
             const workOrderIds = woData.map(wo => wo.id);
             const vehicleEntryIds = woData.map(wo => wo.vehicle_entry_id).filter(Boolean) as string[];
 
-            // Step 2: Fetch all required data in parallel
+            // Step 2: Fetch estimation and vehicle data in parallel
             const [
-                billingsResult,
                 entriesResult,
                 estPartsResult,
                 estJobsResult,
             ] = await Promise.allSettled([
-                supabase.from('work_order_billings').select('*, goods_id').in('work_order_id', workOrderIds),
                 supabase.from('vehicle_entries').select('id, entry_date, vehicle_id').in('id', vehicleEntryIds),
-                supabase.from('vehicle_entry_spareparts').select('*, goods_id').in('vehicle_entry_id', vehicleEntryIds),
+                // Use sparepart_id and alias it to goods_id as per instruction
+                supabase.from('vehicle_entry_spareparts').select('*, goods_id:sparepart_id').in('vehicle_entry_id', vehicleEntryIds),
                 supabase.from('vehicle_entry_jobs').select('*').in('vehicle_entry_id', vehicleEntryIds),
             ]);
 
@@ -147,15 +146,13 @@ const WorkOrderDetailReport = () => {
                 return result.value.data;
             };
 
-            const billingsData = checkError(billingsResult, 'tagihan (billings)');
             const vehicleEntriesData = checkError(entriesResult, 'entri kendaraan');
             const estimationParts = checkError(estPartsResult, 'estimasi sparepart');
             const estimationJobs = checkError(estJobsResult, 'estimasi jasa');
 
-            // Step 3: Fetch HPP data sources
-            const realizedGoodsIds = billingsData?.filter(b => b.item_type === 'PART' && b.goods_id).map(b => b.goods_id) || [];
+            // Step 3: Fetch HPP data sources (only from estimated parts)
             const estimatedGoodsIds = estimationParts?.filter(p => p.goods_id).map(p => p.goods_id) || [];
-            const allGoodsIds = [...new Set([...realizedGoodsIds, ...estimatedGoodsIds])];
+            const allGoodsIds = [...new Set(estimatedGoodsIds)];
 
             const [
                 { data: woLinkedPos, error: woPoError },
@@ -235,35 +232,14 @@ const WorkOrderDetailReport = () => {
                 return 0;
             };
 
-            // Step 6: Group items by WO, starting with Realized, then adding Estimated if no Realized exist
+            // Step 6: Group items by WO from Estimation data
             const reportItemsByWo = new Map<string, ReportItem[]>();
 
-            // Process Realized items first
-            billingsData?.forEach(billing => {
-                const woId = billing.work_order_id;
-                const hpp = billing.item_type === 'PART' ? getHpp(woId, billing.goods_id, billing.item_name) : 0;
-                const sellingPrice = billing.unit_price || 0;
-                const qty = billing.qty || 0;
-                const totalSellingPrice = sellingPrice * qty;
-                const totalHpp = hpp * qty;
-
-                const reportItem: ReportItem = {
-                    item_type: billing.item_type,
-                    item_name: billing.item_name,
-                    qty, unit_price: sellingPrice, total_price: totalSellingPrice,
-                    hpp, total_hpp: totalHpp, profit: totalSellingPrice - totalHpp,
-                    source: 'REALIZED',
-                };
-
-                if (!reportItemsByWo.has(woId)) reportItemsByWo.set(woId, []);
-                reportItemsByWo.get(woId)?.push(reportItem);
-            });
-
-            // Process Estimated items if no Realized items exist for the WO
+            // Process Estimated items
             const processEstimatedItems = (items: any[], type: 'PART' | 'JOB') => {
                 items.forEach(item => {
                     const woId = woMapByVeId.get(item.vehicle_entry_id);
-                    if (!woId || reportItemsByWo.has(woId)) return;
+                    if (!woId) return; // Just skip if no corresponding WO
 
                     const hpp = type === 'PART' ? getHpp(woId, item.goods_id, item.item_name) : 0;
                     const sellingPrice = item.estimation_price || 0;
@@ -276,7 +252,7 @@ const WorkOrderDetailReport = () => {
                         item_name: item.item_name,
                         qty, unit_price: sellingPrice, total_price: totalSellingPrice,
                         hpp, total_hpp: totalHpp, profit: totalSellingPrice - totalHpp,
-                        source: 'ESTIMATE_ONLY',
+                        source: 'ESTIMATE_ONLY', // Source is always estimate
                     };
 
                     if (!reportItemsByWo.has(woId)) reportItemsByWo.set(woId, []);
