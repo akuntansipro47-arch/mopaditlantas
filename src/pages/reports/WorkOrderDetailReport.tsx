@@ -253,9 +253,6 @@ const WorkOrderDetailReport = () => {
             // Process Estimated items
             const processEstimatedItems = (items: any[], type: 'PART' | 'JOB') => {
                 items.forEach(item => {
-                    // Log the raw item for debugging
-                    console.log(`DEBUG: Raw item received (type: ${type}):`, JSON.stringify(item, null, 2));
-
                     const woId = woMapByVeId.get(item.vehicle_entry_id);
                     if (!woId) return; // Just skip if no corresponding WO
 
@@ -263,8 +260,8 @@ const WorkOrderDetailReport = () => {
                     const itemName = isPart ? (goodsMap.get(item.goods_id) || item.item_name) : (jobTypesMap.get(item.job_type_id) || 'Jasa Umum');
                     const hpp = isPart ? getHpp(woId, item.goods_id, goodsMap.get(item.goods_id) || item.item_name) : 0;
                     
-                    // Attempt to get the price from multiple possible columns, based on the new debug log
-                    const sellingPrice = item.estimation_price || item.selling_price || item.unit_price || 0;
+                    // The log confirmed 'estimated_price' is the correct column.
+                    const sellingPrice = item.estimated_price || 0;
                     
                     const qty = item.qty || (isPart ? 0 : 1);
                     const totalSellingPrice = sellingPrice * qty;
