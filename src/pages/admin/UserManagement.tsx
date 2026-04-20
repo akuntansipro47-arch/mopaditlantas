@@ -11,7 +11,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
-import { Loader2, Plus, Save } from 'lucide-react';
+import { Eye, EyeOff, Loader2, Plus, Save } from 'lucide-react';
 
 type AppUser = {
   id: string;
@@ -111,6 +111,7 @@ export default function UserManagement() {
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<AppUser | null>(null);
+  const [showPassword, setShowPassword] = useState(false);
   const [form, setForm] = useState({
     username: '',
     full_name: '',
@@ -149,6 +150,7 @@ export default function UserManagement() {
 
   function openCreate() {
     setEditing(null);
+    setShowPassword(false);
     setForm({
       username: '',
       full_name: '',
@@ -164,6 +166,7 @@ export default function UserManagement() {
     const allowed = normalizeAllowedMenus(u.allowed_menus);
     const allowAll = allowed.includes('*');
     setEditing(u);
+    setShowPassword(false);
     setForm({
       username: u.username || '',
       full_name: u.full_name || '',
@@ -385,12 +388,22 @@ export default function UserManagement() {
               </div>
               <div className="space-y-2">
                 <Label>Password {editing ? '(opsional untuk reset)' : ''}</Label>
-                <Input
-                  type="password"
-                  value={form.password}
-                  onChange={(e) => setForm(prev => ({ ...prev, password: e.target.value }))}
-                  placeholder={editing ? 'Kosongkan jika tidak diubah' : 'Password awal'}
-                />
+                <div className="relative">
+                  <Input
+                    type={showPassword ? 'text' : 'password'}
+                    value={form.password}
+                    onChange={(e) => setForm(prev => ({ ...prev, password: e.target.value }))}
+                    placeholder={editing ? 'Kosongkan jika tidak diubah' : 'Password awal'}
+                    className="pr-10"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute inset-y-0 right-0 flex items-center px-3 text-slate-500 hover:text-slate-800"
+                  >
+                    {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
+                  </button>
+                </div>
               </div>
               <div className="flex items-center gap-2">
                 <Checkbox
