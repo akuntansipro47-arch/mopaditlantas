@@ -124,21 +124,33 @@ const WorkOrderDetailReport = () => {
 
             // Step 2: Fetch all required data in parallel
             const [
-                { data: billingsData, error: billingsError },
-                { data: vehicleEntriesData, error: entriesError },
-                { data: estimationParts, error: estPartsError },
-                { data: estimationJobs, error: estJobsError },
-            ] = await Promise.all([
+                billingsResult,
+                entriesResult,
+                estPartsResult,
+                estJobsResult,
+            ] = await Promise.allSettled([
                 supabase.from('work_order_billings').select('*, goods_id').in('work_order_id', workOrderIds),
                 supabase.from('vehicle_entries').select('id, entry_date, vehicle_id').in('id', vehicleEntryIds),
-                supabase.from('vehicle_entry_spareparts').select('*, goods_id:item_id').in('vehicle_entry_id', vehicleEntryIds),
+                supabase.from('vehicle_entry_spareparts').select('*, goods_id').in('vehicle_entry_id', vehicleEntryIds),
                 supabase.from('vehicle_entry_jobs').select('*').in('vehicle_entry_id', vehicleEntryIds),
             ]);
 
-            if (billingsError) throw new Error(`Gagal mengambil data tagihan (billings): ${billingsError.message}`);
-            if (entriesError) throw new Error(`Gagal mengambil data vehicle entries: ${entriesError.message}`);
-            if (estPartsError) throw new Error(`Gagal mengambil data estimasi sparepart: ${estPartsError.message}`);
-            if (estJobsError) throw new Error(`Gagal mengambil data estimasi jasa: ${estJobsError.message}`);
+            // Helper to check for errors and throw them
+            const checkError = (result: PromiseSettledResult<any>, context: string) => {
+                if (result.status === 'rejected') {
+                    console.error(`Error fetching ${context}:`, result.reason);
+                    throw new Error(`Gagal mengambil data ${context}: ${result.reason.message}`);
+                }
+                if (result.value.error) {
+                    throw new Error(`Gagal mengambil data ${context}: ${result.value.error.message}`);
+                }
+                return result.value.data;
+            };
+
+            const billingsData = checkError(billingsResult, 'tagihan (billings)');
+            const vehicleEntriesData = checkError(entriesResult, 'entri kendaraan');
+            const estimationParts = checkError(estPartsResult, 'estimasi sparepart');
+            const estimationJobs = checkError(estJobsResult, 'estimasi jasa');
 
             // Step 3: Fetch HPP data sources
             const realizedGoodsIds = billingsData?.filter(b => b.item_type === 'PART' && b.goods_id).map(b => b.goods_id) || [];
