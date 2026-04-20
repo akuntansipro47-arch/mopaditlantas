@@ -131,7 +131,7 @@ const WorkOrderDetailReport = () => {
             ] = await Promise.all([
                 supabase.from('work_order_billings').select('*, goods_id').in('work_order_id', workOrderIds),
                 supabase.from('vehicle_entries').select('id, entry_date, vehicle_id').in('id', vehicleEntryIds),
-                supabase.from('vehicle_entry_spareparts').select('*, goods_id').in('vehicle_entry_id', vehicleEntryIds),
+                supabase.from('vehicle_entry_spareparts').select('*, goods_id:item_id').in('vehicle_entry_id', vehicleEntryIds),
                 supabase.from('vehicle_entry_jobs').select('*').in('vehicle_entry_id', vehicleEntryIds),
             ]);
 
