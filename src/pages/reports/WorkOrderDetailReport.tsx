@@ -122,38 +122,43 @@ const WorkOrderDetailReport = () => {
             const workOrderIds = woData.map(wo => wo.id);
             const vehicleEntryIds = woData.map(wo => wo.vehicle_entry_id).filter(Boolean) as string[];
 
-            // Step 2: Fetch Billings (Harga Jual) and Vehicle Entries
+            // Step 2: Fetch all required data in parallel
             const [
                 { data: billingsData, error: billingsError },
                 { data: vehicleEntriesData, error: entriesError },
+                { data: estimationParts, error: estPartsError },
+                { data: estimationJobs, error: estJobsError },
             ] = await Promise.all([
                 supabase.from('work_order_billings').select('*, goods_id').in('work_order_id', workOrderIds),
                 supabase.from('vehicle_entries').select('id, entry_date, vehicle_id').in('id', vehicleEntryIds),
+                supabase.from('vehicle_entry_spareparts').select('*, goods_id').in('vehicle_entry_id', vehicleEntryIds),
+                supabase.from('vehicle_entry_jobs').select('*').in('vehicle_entry_id', vehicleEntryIds),
             ]);
 
             if (billingsError) throw new Error(`Gagal mengambil data tagihan (billings): ${billingsError.message}`);
             if (entriesError) throw new Error(`Gagal mengambil data vehicle entries: ${entriesError.message}`);
+            if (estPartsError) throw new Error(`Gagal mengambil data estimasi sparepart: ${estPartsError.message}`);
+            if (estJobsError) throw new Error(`Gagal mengambil data estimasi jasa: ${estJobsError.message}`);
 
             // Step 3: Fetch HPP data sources
-            const goodsIdsForHpp = billingsData?.filter(b => b.item_type === 'PART' && b.goods_id).map(b => b.goods_id) || [];
+            const realizedGoodsIds = billingsData?.filter(b => b.item_type === 'PART' && b.goods_id).map(b => b.goods_id) || [];
+            const estimatedGoodsIds = estimationParts?.filter(p => p.goods_id).map(p => p.goods_id) || [];
+            const allGoodsIds = [...new Set([...realizedGoodsIds, ...estimatedGoodsIds])];
 
             const [
-                // HPP Source 1: POs linked to our WOs
                 { data: woLinkedPos, error: woPoError },
-                // HPP Source 2: Latest POs for all involved goods
                 { data: latestPoItems, error: latestPoError },
-                // Vehicle Details
                 { data: vehiclesData, error: vehiclesError },
             ] = await Promise.all([
                 supabase
                     .from('purchase_orders')
-                    .select('work_order_id, status, purchase_order_items(goods_id, unit_price)')
+                    .select('work_order_id, status, purchase_order_items(goods_id, unit_price, item_name)')
                     .in('work_order_id', workOrderIds)
                     .in('status', ['RECEIVED_PART', 'RECEIVED_FULL']),
                 supabase
                     .from('purchase_order_items')
-                    .select('goods_id, unit_price, purchase_orders!inner(created_at, status)')
-                    .in('goods_id', goodsIdsForHpp)
+                    .select('goods_id, item_name, unit_price, purchase_orders!inner(created_at, status)')
+                    .in('goods_id', allGoodsIds)
                     .in('purchase_orders.status', ['RECEIVED_PART', 'RECEIVED_FULL'])
                     .order('created_at', { foreignTable: 'purchase_orders', ascending: false }),
                 supabase
@@ -167,16 +172,14 @@ const WorkOrderDetailReport = () => {
             if (vehiclesError) throw new Error(`Gagal mengambil data kendaraan: ${vehiclesError.message}`);
 
             // Step 4: Pre-process HPP data into fast-lookup maps
-            const hppP1Map_byGoodsId = new Map<string, Map<string, number>>(); // wo_id -> goods_id -> price
-            const hppP1Map_byItemName = new Map<string, Map<string, number>>(); // wo_id -> item_name -> price
+            const hppP1Map_byGoodsId = new Map<string, Map<string, number>>();
+            const hppP1Map_byItemName = new Map<string, Map<string, number>>();
             woLinkedPos?.forEach(po => {
                 if (po.work_order_id) {
                     if (!hppP1Map_byGoodsId.has(po.work_order_id)) hppP1Map_byGoodsId.set(po.work_order_id, new Map());
                     if (!hppP1Map_byItemName.has(po.work_order_id)) hppP1Map_byItemName.set(po.work_order_id, new Map());
-                    
                     const goodsMap = hppP1Map_byGoodsId.get(po.work_order_id);
                     const nameMap = hppP1Map_byItemName.get(po.work_order_id);
-
                     (po.purchase_order_items as any[]).forEach(item => {
                         if (item.goods_id) goodsMap?.set(item.goods_id, item.unit_price);
                         if (item.item_name) nameMap?.set(item.item_name, item.unit_price);
@@ -184,8 +187,8 @@ const WorkOrderDetailReport = () => {
                 }
             });
 
-            const hppP2Map_byGoodsId = new Map<string, number>(); // goods_id -> latest price
-            const hppP2Map_byItemName = new Map<string, number>(); // item_name -> latest price
+            const hppP2Map_byGoodsId = new Map<string, number>();
+            const hppP2Map_byItemName = new Map<string, number>();
             latestPoItems?.forEach(item => {
                 if (item.goods_id && !hppP2Map_byGoodsId.has(item.goods_id)) {
                     hppP2Map_byGoodsId.set(item.goods_id, item.unit_price);
@@ -195,49 +198,38 @@ const WorkOrderDetailReport = () => {
                 }
             });
 
-            // Step 5: Create maps for vehicle data
+            // Step 5: Create helper maps
             const vehicleEntryMap = new Map(vehicleEntriesData?.map(e => [e.id, e]));
             const vehicleMap = new Map(vehiclesData?.map(v => [v.id, v]));
+            const woMapByVeId = new Map(woData.map(wo => [wo.vehicle_entry_id, wo.id]));
 
-            // Step 6: Group items by WO and calculate HPP/Profit per item
+            const getHpp = (woId: string, goodsId: string | null, itemName: string | null): number => {
+                if (goodsId) {
+                    const p1Price = hppP1Map_byGoodsId.get(woId)?.get(goodsId);
+                    if (p1Price !== undefined) return p1Price;
+                }
+                if (itemName) {
+                    const p1PriceName = hppP1Map_byItemName.get(woId)?.get(itemName);
+                    if (p1PriceName !== undefined) return p1PriceName;
+                }
+                if (goodsId) {
+                    const p2Price = hppP2Map_byGoodsId.get(goodsId);
+                    if (p2Price !== undefined) return p2Price;
+                }
+                if (itemName) {
+                    const p2PriceName = hppP2Map_byItemName.get(itemName);
+                    if (p2PriceName !== undefined) return p2PriceName;
+                }
+                return 0;
+            };
+
+            // Step 6: Group items by WO, starting with Realized, then adding Estimated if no Realized exist
             const reportItemsByWo = new Map<string, ReportItem[]>();
+
+            // Process Realized items first
             billingsData?.forEach(billing => {
                 const woId = billing.work_order_id;
-                let hpp = 0;
-
-                if (billing.item_type === 'PART') {
-                    // Priority 1: Match by goods_id from WO-linked PO
-                    if (billing.goods_id) {
-                        const p1Price = hppP1Map_byGoodsId.get(woId)?.get(billing.goods_id);
-                        if (p1Price !== undefined) {
-                            hpp = p1Price;
-                        }
-                    }
-                    // Fallback 1.1: Match by item_name from WO-linked PO
-                    if (hpp === 0 && billing.item_name) {
-                        const p1PriceName = hppP1Map_byItemName.get(woId)?.get(billing.item_name);
-                        if (p1PriceName !== undefined) {
-                            hpp = p1PriceName;
-                        }
-                    }
-                    
-                    // Priority 2 (if P1 fails): Match by goods_id from latest PO
-                    if (hpp === 0 && billing.goods_id) {
-                        const p2Price = hppP2Map_byGoodsId.get(billing.goods_id);
-                        if (p2Price !== undefined) {
-                            hpp = p2Price;
-                        }
-                    }
-                    
-                    // Fallback 2.1: Match by item_name from latest PO
-                    if (hpp === 0 && billing.item_name) {
-                        const p2PriceName = hppP2Map_byItemName.get(billing.item_name);
-                        if (p2PriceName !== undefined) {
-                            hpp = p2PriceName;
-                        }
-                    }
-                }
-
+                const hpp = billing.item_type === 'PART' ? getHpp(woId, billing.goods_id, billing.item_name) : 0;
                 const sellingPrice = billing.unit_price || 0;
                 const qty = billing.qty || 0;
                 const totalSellingPrice = sellingPrice * qty;
@@ -246,28 +238,48 @@ const WorkOrderDetailReport = () => {
                 const reportItem: ReportItem = {
                     item_type: billing.item_type,
                     item_name: billing.item_name,
-                    qty: qty,
-                    unit_price: sellingPrice,
-                    total_price: totalSellingPrice,
-                    hpp: hpp, // This is unit HPP
-                    total_hpp: totalHpp,
-                    profit: totalSellingPrice - totalHpp, // This is total profit for the line
+                    qty, unit_price: sellingPrice, total_price: totalSellingPrice,
+                    hpp, total_hpp: totalHpp, profit: totalSellingPrice - totalHpp,
                     source: 'REALIZED',
                 };
 
-                if (!reportItemsByWo.has(woId)) {
-                    reportItemsByWo.set(woId, []);
-                }
+                if (!reportItemsByWo.has(woId)) reportItemsByWo.set(woId, []);
                 reportItemsByWo.get(woId)?.push(reportItem);
             });
+
+            // Process Estimated items if no Realized items exist for the WO
+            const processEstimatedItems = (items: any[], type: 'PART' | 'JOB') => {
+                items.forEach(item => {
+                    const woId = woMapByVeId.get(item.vehicle_entry_id);
+                    if (!woId || reportItemsByWo.has(woId)) return;
+
+                    const hpp = type === 'PART' ? getHpp(woId, item.goods_id, item.item_name) : 0;
+                    const sellingPrice = item.estimation_price || 0;
+                    const qty = item.qty || 0;
+                    const totalSellingPrice = sellingPrice * qty;
+                    const totalHpp = hpp * qty;
+
+                    const reportItem: ReportItem = {
+                        item_type: type,
+                        item_name: item.item_name,
+                        qty, unit_price: sellingPrice, total_price: totalSellingPrice,
+                        hpp, total_hpp: totalHpp, profit: totalSellingPrice - totalHpp,
+                        source: 'ESTIMATE_ONLY',
+                    };
+
+                    if (!reportItemsByWo.has(woId)) reportItemsByWo.set(woId, []);
+                    reportItemsByWo.get(woId)?.push(reportItem);
+                });
+            };
+
+            processEstimatedItems(estimationParts || [], 'PART');
+            processEstimatedItems(estimationJobs || [], 'JOB');
 
             // Step 7: Combine all data into the final report structure
             const finalReportData = woData.map(wo => {
                 const vehicleEntry = vehicleEntryMap.get(wo.vehicle_entry_id);
                 const vehicle = vehicleEntry ? vehicleMap.get(vehicleEntry.vehicle_id) : undefined;
-                
                 const items = reportItemsByWo.get(wo.id) || [];
-                
                 const total_realized = items.reduce((sum, item) => sum + item.total_price, 0);
                 const total_hpp = items.reduce((sum, item) => sum + item.total_hpp, 0);
                 const total_profit = items.reduce((sum, item) => sum + item.profit, 0);
@@ -280,14 +292,14 @@ const WorkOrderDetailReport = () => {
                     plate_number: vehicle?.license_plate || 'N/A',
                     brand_type: vehicle?.brand_type || null,
                     vehicle_type: vehicle?.vehicle_type || null,
-                    service_group: vehicle?.vehicle_type || null, // FIX: Use vehicle_type for Group
+                    service_group: vehicle?.vehicle_type || null,
                     customer_name: vehicle?.owner_name || 'N/A',
                     total_realized,
                     total_hpp,
                     total_profit,
                     items: items,
                 };
-            });
+            }).filter(d => d.items.length > 0); // Only show WOs with items
 
             setReportData(finalReportData);
 
