@@ -149,81 +149,49 @@ const WorkOrderDetailReport = () => {
             const estimationParts = checkError(estPartsResult, 'estimasi sparepart');
             const estimationJobs = checkError(estJobsResult, 'estimasi jasa');
 
-            // Step 3: Fetch HPP data sources (only from estimated parts)
-            const estimatedGoodsIds = estimationParts?.filter(p => p.goods_id).map(p => p.goods_id) || [];
-            const allGoodsIds = [...new Set(estimatedGoodsIds)];
+            // Step 3: Fetch all necessary data in parallel
+            const allGoodsIds = estimationParts?.map(p => p.goods_id).filter(Boolean) || [];
+            const allJobTypeIds = estimationJobs?.map(j => j.job_type_id).filter(Boolean) || [];
+            const allVehicleIds = vehicleEntriesData?.map(ve => ve.vehicle_id).filter(Boolean) || [];
 
             const [
-                { data: woLinkedPos, error: woPoError },
                 { data: latestPoItems, error: latestPoError },
                 { data: vehiclesData, error: vehiclesError },
                 { data: jobTypesData, error: jobTypesError },
                 { data: goodsData, error: goodsError },
             ] = await Promise.all([
-                supabase
-                    .from('purchase_orders')
-                    .select('work_order_id, status, purchase_order_items(goods_id, unit_price)')
-                    .in('work_order_id', workOrderIds)
-                    .in('status', ['RECEIVED_PART', 'RECEIVED_FULL']),
+                // The ONLY source for HPP now: latest price for any item.
                 supabase
                     .from('purchase_order_items')
                     .select('goods_id, unit_price, purchase_orders!inner(created_at, status)')
-                    .in('goods_id', allGoodsIds)
                     .in('purchase_orders.status', ['RECEIVED_PART', 'RECEIVED_FULL'])
+                    .not('unit_price', 'is', null)
                     .order('created_at', { foreignTable: 'purchase_orders', ascending: false }),
                 supabase
                     .from('vehicles')
                     .select('id, license_plate, brand_type, vehicle_type, owner_name')
-                    .in('id', vehicleEntriesData?.map(ve => ve.vehicle_id).filter(Boolean) || []),
-                supabase.from('job_types').select('id, job_name'),
-                supabase.from('goods').select('id, name').in('id', allGoodsIds),
+                    .in('id', allVehicleIds),
+                supabase.from('job_types').select('id, job_name').in('id', allJobTypeIds),
+                supabase.from('goods').select('id, name'), // Fetch all goods for the name->id map
             ]);
 
-            if (woPoError) throw new Error(`Gagal mengambil HPP P1: ${woPoError.message}`);
-            if (latestPoError) throw new Error(`Gagal mengambil HPP P2: ${latestPoError.message}`);
+            if (latestPoError) throw new Error(`Gagal mengambil data HPP: ${latestPoError.message}`);
             if (vehiclesError) throw new Error(`Gagal mengambil data kendaraan: ${vehiclesError.message}`);
             if (jobTypesError) throw new Error(`Gagal mengambil data jenis pekerjaan: ${jobTypesError.message}`);
             if (goodsError) throw new Error(`Gagal mengambil data barang: ${goodsError.message}`);
 
-            console.log("DEBUG HPP P1 (by WO): Raw data", JSON.stringify(woLinkedPos, null, 2));
-            console.log("DEBUG HPP P2 (latest): Raw data", JSON.stringify(latestPoItems, null, 2));
+            console.log("DEBUG HPP (latest): Raw data", JSON.stringify(latestPoItems, null, 2));
 
-            // Step 4: Pre-process HPP data into fast-lookup maps
+            // Step 4: Pre-process data into fast-lookup maps
             const goodsMap = new Map(goodsData.map(g => [g.id, g.name]));
             const goodsIdByNameMap = new Map(goodsData.map(g => [g.name, g.id]));
-            const hppP1Map_byGoodsId = new Map<string, Map<string, number>>();
-            const hppP1Map_byItemName = new Map<string, Map<string, number>>();
-            woLinkedPos?.forEach(po => {
-                if (po.work_order_id) {
-                    if (!hppP1Map_byGoodsId.has(po.work_order_id)) hppP1Map_byGoodsId.set(po.work_order_id, new Map());
-                    if (!hppP1Map_byItemName.has(po.work_order_id)) hppP1Map_byItemName.set(po.work_order_id, new Map());
-                    const goodsIdMap = hppP1Map_byGoodsId.get(po.work_order_id);
-                    const nameMap = hppP1Map_byItemName.get(po.work_order_id);
-                    (po.purchase_order_items as any[]).forEach(item => {
-                        const itemName = goodsMap.get(item.goods_id);
-                        if (item.goods_id) {
-                            goodsIdMap?.set(item.goods_id, item.unit_price);
-                            console.log(`DEBUG HPP P1: Map by ID for WO ${po.work_order_id}. Goods ${item.goods_id} -> Price ${item.unit_price}`);
-                        }
-                        if (itemName) {
-                            nameMap?.set(itemName, item.unit_price);
-                            console.log(`DEBUG HPP P1: Map by Name for WO ${po.work_order_id}. Name ${itemName} -> Price ${item.unit_price}`);
-                        }
-                    });
-                }
-            });
-
-            const hppP2Map_byGoodsId = new Map<string, number>();
-            const hppP2Map_byItemName = new Map<string, number>();
+            
+            // Simplified HPP Map - only one priority
+            const hppMap = new Map<string, number>();
             latestPoItems?.forEach(item => {
-                const itemName = goodsMap.get(item.goods_id);
-                if (item.goods_id && !hppP2Map_byGoodsId.has(item.goods_id)) {
-                    hppP2Map_byGoodsId.set(item.goods_id, item.unit_price);
-                    console.log(`DEBUG HPP P2: Map by ID. Goods ${item.goods_id} -> Price ${item.unit_price}`);
-                }
-                if (itemName && !hppP2Map_byItemName.has(itemName)) {
-                    hppP2Map_byItemName.set(itemName, item.unit_price);
-                    console.log(`DEBUG HPP P2: Map by Name. Name ${itemName} -> Price ${item.unit_price}`);
+                if (item.goods_id && item.unit_price != null && !hppMap.has(item.goods_id)) {
+                    hppMap.set(item.goods_id, item.unit_price);
+                    console.log(`DEBUG HPP: Map by ID. Goods ${item.goods_id} -> Price ${item.unit_price}`);
                 }
             });
 
@@ -233,52 +201,14 @@ const WorkOrderDetailReport = () => {
             const woMapByVeId = new Map(woData.map(wo => [wo.vehicle_entry_id, wo.id]));
             const jobTypesMap = new Map(jobTypesData?.map(jt => [jt.id, jt.job_name]));
 
-            const getHpp = (woId: string, goodsId: string | null, itemName: string | null): number => {
-                console.log(`--- START HPP LOOKUP for WO ${woId} ---`);
-                console.log(`Searching for: goodsId='${goodsId}', itemName='${itemName}'`);
-
-                // Priority 1: Price from a PO linked to this specific WO
-                const p1MapById = hppP1Map_byGoodsId.get(woId);
-                if (goodsId && p1MapById) {
-                    const price = p1MapById.get(goodsId);
-                    if (price !== undefined) {
-                        console.log(`SUCCESS P1 (by ID): Found price ${price}`);
-                        console.log(`--- END HPP LOOKUP ---`);
-                        return price;
-                    }
+            const getHpp = (goodsId: string | null): number => {
+                if (!goodsId) return 0;
+                const price = hppMap.get(goodsId);
+                if (price !== undefined) {
+                    console.log(`SUCCESS HPP: Found price ${price} for goodsId ${goodsId}`);
+                    return price;
                 }
-                const p1MapByName = hppP1Map_byItemName.get(woId);
-                if (itemName && p1MapByName) {
-                    const price = p1MapByName.get(itemName);
-                    if (price !== undefined) {
-                        console.log(`SUCCESS P1 (by Name): Found price ${price}`);
-                        console.log(`--- END HPP LOOKUP ---`);
-                        return price;
-                    }
-                }
-                console.log("INFO: No match in Priority 1.");
-
-                // Priority 2: Latest price from any PO
-                if (goodsId) {
-                    const price = hppP2Map_byGoodsId.get(goodsId);
-                    if (price !== undefined) {
-                        console.log(`SUCCESS P2 (by ID): Found price ${price}`);
-                        console.log(`--- END HPP LOOKUP ---`);
-                        return price;
-                    }
-                }
-                if (itemName) {
-                    const price = hppP2Map_byItemName.get(itemName);
-                    if (price !== undefined) {
-                        console.log(`SUCCESS P2 (by Name): Found price ${price}`);
-                        console.log(`--- END HPP LOOKUP ---`);
-                        return price;
-                    }
-                }
-                console.log("INFO: No match in Priority 2.");
-
-                console.log("FAILURE: No HPP found. Returning 0.");
-                console.log(`--- END HPP LOOKUP ---`);
+                console.log(`FAILURE HPP: No price found for goodsId ${goodsId}`);
                 return 0;
             };
 
@@ -305,7 +235,7 @@ const WorkOrderDetailReport = () => {
                         }
                     }
 
-                    const hpp = isPart ? getHpp(woId, goodsId, itemName) : 0;
+                    const hpp = isPart ? getHpp(goodsId) : 0;
                     
                     const sellingPrice = item.estimated_price || 0;
                     
