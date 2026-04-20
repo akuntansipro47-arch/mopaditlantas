@@ -223,22 +223,28 @@ const WorkOrderDetailReport = () => {
             const jobTypesMap = new Map(jobTypesData?.map(jt => [jt.id, jt.job_name]));
 
             const getHpp = (woId: string, goodsId: string | null, itemName: string | null): number => {
+                // Prioritas 1: Harga dari PO yang terikat langsung dengan WO ini
+                const p1MapById = hppP1Map_byGoodsId.get(woId);
+                if (goodsId && p1MapById) {
+                    const price = p1MapById.get(goodsId);
+                    if (price !== undefined) return price;
+                }
+                const p1MapByName = hppP1Map_byItemName.get(woId);
+                if (itemName && p1MapByName) {
+                    const price = p1MapByName.get(itemName);
+                    if (price !== undefined) return price;
+                }
+
+                // Prioritas 2: Harga terakhir dari PO manapun
                 if (goodsId) {
-                    const p1Price = hppP1Map_byGoodsId.get(woId)?.get(goodsId);
-                    if (p1Price !== undefined) return p1Price;
+                    const price = hppP2Map_byGoodsId.get(goodsId);
+                    if (price !== undefined) return price;
                 }
                 if (itemName) {
-                    const p1PriceName = hppP1Map_byItemName.get(woId)?.get(itemName);
-                    if (p1PriceName !== undefined) return p1PriceName;
+                    const price = hppP2Map_byItemName.get(itemName);
+                    if (price !== undefined) return price;
                 }
-                if (goodsId) {
-                    const p2Price = hppP2Map_byGoodsId.get(goodsId);
-                    if (p2Price !== undefined) return p2Price;
-                }
-                if (itemName) {
-                    const p2PriceName = hppP2Map_byItemName.get(itemName);
-                    if (p2PriceName !== undefined) return p2PriceName;
-                }
+
                 return 0;
             };
 
