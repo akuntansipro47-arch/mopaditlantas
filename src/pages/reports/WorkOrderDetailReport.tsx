@@ -158,15 +158,17 @@ const WorkOrderDetailReport = () => {
                 { data: woLinkedPos, error: woPoError },
                 { data: latestPoItems, error: latestPoError },
                 { data: vehiclesData, error: vehiclesError },
+                { data: jobTypesData, error: jobTypesError },
+                { data: goodsData, error: goodsError },
             ] = await Promise.all([
                 supabase
                     .from('purchase_orders')
-                    .select('work_order_id, status, purchase_order_items(goods_id, unit_price, goods(id, name))')
+                    .select('work_order_id, status, purchase_order_items(goods_id, unit_price)')
                     .in('work_order_id', workOrderIds)
                     .in('status', ['RECEIVED_PART', 'RECEIVED_FULL']),
                 supabase
                     .from('purchase_order_items')
-                    .select('goods_id, unit_price, goods(id, name), purchase_orders!inner(created_at, status)')
+                    .select('goods_id, unit_price, purchase_orders!inner(created_at, status)')
                     .in('goods_id', allGoodsIds)
                     .in('purchase_orders.status', ['RECEIVED_PART', 'RECEIVED_FULL'])
                     .order('created_at', { foreignTable: 'purchase_orders', ascending: false }),
@@ -174,24 +176,29 @@ const WorkOrderDetailReport = () => {
                     .from('vehicles')
                     .select('id, license_plate, brand_type, vehicle_type, owner_name')
                     .in('id', vehicleEntriesData?.map(ve => ve.vehicle_id).filter(Boolean) || []),
+                supabase.from('job_types').select('id, job_name'),
+                supabase.from('goods').select('id, name').in('id', allGoodsIds),
             ]);
 
             if (woPoError) throw new Error(`Gagal mengambil HPP P1: ${woPoError.message}`);
             if (latestPoError) throw new Error(`Gagal mengambil HPP P2: ${latestPoError.message}`);
             if (vehiclesError) throw new Error(`Gagal mengambil data kendaraan: ${vehiclesError.message}`);
+            if (jobTypesError) throw new Error(`Gagal mengambil data jenis pekerjaan: ${jobTypesError.message}`);
+            if (goodsError) throw new Error(`Gagal mengambil data barang: ${goodsError.message}`);
 
             // Step 4: Pre-process HPP data into fast-lookup maps
+            const goodsMap = new Map(goodsData?.map(g => [g.id, g.name]));
             const hppP1Map_byGoodsId = new Map<string, Map<string, number>>();
             const hppP1Map_byItemName = new Map<string, Map<string, number>>();
             woLinkedPos?.forEach(po => {
                 if (po.work_order_id) {
                     if (!hppP1Map_byGoodsId.has(po.work_order_id)) hppP1Map_byGoodsId.set(po.work_order_id, new Map());
                     if (!hppP1Map_byItemName.has(po.work_order_id)) hppP1Map_byItemName.set(po.work_order_id, new Map());
-                    const goodsMap = hppP1Map_byGoodsId.get(po.work_order_id);
+                    const goodsIdMap = hppP1Map_byGoodsId.get(po.work_order_id);
                     const nameMap = hppP1Map_byItemName.get(po.work_order_id);
                     (po.purchase_order_items as any[]).forEach(item => {
-                        const itemName = item.goods?.name;
-                        if (item.goods_id) goodsMap?.set(item.goods_id, item.unit_price);
+                        const itemName = goodsMap.get(item.goods_id);
+                        if (item.goods_id) goodsIdMap?.set(item.goods_id, item.unit_price);
                         if (itemName) nameMap?.set(itemName, item.unit_price);
                     });
                 }
@@ -200,7 +207,7 @@ const WorkOrderDetailReport = () => {
             const hppP2Map_byGoodsId = new Map<string, number>();
             const hppP2Map_byItemName = new Map<string, number>();
             latestPoItems?.forEach(item => {
-                const itemName = item.goods?.name;
+                const itemName = goodsMap.get(item.goods_id);
                 if (item.goods_id && !hppP2Map_byGoodsId.has(item.goods_id)) {
                     hppP2Map_byGoodsId.set(item.goods_id, item.unit_price);
                 }
@@ -213,6 +220,7 @@ const WorkOrderDetailReport = () => {
             const vehicleEntryMap = new Map(vehicleEntriesData?.map(e => [e.id, e]));
             const vehicleMap = new Map(vehiclesData?.map(v => [v.id, v]));
             const woMapByVeId = new Map(woData.map(wo => [wo.vehicle_entry_id, wo.id]));
+            const jobTypesMap = new Map(jobTypesData?.map(jt => [jt.id, jt.job_name]));
 
             const getHpp = (woId: string, goodsId: string | null, itemName: string | null): number => {
                 if (goodsId) {
@@ -243,15 +251,17 @@ const WorkOrderDetailReport = () => {
                     const woId = woMapByVeId.get(item.vehicle_entry_id);
                     if (!woId) return; // Just skip if no corresponding WO
 
-                    const hpp = type === 'PART' ? getHpp(woId, item.goods_id, item.item_name) : 0;
+                    const isPart = type === 'PART';
+                    const itemName = isPart ? item.item_name : (jobTypesMap.get(item.job_type_id) || 'Jasa Umum');
+                    const hpp = isPart ? getHpp(woId, item.goods_id, item.item_name) : 0;
                     const sellingPrice = item.estimation_price || 0;
-                    const qty = item.qty || 0;
+                    const qty = item.qty || (isPart ? 0 : 1);
                     const totalSellingPrice = sellingPrice * qty;
                     const totalHpp = hpp * qty;
 
                     const reportItem: ReportItem = {
                         item_type: type,
-                        item_name: item.item_name,
+                        item_name: itemName,
                         qty, unit_price: sellingPrice, total_price: totalSellingPrice,
                         hpp, total_hpp: totalHpp, profit: totalSellingPrice - totalHpp,
                         source: 'ESTIMATE_ONLY', // Source is always estimate
