@@ -78,29 +78,56 @@ export default function PurchaseOrderDetailReport() {
       const from = (page - 1) * ITEMS_PER_PAGE;
       const to = from + ITEMS_PER_PAGE - 1;
 
+      // --- START: LOGIKA BARU --- 
+      // 1. Query utama dari purchase_order_items, gabung dengan tabel lain
       let query = supabase
-        .from('purchase_order_details_report_view')
-        .select('*', { count: 'exact' })
-        .gte('po_date', startDate)
-        .lte('po_date', endDate);
+        .from('purchase_order_items')
+        .select(`
+          id,
+          quantity,
+          unit_price,
+          total_price,
+          goods!left(id, name),
+          purchase_orders!inner(
+            id,
+            po_number,
+            created_at,
+            supplier_id,
+            suppliers!left(name),
+            work_order_id,
+            work_orders!left(
+              wo_number,
+              vehicle_id,
+              vehicles!left(
+                license_plate,
+                brand_type
+              )
+            )
+          )
+        `, { count: 'exact' })
+        .gte('purchase_orders.created_at', startDate)
+        .lte('purchase_orders.created_at', endDate);
 
+      // 2. Terapkan filter pencarian jika ada
       if (searchQuery) {
         const q = `%${searchQuery.trim().replace(/ /g, '%')}%`;
+        // Pencarian dilakukan pada tabel-tabel yang sudah digabungkan
         query = query.or(
-          `po_number.ilike.${q},` +
-          `wo_number.ilike.${q},` +
-          `vehicle_license_plate.ilike.${q},` +
-          `vehicle_brand.ilike.${q},` +
-          `goods_name.ilike.${q},` +
-          `supplier_name.ilike.${q}`
+          `purchase_orders.po_number.ilike.${q},` +
+          `purchase_orders.work_orders.wo_number.ilike.${q},` +
+          `purchase_orders.work_orders.vehicles.license_plate.ilike.${q},` +
+          `purchase_orders.work_orders.vehicles.brand_type.ilike.${q},` +
+          `goods.name.ilike.${q},` +
+          `purchase_orders.suppliers.name.ilike.${q}`
         );
       }
 
-      const { data: viewData, error: viewError, count: totalCount } = await query
-        .order('po_date', { ascending: false })
+      const { data: poItems, error: poError, count: totalCount } = await query
+        .order('created_at', { foreignTable: 'purchase_orders', ascending: false })
         .range(from, to);
 
-      if (viewError) throw viewError;
+      if (poError) throw poError;
+      // --- END: LOGIKA BARU ---
 
       if (page === 1) {
         if (totalCount) {
@@ -110,7 +137,7 @@ export default function PurchaseOrderDetailReport() {
         }
       }
 
-      if (!viewData || viewData.length === 0) {
+      if (!poItems || poItems.length === 0) {
         if (page === 1) {
           setData([]);
           toast.info('Tidak ada data ditemukan untuk rentang tanggal yang dipilih.');
@@ -119,10 +146,8 @@ export default function PurchaseOrderDetailReport() {
         return;
       }
 
-      // 2. Gather IDs from the CURRENT PAGE's items only
-      const poIds = [...new Set(viewData.map(item => item.po_id))];
+      const poIds = [...new Set(poItems.map(item => item.purchase_orders.id))];
 
-      // 3. Fetch goods receipts for these specific POs
       const { data: receipts, error: receiptError } = await supabase
         .from('goods_receipts')
         .select('po_id, items:goods_receipt_items(goods_id, quantity_received)')
@@ -140,7 +165,6 @@ export default function PurchaseOrderDetailReport() {
         });
       });
 
-      // 4. Fetch payment status from invoices for these specific POs
       const { data: invoices, error: invoiceError } = await supabase
         .from('purchase_invoices')
         .select('po_id, status')
@@ -153,9 +177,11 @@ export default function PurchaseOrderDetailReport() {
         paymentStatusMap.set(inv.po_id, inv.status);
       });
 
-      // 5. Combine all data
-      const combinedData = viewData.map(item => {
-        const paymentStatus = paymentStatusMap.get(item.po_id);
+      const combinedData = poItems.map(item => {
+        const po = item.purchase_orders;
+        if (!po) return null;
+
+        const paymentStatus = paymentStatusMap.get(po.id);
 
         let statusBayar = 'Belum Ditagih';
         if (paymentStatus === 'PAID') {
@@ -166,19 +192,19 @@ export default function PurchaseOrderDetailReport() {
           statusBayar = 'Belum Lunas';
         }
 
-        const receivedQtyKey = `${item.po_id}-${item.goods_id}`;
+        const receivedQtyKey = `${po.id}-${item.goods?.id}`;
         const receivedQty = receivedQtyMap.get(receivedQtyKey) || 0;
 
         return {
-          id: item.po_item_id,
-          tgl: item.po_date,
-          no_po: item.po_number,
-          supplier: item.supplier_name || '-',
-          kendaraan: item.vehicle_brand,
-          nopol: item.vehicle_license_plate,
-          no_wo: item.wo_number || '-',
-          tipe: item.goods_name || '-',
-          nama_barang: item.goods_name || '-',
+          id: item.id,
+          tgl: po.created_at,
+          no_po: po.po_number,
+          supplier: po.suppliers?.name || '-',
+          kendaraan: po.work_orders?.vehicles?.brand_type || '-',
+          nopol: po.work_orders?.vehicles?.license_plate || '-',
+          no_wo: po.work_orders?.wo_number || '-',
+          tipe: item.goods?.name || '-',
+          nama_barang: item.goods?.name || '-',
           qty: item.quantity,
           diterima: receivedQty,
           status_bayar: statusBayar,
@@ -204,31 +230,55 @@ export default function PurchaseOrderDetailReport() {
     }
   
     try {
+      // --- START: LOGIKA BARU ---
       let query = supabase
-        .from('purchase_order_details_report_view')
-        .select('*')
-        .gte('po_date', dateRange.start)
-        .lte('po_date', dateRange.end);
+        .from('purchase_order_items')
+        .select(`
+          id,
+          quantity,
+          unit_price,
+          total_price,
+          goods!left(id, name),
+          purchase_orders!inner(
+            id,
+            po_number,
+            created_at,
+            supplier_id,
+            suppliers!left(name),
+            work_order_id,
+            work_orders!left(
+              wo_number,
+              vehicle_id,
+              vehicles!left(
+                license_plate,
+                brand_type
+              )
+            )
+          )
+        `)
+        .gte('purchase_orders.created_at', dateRange.start)
+        .lte('purchase_orders.created_at', dateRange.end);
 
       if (searchQuery) {
         const q = `%${searchQuery.trim().replace(/ /g, '%')}%`;
         query = query.or(
-          `po_number.ilike.${q},` +
-          `wo_number.ilike.${q},` +
-          `vehicle_license_plate.ilike.${q},` +
-          `vehicle_brand.ilike.${q},` +
-          `goods_name.ilike.${q},` +
-          `supplier_name.ilike.${q}`
+          `purchase_orders.po_number.ilike.${q},` +
+          `purchase_orders.work_orders.wo_number.ilike.${q},` +
+          `purchase_orders.work_orders.vehicles.license_plate.ilike.${q},` +
+          `purchase_orders.work_orders.vehicles.brand_type.ilike.${q},` +
+          `goods.name.ilike.${q},` +
+          `purchase_orders.suppliers.name.ilike.${q}`
         );
       }
 
-      const { data: viewData, error: viewError } = await query
-        .order('po_date', { ascending: false });
+      const { data: poItems, error: poError } = await query
+        .order('created_at', { foreignTable: 'purchase_orders', ascending: false });
+      // --- END: LOGIKA BARU ---
   
-      if (viewError) throw viewError;
-      if (!viewData || viewData.length === 0) return [];
+      if (poError) throw poError;
+      if (!poItems || poItems.length === 0) return [];
   
-      const poIds = [...new Set(viewData.map(item => item.po_id))];
+      const poIds = [...new Set(poItems.map(item => item.purchase_orders.id))];
   
       const { data: receipts, error: receiptError } = await supabase
         .from('goods_receipts')
@@ -259,27 +309,30 @@ export default function PurchaseOrderDetailReport() {
         paymentStatusMap.set(inv.po_id, inv.status);
       });
   
-      const combinedData = viewData.map(item => {
-        const paymentStatus = paymentStatusMap.get(item.po_id);
+      const combinedData = poItems.map(item => {
+        const po = item.purchase_orders;
+        if (!po) return null;
+
+        const paymentStatus = paymentStatusMap.get(po.id);
 
         let statusBayar = 'Belum Ditagih';
         if (paymentStatus === 'PAID') statusBayar = 'Lunas';
         else if (paymentStatus === 'PARTIAL') statusBayar = 'Bayar Sebagian';
         else if (paymentStatus) statusBayar = 'Belum Lunas';
 
-        const receivedQtyKey = `${item.po_id}-${item.goods_id}`;
+        const receivedQtyKey = `${po.id}-${item.goods?.id}`;
         const receivedQty = receivedQtyMap.get(receivedQtyKey) || 0;
 
         return {
-          id: item.po_item_id,
-          tgl: item.po_date,
-          no_po: item.po_number,
-          supplier: item.supplier_name || '-',
-          kendaraan: item.vehicle_brand,
-          nopol: item.vehicle_license_plate,
-          no_wo: item.wo_number || '-',
-          tipe: item.goods_name || '-',
-          nama_barang: item.goods_name || '-',
+          id: item.id,
+          tgl: po.created_at,
+          no_po: po.po_number,
+          supplier: po.suppliers?.name || '-',
+          kendaraan: po.work_orders?.vehicles?.brand_type || '-',
+          nopol: po.work_orders?.vehicles?.license_plate || '-',
+          no_wo: po.work_orders?.wo_number || '-',
+          tipe: item.goods?.name || '-',
+          nama_barang: item.goods?.name || '-',
           qty: item.quantity,
           diterima: receivedQty,
           status_bayar: statusBayar,
