@@ -507,40 +507,6 @@ export default function WorkOrderV2() {
         setIssuedParts(flatIssuedParts);
       }
     }
-
-    // Reset and fetch data for the gatekeeper
-    setRequiredParts([]);
-    setIssuedParts([]);
-    setPartValidationStatus({ isMet: false, missing: [] });
-
-    if (wo.vehicle_entry_id) {
-      // 1. Fetch Required Parts from vehicle_entry_spareparts
-      const { data: requiredData, error: requiredError } = await supabase
-        .from('vehicle_entry_spareparts')
-        .select('goods_id, qty, goods(name)')
-        .eq('vehicle_entry_id', wo.vehicle_entry_id);
-
-      if (requiredError) {
-        toast.error('Gagal mengambil daftar kebutuhan sparepart.');
-        console.error(requiredError);
-      } else {
-        setRequiredParts(requiredData || []);
-      }
-
-      // 2. Fetch Issued Parts from goods_issues -> goods_issue_items
-      const { data: issuedData, error: issuedError } = await supabase
-        .from('goods_issues')
-        .select('items:goods_issue_items(goods_id, quantity)')
-        .eq('work_order_id', wo.id);
-      
-      if (issuedError) {
-        toast.error('Gagal mengambil daftar sparepart yang sudah keluar.');
-        console.error(issuedError);
-      } else {
-        const flatIssuedParts = issuedData?.flatMap((issue: any) => issue.items) || [];
-        setIssuedParts(flatIssuedParts);
-      }
-    }
     
     try {
       const normalizeText = (v: string) =>
@@ -975,7 +941,7 @@ export default function WorkOrderV2() {
       if (issuedQty < required.qty) {
         allPartsMet = false;
         missingParts.push({ 
-          name: required.spareparts.name, 
+          name: required.spareparts?.name || required.item_name || 'Nama Barang Tidak Ditemukan', 
           required: required.qty, 
           issued: issuedQty, 
           missing: required.qty - issuedQty 
