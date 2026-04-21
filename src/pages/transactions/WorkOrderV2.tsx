@@ -25,10 +25,9 @@ interface Vehicle {
   model: string;
   brand_type: string;
 }
-
 interface VehicleEntry {
   id: string;
-  complaint: string;
+  notes: string; // <- Diubah dari complaint
   vehicles: Vehicle | null;
 }
 
@@ -394,7 +393,7 @@ const WorkOrderV2 = () => {
                       <TableCell className="font-medium">{wo.wo_number}</TableCell>
                       <TableCell>{formatDate(wo.work_date)}</TableCell>
                       <TableCell>{wo.vehicle_entries?.vehicles?.license_plate || '-'}</TableCell>
-                      <TableCell className="max-w-[300px] truncate">{wo.vehicle_entries?.complaint || '-'}</TableCell>
+                      ><TableCell className="max-w-[300px] truncate">{wo.vehicle_entries?.notes || '-'}</TableCell>
                       <TableCell>{wo.mechanics?.name || '-'}</TableCell>
                       <TableCell className="text-right">
                         <Button variant="ghost" size="icon" onClick={() => triggerPrint(wo)} title="Cetak SPK">
@@ -532,7 +531,7 @@ const WorkOrderV2 = () => {
               </div>
               <div className="mt-4">
                 <h2 className="font-bold border-b border-black">KELUHAN:</h2>
-                <p className="mt-2 text-sm">{selectedWoForPrint.vehicle_entries?.complaint}</p>
+                <p className="mt-2 text-sm">{selectedWoForPrint.vehicle_entries?.notes}</p>
               </div>
               <div className="mt-4">
                 <h2 className="font-bold border-b border-black">DETAIL PEKERJAAN / SPAREPART:</h2>
