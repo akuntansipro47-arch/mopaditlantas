@@ -46,6 +46,9 @@ export default function WorkOrder() {
   const [entries, setEntries] = useState<(VehicleEntry & { vehicles: Vehicle | null })[]>([]);
   const [mechanics, setMechanics] = useState<Mechanic[]>([]);
   
+  const [isVehicleSearchOpen, setIsVehicleSearchOpen] = useState(false);
+  const [vehicleSearchQuery, setVehicleSearchQuery] = useState('');
+  
   // Form State
   const [formData, setFormData] = useState({
     work_date: new Date().toISOString().split('T')[0],
@@ -279,18 +282,52 @@ export default function WorkOrder() {
 
                 <div className="space-y-2">
                   <Label>Referensi Nota Dinas (Entry Kendaraan)</Label>
-                  <Combobox
-                    options={entries.map(e => ({
-                      value: e.id,
-                      label: `${e.vehicles?.license_plate} (${e.vehicles?.brand_type}) - ${new Date(e.entry_date).toLocaleDateString('id-ID')}`
-                    }))}
-                    value={formData.vehicle_entry_id}
-                    onChange={(v) => handleSelectChange('vehicle_entry_id', v)}
-                    placeholder="Pilih Kendaraan Masuk"
-                    searchPlaceholder="Cari plat nomor atau merk..."
-                    emptyText="Tidak ada kendaraan masuk status OPEN."
-                    disabled={isEditing}
-                  />
+                  <Dialog open={isVehicleSearchOpen} onOpenChange={setIsVehicleSearchOpen}>
+                    <DialogTrigger asChild>
+                      <Button variant="outline" className="w-full justify-start text-left font-normal" disabled={isEditing}>
+                        {selectedEntryDetails ? 
+                          `${selectedEntryDetails.vehicles?.license_plate} (${selectedEntryDetails.vehicles?.brand_type})` : 
+                          "Pilih Kendaraan Masuk..."}
+                      </Button>
+                    </DialogTrigger>
+                    <DialogContent className="sm:max-w-[600px]">
+                      <DialogHeader>
+                        <DialogTitle>Cari Kendaraan Masuk</DialogTitle>
+                        <DialogDescription>Cari berdasarkan plat nomor atau tipe kendaraan.</DialogDescription>
+                      </DialogHeader>
+                      <div className="py-4">
+                        <Input 
+                          placeholder="Ketik untuk mencari..." 
+                          value={vehicleSearchQuery}
+                          onChange={(e) => setVehicleSearchQuery(e.target.value)}
+                          className="mb-4"
+                        />
+                        <div className="max-h-[300px] overflow-y-auto space-y-2">
+                          {entries
+                            .filter(e => 
+                              e.vehicles?.license_plate.toLowerCase().includes(vehicleSearchQuery.toLowerCase()) ||
+                              e.vehicles?.brand_type.toLowerCase().includes(vehicleSearchQuery.toLowerCase())
+                            )
+                            .map(e => (
+                              <div 
+                                key={e.id}
+                                onClick={() => {
+                                  handleSelectChange('vehicle_entry_id', e.id);
+                                  setIsVehicleSearchOpen(false);
+                                  setVehicleSearchQuery('');
+                                }}
+                                className="p-3 border rounded-md hover:bg-accent cursor-pointer"
+                              >
+                                <p className="font-semibold">{e.vehicles?.license_plate} ({e.vehicles?.brand_type})</p>
+                                <p className="text-sm text-muted-foreground">Tgl Masuk: {new Date(e.entry_date).toLocaleDateString('id-ID')}</p>
+                              </div>
+                            ))
+                          }
+                          {entries.length === 0 && <p className="text-center text-sm text-muted-foreground">Tidak ada kendaraan masuk status OPEN.</p>}
+                        </div>
+                      </div>
+                    </DialogContent>
+                  </Dialog>
                   <p className="text-xs text-muted-foreground">Hanya menampilkan kendaraan masuk yang belum diproses.</p>
                 </div>
 
