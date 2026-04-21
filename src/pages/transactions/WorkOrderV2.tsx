@@ -13,7 +13,7 @@ import { useReactToPrint } from 'react-to-print';
 import { toast } from 'sonner';
 
 // --- Interface Definitions ---
-// Pastikan interface ini sesuai dengan struktur tabel Anda
+// Disesuaikan dengan skema tabel baru Anda
 
 interface Vehicle {
   id: string;
@@ -28,22 +28,35 @@ interface Mechanic {
 }
 
 interface VehicleEntry {
-  id: string;
-  notes: string; // DIGANTI: dari 'complaint' menjadi 'notes'
+  id:string;
+  notes: string;
   vehicles: Vehicle | null;
+}
+
+interface WorkOrderImage {
+  id: string;
+  image_url: string;
+}
+
+interface WorkOrderBilling {
+  id: string;
+  item_name: string;
+  qty: number;
+  total_price: number;
+  item_type: 'PART' | 'JOB';
 }
 
 interface WorkOrder {
   id: string;
   work_order_number: string;
   work_date: string;
-  vehicle_entry_id: string;
-  mechanic_id: string;
   vehicle_entries: VehicleEntry | null;
   mechanics: Mechanic | null;
+  work_order_images: WorkOrderImage[]; // Menjadi array
+  work_order_billings: WorkOrderBilling[]; // Menjadi array
 }
 
-// --- Helper Function ---
+// --- Helper Functions ---
 const formatDate = (dateString: string) => {
   if (!dateString) return '-';
   return new Date(dateString).toLocaleDateString('id-ID', {
@@ -51,6 +64,15 @@ const formatDate = (dateString: string) => {
     month: 'long',
     year: 'numeric',
   });
+};
+
+const formatCurrency = (amount: number) => {
+  if (typeof amount !== 'number') return 'Rp 0';
+  return new Intl.NumberFormat('id-ID', {
+    style: 'currency',
+    currency: 'IDR',
+    minimumFractionDigits: 0,
+  }).format(amount);
 };
 
 
@@ -73,57 +95,27 @@ export default function WorkOrderV2() {
       setError(null);
 
       try {
-        // 1. Ambil data utama dari work_orders
-        const { data: woData, error: woError } = await supabase
+        // --- QUERY DIPERBARUI ---
+        // Mengambil semua data terkait termasuk gambar dan billing
+        const { data, error } = await supabase
           .from('work_orders')
-          .select('*')
+          .select(`
+            *,
+            vehicle_entries (
+              *,
+              vehicles (*)
+            ),
+            mechanics (*),
+            work_order_images (*),
+            work_order_billings (*)
+          `)
           .order('created_at', { ascending: false });
 
-        if (woError) throw new Error(`Gagal mengambil data WO: ${woError.message}`);
-        if (!woData) return;
+        if (error) {
+          throw new Error(`Gagal mengambil data WO: ${error.message}`);
+        }
 
-        // 2. Kumpulkan semua ID yang dibutuhkan untuk relasi
-        const entryIds = [...new Set(woData.map((wo) => wo.vehicle_entry_id).filter(Boolean))];
-        const mechanicIds = [...new Set(woData.map((wo) => wo.mechanic_id).filter(Boolean))];
-
-        // 3. Ambil data relasi (vehicle_entries dan mechanics) secara paralel
-        const [entriesResponse, mechanicsResponse] = await Promise.all([
-          entryIds.length > 0 ? supabase.from('vehicle_entries').select('id, notes, vehicle_id').in('id', entryIds) : Promise.resolve({ data: [], error: null }),
-          mechanicIds.length > 0 ? supabase.from('mechanics').select('id, name').in('id', mechanicIds) : Promise.resolve({ data: [], error: null }),
-        ]);
-
-        if (entriesResponse.error) throw new Error(`Gagal mengambil data Vehicle Entries: ${entriesResponse.error.message}`);
-        if (mechanicsResponse.error) throw new Error(`Gagal mengambil data Mechanics: ${mechanicsResponse.error.message}`);
-
-        const vehicleIds = [...new Set(entriesResponse.data?.map((entry) => entry.vehicle_id).filter(Boolean) || [])];
-
-        // 4. Ambil data kendaraan (vehicles)
-        const { data: vehiclesData, error: vehiclesError } = vehicleIds.length > 0
-          ? await supabase.from('vehicles').select('*').in('id', vehicleIds)
-          : { data: [], error: null };
-
-        if (vehiclesError) throw new Error(`Gagal mengambil data Vehicles: ${vehiclesError.message}`);
-
-        // 5. Buat "peta" untuk mempermudah pencarian data relasi
-        const entriesMap = new Map(entriesResponse.data?.map(entry => [entry.id, entry]));
-        const mechanicsMap = new Map(mechanicsResponse.data?.map(mech => [mech.id, mech]));
-        const vehiclesMap = new Map(vehiclesData?.map(vehicle => [vehicle.id, vehicle]));
-
-        // 6. Gabungkan semua data menjadi satu struktur yang lengkap
-        const combinedData = woData.map((wo) => {
-          const vehicleEntry = entriesMap.get(wo.vehicle_entry_id) || null;
-          if (vehicleEntry) {
-            (vehicleEntry as any).vehicles = vehiclesMap.get(vehicleEntry.vehicle_id) || null;
-          }
-
-          return {
-            ...wo,
-            vehicle_entries: vehicleEntry,
-            mechanics: mechanicsMap.get(wo.mechanic_id) || null,
-          };
-        });
-
-        setWorkOrders(combinedData as WorkOrder[]);
+        setWorkOrders(data as WorkOrder[]);
 
       } catch (err: any) {
         setError(err.message);
@@ -145,7 +137,7 @@ export default function WorkOrderV2() {
 
 
   if (loading) {
-    return <div className="p-4">Memuat data...</div>;
+    return <div className="p-4 text-center">Memuat data work order...</div>;
   }
 
   if (error) {
@@ -174,7 +166,6 @@ export default function WorkOrderV2() {
                   <TableCell className="font-medium">{wo.work_order_number}</TableCell>
                   <TableCell>{formatDate(wo.work_date)}</TableCell>
                   <TableCell>{wo.vehicle_entries?.vehicles?.license_plate || '-'}</TableCell>
-                  {/* KODE DIPERBAIKI: Menggunakan 'notes' dan sintaks JSX yang benar */}
                   <TableCell className="max-w-[300px] truncate">{wo.vehicle_entries?.notes || '-'}</TableCell>
                   <TableCell>{wo.mechanics?.name || '-'}</TableCell>
                   <TableCell className="text-right">
@@ -195,34 +186,65 @@ export default function WorkOrderV2() {
         </Table>
       </div>
 
-      {/* Elemen untuk dicetak (disembunyikan dari layar) */}
+      {/* --- BAGIAN CETAK DIPERBARUI --- */}
       <div className="hidden">
         {selectedWoForPrint && (
           <div ref={printRef} className="p-8">
             <h2 className="text-xl font-bold mb-4">Work Order: {selectedWoForPrint.work_order_number}</h2>
+            
+            {/* Info Kendaraan */}
             <div className="grid grid-cols-2 gap-4 text-sm">
-              <div>
-                <strong>No. Polisi:</strong> <span>{selectedWoForPrint.vehicle_entries?.vehicles?.license_plate}</span>
-              </div>
-              <div>
-                <strong>Kendaraan:</strong> <span>{selectedWoForPrint.vehicle_entries?.vehicles?.brand_type}</span>
-              </div>
-              <div>
-                <strong>Pemilik:</strong> <span>{selectedWoForPrint.vehicle_entries?.vehicles?.owner_name}</span>
-              </div>
-              <div>
-                <strong>Tanggal:</strong> <span>{formatDate(selectedWoForPrint.work_date)}</span>
-              </div>
+              <div><strong>No. Polisi:</strong> <span>{selectedWoForPrint.vehicle_entries?.vehicles?.license_plate}</span></div>
+              <div><strong>Kendaraan:</strong> <span>{selectedWoForPrint.vehicle_entries?.vehicles?.brand_type}</span></div>
+              <div><strong>Pemilik:</strong> <span>{selectedWoForPrint.vehicle_entries?.vehicles?.owner_name}</span></div>
+              <div><strong>Tanggal:</strong> <span>{formatDate(selectedWoForPrint.work_date)}</span></div>
             </div>
+
+            {/* Keluhan */}
             <div className="mt-6">
               <h3 className="font-bold">Keluhan Pelanggan:</h3>
-              {/* KODE DIPERBAIKI: Menggunakan 'notes' */}
               <p className="mt-2 text-sm">{selectedWoForPrint.vehicle_entries?.notes}</p>
             </div>
+
+            {/* Rincian Biaya */}
+            <div className="mt-6">
+              <h3 className="font-bold">Rincian Biaya:</h3>
+              <table className="w-full text-sm mt-2">
+                <thead>
+                  <tr className="border-b">
+                    <th className="text-left py-1 px-2">Deskripsi</th>
+                    <th className="text-center py-1 px-2">Qty</th>
+                    <th className="text-right py-1 px-2">Total</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {selectedWoForPrint.work_order_billings?.map(item => (
+                    <tr key={item.id}>
+                      <td className="py-1 px-2">{item.item_name}</td>
+                      <td className="text-center py-1 px-2">{item.qty}</td>
+                      <td className="text-right py-1 px-2">{formatCurrency(item.total_price)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Dokumentasi Foto */}
+            <div className="mt-6">
+              <h3 className="font-bold">Dokumentasi Foto:</h3>
+              <div className="grid grid-cols-3 gap-2 mt-2">
+                {selectedWoForPrint.work_order_images?.map(img => (
+                  <img key={img.id} src={img.image_url} alt="Dokumentasi WO" className="w-full h-auto object-cover border" />
+                ))}
+              </div>
+            </div>
+
+            {/* Mekanik */}
             <div className="mt-6">
               <h3 className="font-bold">Mekanik Bertugas:</h3>
               <p className="mt-2 text-sm">{selectedWoForPrint.mechanics?.name}</p>
             </div>
+
           </div>
         )}
       </div>
