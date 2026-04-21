@@ -754,42 +754,69 @@ export default function WorkOrderV2() {
           )}
         </DialogContent>
       </Dialog>
-      {/* Dialog Print SPK */}
+           {/* Dialog Print SPK */}
       <Dialog open={isPrintDialogOpen} onOpenChange={setIsPrintDialogOpen}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>
             <DialogTitle>Cetak SPK</DialogTitle>
           </DialogHeader>
-          <div id="printable-spk" className="text-sm">
+          <div id="printable-spk" className="text-sm p-1">
             <div className="p-4 border rounded-lg">
-              <div className="text-center mb-4">
-                <h2 className="text-lg font-bold">SURAT PERINTAH KERJA</h2>
+              <div className="text-center mb-4 border-b-2 border-black pb-2">
+                <h2 className="text-lg font-bold uppercase">Surat Perintah Kerja</h2>
                 <p className="text-xs">No. WO: {printData?.wo.wo_number}</p>
               </div>
+              
               <div className="grid grid-cols-2 gap-x-4 gap-y-1 mb-4">
                 <div><strong>Tanggal:</strong> {formatDate(printData?.wo.work_date)}</div>
                 <div><strong>Nopol:</strong> {printData?.wo.vehicle_entries?.vehicles?.license_plate}</div>
                 <div><strong>Mekanik:</strong> {printData?.wo.mechanics?.name}</div>
                 <div><strong>Tipe Kendaraan:</strong> {printData?.wo.vehicle_entries?.vehicles?.brand_type}</div>
               </div>
+
+              <div className="mb-4">
+                <h3 className="font-bold text-base">Keluhan Pelanggan:</h3>
+                <p className="text-sm italic border p-2 rounded-md bg-gray-50 min-h-[50px]">
+                  {printData?.wo.vehicle_entries?.complaint || 'Tidak ada keluhan tercatat.'}
+                </p>
+              </div>
               
               <div className="mb-4">
-                <h3 className="font-bold border-b pb-1 mb-2">Pekerjaan:</h3>
-                <ul className="list-disc list-inside">
+                <h3 className="font-bold text-base border-b pb-1 mb-2">Rincian Pekerjaan:</h3>
+                <ul className="list-decimal list-inside space-y-1">
                   {printData?.entry.vehicle_entry_jobs.map((j: any) => (
                     <li key={j.id}>{j.job_types?.job_name || 'Pekerjaan custom'}</li>
                   ))}
                 </ul>
               </div>
 
-              <div>
-                <h3 className="font-bold border-b pb-1 mb-2">Estimasi Sparepart:</h3>
-                <ul className="list-disc list-inside">
+              <div className="mb-8">
+                <h3 className="font-bold text-base border-b pb-1 mb-2">Estimasi Sparepart:</h3>
+                <ul className="list-decimal list-inside space-y-1">
                   {printData?.entry.vehicle_entry_spareparts.map((p: any) => (
                     <li key={p.id}>{p.item_name} (Qty: {p.qty})</li>
                   ))}
                 </ul>
               </div>
+
+              <div className="mt-16 pt-8 text-center grid grid-cols-3 gap-4 text-xs">
+                  <div>
+                      <p>Mekanik,</p>
+                      <div className="mt-20 border-b border-gray-400 mx-4"></div>
+                      <p className="mt-1">( {printData?.wo.mechanics?.name || ''} )</p>
+                  </div>
+                  <div>
+                      <p>Kepala Mekanik,</p>
+                      <div className="mt-20 border-b border-gray-400 mx-4"></div>
+                      <p className="mt-1">(_________________)</p>
+                  </div>
+                  <div>
+                      <p>Quality Control,</p>
+                      <div className="mt-20 border-b border-gray-400 mx-4"></div>
+                      <p className="mt-1">(_________________)</p>
+                  </div>
+              </div>
+
             </div>
           </div>
           <DialogFooter className="mt-4">
@@ -797,7 +824,6 @@ export default function WorkOrderV2() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-      
     
     </div>
   );
