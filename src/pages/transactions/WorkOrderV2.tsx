@@ -236,10 +236,10 @@ export default function WorkOrderV2() {
   }, [dateRange]);
 
   useEffect(() => {
-    if (isDialogOpen) {
+    if (isDialogOpen && !isEditing) {
       fetchMasterData();
     }
-  }, [isDialogOpen]);
+  }, [isDialogOpen, isEditing]);
 
   useEffect(() => {
     if (formData.vehicle_entry_id && entries.length > 0) {
@@ -286,6 +286,7 @@ export default function WorkOrderV2() {
           mechanics (name),
           vehicle_entries (
             id,
+            complaint,
             vehicles (license_plate, brand_type, vehicle_type)
           )
         `)
@@ -317,12 +318,34 @@ export default function WorkOrderV2() {
     setSelectedEntryDetails(null);
   };
 
-  const handleEdit = (item: WOWithDetails) => {
+  const handleEdit = async (item: WOWithDetails) => {
+    // Fetch the full entry details for the WO being edited
+    const { data: entryData, error } = await supabase
+        .from('vehicle_entries')
+        .select(`*, vehicles (*), vehicle_entry_jobs (*, job_types (*))`)
+        .eq('id', item.vehicle_entry_id || '')
+        .single();
+
+    if (error && item.vehicle_entry_id) {
+        toast.error("Gagal memuat detail antrian untuk diedit.");
+    }
+
+    // Add this entry to our list if it's not already there
+    if (entryData) {
+        setEntries(prevEntries => {
+            if (prevEntries.find(e => e.id === entryData.id)) {
+                return prevEntries;
+            }
+            return [...prevEntries, entryData as any];
+        });
+    }
+    
     setFormData({
       work_date: item.work_date,
       vehicle_entry_id: item.vehicle_entry_id || '',
       mechanic_id: item.mechanic_id || '',
     });
+    
     setIsEditing(true);
     setCurrentId(item.id);
     setIsDialogOpen(true);
@@ -419,6 +442,7 @@ export default function WorkOrderV2() {
       setLoading(false);
     }
   };
+
   const handleFinishWO = async (wo: any) => {
     setLoading(true);
     setFinishWOModalOpen(true); 
@@ -428,7 +452,6 @@ export default function WorkOrderV2() {
     setPartValidationStatus({ isMet: false, missing: [] });
 
     try {
-      // THE FIX IS HERE: Explicitly defining the relationship
       const { data: heavyWOData, error: heavyWOError } = await supabase
         .from('work_orders')
         .select(`
@@ -441,7 +464,7 @@ export default function WorkOrderV2() {
             vehicle_entry_spareparts (
               *, 
               item_name,
-              spareparts:sparepart_id (name, selling_price)
+              spareparts!sparepart_id (name, selling_price)
             )
           )
         `)
@@ -527,7 +550,7 @@ export default function WorkOrderV2() {
       setLoading(false);
     }
   };
-  
+
   const handleSaveBillingAndClose = async () => {
     if (!activeWOForBilling) return;
     setLoading(true);
@@ -648,15 +671,17 @@ export default function WorkOrderV2() {
                 <Input type="date" value={formData.work_date} onChange={e => setFormData(prev => ({ ...prev, work_date: e.target.value }))} />
               </div>
               <div>
-                <Label>No. Antrian Kendaraan</Label>
-                <Select name="vehicle_entry_id" value={formData.vehicle_entry_id} onValueChange={v => handleSelectChange('vehicle_entry_id', v)}>
-                  <SelectTrigger><SelectValue placeholder="Pilih No. Antrian" /></SelectTrigger>
-                  <SelectContent>
-                    {entries.map(entry => (
-                      <SelectItem key={entry.id} value={entry.id}>{entry.vehicles?.license_plate} - {formatDate(entry.entry_date)}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <Label>Kendaraan (dari Antrian)</Label>
+                <div className="flex items-center space-x-2">
+                    <Input 
+                        readOnly 
+                        value={selectedEntryDetails ? `${selectedEntryDetails.vehicles?.license_plate} - ${selectedEntryDetails.complaint}` : 'Belum ada kendaraan dipilih'}
+                        className="flex-grow bg-gray-100"
+                    />
+                    <Button type="button" variant="outline" onClick={() => setIsEntrySearchOpen(true)}>
+                        <Search className="h-4 w-4" />
+                    </Button>
+                </div>
               </div>
               {selectedEntryDetails && (
                 <Card className="bg-slate-50">
@@ -689,6 +714,47 @@ export default function WorkOrderV2() {
             </DialogFooter>
           </form>
         </DialogContent>
+      </Dialog>
+
+      {/* Dialog Cari Antrian Kendaraan */}
+      <Dialog open={isEntrySearchOpen} onOpenChange={setIsEntrySearchOpen}>
+          <DialogContent className="p-0">
+              <Command>
+                  <CommandInput 
+                      placeholder="Cari Nopol atau Keluhan..." 
+                      value={entrySearchQuery}
+                      onValueChange={setEntrySearchQuery}
+                  />
+                  <CommandList>
+                      <CommandEmpty>Tidak ada antrian ditemukan.</CommandEmpty>
+                      <CommandGroup heading="Antrian Kendaraan (Status OPEN)">
+                          {entries
+                              .filter(entry => {
+                                  if (entry.status !== 'OPEN') return false;
+                                  const searchTerm = entrySearchQuery.toLowerCase();
+                                  const licensePlate = entry.vehicles?.license_plate?.toLowerCase() || '';
+                                  const complaint = entry.complaint?.toLowerCase() || '';
+                                  return licensePlate.includes(searchTerm) || complaint.includes(searchTerm);
+                              })
+                              .map(entry => (
+                              <CommandItem
+                                  key={entry.id}
+                                  onSelect={() => {
+                                      handleSelectChange('vehicle_entry_id', entry.id);
+                                      setIsEntrySearchOpen(false);
+                                      setEntrySearchQuery('');
+                                  }}
+                              >
+                                  <div className="flex justify-between w-full">
+                                      <span>{entry.vehicles?.license_plate}</span>
+                                      <span className="text-muted-foreground text-xs">{entry.complaint}</span>
+                                  </div>
+                              </CommandItem>
+                          ))}
+                      </CommandGroup>
+                  </CommandList>
+              </Command>
+          </DialogContent>
       </Dialog>
 
       {/* Dialog Selesaikan WO */}
@@ -758,7 +824,8 @@ export default function WorkOrderV2() {
           )}
         </DialogContent>
       </Dialog>
-           {/* Dialog Print SPK */}
+
+      {/* Dialog Print SPK */}
       <Dialog open={isPrintDialogOpen} onOpenChange={setIsPrintDialogOpen}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>
@@ -828,7 +895,6 @@ export default function WorkOrderV2() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    
     </div>
   );
 }
