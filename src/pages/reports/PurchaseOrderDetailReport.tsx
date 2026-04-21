@@ -78,56 +78,18 @@ export default function PurchaseOrderDetailReport() {
       const from = (page - 1) * ITEMS_PER_PAGE;
       const to = from + ITEMS_PER_PAGE - 1;
 
-      // --- START: LOGIKA BARU --- 
-      // 1. Query utama dari purchase_order_items, gabung dengan tabel lain
-      let query = supabase
+      const { data: poItems, error: poError, count: totalCount } = await supabase
         .from('purchase_order_items')
         .select(`
-          id,
-          quantity,
-          unit_price,
-          total_price,
-          goods!left(id, name),
-          purchase_orders!inner(
-            id,
-            po_number,
-            created_at,
-            supplier_id,
-            suppliers!left(name),
-            work_order_id,
-            work_orders!left(
-              wo_number,
-              vehicle_id,
-              vehicles!left(
-                license_plate,
-                brand_type
-              )
-            )
-          )
-        `, { count: 'exact' })
+          *,
+          purchase_orders!inner(*, suppliers:supplier_id(name), work_orders(wo_number, vehicle_id, vehicles(license_plate, brand_type))),
+          goods(name)
+        `)
         .gte('purchase_orders.created_at', startDate)
-        .lte('purchase_orders.created_at', endDate);
-
-      // 2. Terapkan filter pencarian jika ada
-      if (searchQuery) {
-        const q = `%${searchQuery.trim().replace(/ /g, '%')}%`;
-        // Pencarian dilakukan pada tabel-tabel yang sudah digabungkan
-        query = query.or(
-          `purchase_orders.po_number.ilike.${q},` +
-          `purchase_orders.work_orders.wo_number.ilike.${q},` +
-          `purchase_orders.work_orders.vehicles.license_plate.ilike.${q},` +
-          `purchase_orders.work_orders.vehicles.brand_type.ilike.${q},` +
-          `goods.name.ilike.${q},` +
-          `purchase_orders.suppliers.name.ilike.${q}`
-        );
-      }
-
-      const { data: poItems, error: poError, count: totalCount } = await query
+        .lte('purchase_orders.created_at', endDate)
+        .or(searchQuery ? `purchase_orders.po_number.ilike.%${searchQuery}%,purchase_orders.work_orders.wo_number.ilike.%${searchQuery}%,purchase_orders.work_orders.vehicles.license_plate.ilike.%${searchQuery}%,goods.name.ilike.%${searchQuery}%,purchase_orders.suppliers.name.ilike.%${searchQuery}%` : '')
         .order('created_at', { foreignTable: 'purchase_orders', ascending: false })
         .range(from, to);
-
-      if (poError) throw poError;
-      // --- END: LOGIKA BARU ---
 
       if (page === 1) {
         if (totalCount) {
@@ -230,50 +192,17 @@ export default function PurchaseOrderDetailReport() {
     }
   
     try {
-      // --- START: LOGIKA BARU ---
-      let query = supabase
+      const { data: poItems, error: poError } = await supabase
         .from('purchase_order_items')
         .select(`
-          id,
-          quantity,
-          unit_price,
-          total_price,
-          goods!left(id, name),
-          purchase_orders!inner(
-            id,
-            po_number,
-            created_at,
-            supplier_id,
-            suppliers!left(name),
-            work_order_id,
-            work_orders!left(
-              wo_number,
-              vehicle_id,
-              vehicles!left(
-                license_plate,
-                brand_type
-              )
-            )
-          )
+          *,
+          purchase_orders!inner(*, suppliers:supplier_id(name), work_orders(wo_number, vehicle_id, vehicles(license_plate, brand_type))),
+          goods(name)
         `)
         .gte('purchase_orders.created_at', dateRange.start)
-        .lte('purchase_orders.created_at', dateRange.end);
-
-      if (searchQuery) {
-        const q = `%${searchQuery.trim().replace(/ /g, '%')}%`;
-        query = query.or(
-          `purchase_orders.po_number.ilike.${q},` +
-          `purchase_orders.work_orders.wo_number.ilike.${q},` +
-          `purchase_orders.work_orders.vehicles.license_plate.ilike.${q},` +
-          `purchase_orders.work_orders.vehicles.brand_type.ilike.${q},` +
-          `goods.name.ilike.${q},` +
-          `purchase_orders.suppliers.name.ilike.${q}`
-        );
-      }
-
-      const { data: poItems, error: poError } = await query
+        .lte('purchase_orders.created_at', dateRange.end)
+        .or(searchQuery ? `purchase_orders.po_number.ilike.%${searchQuery}%,purchase_orders.work_orders.wo_number.ilike.%${searchQuery}%,purchase_orders.work_orders.vehicles.license_plate.ilike.%${searchQuery}%,goods.name.ilike.%${searchQuery}%,purchase_orders.suppliers.name.ilike.%${searchQuery}%` : '')
         .order('created_at', { foreignTable: 'purchase_orders', ascending: false });
-      // --- END: LOGIKA BARU ---
   
       if (poError) throw poError;
       if (!poItems || poItems.length === 0) return [];
