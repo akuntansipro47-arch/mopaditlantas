@@ -250,17 +250,18 @@ export default function WorkOrderV2() {
                     wo_number,
                     status,
                     created_at,
-                    vehicle_entry:vehicle_entry_id (
+                                        vehicle_entry:vehicle_entry_id!inner(
                         id,
                         entry_date,
                         complaint,
-                        vehicle:vehicles (
+                        vehicle:vehicles!inner(
                             license_plate,
                             owner_name,
                             model
                         )
                     ),
-                    mechanic:mechanic_id (
+                    mechanic:mechanic_id!inner(
+
                         id,
                         name
                     )
