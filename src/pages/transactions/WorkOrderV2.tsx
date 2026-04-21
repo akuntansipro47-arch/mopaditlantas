@@ -77,80 +77,65 @@ export default function WorkOrderV2() {
       toast.error('Gagal memuat data master: ' + error.message);
     }
   }, []);
-
-  const fetchWOs = useCallback(async () => {
-    setLoading(true);
-    try {
-      // Step 1: Fetch base work orders within the date range
-      let woQuery = supabase
-        .from('work_orders')
-        .select('id, wo_number, status, work_date, created_at, vehicle_entry_id, mechanic_id')
-        .order('created_at', { ascending: false });
-
-      if (dateRange.start) {
-        woQuery = woQuery.gte('work_date', dateRange.start);
-      }
-      if (dateRange.end) {
-        woQuery = woQuery.lte('work_date', dateRange.end);
-      }
-
-      const { data: woData, error: woError } = await woQuery;
-      if (woError) throw new Error(woError.message);
-      if (!woData || woData.length === 0) {
-        setWos([]);
-        setLoading(false);
-        return;
-      }
-
-      // Step 2: Collect IDs for related data
-      const entryIds = [...new Set(woData.map(wo => wo.vehicle_entry_id).filter(Boolean))];
-      const mechanicIds = [...new Set(woData.map(wo => wo.mechanic_id).filter(Boolean))];
-
-      // Step 3: Fetch related data in parallel
-      const [
-        { data: mechanicsData, error: mechanicsError },
-        { data: entriesData, error: entriesError }
-      ] = await Promise.all([
-        mechanicIds.length > 0 ? supabase.from('mechanics').select('id, name').in('id', mechanicIds) : Promise.resolve({ data: [], error: null }),
-        entryIds.length > 0 ? supabase.from('vehicle_entries').select('id, complaint, vehicle_id').in('id', entryIds) : Promise.resolve({ data: [], error: null })
-      ]);
-
-      if (mechanicsError) throw new Error(mechanicsError.message);
-      if (entriesError) throw new Error(entriesError.message);
-
-      // Step 4: Collect vehicle IDs from entries
-      const vehicleIds = [...new Set(entriesData?.map(e => e.vehicle_id).filter(Boolean) || [])];
-
-      // Step 5: Fetch vehicle data
-      const { data: vehiclesData, error: vehiclesError } = vehicleIds.length > 0
-        ? await supabase.from('vehicles').select('id, license_plate, owner_name, model, brand_type').in('id', vehicleIds)
-        : { data: [], error: null };
-      
-      if (vehiclesError) throw new Error(vehiclesError.message);
-
-      // Step 6: Create maps for efficient lookup
-      const mechanicsMap = new Map(mechanicsData?.map(m => [m.id, m]));
-      const vehiclesMap = new Map(vehiclesData?.map(v => [v.id, v]));
-      const entriesMap = new Map(entriesData?.map(e => [e.id, {
-        ...e,
-        vehicles: vehiclesMap.get(e.vehicle_id) || null
-      }]));
-
-      // Step 7: Combine all data
-      const combinedData = woData.map(wo => ({
-        ...wo,
-        mechanics: mechanicsMap.get(wo.mechanic_id) || null,
-        vehicle_entries: entriesMap.get(wo.vehicle_entry_id) || null,
-      }));
-
-      setWos(combinedData as any);
-
-    } catch (error: any) {
-      toast.error('Gagal mengambil data WO: ' + error.message);
-    } finally {
+const fetchWOs = useCallback(async () => {
+  setLoading(true);
+  try {
+    // Step 1: Fetch base WO data
+    let woQuery = supabase.from('work_orders').select('id, wo_number, status, work_date, created_at, vehicle_entry_id, mechanic_id').order('created_at', { ascending: false });
+    if (dateRange.start) woQuery = woQuery.gte('work_date', dateRange.start);
+    if (dateRange.end) woQuery = woQuery.lte('work_date', dateRange.end);
+    const { data: woData, error: woError } = await woQuery;
+    if (woError) throw new Error(`Work Orders: ${woError.message}`);
+    if (!woData || woData.length === 0) {
+      setWos([]);
       setLoading(false);
+      return;
     }
-  }, [dateRange.start, dateRange.end]);
+
+    // Step 2: Collect related IDs
+    const entryIds = [...new Set(woData.map(wo => wo.vehicle_entry_id).filter(Boolean))];
+    const mechanicIds = [...new Set(woData.map(wo => wo.mechanic_id).filter(Boolean))];
+
+    // Step 3: Fetch related data (entries and mechanics)
+    const [
+      { data: entriesData, error: entriesError },
+      { data: mechanicsData, error: mechanicsError }
+    ] = await Promise.all([
+      entryIds.length > 0 ? supabase.from('vehicle_entries').select('id, complaint, vehicle_id').in('id', entryIds) : Promise.resolve({ data: [], error: null }),
+      mechanicIds.length > 0 ? supabase.from('mechanics').select('id, name').in('id', mechanicIds) : Promise.resolve({ data: [], error: null })
+    ]);
+
+    if (entriesError) throw new Error(`Vehicle Entries: ${entriesError.message}`);
+    if (mechanicsError) throw new Error(`Mechanics: ${mechanicsError.message}`);
+
+    // Step 4: Fetch vehicle data from entries
+    const vehicleIds = [...new Set(entriesData?.map(e => e.vehicle_id).filter(Boolean) || [])];
+    const { data: vehiclesData, error: vehiclesError } = vehicleIds.length > 0
+      ? await supabase.from('vehicles').select('id, license_plate, owner_name, model, brand_type').in('id', vehicleIds)
+      : { data: [], error: null };
+    
+    if (vehiclesError) throw new Error(`Vehicles: ${vehiclesError.message}`);
+
+    // Step 5: Create lookup maps and combine data
+    const mechanicsMap = new Map(mechanicsData?.map(m => [m.id, m]));
+    const vehiclesMap = new Map(vehiclesData?.map(v => [v.id, v]));
+    const entriesMap = new Map(entriesData?.map(e => [e.id, { ...e, vehicles: vehiclesMap.get(e.vehicle_id) || null }]));
+
+    const combinedData = woData.map(wo => ({
+      ...wo,
+      mechanics: mechanicsMap.get(wo.mechanic_id) || null,
+      vehicle_entries: entriesMap.get(wo.vehicle_entry_id) || null,
+    }));
+    
+    setWos(combinedData as any);
+
+  } catch (error: any) {
+    console.error("Error fetching WOs:", error);
+    toast.error('Gagal mengambil data WO: ' + error.message);
+  } finally {
+    setLoading(false);
+  }
+}, [dateRange.start, dateRange.end]);
 
   useEffect(() => {
     fetchWOs();
