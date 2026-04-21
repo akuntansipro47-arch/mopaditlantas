@@ -483,7 +483,7 @@ export default function WorkOrderV2() {
       // 1. Fetch Required Parts from vehicle_entry_spareparts
       const { data: requiredData, error: requiredError } = await supabase
         .from('vehicle_entry_spareparts')
-        .select('goods_id, qty, goods(name)')
+        .select('sparepart_id, qty, item_name, spareparts(name)')
         .eq('vehicle_entry_id', wo.vehicle_entry_id);
 
       if (requiredError) {
@@ -942,7 +942,7 @@ export default function WorkOrderV2() {
       if (issuedQty < required.qty) {
         allPartsMet = false;
         missingParts.push({ 
-          name: required.spareparts.name, 
+          name: required.spareparts?.name || required.item_name || 'Nama Barang Tidak Ditemukan', 
           required: required.qty, 
           issued: issuedQty, 
           missing: required.qty - issuedQty 
