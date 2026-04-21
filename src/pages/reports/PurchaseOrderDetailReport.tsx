@@ -123,18 +123,13 @@ export default function PurchaseOrderDetailReport() {
       ] = await Promise.all([
         supabase.from('goods_receipts').select('po_id, items:goods_receipt_items(goods_id, quantity_received)').in('po_id', poIds),
         supabase.from('purchase_invoices').select('po_id, status').in('po_id', poIds),
-        supabase.from('work_orders').select('id, wo_number, vehicle_id').in('id', workOrderIds)
+        supabase.from('work_orders').select('id, wo_number, vehicle_entries(vehicles(id, license_plate, brand_type))').in('id', workOrderIds)
       ]);
 
       if (receiptError) throw receiptError;
       if (invoiceError) throw invoiceError;
       if (woError) throw woError;
       
-      const vehicleIds = [...new Set(workOrdersResult?.map(wo => wo.vehicle_id).filter(Boolean))];
-      const { data: vehicles, error: vehiclesError } = await supabase.from('vehicles').select('id, license_plate, brand_type').in('id', vehicleIds);
-
-      if (vehiclesError) throw vehiclesError;
-
       // 3. Create maps for efficient data lookup
       const receivedQtyMap = new Map<string, number>();
       receipts?.forEach(receipt => {
@@ -148,11 +143,7 @@ export default function PurchaseOrderDetailReport() {
       const paymentStatusMap = new Map<number, string>();
       invoices?.forEach(inv => paymentStatusMap.set(inv.po_id, inv.status));
 
-      const vehicleMap = new Map(vehicles?.map(v => [v.id, v]));
-      const workOrderMap = new Map(workOrdersResult?.map(wo => {
-        const vehicle = wo.vehicle_id ? vehicleMap.get(wo.vehicle_id) : null;
-        return [wo.id, { ...wo, vehicles: vehicle }];
-      }));
+      const workOrderMap = new Map(workOrdersResult?.map(wo => [wo.id, wo]));
 
       // 4. Combine all data
       const combinedData = poItems.map(item => {
@@ -160,6 +151,7 @@ export default function PurchaseOrderDetailReport() {
         if (!po) return null;
 
         const workOrder = po.work_order_id ? workOrderMap.get(po.work_order_id) : null;
+        const vehicle = workOrder?.vehicle_entries?.vehicles;
         const paymentStatus = paymentStatusMap.get(po.id);
 
         let statusBayar = 'Belum Ditagih';
@@ -174,8 +166,8 @@ export default function PurchaseOrderDetailReport() {
           tgl: po.created_at,
           no_po: po.po_number,
           supplier: po.suppliers?.name || '-',
-          kendaraan: workOrder?.vehicles?.brand_type || '-',
-          nopol: workOrder?.vehicles?.license_plate || '-',
+          kendaraan: vehicle?.brand_type || '-',
+          nopol: vehicle?.license_plate || '-',
           no_wo: workOrder?.wo_number || '-',
           tipe: item.goods?.name || '-',
           nama_barang: item.goods?.name || '-',
@@ -242,17 +234,12 @@ export default function PurchaseOrderDetailReport() {
       ] = await Promise.all([
         supabase.from('goods_receipts').select('po_id, items:goods_receipt_items(goods_id, quantity_received)').in('po_id', poIds),
         supabase.from('purchase_invoices').select('po_id, status').in('po_id', poIds),
-        supabase.from('work_orders').select('id, wo_number, vehicle_id').in('id', workOrderIds)
+        supabase.from('work_orders').select('id, wo_number, vehicle_entries(vehicles(id, license_plate, brand_type))').in('id', workOrderIds)
       ]);
 
       if (receiptError) throw receiptError;
       if (invoiceError) throw invoiceError;
       if (woError) throw woError;
-
-      const vehicleIds = [...new Set(workOrdersResult?.map(wo => wo.vehicle_id).filter(Boolean))];
-      const { data: vehicles, error: vehiclesError } = await supabase.from('vehicles').select('id, license_plate, brand_type').in('id', vehicleIds);
-
-      if (vehiclesError) throw vehiclesError;
 
       const receivedQtyMap = new Map<string, number>();
       receipts?.forEach(receipt => {
@@ -266,17 +253,14 @@ export default function PurchaseOrderDetailReport() {
       const paymentStatusMap = new Map<number, string>();
       invoices?.forEach(inv => paymentStatusMap.set(inv.po_id, inv.status));
 
-      const vehicleMap = new Map(vehicles?.map(v => [v.id, v]));
-      const workOrderMap = new Map(workOrdersResult?.map(wo => {
-        const vehicle = wo.vehicle_id ? vehicleMap.get(wo.vehicle_id) : null;
-        return [wo.id, { ...wo, vehicles: vehicle }];
-      }));
+      const workOrderMap = new Map(workOrdersResult?.map(wo => [wo.id, wo]));
 
       const combinedData = poItems.map(item => {
         const po = item.purchase_orders;
         if (!po) return null;
 
         const workOrder = po.work_order_id ? workOrderMap.get(po.work_order_id) : null;
+        const vehicle = workOrder?.vehicle_entries?.vehicles;
         const paymentStatus = paymentStatusMap.get(po.id);
 
         let statusBayar = 'Belum Ditagih';
@@ -291,8 +275,8 @@ export default function PurchaseOrderDetailReport() {
           tgl: po.created_at,
           no_po: po.po_number,
           supplier: po.suppliers?.name || '-',
-          kendaraan: workOrder?.vehicles?.brand_type || '-',
-          nopol: workOrder?.vehicles?.license_plate || '-',
+          kendaraan: vehicle?.brand_type || '-',
+          nopol: vehicle?.license_plate || '-',
           no_wo: workOrder?.wo_number || '-',
           tipe: item.goods?.name || '-',
           nama_barang: item.goods?.name || '-',
