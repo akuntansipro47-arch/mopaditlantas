@@ -73,7 +73,7 @@ export default function PurchaseOrderDetailReport() {
 
     try {
       const startDate = dateRange.start;
-      const endDate = dateRange.end;
+      const endDate = `${dateRange.end} 23:59:59`;
 
       const from = (page - 1) * ITEMS_PER_PAGE;
       const to = from + ITEMS_PER_PAGE - 1;
@@ -200,7 +200,7 @@ export default function PurchaseOrderDetailReport() {
           goods(name)
         `)
         .gte('purchase_orders.created_at', dateRange.start)
-        .lte('purchase_orders.created_at', dateRange.end)
+        .lte('purchase_orders.created_at', `${dateRange.end} 23:59:59`)
         .or(searchQuery ? `purchase_orders.po_number.ilike.%${searchQuery}%,purchase_orders.work_orders.wo_number.ilike.%${searchQuery}%,purchase_orders.work_orders.vehicles.license_plate.ilike.%${searchQuery}%,goods.name.ilike.%${searchQuery}%,purchase_orders.suppliers.name.ilike.%${searchQuery}%` : '')
         .order('created_at', { foreignTable: 'purchase_orders', ascending: false });
   
