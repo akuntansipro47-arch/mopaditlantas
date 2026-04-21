@@ -35,6 +35,13 @@ type WOWithDetails = WO & {
   mechanics: Mechanic | null;
 };
 
+type BillingItem = {
+  type: 'PART' | 'JASA';
+  name: string;
+  qty: number;
+  price: number;
+};
+
 type WOBillingItem = {
   id?: string;
   item_type: 'JOB' | 'PART';
@@ -50,55 +57,34 @@ type WOBillingItem = {
 
 export default function WorkOrderV2() {
   const { user } = useAuth();
-  const canAdjustBillingPrice = user?.role === 'SUPER_ADMIN';
   const [wos, setWos] = useState<WOWithDetails[]>([]);
   const [loading, setLoading] = useState(true);
-  const [search, setSearch] = useState('');
   const [dateRange, setDateRange] = useState({
-    start: new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0],
-    end: new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0).toISOString().split('T')[0]
+    from: new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0],
+    to: new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0).toISOString().split('T')[0]
   });
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [currentId, setCurrentId] = useState<string | null>(null);
 
-  // Billing / Finishing State
-  const [isBillingOpen, setIsBillingOpen] = useState(false);
-  const [billingItems, setBillingItems] = useState<WOBillingItem[]>([]);
-  const [activeWO, setActiveWO] = useState<WOWithDetails | null>(null);
-  const [hasEstimateChange, setHasEstimateChange] = useState(false);
-  const [goodsList, setGoodsList] = useState<Goods[]>([]);
-  const [itemSearchOpen, setItemSearchOpen] = useState(false);
-  const [itemSearchQuery, setItemSearchQuery] = useState('');
-  const [serviceRinganFilter, setServiceRinganFilter] = useState(false);
-  const [activeBillingIndex, setActiveBillingIndex] = useState<number | null>(null);
-
-  // States for Spare Part Validation Gatekeeper
-  const [requiredParts, setRequiredParts] = useState<any[]>([]);
-  const [issuedParts, setIssuedParts] = useState<any[]>([]);
+  // New states for the Finish WO Modal
+  const [isFinishWOModalOpen, setFinishWOModalOpen] = useState(false);
+  const [activeWOForBilling, setActiveWOForBilling] = useState<any | null>(null);
+  const [billingItems, setBillingItems] = useState<BillingItem[]>([]);
   const [partValidationStatus, setPartValidationStatus] = useState<{isMet: boolean, missing: any[]}>({ isMet: false, missing: [] });
-  
+
   // Entry Search Dialog
   const [isEntrySearchOpen, setIsEntrySearchOpen] = useState(false);
   const [entrySearchQuery, setEntrySearchQuery] = useState('');
 
   const [activeWOImages, setActiveWOImages] = useState<any[]>([]);
   const [isImageDialogOpen, setIsImageDialogOpen] = useState(false);
-
-  const classifyVehicleType = (vehicleType?: string | null) => {
-    const vt = String(vehicleType || '').toUpperCase();
-    if (vt.includes('R2_KECIL') || vt.includes('R2 KECIL') || vt.includes('KECIL')) return 'R2 Kecil';
-    if (vt === 'R4' || vt.includes('R4') || vt.includes('MOBIL')) return 'R4';
-    if (vt === 'R2' || vt.includes('R2') || vt.includes('MOTOR')) return 'R2';
-    return '-';
-  };
   const [uploadingImage, setUploadingImage] = useState(false);
 
   // Print State
   const [isPrintDialogOpen, setIsPrintDialogOpen] = useState(false);
   const [printData, setPrintData] = useState<any>(null);
 
-  // ... (inside fetchWOs or separate function)
   async function fetchWOImages(woId: string) {
     const { data } = await supabase
         .from('work_order_images')
@@ -116,7 +102,6 @@ export default function WorkOrderV2() {
     setUploadingImage(true);
     try {
         for (const file of files) {
-            // 1. Compress Image Logic
             const compressedBase64 = await new Promise<string>((resolve, reject) => {
                 const reader = new FileReader();
                 reader.readAsDataURL(file);
@@ -127,7 +112,6 @@ export default function WorkOrderV2() {
                         const canvas = document.createElement('canvas');
                         const ctx = canvas.getContext('2d');
                         
-                        // Max dimensions
                         const MAX_WIDTH = 1280;
                         const MAX_HEIGHT = 1280;
                         let width = img.width;
@@ -150,7 +134,6 @@ export default function WorkOrderV2() {
                         
                         if (ctx) {
                             ctx.drawImage(img, 0, 0, width, height);
-                            // Compress to JPEG with 0.7 quality
                             const dataUrl = canvas.toDataURL('image/jpeg', 0.7);
                             resolve(dataUrl);
                         } else {
@@ -162,12 +145,11 @@ export default function WorkOrderV2() {
                 reader.onerror = error => reject(error);
             });
 
-            // 2. Save directly to DB (Bypassing Storage Bucket)
             const { error: dbError } = await supabase
                 .from('work_order_images')
                 .insert([{
                     work_order_id: woId,
-                    image_url: compressedBase64, // Storing compressed base64 string
+                    image_url: compressedBase64,
                     uploaded_by: user?.id || null
                 }]);
 
@@ -186,19 +168,18 @@ export default function WorkOrderV2() {
     }
   };
 
-  const handleDeleteImage = async (imageId: string, imageUrl: string) => {
+  const handleDeleteImage = async (imageId: string) => {
       if(!confirm("Hapus foto ini?")) return;
       try {
           await supabase.from('work_order_images').delete().eq('id', imageId);
           toast.success("Foto dihapus");
-          if(activeWO) fetchWOImages(activeWO.id);
+          if(activeWOForBilling) fetchWOImages(activeWOForBilling.id);
       } catch (e: any) {
           toast.error("Gagal hapus: " + e.message);
       }
   };
 
   const handlePrint = async (wo: WOWithDetails) => {
-    // Fetch full details for printing
     try {
       const { data: entry } = await supabase
         .from('vehicle_entries')
@@ -232,7 +213,7 @@ export default function WorkOrderV2() {
       document.body.innerHTML = printContent.innerHTML;
       window.print();
       document.body.innerHTML = originalContents;
-      window.location.reload(); // Reload to restore event handlers
+      window.location.reload();
     }
   };
 
@@ -250,40 +231,15 @@ export default function WorkOrderV2() {
   const [selectedEntryDetails, setSelectedEntryDetails] = useState<any>(null);
 
   useEffect(() => {
-    console.log('WorkOrder V2 Mounted - Version 3.3 (Date Filter & Vehicle Search)');
     fetchWOs();
     fetchMasterData();
-    fetchGoods();
   }, [dateRange]);
 
   useEffect(() => {
     if (isDialogOpen) {
       fetchMasterData();
-      fetchGoods();
     }
   }, [isDialogOpen]);
-
-  useEffect(() => {
-    if (!isDialogOpen) return;
-    const onFocus = () => {
-      fetchMasterData();
-      fetchGoods();
-    };
-    window.addEventListener('focus', onFocus);
-    return () => window.removeEventListener('focus', onFocus);
-  }, [isDialogOpen]);
-
-  useRealtimeRefetch({
-    tables: ['goods'],
-    enabled: isDialogOpen,
-    onRefetch: fetchGoods,
-  });
-
-  useRealtimeRefetch({
-    tables: ['vehicle_entries', 'vehicle_entry_jobs', 'job_types', 'vehicles', 'mechanics'],
-    enabled: isDialogOpen,
-    onRefetch: fetchMasterData,
-  });
 
   useEffect(() => {
     if (formData.vehicle_entry_id && entries.length > 0) {
@@ -295,7 +251,6 @@ export default function WorkOrderV2() {
   }, [formData.vehicle_entry_id, entries]);
 
   async function fetchMasterData() {
-    // Fetch OPEN Vehicle Entries that haven't been processed yet
     const { data: e } = await supabase
       .from('vehicle_entries')
       .select(`
@@ -313,43 +268,39 @@ export default function WorkOrderV2() {
     setMechanics(m || []);
   }
 
-  async function fetchGoods() {
-    const { data } = await supabase.from('goods').select('*').order('name');
-    setGoodsList(data || []);
-  }
-
-  async function fetchWOs() {
+  const fetchWOs = async () => {
     setLoading(true);
     try {
-      let query = supabase
+      const { data, error } = await supabase
         .from('work_orders')
         .select(`
-          *,
-          mechanics (*),
+          id,
+          wo_number,
+          work_date,
+          status,
+          vehicle_entry_id,
+          mechanic_id,
+          created_at,
+          work_started_at,
+          work_completed_at,
+          mechanics (name),
           vehicle_entries (
-            *,
-            vehicles (*)
+            id,
+            vehicles (license_plate, brand_type, vehicle_type)
           )
         `)
+        .gte('work_date', dateRange.from)
+        .lte('work_date', dateRange.to)
         .order('created_at', { ascending: false });
 
-      if (dateRange.start) {
-        query = query.gte('work_date', dateRange.start);
-      }
-      if (dateRange.end) {
-        query = query.lte('work_date', dateRange.end);
-      }
-
-      const { data, error } = await query;
-
       if (error) throw error;
-      setWos(data as any || []);
+      setWos((data as any) || []);
     } catch (error: any) {
       toast.error('Gagal mengambil data WO: ' + error.message);
     } finally {
       setLoading(false);
     }
-  }
+  };
 
   const handleSelectChange = (name: string, value: string) => {
     setFormData(prev => ({ ...prev, [name]: value }));
@@ -386,7 +337,6 @@ export default function WorkOrderV2() {
       return;
     }
     
-    // Check permission for Re-open or Editing Closed/Completed WO
     if (currentStatus === 'CLOSED' || currentStatus === 'COMPLETED') { 
         const hasReopenAccess = user?.role === 'SUPER_ADMIN' || (user?.role === 'ADMIN' && user?.allowed_menus?.includes('trans_wo_reopen'));
         
@@ -397,11 +347,14 @@ export default function WorkOrderV2() {
     }
 
     try {
-      const updatePayload: { status: string; work_started_at?: string; } = { status: newStatus };
+      const updatePayload: { status: string; work_started_at?: string; work_completed_at?: string; } = { status: newStatus };
 
-      // Set start time only when moving from OPEN to IN_PROGRESS
       if (newStatus === 'IN_PROGRESS' && currentStatus === 'OPEN') {
         updatePayload.work_started_at = new Date().toISOString();
+      }
+      
+      if (newStatus === 'CLOSED') {
+        updatePayload.work_completed_at = new Date().toISOString();
       }
 
       const { error } = await supabase
@@ -417,6 +370,7 @@ export default function WorkOrderV2() {
       toast.error('Gagal update status: ' + error.message);
     }
   };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
@@ -445,7 +399,6 @@ export default function WorkOrderV2() {
           } as any]);
         if (error) throw error;
         
-        // Also update Vehicle Entry status to PROCESSED
         if (formData.vehicle_entry_id) {
            await supabase
              .from('vehicle_entries')
@@ -459,7 +412,7 @@ export default function WorkOrderV2() {
       setIsDialogOpen(false);
       resetForm();
       fetchWOs();
-      fetchMasterData(); // Refresh available entries
+      fetchMasterData();
     } catch (error: any) {
       toast.error('Gagal menyimpan WO: ' + error.message);
     } finally {
@@ -467,23 +420,18 @@ export default function WorkOrderV2() {
     }
   };
 
-  // --- Billing / Finishing Logic ---
-
   const handleFinishWO = async (wo: any) => {
     setLoading(true);
-    // We open the modal immediately but show a loading state inside
     setFinishWOModalOpen(true); 
     setActiveWOForBilling(wo);
 
-    // Reset states for the modal to clear previous data
     setBillingItems([]);
     setPartValidationStatus({ isMet: false, missing: [] });
 
     try {
-      // STEP 1: Fetch the FULL, "heavy" details for this specific WO. This is the key fix.
       const { data: heavyWOData, error: heavyWOError } = await supabase
         .from('work_orders')
-        .select(`
+        .select(\`
           *,
           mechanics (*),
           vehicle_entries (
@@ -492,7 +440,7 @@ export default function WorkOrderV2() {
             vehicle_entry_jobs (*, job_types(*)),
             vehicle_entry_spareparts (*, spareparts(*), item_name)
           )
-        `)
+        \`)
         .eq('id', wo.id)
         .single();
 
@@ -501,10 +449,9 @@ export default function WorkOrderV2() {
 
       const heavyWO = heavyWOData;
 
-      // STEP 2: Calculate Billing Items from the fresh, heavy data
       const estimatedParts = heavyWO.vehicle_entries?.vehicle_entry_spareparts || [];
       const estimatedJobs = heavyWO.vehicle_entries?.vehicle_entry_jobs || [];
-      const tempBillingItems: any[] = []; // Using 'any' temporarily for simplified object creation
+      const tempBillingItems: BillingItem[] = [];
 
       estimatedParts.forEach((part: any) => {
         tempBillingItems.push({
@@ -524,9 +471,8 @@ export default function WorkOrderV2() {
         });
       });
       
-      setBillingItems(tempBillingItems as WOBillingItem[]);
+      setBillingItems(tempBillingItems);
 
-      // STEP 3: Perform the Gatekeeper Check (Spare Part Fulfillment Validation)
       const { data: issuedData, error: issuedError } = await supabase
         .from('goods_issue_items')
         .select('sparepart_id, qty')
@@ -546,7 +492,6 @@ export default function WorkOrderV2() {
       const missingParts: { name: string; required: number; issued: number; missing: number }[] = [];
 
       (estimatedParts || []).forEach((required: any) => {
-        // Ensure required.sparepart_id exists before checking the map
         if (required.sparepart_id) {
             const issuedQty = issuedMap.get(required.sparepart_id) || 0;
             if (issuedQty < required.qty) {
@@ -558,7 +503,7 @@ export default function WorkOrderV2() {
                 missing: required.qty - issuedQty,
               });
             }
-        } else if (required.qty > 0) { // Handle parts that were manually added without a master ID
+        } else if (required.qty > 0) {
             allPartsMet = false;
             missingParts.push({
                 name: required.item_name || 'Barang manual tanpa ID',
@@ -573,1434 +518,270 @@ export default function WorkOrderV2() {
 
     } catch (error: any) {
       toast.error('Gagal memproses data penyelesaian WO: ' + error.message);
-      setFinishWOModalOpen(false); // Close modal on critical error
-    } finally {
-      setLoading(false);
-    }
-  };
-  
-
-        toast.success('WO berhasil dibuat');
-      }
-      
-      setIsDialogOpen(false);
-      resetForm();
-      fetchWOs();
-      fetchMasterData(); // Refresh available entries
-    } catch (error: any) {
-      toast.error('Gagal menyimpan WO: ' + error.message);
+      setFinishWOModalOpen(false);
     } finally {
       setLoading(false);
     }
   };
 
-  // --- Billing / Finishing Logic ---
-
-  const handleFinishWO = async (wo: any) => {
+  const handleSaveBillingAndClose = async () => {
+    if (!activeWOForBilling) return;
     setLoading(true);
-    // We open the modal immediately but show a loading state inside
-    setFinishWOModalOpen(true); 
-    setActiveWOForBilling(wo);
-
-    // Reset states for the modal to clear previous data
-    setBillingItems([]);
-    setPartValidationStatus({ isMet: false, missing: [] });
-
     try {
-      // STEP 1: Fetch the FULL, "heavy" details for this specific WO. This is the key fix.
-      const { data: heavyWOData, error: heavyWOError } = await supabase
+      // Update status to 'COMPLETED'
+      const { error: statusError } = await supabase
         .from('work_orders')
-        .select(`
-          *,
-          mechanics (*),
-          vehicle_entries (
-            *,
-            vehicles (*),
-            vehicle_entry_jobs (*, job_types(*)),
-            vehicle_entry_spareparts (*, spareparts(*), item_name)
-          )
-        `)
-        .eq('id', wo.id)
-        .single();
+        .update({ status: 'COMPLETED', work_completed_at: new Date().toISOString() })
+        .eq('id', activeWOForBilling.id);
 
-      if (heavyWOError) throw heavyWOError;
-      if (!heavyWOData) throw new Error("Data WO tidak ditemukan untuk diselesaikan.");
+      if (statusError) throw statusError;
 
-      const heavyWO = heavyWOData;
-
-      // STEP 2: Calculate Billing Items from the fresh, heavy data
-      const estimatedParts = heavyWO.vehicle_entries?.vehicle_entry_spareparts || [];
-      const estimatedJobs = heavyWO.vehicle_entries?.vehicle_entry_jobs || [];
-      const tempBillingItems: any[] = []; // Using 'any' temporarily for simplified object creation
-
-      estimatedParts.forEach((part: any) => {
-        tempBillingItems.push({
-          type: 'PART',
-          name: part.spareparts?.name || part.item_name || 'Sparepart tidak dikenal',
-          qty: part.qty || 1,
-          price: part.estimated_price || part.spareparts?.selling_price || 0,
-        });
-      });
-
-      estimatedJobs.forEach((job: any) => {
-        tempBillingItems.push({
-          type: 'JASA',
-          name: job.job_types?.job_name || 'Jasa tidak dikenal',
-          qty: 1,
-          price: job.estimated_price || job.job_types?.selling_price || 0,
-        });
-      });
-      
-      setBillingItems(tempBillingItems as WOBillingItem[]);
-
-      // STEP 3: Perform the Gatekeeper Check (Spare Part Fulfillment Validation)
-      const { data: issuedData, error: issuedError } = await supabase
-        .from('goods_issue_items')
-        .select('sparepart_id, qty')
-        .eq('work_order_id', wo.id);
-
-      if (issuedError) throw issuedError;
-
-      const issuedMap = new Map<string, number>();
-      (issuedData || []).forEach((item: any) => {
-        if (item.sparepart_id) {
-          const currentQty = issuedMap.get(item.sparepart_id) || 0;
-          issuedMap.set(item.sparepart_id, currentQty + item.qty);
-        }
-      });
-
-      let allPartsMet = true;
-      const missingParts: { name: string; required: number; issued: number; missing: number }[] = [];
-
-      (estimatedParts || []).forEach((required: any) => {
-        // Ensure required.sparepart_id exists before checking the map
-        if (required.sparepart_id) {
-            const issuedQty = issuedMap.get(required.sparepart_id) || 0;
-            if (issuedQty < required.qty) {
-              allPartsMet = false;
-              missingParts.push({
-                name: required.spareparts?.name || required.item_name || 'Nama Barang Tidak Ditemukan',
-                required: required.qty,
-                issued: issuedQty,
-                missing: required.qty - issuedQty,
-              });
-            }
-        } else if (required.qty > 0) { // Handle parts that were manually added without a master ID
-            allPartsMet = false;
-            missingParts.push({
-                name: required.item_name || 'Barang manual tanpa ID',
-                required: required.qty,
-                issued: 0,
-                missing: required.qty,
-            });
-        }
-      });
-
-      setPartValidationStatus({ isMet: allPartsMet, missing: missingParts });
-
-    } catch (error: any) {
-      toast.error('Gagal memproses data penyelesaian WO: ' + error.message);
-      setFinishWOModalOpen(false); // Close modal on critical error
-    } finally {
-      setLoading(false);
-    }
-  };
-
-      try {
-        const latestJobTypeIds = new Set<string>(
-          (latestEntryJobs || [])
-            .map((j: any) => String(j?.job_types?.id || ''))
-            .filter(Boolean)
-        );
-        const currentJobTypeIds = new Set<string>(
-          (items || [])
-            .filter((i) => i.item_type === 'JOB' && Boolean(i.job_type_id))
-            .map((i) => String(i.job_type_id || ''))
-            .filter(Boolean)
-        );
-
-        const latestCount = latestJobTypeIds.size;
-        const currentCount = currentJobTypeIds.size;
-        let changed = latestCount !== currentCount;
-        if (!changed) {
-          for (const id of latestJobTypeIds) {
-            if (!currentJobTypeIds.has(id)) {
-              changed = true;
-              break;
-            }
-          }
-        }
-        setHasEstimateChange(changed);
-        if (changed && latestCount > 0) {
-          toast.info('Estimasi pekerjaan berubah. Gunakan tombol "Sync dari Estimasi" agar detail WO mengikuti perubahan.');
-        }
-      } catch {
-        setHasEstimateChange(false);
-      }
-
-      setBillingItems(items);
-      setIsBillingOpen(true);
-
-    } catch (error) {
-      console.error(error);
-      toast.error("Gagal memuat detail pekerjaan");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const syncBillingJobsFromEstimate = async () => {
-    if (!activeWO?.vehicle_entry_id) {
-      toast.error('Vehicle Entry tidak ditemukan untuk WO ini.');
-      return;
-    }
-
-    setLoading(true);
-    try {
-      const { data: entryDataLatest, error } = await supabase
-        .from('vehicle_entries')
-        .select(`
-          vehicle_entry_jobs (
-            estimated_price,
-            job_types (*)
-          )
-        `)
-        .eq('id', activeWO.vehicle_entry_id)
-        .single();
-      if (error) throw error;
-
-      const latestEntryJobs = (entryDataLatest?.vehicle_entry_jobs as any[]) || [];
-      const existingByJobTypeId = new Map<string, WOBillingItem>();
-      (billingItems || [])
-        .filter((i) => i.item_type === 'JOB' && Boolean(i.job_type_id))
-        .forEach((i) => existingByJobTypeId.set(String(i.job_type_id), i));
-
-      const rebuiltJobs: WOBillingItem[] = latestEntryJobs
-        .map((j: any) => {
-          const jt = j?.job_types;
-          if (!jt?.id) return null;
-          const jobTypeId = String(jt.id);
-          const jobName = String(jt.job_name || '');
-          const jobGroup = String(jt.job_group || '');
-          const existing = existingByJobTypeId.get(jobTypeId);
-
-          const isSR = isServiceRingan(jobGroup);
-          const qty = isSR ? Number(existing?.qty || 1) : 1;
-          const goods_id = isSR ? (existing?.goods_id || null) : null;
-          const est = Number(j?.estimated_price || 0);
-          const sp = Number(jt?.selling_price || 0);
-          const baseUnit = est > 0 ? est : sp;
-          const unit_price = isSR ? Number(existing?.unit_price || 0) : baseUnit;
-
-          return {
-            item_type: 'JOB',
-            job_type_id: jobTypeId,
-            goods_id,
-            item_name: jobName,
-            job_group: jobGroup,
-            qty,
-            unit_price,
-            total_price: qty * unit_price,
-            source: 'WO_INTERFACE',
-          } as WOBillingItem;
-        })
-        .filter(Boolean) as WOBillingItem[];
-
-      const manualJobs = (billingItems || []).filter((i) => i.item_type === 'JOB' && !i.job_type_id);
-      const parts = (billingItems || []).filter((i) => i.item_type === 'PART');
-
-      setBillingItems([...rebuiltJobs, ...manualJobs, ...parts]);
-      setHasEstimateChange(false);
-      toast.success('Detail WO sudah disinkronkan dari estimasi terbaru.');
-    } catch (e: any) {
-      toast.error('Gagal sync dari estimasi: ' + (e?.message || 'Unknown error'));
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleBillingItemChange = (index: number, field: keyof WOBillingItem, value: any) => {
-    const newItems = [...billingItems];
-    const item = newItems[index];
-
-    (item as any)[field] = value;
-
-    // Recalculate total if price or qty changes
-    if (field === 'qty' || field === 'unit_price') {
-      item.total_price = item.qty * item.unit_price;
-    }
-
-    setBillingItems(newItems);
-  };
-
-    const handleBillingPartSelect = (index: number, goods: Goods) => {
-    const newItems = [...billingItems];
-    const item = newItems[index];
-    
-    item.goods_id = goods.id;
-    // item.item_name = `Ganti ${goods.name}`; 
-    item.unit_price = goods.selling_price || 0;
-    item.total_price = item.qty * (goods.selling_price || 0);
-    item.source = 'WO_INTERFACE'; // Mark as added in WO interface
-
-    setBillingItems(newItems);
-    setItemSearchOpen(false);
-    setActiveBillingIndex(null);
-  };
-
-  const handleSaveBilling = async (): Promise<boolean> => {
-    if (!activeWO) return false;
-
-    const isBillingValid = billingItems.every(item => 
-      !isServiceRingan(item.job_group) || 
-      (isServiceRingan(item.job_group) && item.goods_id)
-    );
-
-    if (!isBillingValid) {
-      toast.error("Tidak bisa menutup WO. Pastikan semua pekerjaan 'Service Ringan' sudah memilih sparepart.");
-      return false;
-    }
-
-    setLoading(true);
-
-    try {
-        // 1. Save Billing Items to DB
-        
-        // Delete old billings first (simple overwrite strategy)
-        await supabase.from('work_order_billings').delete().eq('work_order_id', activeWO.id);
-
-        const { error: billingError } = await supabase
-            .from('work_order_billings')
-            .insert(billingItems.map(item => ({
-                work_order_id: activeWO.id,
-                item_type: item.item_type,
-                job_type_id: item.job_type_id,
-                goods_id: item.goods_id,
-                item_name: item.item_name,
-                qty: item.qty,
-                unit_price: item.unit_price,
-                total_price: item.total_price,
-                job_group: item.job_group
-            })));
-
-        if (billingError) throw billingError;
-
-        // 3. Update WO Status to CLOSED
-        await supabase
-            .from('work_orders')
-            .update({ 
-              status: 'CLOSED',
-              work_completed_at: new Date().toISOString()
-            } as any)
-            .eq('id', activeWO.id);
-        
-        // 4. Update Vehicle Entry Status to COMPLETED
-        if (activeWO.vehicle_entry_id) {
-            await supabase
-                .from('vehicle_entries')
-                .update({ status: 'COMPLETED' } as any)
-                .eq('id', activeWO.vehicle_entry_id);
-        }
-        
-        toast.success("WO Ditutup & Tagihan Disimpan");
-        setIsBillingOpen(false);
-        fetchWOs();
-        return true;
-
-    } catch (error: any) {
-        toast.error("Gagal menyimpan: " + error.message);
-        return false;
-    } finally {
-        setLoading(false);
-    }
-  };
-
-  const calculateGrandTotal = () => {
-    return billingItems.reduce((acc, item) => acc + (item.total_price || 0), 0);
-  };
-
-  // Gatekeeper Logic: Compare required vs issued parts
-  useEffect(() => {
-    if (!isBillingOpen || requiredParts.length === 0) {
-      // If no parts were estimated, requirement is met by default
-      setPartValidationStatus({ isMet: true, missing: [] });
-      return;
-    }
-
-    const issuedMap = new Map<string, number>();
-    issuedParts.forEach(part => {
-      issuedMap.set(part.sparepart_id, (issuedMap.get(part.sparepart_id) || 0) + part.qty);
-    });
-
-    const missingParts: any[] = [];
-    let allPartsMet = true;
-
-    requiredParts.forEach(required => {
-      const issuedQty = issuedMap.get(required.sparepart_id) || 0;
-      if (issuedQty < required.qty) {
-        allPartsMet = false;
-        missingParts.push({ 
-          name: required.spareparts?.name || required.item_name || 'Nama Barang Tidak Ditemukan', 
-          required: required.qty, 
-          issued: issuedQty, 
-          missing: required.qty - issuedQty 
-        });
-      }
-    });
-
-    setPartValidationStatus({ isMet: allPartsMet, missing: missingParts });
-
-  }, [requiredParts, issuedParts, isBillingOpen]);
-
-  // Gatekeeper Logic: Compare required vs issued parts
-  useEffect(() => {
-    if (!isBillingOpen || requiredParts.length === 0) {
-      // If no parts were estimated, requirement is met by default
-      setPartValidationStatus({ isMet: true, missing: [] });
-      return;
-    }
-
-    const issuedMap = new Map<string, number>();
-    issuedParts.forEach(part => {
-      issuedMap.set(part.sparepart_id, (issuedMap.get(part.sparepart_id) || 0) + part.qty);
-    });
-
-    const missingParts: any[] = [];
-    let allPartsMet = true;
-
-    requiredParts.forEach(required => {
-      const issuedQty = issuedMap.get(required.sparepart_id) || 0;
-      if (issuedQty < required.qty) {
-        allPartsMet = false;
-        missingParts.push({ 
-          name: required.spareparts?.name || required.item_name || 'Nama Barang Tidak Ditemukan', 
-          required: required.qty, 
-          issued: issuedQty, 
-          missing: required.qty - issuedQty 
-        });
-      }
-    });
-
-    setPartValidationStatus({ isMet: allPartsMet, missing: missingParts });
-
-  }, [requiredParts, issuedParts, isBillingOpen]);
-
-  const handleDelete = async (id: string) => {
-    // Check permission: SUPER_ADMIN or ADMIN with 'trans_wo_delete' (assuming we add this key or reuse reopen for advanced actions)
-    // Using 'trans_wo_reopen' as a proxy for "Advanced WO Admin" for now as per request "admin yang diberikan bisa lakukan itu"
-    const hasDeleteAccess = user?.role === 'SUPER_ADMIN' || (user?.role === 'ADMIN' && user?.allowed_menus?.includes('trans_wo_reopen'));
-
-    if (!hasDeleteAccess) {
-        toast.error("Anda tidak memiliki izin untuk menghapus WO.");
-        return;
-    }
-
-    if (!confirm('PERINGATAN: Apakah Anda yakin ingin MENGHAPUS Work Order ini secara permanen? Data yang dihapus tidak dapat dikembalikan.')) return;
-    
-    setLoading(true);
-    try {
-      // 1. Get all related Goods Issues
-      const { data: issues } = await supabase
-        .from('goods_issues')
-        .select('id, items:goods_issue_items(goods_id, quantity)')
-        .eq('work_order_id', id);
-
-      const issueIds = issues?.map(i => i.id) || [];
-
-      // 2. Restore Stock Logic (Must be done before deleting items)
-      if (issues) {
-        for (const issue of issues) {
-          if (issue.items) {
-            for (const item of issue.items) {
-               if (item.goods_id) {
-                 const { data: currentGood } = await supabase
-                   .from('goods')
-                   .select('current_stock')
-                   .eq('id', item.goods_id)
-                   .single();
-                  
-                 if (currentGood) {
-                   await supabase
-                     .from('goods')
-                     .update({ current_stock: (currentGood.current_stock || 0) + item.quantity })
-                     .eq('id', item.goods_id);
-                 }
-               }
-            }
-          }
-        }
-      }
-
-      // 3. Delete ALL Goods Issue Items (Bulk Delete for safety)
-      if (issueIds.length > 0) {
-          const { error: itemsError } = await supabase
-            .from('goods_issue_items')
-            .delete()
-            .in('issue_id', issueIds);
-          
-          if (itemsError) throw itemsError;
-      }
-
-      // 4. Delete Goods Issues
-      const { error: issuesError } = await supabase
-        .from('goods_issues')
-        .delete()
-        .eq('work_order_id', id);
-
-      if (issuesError) throw issuesError;
-
-      // 5. Delete Billings & Images
-      await supabase.from('work_order_billings').delete().eq('work_order_id', id);
-      await supabase.from('work_order_images').delete().eq('work_order_id', id);
-
-      // 6. Unlink Purchase Orders (Set work_order_id to NULL instead of deleting PO)
-      // This prevents FK violation if a PO exists for this WO
-      await supabase
-        .from('purchase_orders')
-        .update({ work_order_id: null } as any)
-        .eq('work_order_id', id);
-
-      // 7. Delete Work Order
-      const { error } = await supabase.from('work_orders').delete().eq('id', id);
-      if (error) throw error;
-      
-      toast.success('Work Order berhasil dihapus');
+      toast.success('WO Selesai & Billing Tersimpan!');
+      setFinishWOModalOpen(false);
+      setActiveWOForBilling(null);
       fetchWOs();
     } catch (error: any) {
-      console.error(error);
-      if (error.message?.includes('goods_issues_work_order_id_fkey')) {
-          toast.error('GAGAL HAPUS: Masih ada Barang Keluar yang terkait. Kemungkinan Anda tidak memiliki izin untuk menghapus Barang Keluar tersebut (RLS). Hubungi IT untuk menjalankan script "ON DELETE CASCADE".');
-      } else {
-          toast.error('Gagal menghapus WO: ' + error.message);
-      }
+      toast.error('Gagal menyimpan: ' + error.message);
     } finally {
       setLoading(false);
     }
   };
 
-  const handleFixStock = async (wo: WOWithDetails) => {
-    if (!confirm(`Jalankan 'Fix Stock' untuk WO ${wo.wo_number}? Ini akan mengecek tagihan dan memastikan stok terpotong.`)) return;
-    
-    setLoading(true);
-    try {
-        // 1. Fetch Billings
-        const { data: billings } = await supabase.from('work_order_billings').select('*').eq('work_order_id', wo.id);
-        
-        if (!billings || billings.length === 0) {
-            toast.error("Tidak ada data tagihan ditemukan untuk WO ini.");
-            setLoading(false);
-            return;
-        }
-
-        // 2. Fetch Existing Issues
-        const { data: existingIssues } = await supabase
-            .from('goods_issues')
-            .select('*, items:goods_issue_items(*)')
-            .eq('work_order_id', wo.id);
-
-        // 3. Prepare Issue Header
-        let targetIssueId: string;
-        // Fix: Use issue_number pattern instead of notes
-        const autoIssue = existingIssues?.find(i => i.issue_number?.includes('GI-WO-AUTO-'));
-        
-        if (autoIssue) {
-            targetIssueId = autoIssue.id;
-        } else {
-             // Create new header if needed
-             const hasParts = billings.some(i => i.goods_id);
-             if (hasParts) {
-                 const { data: newIssue, error: createError } = await supabase
-                    .from('goods_issues')
-                    .insert([{
-                        issue_number: `GI-WO-AUTO-${Date.now()}-${Math.floor(Math.random()*1000)}`,
-                        work_order_id: wo.id,
-                        issue_date: wo.work_date || new Date().toISOString().split('T')[0]
-                        // Removed notes
-                    }])
-                    .select()
-                    .single();
-                 
-                 if (createError) throw createError;
-                 targetIssueId = newIssue.id;
-             } else {
-                 toast.info("Tidak ada sparepart dalam tagihan.");
-                 setLoading(false);
-                 return;
-             }
-        }
-
-        // 4. Map Existing Issued Items
-        const issuedMap = new Map<string, number>();
-        if (existingIssues) {
-            existingIssues.forEach(issue => {
-                if (issue.items) {
-                    issue.items.forEach((item: any) => {
-                        if (item.goods_id) {
-                            const current = issuedMap.get(item.goods_id) || 0;
-                            issuedMap.set(item.goods_id, current + item.quantity);
-                        }
-                    });
-                }
-            });
-        }
-
-        // 5. Sync
-        let updatedCount = 0;
-        if (targetIssueId) {
-            for (const item of billings) {
-                if (item.goods_id) {
-                    const billedQty = item.qty;
-                    const alreadyIssuedQty = issuedMap.get(item.goods_id) || 0;
-                    const diff = billedQty - alreadyIssuedQty;
-
-                    if (diff > 0) { // Only handle positive diff
-                        // Adjust Stock
-                        const { data: currentGood } = await supabase
-                            .from('goods')
-                            .select('current_stock, name')
-                            .eq('id', item.goods_id)
-                            .single();
-
-                        if (currentGood) {
-                             await supabase
-                                .from('goods')
-                                .update({ current_stock: (currentGood.current_stock || 0) - diff })
-                                .eq('id', item.goods_id);
-                        }
-
-                        // Update/Insert Issue Item
-                        const { data: existingTargetItem } = await supabase
-                            .from('goods_issue_items')
-                            .select('*')
-                            .eq('issue_id', targetIssueId)
-                            .eq('goods_id', item.goods_id)
-                            .single();
-
-                        if (existingTargetItem) {
-                            await supabase
-                                .from('goods_issue_items')
-                                .update({ quantity: existingTargetItem.quantity + diff })
-                                .eq('id', existingTargetItem.id);
-                        } else {
-                            if (diff > 0) {
-                                await supabase
-                                    .from('goods_issue_items')
-                                    .insert({
-                                        issue_id: targetIssueId,
-                                        goods_id: item.goods_id,
-                                        quantity: diff
-                                    });
-                            }
-                        }
-                        updatedCount++;
-                        console.log(`Fixed Stock for ${currentGood?.name}: Diff ${diff}`);
-                    }
-                }
-            }
-        }
-
-        if (updatedCount > 0) {
-            toast.success(`Berhasil memperbaiki stok untuk ${updatedCount} item.`);
-        } else {
-            toast.info("Stok sudah sinkron. Tidak ada perubahan.");
-        }
-
-        // 6. Auto Journal HPP (PERSEDIAAN) untuk Goods Issue yang dibuat/diupdate
-        if (targetIssueId) {
-          const { data: issue, error: issueErr } = await supabase
-            .from('goods_issues')
-            .select(`
-              id,
-              issue_number,
-              issue_date,
-              items:goods_issue_items (
-                goods_id,
-                quantity,
-                goods (id, item_type)
-              )
-            `)
-            .eq('id', targetIssueId)
-            .maybeSingle();
-          if (issueErr) throw issueErr;
-
-          const items = Array.isArray((issue as any)?.items) ? (issue as any).items : [];
-          const persItems = items
-            .map((it: any) => {
-              const g: any = it.goods;
-              const itemType = String((Array.isArray(g) ? g[0]?.item_type : g?.item_type) || '').toUpperCase();
-              return { goods_id: String(it.goods_id || ''), quantity: Number(it.quantity || 0), itemType };
-            })
-            .filter((it: any) => it.goods_id && it.quantity > 0 && it.itemType === 'PERSEDIAAN');
-
-          if (persItems.length > 0) {
-            const goodsIds = Array.from(new Set(persItems.map((x: any) => x.goods_id)));
-            const { data: poItems, error: poErr } = await supabase
-              .from('purchase_order_items')
-              .select('goods_id, unit_price, created_at')
-              .in('goods_id', goodsIds)
-              .order('created_at', { ascending: false });
-            if (poErr) throw poErr;
-
-            const priceMap: Record<string, number> = {};
-            (poItems || []).forEach((p: any) => {
-              const gid = String(p.goods_id || '');
-              if (!gid) return;
-              if (priceMap[gid] !== undefined) return;
-              priceMap[gid] = Number(p.unit_price || 0);
-            });
-
-            const totalCost = persItems.reduce((sum: number, it: any) => sum + (Number(priceMap[it.goods_id] || 0) * it.quantity), 0);
-
-            if (totalCost > 0) {
-              const { data: persAcc } = await supabase
-                .from('chart_of_accounts')
-                .select('id, account_code, account_name')
-                .eq('account_type', 'DETAIL')
-                .ilike('account_name', '%persediaan%')
-                .order('account_code', { ascending: true })
-                .limit(1)
-                .maybeSingle();
-
-              const { data: hppAcc } = await supabase
-                .from('chart_of_accounts')
-                .select('id, account_code, account_name')
-                .eq('account_type', 'DETAIL')
-                .or('account_name.ilike.%hpp%,account_name.ilike.%harga pokok%')
-                .order('account_code', { ascending: true })
-                .limit(1)
-                .maybeSingle();
-
-              if (persAcc && hppAcc) {
-                await supabase.from('journal_entries').delete().eq('reference', targetIssueId);
-
-                const { data: je, error: jeErr } = await supabase
-                  .from('journal_entries')
-                  .insert([{
-                    entry_date: String((issue as any)?.issue_date || wo.work_date || new Date().toISOString().split('T')[0]),
-                    voucher_no: String((issue as any)?.issue_number || ''),
-                    reference: targetIssueId,
-                    description: `HPP Persediaan WO ${wo.wo_number}`,
-                    entry_type: 'JOURNAL',
-                    total_amount: totalCost,
-                  }])
-                  .select()
-                  .single();
-                if (jeErr) throw jeErr;
-
-                const { error: jiErr } = await supabase.from('journal_entry_items').insert([
-                  {
-                    journal_entry_id: je.id,
-                    account_id: hppAcc.id,
-                    debit: totalCost,
-                    credit: 0,
-                    description: 'HPP Persediaan',
-                  },
-                  {
-                    journal_entry_id: je.id,
-                    account_id: persAcc.id,
-                    debit: 0,
-                    credit: totalCost,
-                    description: 'Pengurangan Persediaan',
-                  },
-                ]);
-                if (jiErr) throw jiErr;
-              }
-            }
-          }
-        }
-
-    } catch (e: any) {
-        toast.error("Gagal fix stock: " + e.message);
-    } finally {
-        setLoading(false);
-    }
-  };
-
-  const filteredWOs = wos.filter(w => 
-    w.wo_number.toLowerCase().includes(search.toLowerCase()) ||
-    w.vehicle_entries?.vehicles?.license_plate.toLowerCase().includes(search.toLowerCase()) ||
-    w.vehicle_entries?.vehicles?.brand_type?.toLowerCase().includes(search.toLowerCase())
-  );
-
-  const isServiceRingan = (group: string | null | undefined) => {
-    if (!group) return false;
-    return group.toUpperCase().replace(/_/g, ' ').includes('SERVICE RINGAN');
-  };
+  const filteredWOs = wos.filter(wo => {
+    const searchTerm = entrySearchQuery.toLowerCase();
+    const woNumber = wo.wo_number?.toLowerCase() || '';
+    const licensePlate = wo.vehicle_entries?.vehicles?.license_plate?.toLowerCase() || '';
+    return woNumber.includes(searchTerm) || licensePlate.includes(searchTerm);
+  });
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h2 className="text-3xl font-bold tracking-tight text-blue-700">Work Order (WO)</h2>
-        <Dialog open={isDialogOpen} onOpenChange={(open) => { setIsDialogOpen(open); if(!open) resetForm(); }}>
-          <DialogTrigger asChild>
-            <Button><Plus className="mr-2 h-4 w-4" /> Buat WO Baru</Button>
-          </DialogTrigger>
-          <DialogContent className="sm:max-w-[600px]">
-            <DialogHeader>
-              <DialogTitle>{isEditing ? 'Edit Work Order' : 'Buat Work Order Baru'}</DialogTitle>
-              <DialogDescription>Tugaskan mekanik untuk perbaikan kendaraan.</DialogDescription>
-            </DialogHeader>
-            <form onSubmit={handleSubmit}>
-              <div className="grid gap-4 py-4">
-                <div className="grid grid-cols-2 gap-4">
-                   <div className="space-y-2">
-                    <Label>Tanggal WO</Label>
-                    <Input type="date" value={formData.work_date} onChange={(e) => setFormData({...formData, work_date: e.target.value})} required />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Pilih Mekanik</Label>
-                    <Select value={formData.mechanic_id} onValueChange={(v) => handleSelectChange('mechanic_id', v)}>
-                      <SelectTrigger><SelectValue placeholder="Pilih Mekanik" /></SelectTrigger>
-                      <SelectContent>
-                        {mechanics.map(m => (
-                          <SelectItem key={m.id} value={m.id}>{m.name} ({m.specialization})</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
-
-                <div className="space-y-2">
-                  <Label>Referensi Entry (Pilih Kendaraan Masuk)</Label>
-                  {isEditing ? (
-                     <div className="border p-2 rounded-md bg-gray-100 text-sm">
-                        {entries.find(e => e.id === formData.vehicle_entry_id)?.vehicles?.license_plate || 'Unknown'} - {entries.find(e => e.id === formData.vehicle_entry_id)?.entry_number || 'Unknown'}
-                     </div>
-                  ) : (
-                    <Button 
-                        variant="outline" 
-                        role="combobox" 
-                        className="w-full justify-between font-normal"
-                        onClick={(e) => { e.preventDefault(); setIsEntrySearchOpen(true); }}
-                    >
-                        {formData.vehicle_entry_id 
-                            ? `${entries.find(e => e.id === formData.vehicle_entry_id)?.entry_number} - ${entries.find(e => e.id === formData.vehicle_entry_id)?.vehicles?.license_plate}`
-                            : "Cari Nopol / No. Entry..."}
-                        <Search className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-                    </Button>
-                  )}
-                  <p className="text-xs text-muted-foreground">Hanya menampilkan kendaraan masuk yang belum diproses.</p>
-                </div>
-
-                {/* Entry Details Preview */}
-                {selectedEntryDetails && (
-                  <div className="space-y-3 border rounded-md p-3 bg-slate-50">
-                    <div className="flex justify-between">
-                      <Label className="text-sm font-semibold">Detail Kendaraan & Keluhan</Label>
-                      <Badge variant="outline">{selectedEntryDetails.nota_dinas_number}</Badge>
-                    </div>
-                    
-                    <div className="grid grid-cols-2 gap-2 text-sm">
-                      <div>
-                        <span className="text-xs text-muted-foreground block">Nopol</span>
-                        <span className="font-medium">{selectedEntryDetails.vehicles?.license_plate}</span>
-                      </div>
-                      <div>
-                        <span className="text-xs text-muted-foreground block">Tipe</span>
-                        <span className="font-medium">{selectedEntryDetails.vehicles?.brand_type}</span>
-                      </div>
-                    </div>
-
-                    <div className="space-y-1">
-                      <span className="text-xs text-muted-foreground block">Daftar Pekerjaan (Entry)</span>
-                      {selectedEntryDetails.vehicle_entry_jobs && selectedEntryDetails.vehicle_entry_jobs.length > 0 ? (
-                        <div className="space-y-1 pl-1">
-                          {selectedEntryDetails.vehicle_entry_jobs.map((job: any, idx: number) => (
-                            <div key={idx} className="flex items-center gap-2 text-xs">
-                              <Badge variant="secondary" className="text-[10px] px-1 h-4">
-                                {job.job_types?.job_group.includes('PERBAIKAN') ? 'PRB' : 'SRV'}
-                              </Badge>
-                              <span>{job.job_types?.job_name}</span>
-                              {job.notes && <span className="text-muted-foreground italic">- {job.notes}</span>}
-                            </div>
-                          ))}
-                        </div>
-                      ) : (
-                        <span className="text-xs italic text-muted-foreground">Tidak ada detail pekerjaan</span>
-                      )}
-                    </div>
-
-                    {selectedEntryDetails.notes && (
-                      <div className="text-xs bg-yellow-50 p-2 rounded text-yellow-800 border border-yellow-100">
-                        <span className="font-semibold">Catatan Entry:</span> {selectedEntryDetails.notes}
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-              <DialogFooter>
-                <Button type="submit" disabled={loading}>{loading ? 'Menyimpan...' : 'Simpan WO'}</Button>
-              </DialogFooter>
-            </form>
-          </DialogContent>
-        </Dialog>
-      </div>
-
-      {/* Entry Search Dialog */}
-      <Dialog open={isEntrySearchOpen} onOpenChange={setIsEntrySearchOpen}>
-        <DialogContent className="sm:max-w-[600px] p-0">
-            <Command>
-                <CommandInput 
-                    placeholder="Cari Nopol, No. Entry, atau Nota Dinas..." 
-                    value={entrySearchQuery} 
-                    onChange={(e) => setEntrySearchQuery(e.target.value)} 
-                />
-                <CommandList>
-                    <CommandEmpty>Tidak ditemukan data entry yang belum diproses.</CommandEmpty>
-                    <CommandGroup heading="Kendaraan Masuk (Belum WO)">
-                        {entries
-                            .filter(e => 
-                                e.vehicles?.license_plate.toLowerCase().includes(entrySearchQuery.toLowerCase()) ||
-                                e.entry_number.toLowerCase().includes(entrySearchQuery.toLowerCase()) ||
-                                (e.nota_dinas_number && e.nota_dinas_number.toLowerCase().includes(entrySearchQuery.toLowerCase()))
-                            )
-                            .map(e => (
-                                <CommandItem key={e.id} onSelect={() => {
-                                    handleSelectChange('vehicle_entry_id', e.id);
-                                    setIsEntrySearchOpen(false);
-                                }}>
-                                    <div className="flex flex-col w-full">
-                                        <div className="flex justify-between">
-                                            <span className="font-bold">{e.vehicles?.license_plate}</span>
-                                            <span className="text-xs text-muted-foreground">{e.entry_number}</span>
-                                        </div>
-                                        <div className="flex justify-between text-xs text-gray-500">
-                                            <span>{e.vehicles?.brand_type}</span>
-                                            <span>{formatDate(e.entry_date)}</span>
-                                        </div>
-                                        {e.nota_dinas_number && <span className="text-xs text-blue-600">ND: {e.nota_dinas_number}</span>}
-                                    </div>
-                                    {formData.vehicle_entry_id === e.id && <Check className="ml-auto h-4 w-4" />}
-                                </CommandItem>
-                            ))
-                        }
-                    </CommandGroup>
-                </CommandList>
-            </Command>
-        </DialogContent>
-      </Dialog>
-
+    <div className="p-4">
       <Card>
-        <CardHeader className="pb-3">
-          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-            <CardTitle>Daftar Work Order</CardTitle>
-            <div className="flex flex-col md:flex-row gap-2">
-              <div className="flex items-center gap-2">
-                 <Input 
-                    type="date" 
-                    className="w-auto" 
-                    value={dateRange.start} 
-                    onChange={(e) => setDateRange(prev => ({ ...prev, start: e.target.value }))} 
-                 />
-                 <span>-</span>
-                 <Input 
-                    type="date" 
-                    className="w-auto" 
-                    value={dateRange.end} 
-                    onChange={(e) => setDateRange(prev => ({ ...prev, end: e.target.value }))} 
-                 />
-              </div>
-              <div className="relative w-64">
-                <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground pointer-events-none" />
-                <Input placeholder="Cari No. WO / Nopol / Kendaraan..." className="pl-8" value={search} onChange={e => setSearch(e.target.value)} />
-              </div>
-            </div>
+        <CardHeader>
+          <div className="flex justify-between items-center">
+            <CardTitle>Work Order</CardTitle>
+            <Button onClick={() => { resetForm(); setIsDialogOpen(true); }}>
+              <Plus className="mr-2 h-4 w-4" /> Tambah WO
+            </Button>
+          </div>
+          <div className="flex items-center space-x-2 pt-4">
+            <Input type="date" value={dateRange.from} onChange={e => setDateRange(prev => ({ ...prev, from: e.target.value }))} />
+            <Input type="date" value={dateRange.to} onChange={e => setDateRange(prev => ({ ...prev, to: e.target.value }))} />
+            <Input
+              placeholder="Cari No. WO atau Nopol..."
+              value={entrySearchQuery}
+              onChange={(e) => setEntrySearchQuery(e.target.value)}
+              className="max-w-sm"
+            />
           </div>
         </CardHeader>
         <CardContent>
-          <div className="rounded-md border">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>No. WO</TableHead>
-                  <TableHead>Tanggal</TableHead>
-                  <TableHead>Kendaraan</TableHead>
-                  <TableHead>Group</TableHead>
-                  <TableHead>Mekanik</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead className="text-right">Aksi</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filteredWOs.length === 0 ? (
-                  <TableRow><TableCell colSpan={6} className="text-center h-24">Tidak ada data WO.</TableCell></TableRow>
-                ) : (
-                  filteredWOs.map((item) => (
-                    <TableRow key={item.id}>
-                      <TableCell className="font-medium">{item.wo_number}</TableCell>
-                      <TableCell>{formatDate(item.work_date)}</TableCell>
-                      <TableCell>
-                        <div className="flex flex-col">
-                          <span className="font-medium">{item.vehicle_entries?.vehicles?.license_plate}</span>
-                          <span className="text-xs text-muted-foreground">{item.vehicle_entries?.vehicles?.brand_type}</span>
-                          <span className="text-xs text-muted-foreground">{item.vehicle_entries?.nota_dinas_number}</span>
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-slate-100 text-slate-700">
-                          {classifyVehicleType(item.vehicle_entries?.vehicles?.vehicle_type)}
-                        </span>
-                      </TableCell>
-                      <TableCell>{item.mechanics?.name || '-'}</TableCell>
-                      <TableCell>
-                        <Badge variant={
-                          item.status === 'OPEN' ? 'secondary' : 
-                          item.status === 'IN_PROGRESS' ? 'default' : 
-                          item.status === 'COMPLETED' ? 'outline' : 'destructive'
-                        } className={item.status === 'COMPLETED' ? 'bg-green-100 text-green-800 border-transparent' : ''}>
-                          {item.status.replace('_', ' ')}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <div className="flex justify-end gap-2">
-                          {item.status === 'OPEN' && (
-                            <Button size="sm" variant="outline" onClick={() => handleStatusChange(item.id, 'IN_PROGRESS')}>
-                              <Play className="h-4 w-4 mr-1" /> Mulai
-                            </Button>
-                          )}
-                          {item.status === 'IN_PROGRESS' && (
-                            <Button size="sm" className="bg-green-600 hover:bg-green-700" onClick={() => handleFinishWO(item)}>
-                              <CheckCircle className="h-4 w-4 mr-1" /> Selesai
-                            </Button>
-                          )}
-                          <Button variant="outline" size="sm" className="h-8" onClick={() => handlePrint(item)}>
-                             <ClipboardCheck className="h-4 w-4 mr-1" /> SPK
-                          </Button>
-                          {item.status === 'COMPLETED' && (
-                            <Button size="sm" className="bg-blue-600 hover:bg-blue-700" onClick={() => handleStatusChange(item.id, 'CLOSED')}>
-                              <XCircle className="h-4 w-4 mr-1" /> Tutup WO
-                            </Button>
-                          )}
-                          {item.status === 'CLOSED' && (
-                            <>
-                              {(user?.role === 'SUPER_ADMIN' || (user?.role === 'ADMIN' && user?.allowed_menus?.includes('trans_wo_reopen'))) && (
-                                <Button size="sm" variant="outline" className="text-orange-500 border-orange-200 hover:bg-orange-50" onClick={() => handleStatusChange(item.id, 'IN_PROGRESS')}>
-                                  <RefreshCw className="h-4 w-4" /> Re-open
-                                </Button>
-                              )}
-                            </>
-                          )}
-                          <Button 
-                            variant="ghost" 
-                            size="icon" 
-                            onClick={() => handlePrintSuratJalan(item.id)} 
-                            title={item.status === 'CLOSED' ? "Cetak Surat Jalan / WO" : "Surat Jalan hanya bisa dicetak jika WO sudah ditutup"}
-                            disabled={item.status !== 'CLOSED'}
-                          >
-                              <Printer className="h-4 w-4" />
-                          </Button>
-                          <Button variant="ghost" size="icon" onClick={() => { 
-                              setActiveWO(item); 
-                              fetchWOImages(item.id); 
-                              setIsImageDialogOpen(true); 
-                          }} title="Foto Dokumentasi">
-                              <Camera className="h-4 w-4" />
-                          </Button>
-                          <Button variant="ghost" size="icon" onClick={() => handleEdit(item)}><Eye className="h-4 w-4" /></Button>
-                          {/* Edit button for OPEN & IN_PROGRESS */}
-                          {(item.status === 'OPEN' || item.status === 'IN_PROGRESS') && (
-                             <Button variant="ghost" size="icon" onClick={() => handleEdit(item)} title="Edit WO">
-                               <Pencil className="h-4 w-4" />
-                             </Button>
-                          )}
-                          {(user?.role === 'SUPER_ADMIN' || (user?.role === 'ADMIN' && user?.allowed_menus?.includes('trans_wo_reopen'))) && (
-                            <Button variant="destructive" size="icon" onClick={() => handleDelete(item.id)} title="Hapus WO">
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
-                          )}
-                          {/* Fix Stock Button for Closed WO (Admin Only) */}
-                          {item.status === 'CLOSED' && (user?.role === 'SUPER_ADMIN' || user?.role === 'ADMIN') && (
-                              <Button variant="outline" size="icon" className="text-purple-600 border-purple-200 hover:bg-purple-50" onClick={() => handleFixStock(item)} title="Fix Stock / Sinkronisasi Stok">
-                                  <Wrench className="h-4 w-4" />
-                              </Button>
-                          )}
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  ))
-                )}
-              </TableBody>
-            </Table>
-          </div>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>No. WO</TableHead>
+                <TableHead>Tanggal</TableHead>
+                <TableHead>Nopol</TableHead>
+                <TableHead>Mekanik</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead>Lead Time</TableHead>
+                <TableHead>Aksi</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {loading ? (
+                <TableRow><TableCell colSpan={7} className="text-center">Memuat data...</TableCell></TableRow>
+              ) : filteredWOs.length === 0 ? (
+                <TableRow><TableCell colSpan={7} className="text-center">Tidak ada data</TableCell></TableRow>
+              ) : (
+                filteredWOs.map(wo => (
+                  <TableRow key={wo.id}>
+                    <TableCell>{wo.wo_number}</TableCell>
+                    <TableCell>{formatDate(wo.work_date)}</TableCell>
+                    <TableCell>{wo.vehicle_entries?.vehicles?.license_plate}</TableCell>
+                    <TableCell>{wo.mechanics?.name}</TableCell>
+                    <TableCell><Badge variant={wo.status === 'OPEN' ? 'secondary' : wo.status === 'IN_PROGRESS' ? 'default' : wo.status === 'COMPLETED' ? 'outline' : 'success'}>{wo.status}</Badge></TableCell>
+                    <TableCell>
+                      {wo.work_started_at && wo.work_completed_at ? 
+                        `${Math.round((new Date(wo.work_completed_at).getTime() - new Date(wo.work_started_at).getTime()) / (1000 * 60))} menit`
+                        : '-'}
+                    </TableCell>
+                    <TableCell className="space-x-1">
+                      <Button variant="outline" size="sm" onClick={() => handlePrint(wo)}><Printer className="h-4 w-4" /></Button>
+                      <Button variant="outline" size="sm" onClick={() => handleEdit(wo)}><Pencil className="h-4 w-4" /></Button>
+                      {wo.status === 'OPEN' && <Button variant="outline" size="sm" onClick={() => handleStatusChange(wo.id, 'IN_PROGRESS', wo.status)}><Play className="h-4 w-4" /></Button>}
+                      {wo.status === 'IN_PROGRESS' && <Button variant="default" size="sm" onClick={() => handleFinishWO(wo)}><CheckCircle className="h-4 w-4" /></Button>}
+                      {wo.status === 'COMPLETED' && <Button variant="destructive" size="sm" onClick={() => handleStatusChange(wo.id, 'CLOSED', wo.status)}><XCircle className="h-4 w-4" /></Button>}
+                      <Button 
+                        variant="outline" 
+                        size="sm" 
+                        onClick={() => handlePrintSuratJalan(wo.id)}
+                        disabled={wo.status !== 'CLOSED'}
+                        title={wo.status !== 'CLOSED' ? 'WO harus ditutup terlebih dahulu' : 'Cetak Surat Jalan'}
+                      >
+                        <Printer className="mr-2 h-4 w-4" />
+                        Surat Jalan
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                ))
+              )}
+            </TableBody>
+          </Table>
         </CardContent>
       </Card>
 
-      {/* Billing / Completion Dialog */}
-      <Dialog open={isBillingOpen} onOpenChange={setIsBillingOpen}>
-        <DialogContent className="max-w-[95vw] h-[95vh] flex flex-col">
-            <DialogHeader>
-                <DialogTitle>Penyelesaian Work Order & Tagihan</DialogTitle>
-                <DialogDescription>
-                    WO: {activeWO?.wo_number} | {activeWO?.vehicle_entries?.vehicles?.license_plate}
-                </DialogDescription>
-            </DialogHeader>
-
-            <div className="flex-1 overflow-y-auto py-4">
-                 {/* Spare Part Validation Status */}
-                 <div className="my-4 p-3 rounded-md border mx-6">
-                    <h4 className="font-semibold mb-2">Status Pemenuhan Sparepart</h4>
-                    {partValidationStatus.isMet ? (
-                    <div className="text-green-600">
-                        <p>✅ Semua sparepart yang diestimasi sudah terpenuhi.</p>
-                    </div>
-                    ) : (
-                    <div className="text-red-600">
-                        <p>❌ Ada sparepart yang belum terpenuhi:</p>
-                        <ul className="list-disc pl-5 mt-1 text-sm">
-                        {partValidationStatus.missing.map((p, i) => (
-                            <li key={i}>{p.name} (kurang {p.missing} unit)</li>
-                        ))}
-                        </ul>
-                    </div>
-                    )}
-                </div>
-
-                 {hasEstimateChange && (
-                   <div className="mb-3 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900">
-                     Estimasi pekerjaan sudah berubah. Klik "Sync dari Estimasi" agar detail mengikuti data terbaru.
-                   </div>
-                 )}
-                 <Table>
-                    <TableHeader>
-                        <TableRow>
-                            <TableHead className="w-[10%]">Group</TableHead>
-                            <TableHead className="w-[25%]">Daftar Pengerjaan</TableHead>
-                            <TableHead className="w-[25%]">Sparepart</TableHead>
-                            <TableHead className="w-[15%]">Harga Pagu</TableHead>
-                            <TableHead className="w-[8%]">Qty</TableHead>
-                            <TableHead className="w-[17%] text-right">Nominal</TableHead>
-                        </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                        {billingItems.map((item, index) => (
-                            <TableRow key={index}>
-                                <TableCell>
-                                    <Badge variant="outline" className={isServiceRingan(item.job_group) ? 'bg-blue-50' : 'bg-orange-50'}>
-                                        {item.job_group || (isServiceRingan(item.job_group) ? 'Service Ringan' : 'Perbaikan')}
-                                    </Badge>
-                                </TableCell>
-                                <TableCell className="font-medium">{item.item_name}</TableCell>
-                                <TableCell>
-                                    {/* Sparepart Selection Logic */}
-                                    {isServiceRingan(item.job_group) ? (
-                                        // Service Ringan: Must Select Part (Search filtered by 'Oli' if job name implies oil)
-                                        <div className="relative">
-                                            <Button 
-                                                variant="outline" 
-                                                role="combobox" 
-                                                className={cn("w-full justify-between text-xs h-8", !item.goods_id && "text-muted-foreground")}
-                                                onClick={() => { 
-                                                    setActiveBillingIndex(index); 
-                                                    // Auto-filter for Service Ringan (Show OLI and FILTER items)
-                                                    if (isServiceRingan(item.job_group)) {
-                                                        setItemSearchQuery('');
-                                                        setServiceRinganFilter(true);
-                                                    } else {
-                                                        setItemSearchQuery('');
-                                                        setServiceRinganFilter(false);
-                                                    }
-                                                    setItemSearchOpen(true); 
-                                                }}
-                                            >
-                                                {item.goods_id 
-                                                    ? goodsList.find(g => g.id === item.goods_id)?.name 
-                                                    : "Pilih Part..."}
-                                                <Search className="ml-2 h-3 w-3 shrink-0 opacity-50" />
-                                            </Button>
-                                        </div>
-                                    ) : (
-                                        // Perbaikan: Read-only part name (if from Goods Issue) or Disabled (if pure Job)
-                                        <span className="text-xs text-gray-500 italic">
-                                            {item.item_type === 'PART' ? item.item_name.replace('Penggantian ', '') : '(Tidak ada part)'}
-                                        </span>
-                                    )}
-                                </TableCell>
-                                <TableCell>
-                                    <Input 
-                                        type="number" 
-                                        className={cn("h-8 text-right", canAdjustBillingPrice ? "bg-white" : "bg-gray-50")}
-                                        value={item.unit_price} 
-                                        readOnly={!canAdjustBillingPrice}
-                                        onChange={(e) => {
-                                          if (!canAdjustBillingPrice) return;
-                                          handleBillingItemChange(index, 'unit_price', Number(e.target.value) || 0);
-                                        }}
-                                    />
-                                </TableCell>
-                                <TableCell>
-                                    <Input 
-                                        type="text"
-                                        inputMode="numeric" 
-                                        className={cn("h-8 text-center min-w-[60px]", !isServiceRingan(item.job_group) && "bg-gray-100 text-gray-500")}
-                                        value={item.qty} 
-                                        readOnly={!isServiceRingan(item.job_group)} // Read-only for Perbaikan
-                                        onChange={(e) => {
-                                            const val = e.target.value.replace(/[^0-9]/g, '');
-                                            handleBillingItemChange(index, 'qty', val ? parseInt(val) : 0);
-                                        }}
-                                    />
-                                </TableCell>
-                                <TableCell className="text-right font-bold">
-                                    {formatCurrency(item.total_price)}
-                                </TableCell>
-                            </TableRow>
-                        ))}
-                    </TableBody>
-                 </Table>
-            </div>
-
-            <div className="flex justify-between items-center border-t pt-4">
-                <div className="text-xl font-bold">
-                    Total Estimasi Biaya: {formatCurrency(calculateGrandTotal())}
-                </div>
-                <div className="flex gap-2">
-                    <Button
-                      variant="outline"
-                      disabled={loading || !activeWO?.vehicle_entry_id}
-                      onClick={syncBillingJobsFromEstimate}
-                    >
-                      Sync dari Estimasi
-                    </Button>
-                    <Button variant="outline" onClick={() => setIsBillingOpen(false)}>Batal</Button>
-                    <Button className="bg-blue-600 hover:bg-blue-700" onClick={handleSaveBilling}>
-                        <CheckCircle className="mr-2 h-4 w-4" /> Simpan
-                    </Button>
-                    <Button variant="secondary" onClick={async () => {
-                        const success = await handleSaveBilling();
-                        if (success && activeWO) window.open(`/print/invoice/${activeWO.id}`, '_blank');
-                    }}>
-                        <Printer className="mr-2 h-4 w-4" /> Simpan & Cetak
-                    </Button>
-                </div>
-            </div>
-
-            {/* Sparepart Search Dialog for Billing */}
-            <Dialog open={itemSearchOpen} onOpenChange={setItemSearchOpen}>
-                <DialogContent className="sm:max-w-[500px] p-0">
-                    <Command>
-                        <CommandInput placeholder="Cari sparepart (oli, filter, dll)..." value={itemSearchQuery} onChange={(e) => setItemSearchQuery(e.target.value)} />
-                        <CommandList>
-                            <CommandEmpty>Tidak ditemukan.</CommandEmpty>
-                            <CommandGroup heading="Spareparts">
-                                {goodsList
-                                    .filter(g => {
-                                        if (itemSearchQuery) return g.name.toLowerCase().includes(itemSearchQuery.toLowerCase());
-                                        if (serviceRinganFilter) {
-                                            const n = g.name.toLowerCase();
-                                            return n.includes('oli') || n.includes('filter');
-                                        }
-                                        return true;
-                                    })
-                                    .map(g => (
-                                        <CommandItem key={g.id} onSelect={() => activeBillingIndex !== null && handleBillingPartSelect(activeBillingIndex, g)}>
-                                            <div className="flex flex-col">
-                                                <span>{g.name}</span>
-                                                <span className="text-xs text-gray-500">Stok: {g.current_stock} | {formatCurrency(g.selling_price || 0)}</span>
-                                            </div>
-                                            {activeBillingIndex !== null && billingItems[activeBillingIndex]?.goods_id === g.id && <Check className="ml-auto h-4 w-4" />}
-                                        </CommandItem>
-                                    ))}
-                            </CommandGroup>
-                        </CommandList>
-                    </Command>
-                </DialogContent>
-            </Dialog>
-
-        </DialogContent>
-      </Dialog>
-
-      {/* Image Gallery Dialog */}
-      <Dialog open={isImageDialogOpen} onOpenChange={setIsImageDialogOpen}>
-        <DialogContent className="max-w-3xl">
-            <DialogHeader>
-                <DialogTitle>Dokumentasi WO: {activeWO?.wo_number}</DialogTitle>
-                <DialogDescription>Upload foto kendaraan atau progress pekerjaan.</DialogDescription>
-            </DialogHeader>
-            
-            <div className="flex flex-col gap-4">
-                {/* Upload Controls */}
-                <div className="flex gap-4 border-b pb-4">
-                    <Button variant="outline" className="relative" disabled={uploadingImage}>
-                        <input 
-                            type="file" 
-                            accept="image/jpeg, image/png" 
-                            multiple
-                            className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-                            onChange={(e) => activeWO && handleImageUpload(e, activeWO.id)}
-                        />
-                        <Upload className="mr-2 h-4 w-4" /> 
-                        {uploadingImage ? 'Uploading...' : 'Upload Foto (File - Multi)'}
-                    </Button>
-                    <Button variant="outline" className="relative" disabled={uploadingImage}>
-                         <input 
-                            type="file" 
-                            accept="image/jpeg, image/png" 
-                            capture="environment"
-                            className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-                            onChange={(e) => activeWO && handleImageUpload(e, activeWO.id)}
-                        />
-                        <Camera className="mr-2 h-4 w-4" /> 
-                        {uploadingImage ? 'Uploading...' : 'Ambil Foto (Kamera)'}
-                    </Button>
-                </div>
-                
-                {/* Max Size Info */}
-                <div className="text-xs text-muted-foreground bg-blue-50 p-2 rounded border border-blue-100 flex items-center gap-2">
-                    <div className="h-4 w-4 rounded-full bg-blue-200 flex items-center justify-center text-blue-700 text-[10px] font-bold">i</div>
-                    <span>Sistem akan otomatis mengkompresi foto agar aman disimpan di database. Kualitas tetap terjaga.</span>
-                </div>
-
-                {/* Gallery Grid */}
-                <div className="grid grid-cols-2 md:grid-cols-3 gap-4 max-h-[60vh] overflow-y-auto p-1">
-                    {activeWOImages.length === 0 ? (
-                        <div className="col-span-full text-center py-10 text-gray-500 border-2 border-dashed rounded-lg">
-                            <ImageIcon className="h-10 w-10 mx-auto mb-2 opacity-20" />
-                            Belum ada foto dokumentasi.
-                        </div>
-                    ) : (
-                        activeWOImages.map((img) => (
-                            <div key={img.id} className="relative group border rounded-lg overflow-hidden shadow-sm aspect-video bg-gray-100">
-                                <img src={img.image_url} alt="WO Doc" className="w-full h-full object-cover" />
-                                <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                                    {activeWO && (activeWO.status === 'OPEN' || activeWO.status === 'IN_PROGRESS') && (
-                                        <Button variant="destructive" size="icon" onClick={() => handleDeleteImage(img.id, img.image_url)}>
-                                            <Trash2 className="h-4 w-4" />
-                                        </Button>
-                                    )}
-                                    <Button variant="secondary" size="icon" className="ml-2" onClick={() => window.open(img.image_url, '_blank')}>
-                                        <Eye className="h-4 w-4" />
-                                    </Button>
-                                </div>
-                                <div className="absolute bottom-0 left-0 right-0 bg-black/60 text-white text-[10px] p-1 truncate">
-                                    {new Date(img.created_at).toLocaleString()}
-                                </div>
-                            </div>
-                        ))
-                    )}
-                </div>
-            </div>
-        </DialogContent>
-      </Dialog>
-
-      {/* Print SPK Dialog */}
-      <Dialog open={isPrintDialogOpen} onOpenChange={setIsPrintDialogOpen}>
-        <DialogContent className="max-w-3xl">
+      {/* Dialog Tambah/Edit WO */}
+      <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+        <DialogContent>
           <DialogHeader>
-            <DialogTitle>Cetak Surat Perintah Kerja (SPK)</DialogTitle>
+            <DialogTitle>{isEditing ? 'Edit' : 'Tambah'} Work Order</DialogTitle>
           </DialogHeader>
-          
-          <div className="border p-4 rounded bg-white max-h-[60vh] overflow-y-auto" id="printable-spk">
-            {printData && (
-              <div className="space-y-6 text-sm font-sans">
-                {/* Header */}
-                <div className="text-center border-b pb-4 mb-4">
-                  <h1 className="text-xl font-bold uppercase">Surat Perintah Kerja (SPK)</h1>
-                  <p className="text-muted-foreground">No. WO: {printData.wo.wo_number}</p>
-                </div>
-
-                {/* Info */}
-                <div className="grid grid-cols-2 gap-8">
-                  <div className="space-y-1">
-                    <p><span className="font-semibold w-24 inline-block">Tanggal:</span> {formatDate(printData.wo.work_date)}</p>
-                    <p><span className="font-semibold w-24 inline-block">Nopol:</span> {printData.wo.vehicle_entries?.vehicles?.license_plate}</p>
-                    <p><span className="font-semibold w-24 inline-block">Kendaraan:</span> {printData.wo.vehicle_entries?.vehicles?.brand_type}</p>
-                    <p><span className="font-semibold w-24 inline-block">Odometer:</span> {printData.entry.current_odometer?.toLocaleString()} km</p>
-                  </div>
-                  <div className="space-y-1">
-                    <p><span className="font-semibold w-24 inline-block">Mekanik:</span> {printData.wo.mechanics?.name}</p>
-                    <p><span className="font-semibold w-24 inline-block">Nota Dinas:</span> {printData.entry.nota_dinas_number}</p>
-                    <p><span className="font-semibold w-24 inline-block">Driver:</span> {printData.entry.driver_name}</p>
-                  </div>
-                </div>
-
-                {/* Catatan Umum (Entry Note) */}
-                {printData.entry.notes && (
-                    <div className="border p-3 rounded bg-gray-50">
-                        <h3 className="font-bold text-sm mb-1">Catatan Keluhan / Masalah Awal:</h3>
-                        <p className="text-sm italic">{printData.entry.notes}</p>
-                    </div>
-                )}
-
-                {/* Job List */}
-                <div>
-                    <h3 className="font-bold border-b mb-2 pb-1">Daftar Pekerjaan (Jasa)</h3>
-                    <table className="w-full text-left border-collapse">
-                        <thead>
-                            <tr className="border-b">
-                                <th className="py-2 w-10">No</th>
-                                <th className="py-2">Deskripsi Pekerjaan</th>
-                                <th className="py-2 w-1/3">Catatan</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {printData.entry.vehicle_entry_jobs?.map((job: any, i: number) => (
-                                <tr key={i} className="border-b border-slate-100">
-                                    <td className="py-2">{i+1}</td>
-                                    <td className="py-2 font-medium">{job.job_types?.job_name}</td>
-                                    <td className="py-2 text-muted-foreground italic">{job.notes || '-'}</td>
-                                </tr>
-                            ))}
-                            {(!printData.entry.vehicle_entry_jobs || printData.entry.vehicle_entry_jobs.length === 0) && (
-                                <tr><td colSpan={3} className="py-4 text-center italic text-muted-foreground">Tidak ada jasa</td></tr>
-                            )}
-                        </tbody>
-                    </table>
-                </div>
-
-                {/* Part List */}
-                <div>
-                    <h3 className="font-bold border-b mb-2 pb-1">Daftar Sparepart / Bahan</h3>
-                    <table className="w-full text-left border-collapse">
-                        <thead>
-                            <tr className="border-b">
-                                <th className="py-2 w-10">No</th>
-                                <th className="py-2">Nama Sparepart</th>
-                                <th className="py-2 w-20 text-center">Qty</th>
-                                <th className="py-2 w-20">Satuan</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {printData.entry.vehicle_entry_spareparts?.map((part: any, i: number) => (
-                                <tr key={i} className="border-b border-slate-100">
-                                    <td className="py-2">{i+1}</td>
-                                    <td className="py-2 font-medium">{part.item_name}</td>
-                                    <td className="py-2 text-center">{part.qty}</td>
-                                    <td className="py-2">{part.unit || 'Pcs'}</td>
-                                </tr>
-                            ))}
-                             {(!printData.entry.vehicle_entry_spareparts || printData.entry.vehicle_entry_spareparts.length === 0) && (
-                                <tr><td colSpan={4} className="py-4 text-center italic text-muted-foreground">Tidak ada sparepart</td></tr>
-                            )}
-                        </tbody>
-                    </table>
-                </div>
-
-                {/* Signatures */}
-                <div className="grid grid-cols-3 gap-4 pt-12 mt-8 text-center">
-                    <div>
-                        <p className="mb-16">Kepala Mekanik</p>
-                        <p className="font-bold underline">( ....................... )</p>
-                    </div>
-                     <div>
-                        <p className="mb-16">Mekanik</p>
-                        <p className="font-bold underline">( {printData.wo.mechanics?.name} )</p>
-                    </div>
-                    <div>
-                        <p className="mb-16">Pengemudi</p>
-                        <p className="font-bold underline">( {printData.entry.driver_name || '.......................'} )</p>
-                    </div>
-                </div>
+          <form onSubmit={handleSubmit}>
+            <div className="space-y-4">
+              <div>
+                <Label>Tanggal</Label>
+                <Input type="date" value={formData.work_date} onChange={e => setFormData(prev => ({ ...prev, work_date: e.target.value }))} />
               </div>
-            )}
-          </div>
+              <div>
+                <Label>No. Antrian Kendaraan</Label>
+                <Select name="vehicle_entry_id" value={formData.vehicle_entry_id} onValueChange={v => handleSelectChange('vehicle_entry_id', v)}>
+                  <SelectTrigger><SelectValue placeholder="Pilih No. Antrian" /></SelectTrigger>
+                  <SelectContent>
+                    {entries.map(entry => (
+                      <SelectItem key={entry.id} value={entry.id}>{entry.vehicles?.license_plate} - {formatDate(entry.entry_date)}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              {selectedEntryDetails && (
+                <Card className="bg-slate-50">
+                  <CardContent className="pt-4 text-sm">
+                    <p><strong>Nopol:</strong> {selectedEntryDetails.vehicles?.license_plate}</p>
+                    <p><strong>Keluhan:</strong> {selectedEntryDetails.complaint}</p>
+                    <p><strong>Estimasi Pekerjaan:</strong></p>
+                    <ul className="list-disc pl-5">
+                      {selectedEntryDetails.vehicle_entry_jobs?.map((job: any) => (
+                        <li key={job.id}>{job.job_types?.job_name || 'Pekerjaan custom'}</li>
+                      ))}
+                    </ul>
+                  </CardContent>
+                </Card>
+              )}
+              <div>
+                <Label>Mekanik</Label>
+                <Select name="mechanic_id" value={formData.mechanic_id} onValueChange={v => handleSelectChange('mechanic_id', v)}>
+                  <SelectTrigger><SelectValue placeholder="Pilih Mekanik" /></SelectTrigger>
+                  <SelectContent>
+                    {mechanics.map(m => (
+                      <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <DialogFooter className="mt-4">
+              <Button type="submit" disabled={loading}>{loading ? 'Menyimpan...' : 'Simpan'}</Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
 
+      {/* Dialog Selesaikan WO */}
+      <Dialog open={isFinishWOModalOpen} onOpenChange={setFinishWOModalOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Selesaikan Work Order: {activeWOForBilling?.wo_number}</DialogTitle>
+            <DialogDescription>
+              Periksa item tagihan dan pastikan semua sparepart sudah terpenuhi sebelum menyelesaikan WO.
+            </DialogDescription>
+          </DialogHeader>
+          {loading ? (
+            <div className="text-center p-8">Memuat data...</div>
+          ) : (
+            <>
+              <div className="mb-4">
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Status Pemenuhan Sparepart</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    {partValidationStatus.isMet ? (
+                      <div className="text-green-600 flex items-center"><CheckCircle className="mr-2 h-4 w-4" /> Semua sparepart yang diestimasi sudah terpenuhi.</div>
+                    ) : (
+                      <div className="text-red-600">
+                        <div className="font-bold flex items-center"><XCircle className="mr-2 h-4 w-4" /> Ada sparepart yang belum terpenuhi:</div>
+                        <ul className="list-disc pl-5 mt-2">
+                          {partValidationStatus.missing.map((p, i) => (
+                            <li key={i}>{p.name} (butuh: {p.required}, keluar: {p.issued}, kurang: {p.missing})</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              </div>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Tipe</TableHead>
+                    <TableHead>Nama Item</TableHead>
+                    <TableHead>Qty</TableHead>
+                    <TableHead>Harga</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {billingItems.map((item, index) => (
+                    <TableRow key={index}>
+                      <TableCell><Badge variant={item.type === 'JASA' ? 'default' : 'secondary'}>{item.type}</Badge></TableCell>
+                      <TableCell>{item.name}</TableCell>
+                      <TableCell>{item.qty}</TableCell>
+                      <TableCell>{formatCurrency(item.price)}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+              <DialogFooter className="mt-4">
+                <Button 
+                  onClick={handleSaveBillingAndClose} 
+                  disabled={!partValidationStatus.isMet || loading}
+                  title={!partValidationStatus.isMet ? 'Sparepart belum lengkap, tidak bisa menyelesaikan WO' : ''}
+                >
+                  {loading ? 'Menyimpan...' : 'Simpan & Selesaikan WO'}
+                </Button>
+              </DialogFooter>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Dialog Print SPK */}
+      <Dialog open={isPrintDialogOpen} onOpenChange={setIsPrintDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Cetak SPK</DialogTitle>
+          </DialogHeader>
+          <div id="printable-spk">
+            <h2>Surat Perintah Kerja</h2>
+            <p><strong>No. WO:</strong> {printData?.wo.wo_number}</p>
+            <p><strong>Tanggal:</strong> {formatDate(printData?.wo.work_date)}</p>
+            <p><strong>Nopol:</strong> {printData?.wo.vehicle_entries?.vehicles?.license_plate}</p>
+            <p><strong>Mekanik:</strong> {printData?.wo.mechanics?.name}</p>
+            <hr />
+            <h3>Pekerjaan:</h3>
+            <ul>
+              {printData?.entry.vehicle_entry_jobs.map((j: any) => <li key={j.id}>{j.job_types?.job_name}</li>)}
+            </ul>
+            <h3>Estimasi Sparepart:</h3>
+            <ul>
+              {printData?.entry.vehicle_entry_spareparts.map((p: any) => <li key={p.id}>{p.item_name} (Qty: {p.qty})</li>)}
+            </ul>
+          </div>
           <DialogFooter>
-             <Button variant="outline" onClick={() => setIsPrintDialogOpen(false)}>Tutup</Button>
-             <Button onClick={handlePrintSPK}><ClipboardCheck className="mr-2 h-4 w-4" /> Cetak Sekarang</Button>
+            <Button onClick={handlePrintSPK}>Cetak</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
-
     </div>
   );
 }
