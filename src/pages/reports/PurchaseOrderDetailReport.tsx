@@ -294,6 +294,12 @@ export default function PurchaseOrderDetailReport() {
         : combinedData;
   
       return finalData;
+    } catch (error: any) {
+      console.error("Error fetching all data for export:", error);
+      toast.error('Gagal mengambil data untuk ekspor: ' + error.message);
+      return null;
+    }
+  }
 
   const handleExport = async () => {
     if (data.length === 0 && totalPages === 0) {
