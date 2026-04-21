@@ -120,16 +120,19 @@ export default function Dashboard() {
           `)
           .gte('created_at', ninetyDaysAgo.toISOString());
 
-        // DIAGNOSTIC: Fetch ALL work orders to check if data exists, ignoring status filter for now.
-        const { data: activeWoData, error: activeWoError } = await supabase
+        // DIAGNOSTIC STEP 2: Check the raw content of work_orders table
+        const { data: rawWoData, error: rawWoError } = await supabase
           .from('work_orders')
-          .select(`
-            vehicle_entries (
-              entry_date,
-              estimated_finish_date,
-              vehicles ( license_plate )
-            )
-          `);
+          .select('id, wo_number, vehicle_entry_id, status, created_at')
+          .limit(10);
+
+        console.log('--- DIAGNOSTIC: RAW WORK ORDERS ---');
+        console.log(rawWoData);
+        console.log('--- ERROR ---', rawWoError);
+
+        // For now, we'll use an empty array to prevent crashes
+        const activeWoData = [];
+        const activeWoError = null;
 
         // Monthly Progress Data (last 6 months)
         const sixMonthsAgo = new Date();
