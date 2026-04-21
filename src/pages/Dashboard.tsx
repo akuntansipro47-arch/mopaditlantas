@@ -141,8 +141,8 @@ export default function Dashboard() {
       <div className="grid grid-cols-1 gap-6 mt-6">
         <Card>
           <CardHeader>
-            <CardTitle>Aktivitas Terbaru</CardTitle>
-          </Header>
+                    <CardTitle>Aktivitas Terbaru</CardTitle>
+                  </CardHeader>
           <CardContent>
             <p className="text-muted-foreground">Komponen aktivitas terbaru akan ditambahkan di sini.</p>
           </CardContent>
