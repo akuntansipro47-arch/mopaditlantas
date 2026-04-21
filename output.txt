@@ -1,0 +1,117 @@
+trae-project@3.0.6 R:\New folder (2)
+Γö£ΓöÇΓö¼ @radix-ui/react-checkbox@1.3.3
+Γöé Γö£ΓöÇΓö¼ @radix-ui/react-compose-refs@1.1.2
+Γöé Γöé ΓööΓöÇΓöÇ react@18.3.1 deduped
+Γöé Γö£ΓöÇΓö¼ @radix-ui/react-context@1.1.2
+Γöé Γöé ΓööΓöÇΓöÇ react@18.3.1 deduped
+Γöé Γö£ΓöÇΓö¼ @radix-ui/react-presence@1.1.5
+Γöé Γöé ΓööΓöÇΓöÇ react@18.3.1 deduped
+Γöé Γö£ΓöÇΓö¼ @radix-ui/react-primitive@2.1.3
+Γöé Γöé Γö£ΓöÇΓö¼ @radix-ui/react-slot@1.2.3
+Γöé Γöé Γöé ΓööΓöÇΓöÇ react@18.3.1 deduped
+Γöé Γöé ΓööΓöÇΓöÇ react@18.3.1 deduped
+Γöé Γö£ΓöÇΓö¼ @radix-ui/react-use-controllable-state@1.2.2
+Γöé Γöé Γö£ΓöÇΓö¼ @radix-ui/react-use-effect-event@0.0.2
+Γöé Γöé Γöé ΓööΓöÇΓöÇ react@18.3.1 deduped
+Γöé Γöé ΓööΓöÇΓöÇ react@18.3.1 deduped
+Γöé Γö£ΓöÇΓö¼ @radix-ui/react-use-previous@1.1.1
+Γöé Γöé ΓööΓöÇΓöÇ react@18.3.1 deduped
+Γöé Γö£ΓöÇΓö¼ @radix-ui/react-use-size@1.1.1
+Γöé Γöé ΓööΓöÇΓöÇ react@18.3.1 deduped
+Γöé ΓööΓöÇΓöÇ react@18.3.1 deduped
+Γö£ΓöÇΓö¼ @radix-ui/react-dialog@1.1.15
+Γöé Γö£ΓöÇΓö¼ @radix-ui/react-dismissable-layer@1.1.11
+Γöé Γöé Γö£ΓöÇΓö¼ @radix-ui/react-use-escape-keydown@1.1.1
+Γöé Γöé Γöé ΓööΓöÇΓöÇ react@18.3.1 deduped
+Γöé Γöé ΓööΓöÇΓöÇ react@18.3.1 deduped
+Γöé Γö£ΓöÇΓö¼ @radix-ui/react-focus-guards@1.1.3
+Γöé Γöé ΓööΓöÇΓöÇ react@18.3.1 deduped
+Γöé Γö£ΓöÇΓö¼ @radix-ui/react-focus-scope@1.1.7
+Γöé Γöé ΓööΓöÇΓöÇ react@18.3.1 deduped
+Γöé Γö£ΓöÇΓö¼ @radix-ui/react-id@1.1.1
+Γöé Γöé ΓööΓöÇΓöÇ react@18.3.1 deduped
+Γöé Γö£ΓöÇΓö¼ @radix-ui/react-portal@1.1.9
+Γöé Γöé ΓööΓöÇΓöÇ react@18.3.1 deduped
+Γöé Γö£ΓöÇΓö¼ @radix-ui/react-slot@1.2.3
+Γöé Γöé ΓööΓöÇΓöÇ react@18.3.1 deduped
+Γöé Γö£ΓöÇΓö¼ react-remove-scroll@2.7.2
+Γöé Γöé Γö£ΓöÇΓö¼ react-remove-scroll-bar@2.3.8
+Γöé Γöé Γöé ΓööΓöÇΓöÇ react@18.3.1 deduped
+Γöé Γöé Γö£ΓöÇΓö¼ react-style-singleton@2.2.3
+Γöé Γöé Γöé ΓööΓöÇΓöÇ react@18.3.1 deduped
+Γöé Γöé Γö£ΓöÇΓöÇ react@18.3.1 deduped
+Γöé Γöé Γö£ΓöÇΓö¼ use-callback-ref@1.3.3
+Γöé Γöé Γöé ΓööΓöÇΓöÇ react@18.3.1 deduped
+Γöé Γöé ΓööΓöÇΓö¼ use-sidecar@1.1.3
+Γöé Γöé   ΓööΓöÇΓöÇ react@18.3.1 deduped
+Γöé ΓööΓöÇΓöÇ react@18.3.1 deduped
+Γö£ΓöÇΓö¼ @radix-ui/react-label@2.1.8
+Γöé Γö£ΓöÇΓö¼ @radix-ui/react-primitive@2.1.4
+Γöé Γöé ΓööΓöÇΓöÇ react@18.3.1 deduped
+Γöé ΓööΓöÇΓöÇ react@18.3.1 deduped
+Γö£ΓöÇΓö¼ @radix-ui/react-popover@1.1.15
+Γöé Γö£ΓöÇΓö¼ @radix-ui/react-popper@1.2.8
+Γöé Γöé Γö£ΓöÇΓö¼ @floating-ui/react-dom@2.1.8
+Γöé Γöé Γöé ΓööΓöÇΓöÇ react@18.3.1 deduped
+Γöé Γöé Γö£ΓöÇΓö¼ @radix-ui/react-arrow@1.1.7
+Γöé Γöé Γöé ΓööΓöÇΓöÇ react@18.3.1 deduped
+Γöé Γöé Γö£ΓöÇΓö¼ @radix-ui/react-use-rect@1.1.1
+Γöé Γöé Γöé ΓööΓöÇΓöÇ react@18.3.1 deduped
+Γöé Γöé ΓööΓöÇΓöÇ react@18.3.1 deduped
+Γöé Γö£ΓöÇΓö¼ @radix-ui/react-slot@1.2.3
+Γöé Γöé ΓööΓöÇΓöÇ react@18.3.1 deduped
+Γöé ΓööΓöÇΓöÇ react@18.3.1 deduped
+Γö£ΓöÇΓö¼ @radix-ui/react-scroll-area@1.2.10
+Γöé Γö£ΓöÇΓö¼ @radix-ui/react-direction@1.1.1
+Γöé Γöé ΓööΓöÇΓöÇ react@18.3.1 deduped
+Γöé Γö£ΓöÇΓö¼ @radix-ui/react-use-callback-ref@1.1.1
+Γöé Γöé ΓööΓöÇΓöÇ react@18.3.1 deduped
+Γöé Γö£ΓöÇΓö¼ @radix-ui/react-use-layout-effect@1.1.1
+Γöé Γöé ΓööΓöÇΓöÇ react@18.3.1 deduped
+Γöé ΓööΓöÇΓöÇ react@18.3.1 deduped
+Γö£ΓöÇΓö¼ @radix-ui/react-select@2.2.6
+Γöé Γö£ΓöÇΓö¼ @radix-ui/react-collection@1.1.7
+Γöé Γöé Γö£ΓöÇΓö¼ @radix-ui/react-slot@1.2.3
+Γöé Γöé Γöé ΓööΓöÇΓöÇ react@18.3.1 deduped
+Γöé Γöé ΓööΓöÇΓöÇ react@18.3.1 deduped
+Γöé Γö£ΓöÇΓö¼ @radix-ui/react-slot@1.2.3
+Γöé Γöé ΓööΓöÇΓöÇ react@18.3.1 deduped
+Γöé Γö£ΓöÇΓö¼ @radix-ui/react-visually-hidden@1.2.3
+Γöé Γöé ΓööΓöÇΓöÇ react@18.3.1 deduped
+Γöé ΓööΓöÇΓöÇ react@18.3.1 deduped
+Γö£ΓöÇΓö¼ @radix-ui/react-slot@1.2.4
+Γöé ΓööΓöÇΓöÇ react@18.3.1 deduped
+Γö£ΓöÇΓö¼ @radix-ui/react-tabs@1.1.13
+Γöé Γö£ΓöÇΓö¼ @radix-ui/react-roving-focus@1.1.11
+Γöé Γöé ΓööΓöÇΓöÇ react@18.3.1 deduped
+Γöé ΓööΓöÇΓöÇ react@18.3.1 deduped
+Γö£ΓöÇΓö¼ @radix-ui/react-toast@1.2.15
+Γöé ΓööΓöÇΓöÇ react@18.3.1 deduped
+Γö£ΓöÇΓö¼ lucide-react@0.511.0
+Γöé ΓööΓöÇΓöÇ react@18.3.1 deduped
+Γö£ΓöÇΓö¼ react-day-picker@9.14.0
+Γöé ΓööΓöÇΓöÇ react@18.3.1 deduped
+Γö£ΓöÇΓö¼ react-dom@18.3.1
+Γöé ΓööΓöÇΓöÇ react@18.3.1 deduped
+Γö£ΓöÇΓö¼ react-hook-form@7.73.1
+Γöé ΓööΓöÇΓöÇ react@18.3.1 deduped
+Γö£ΓöÇΓö¼ react-router-dom@7.14.1
+Γöé Γö£ΓöÇΓö¼ react-router@7.14.1
+Γöé Γöé ΓööΓöÇΓöÇ react@18.3.1 deduped
+Γöé ΓööΓöÇΓöÇ react@18.3.1 deduped
+Γö£ΓöÇΓö¼ react-to-print@3.3.0
+Γöé ΓööΓöÇΓöÇ react@18.3.1 deduped
+Γö£ΓöÇΓöÇ react@18.3.1
+Γö£ΓöÇΓö¼ recharts@3.8.1
+Γöé Γö£ΓöÇΓö¼ @reduxjs/toolkit@2.11.2
+Γöé Γöé ΓööΓöÇΓöÇ react@18.3.1 deduped
+Γöé Γö£ΓöÇΓö¼ react-redux@9.2.0
+Γöé Γöé ΓööΓöÇΓöÇ react@18.3.1 deduped
+Γöé Γö£ΓöÇΓöÇ react@18.3.1 deduped
+Γöé ΓööΓöÇΓö¼ use-sync-external-store@1.6.0
+Γöé   ΓööΓöÇΓöÇ react@18.3.1 deduped
+Γö£ΓöÇΓö¼ sonner@2.0.7
+Γöé ΓööΓöÇΓöÇ react@18.3.1 deduped
+ΓööΓöÇΓö¼ zustand@5.0.12
+  ΓööΓöÇΓöÇ react@18.3.1 deduped
+

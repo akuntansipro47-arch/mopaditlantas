@@ -90,7 +90,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return false;
       }
 
-      toast.error('Username atau Password salah');
+      toast.error('Invalid response from server');
       return false;
     } catch (err: any) {
       toast.error('Login error: ' + err.message);

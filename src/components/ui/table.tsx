@@ -4,86 +4,15 @@ import { cn } from "@/lib/utils"
 const Table = React.forwardRef<
   HTMLTableElement,
   React.HTMLAttributes<HTMLTableElement>
->(({ className, ...props }, ref) => {
-  const topScrollRef = React.useRef<HTMLDivElement | null>(null)
-  const topScrollInnerRef = React.useRef<HTMLDivElement | null>(null)
-  const bottomScrollRef = React.useRef<HTMLDivElement | null>(null)
-  const [showTopScrollbar, setShowTopScrollbar] = React.useState(false)
-  const syncingRef = React.useRef<"top" | "bottom" | null>(null)
-
-  const updateScroll = React.useCallback(() => {
-    const bottom = bottomScrollRef.current
-    const top = topScrollRef.current
-    const topInner = topScrollInnerRef.current
-    if (!bottom || !top || !topInner) return
-
-    const shouldShow = bottom.scrollWidth > bottom.clientWidth + 1
-    setShowTopScrollbar(shouldShow)
-    topInner.style.width = `${bottom.scrollWidth}px`
-    top.scrollLeft = bottom.scrollLeft
-  }, [])
-
-  React.useLayoutEffect(() => {
-    updateScroll()
-    const bottom = bottomScrollRef.current
-    if (!bottom) return
-    const ro = new ResizeObserver(() => updateScroll())
-    ro.observe(bottom)
-    return () => ro.disconnect()
-  }, [updateScroll])
-
-  React.useEffect(() => {
-    const bottom = bottomScrollRef.current
-    const top = topScrollRef.current
-    if (!bottom || !top) return
-
-    const onBottomScroll = () => {
-      if (syncingRef.current === "top") return
-      syncingRef.current = "bottom"
-      top.scrollLeft = bottom.scrollLeft
-      syncingRef.current = null
-    }
-
-    const onTopScroll = () => {
-      if (syncingRef.current === "bottom") return
-      syncingRef.current = "top"
-      bottom.scrollLeft = top.scrollLeft
-      syncingRef.current = null
-    }
-
-    bottom.addEventListener("scroll", onBottomScroll, { passive: true })
-    top.addEventListener("scroll", onTopScroll, { passive: true })
-
-    return () => {
-      bottom.removeEventListener("scroll", onBottomScroll)
-      top.removeEventListener("scroll", onTopScroll)
-    }
-  }, [])
-
-  return (
-    <div className="relative w-full">
-      <div
-        ref={topScrollRef}
-        className={cn(
-          "w-full overflow-x-auto overflow-y-hidden scrollbar-thin scrollbar-thumb-slate-300 scrollbar-track-transparent",
-          !showTopScrollbar && "hidden"
-        )}
-      >
-        <div ref={topScrollInnerRef} className="h-3" />
-      </div>
-      <div
-        ref={bottomScrollRef}
-        className="relative w-full overflow-auto scrollbar-thin scrollbar-thumb-slate-300 scrollbar-track-transparent"
-      >
-        <table
-          ref={ref}
-          className={cn("w-full caption-bottom text-sm", className)}
-          {...props}
-        />
-      </div>
-    </div>
-  )
-})
+>(({ className, ...props }, ref) => (
+  <div className="relative w-full overflow-auto">
+    <table
+      ref={ref}
+      className={cn("w-full caption-bottom text-sm", className)}
+      {...props}
+    />
+  </div>
+))
 Table.displayName = "Table"
 
 const TableHeader = React.forwardRef<

@@ -1,807 +1,107 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { 
-  Activity, 
-  CreditCard, 
-  DollarSign, 
-  Users, 
-  ShoppingCart, 
-  Wrench, 
-  AlertTriangle,
-  ArrowUpRight,
-  ArrowDownRight,
-  Package,
-  CheckCircle
-} from "lucide-react";
-import { 
-  BarChart, 
-  Bar, 
-  XAxis, 
-  YAxis, 
-  CartesianGrid, 
-  Tooltip, 
-  ResponsiveContainer,
-  PieChart,
-  Pie,
-  Cell,
-  Legend
-} from 'recharts';
-import { formatCurrency, formatDate } from '@/lib/utils';
-import { Badge } from '@/components/ui/badge';
-import { Skeleton } from '@/components/ui/skeleton';
+import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
+import { Wrench, ShoppingCart, Car, Wallet } from 'lucide-react';
 
-import { 
-  Table, 
-  TableBody, 
-  TableCell, 
-  TableHead, 
-  TableHeader, 
-  TableRow 
-} from "@/components/ui/table";
-
-import { useAuth } from '@/context/AuthContext';
-
-export default function Dashboard() {
-  const { user } = useAuth();
-  const [loading, setLoading] = useState(true);
-  const [overdueUnits, setOverdueUnits] = useState<any[]>([]);
-  const [stats, setStats] = useState({
-    monthlyPOSpending: 0,
-    activeWOCount: 0,
-    pendingPOCount: 0,
-    vehicleEntryCount: 0,
-    lowStockCount: 0,
-    // Breakdown values
-    inventoryPersediaan: 0,
-    inventoryPeralatan: 0,
-    inventoryInventaris: 0
-  });
-  
-  const [woStatusData, setWoStatusData] = useState<any[]>([]);
-  const [monthlySpendingData, setMonthlySpendingData] = useState<any[]>([]);
-  const [lowStockItems, setLowStockItems] = useState<any[]>([]);
-  const [fastMovingItems, setFastMovingItems] = useState<any[]>([]);
-  const [monthlyStats, setMonthlyStats] = useState<any[]>([]);
-
-  useEffect(() => {
-    fetchDashboardData();
-  }, []);
-
-  const classifyVehicleType = (vehicleType: string) => {
-    const vt = String(vehicleType || '').toUpperCase();
-    if (vt.includes('R2_KECIL') || vt.includes('R2 KECIL') || vt.includes('KECIL')) return 'R2 Kecil';
-    if (vt === 'R4' || vt.includes('R4') || vt.includes('MOBIL')) return 'R4';
-    if (vt === 'R2' || vt.includes('R2') || vt.includes('MOTOR')) return 'R2';
-    return 'Lainnya';
-  };
-
-  async function fetchDashboardData() {
-    setLoading(true);
-    
-    // Initialize defaults to avoid "missing info" if some queries fail
-    let statsData = {
-        monthlyPOSpending: 0,
-        activeWOCount: 0,
-        pendingPOCount: 0,
-        vehicleEntryCount: 0,
-        lowStockCount: 0,
-        inventoryPersediaan: 0,
-        inventoryPeralatan: 0,
-        inventoryInventaris: 0
-    };
-
-    try {
-      const today = new Date();
-      const currentYear = today.getFullYear();
-      const firstDayOfMonth = new Date(currentYear, today.getMonth(), 1).toISOString().split('T')[0];
-      
-      const sixMonthsAgo = new Date();
-      sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 5);
-      sixMonthsAgo.setDate(1);
-
-      // --- 0. NEW MONTHLY STATS TABLE DATA ---
-      const months = [
-        'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 
-        'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'
-      ];
-      
-      // Initialize array for all months
-      const monthlyData = months.map(m => ({
-          name: m,
-          unitMasuk: { total: 0, r4: 0, r2: 0, r2kecil: 0 },
-          unitBelumWO: { total: 0, r4: 0, r2: 0, r2kecil: 0 },
-          unitWoProses: { total: 0, r4: 0, r2: 0, r2kecil: 0 },
-          unitWoClose: { total: 0, r4: 0, r2: 0, r2kecil: 0 },
-      }));
-
-      // --- 1. KPI COUNTS & Monthly Stats (Parallel) ---
-      // We'll run lighter queries in parallel first
-      const startOfYear = `${currentYear}-01-01`;
-      const endOfYear = `${currentYear}-12-31`;
-      const todayStr = today.toISOString().split('T')[0];
-
-      const [woCountRes, poCountRes, entryCountRes, entriesRes, overdueRes] = await Promise.all([
-          supabase.from('work_orders').select('*', { count: 'exact', head: true }).eq('status', 'IN_PROGRESS'),
-          supabase.from('purchase_orders').select('*', { count: 'exact', head: true }).in('status', ['ISSUED', 'RECEIVED_PART']),
-          supabase.from('vehicle_entries').select('*', { count: 'exact', head: true }).gte('entry_date', firstDayOfMonth),
-          supabase.from('vehicle_entries')
-            .select(`
-                entry_date, 
-                status,
-                vehicles (vehicle_type),
-                work_orders (
-                    id,
-                    status
-                )
-            `)
-            .gte('entry_date', startOfYear)
-            .lte('entry_date', endOfYear)
-          ,
-          supabase
-            .from('vehicle_entries')
-            .select(`
-              id,
-              entry_number,
-              entry_date,
-              estimated_finish_date,
-              status,
-              nota_dinas_number,
-              vehicles (license_plate, brand_type, vehicle_type),
-              work_orders (status, wo_number)
-            `)
-            .not('estimated_finish_date', 'is', null)
-            .lte('estimated_finish_date', todayStr)
-            .neq('status', 'CLOSED')
-            .order('estimated_finish_date', { ascending: true })
-            .limit(15)
-      ]);
-
-      statsData.activeWOCount = woCountRes.count || 0;
-      statsData.pendingPOCount = poCountRes.count || 0;
-      statsData.vehicleEntryCount = entryCountRes.count || 0;
-
-      // Process Monthly Stats from Parallel Result
-      if (entriesRes.data) {
-          entriesRes.data.forEach((e: any) => {
-              const date = new Date(e.entry_date);
-              const monthIdx = date.getMonth(); // 0-11
-              
-              if (monthIdx >= 0 && monthIdx < 12) {
-                  const typeKey = classifyVehicleType(e.vehicles?.vehicle_type);
-                  const slot =
-                    typeKey === 'R4' ? 'r4' :
-                    typeKey === 'R2' ? 'r2' :
-                    typeKey === 'R2 Kecil' ? 'r2kecil' :
-                    null;
-
-                  monthlyData[monthIdx].unitMasuk.total++;
-                  if (slot) monthlyData[monthIdx].unitMasuk[slot]++;
-                  
-                  const wo = (e.work_orders as any) && (e.work_orders as any).length > 0 ? (e.work_orders as any)[0] : null;
-
-                  if (!wo) {
-                      // No WO linked yet
-                      if (e.status === 'OPEN') {
-                          monthlyData[monthIdx].unitBelumWO.total++;
-                          if (slot) monthlyData[monthIdx].unitBelumWO[slot]++;
-                      } else {
-                          // Status is PROCESSED/CLOSED but no WO found? 
-                          // Treat as Process to balance the math, or maybe it's a ghost entry.
-                          // Let's assume it's in process if it's not OPEN.
-                          monthlyData[monthIdx].unitWoProses.total++;
-                          if (slot) monthlyData[monthIdx].unitWoProses[slot]++;
-                      }
-                  } else {
-                      // WO Exists
-                      if (wo.status === 'COMPLETED' || wo.status === 'CLOSED') {
-                          monthlyData[monthIdx].unitWoClose.total++;
-                          if (slot) monthlyData[monthIdx].unitWoClose[slot]++;
-                      } else {
-                          // WO is OPEN or IN_PROGRESS
-                          monthlyData[monthIdx].unitWoProses.total++;
-                          if (slot) monthlyData[monthIdx].unitWoProses[slot]++;
-                      }
-                  }
-              }
-          });
-      }
-      setMonthlyStats(monthlyData);
-
-      try {
-        const list = (overdueRes.data as any[]) || [];
-        const t0 = new Date(todayStr).getTime();
-        const filtered = list.filter((e: any) => {
-          const wo = Array.isArray(e.work_orders) && e.work_orders.length > 0 ? e.work_orders[0] : null;
-          const woStatus = String(wo?.status || '').toUpperCase();
-          if (woStatus === 'CLOSED' || woStatus === 'COMPLETED') return false;
-          return true;
-        });
-        const mapped = filtered
-          .map((e: any) => {
-            const est = String(e.estimated_finish_date || '');
-            const estTime = est ? new Date(est).getTime() : 0;
-            const daysLate = estTime ? Math.floor((t0 - estTime) / (1000 * 60 * 60 * 24)) : 0;
-            const wo = Array.isArray(e.work_orders) && e.work_orders.length > 0 ? e.work_orders[0] : null;
-            return {
-              id: e.id,
-              entry_number: e.entry_number,
-              entry_date: e.entry_date,
-              estimated_finish_date: e.estimated_finish_date,
-              nota_dinas_number: e.nota_dinas_number,
-              status: wo?.status || e.status,
-              wo_number: wo?.wo_number || '',
-              license_plate: e.vehicles?.license_plate || '-',
-              brand_type: e.vehicles?.brand_type || '-',
-              vehicle_type: e.vehicles?.vehicle_type || '',
-              daysLate: Math.max(0, daysLate),
-            };
-          })
-          .sort((a: any, b: any) => (b.daysLate || 0) - (a.daysLate || 0));
-        setOverdueUnits(mapped);
-      } catch (e) {
-        console.error('Overdue unit calc error:', e);
-        setOverdueUnits([]);
-      }
-
-      // --- 2. HEAVY CALCULATIONS (Inventory, Spending, Charts) ---
-      // Run these in a second batch or independently to not block the initial render if we were using streaming, 
-      // but here we just parallelize them to speed up total time.
-      
-      const [goodsRes, poItemsRes, posRes, wosRes, lowStockRes] = await Promise.all([
-          supabase.from('goods').select('id, current_stock, item_type').gt('current_stock', 0),
-          supabase.from('purchase_order_items').select('goods_id, unit_price').order('created_at', { ascending: false }).limit(2000),
-          supabase.from('purchase_orders').select('total_amount, po_date, created_at').gte('created_at', sixMonthsAgo.toISOString()).neq('status', 'DRAFT'),
-          supabase.from('work_orders').select('status'),
-          supabase.from('goods').select('id, name, item_code, current_stock, unit').lt('current_stock', 10).gt('current_stock', 0).order('current_stock', { ascending: true }).limit(5)
-      ]);
-
-      // 2a. Inventory Value Calc
-      try {
-          const goods = goodsRes.data;
-          const poItems = poItemsRes.data;
-          
-          const priceMap = new Map();
-          if (poItems) {
-            for (const item of poItems) {
-               if (!priceMap.has(item.goods_id) && item.unit_price) {
-                 priceMap.set(item.goods_id, item.unit_price);
-               }
-            }
-          }
-
-          let valPersediaan = 0;
-          let valPeralatan = 0;
-          let valInventaris = 0;
-
-          if (goods) {
-            for (const g of goods) {
-                const price = priceMap.get(g.id) || 0;
-                const val = (g.current_stock || 0) * price;
-                
-                // Exclude NON_PERSEDIAAN from breakdown as requested
-                if (g.item_type === 'PERSEDIAAN') {
-                    valPersediaan += val;
-                } else if (g.item_type === 'PERALATAN_WORKSHOP') {
-                    valPeralatan += val;
-                } else if (g.item_type === 'INVENTARIS_KANTOR' || g.item_type === 'FURNITURE') {
-                    valInventaris += val;
-                }
-            }
-          }
-          statsData.inventoryPersediaan = valPersediaan;
-          statsData.inventoryPeralatan = valPeralatan;
-          statsData.inventoryInventaris = valInventaris;
-      } catch (e) { console.error("Inventory Value Calc Error:", e); }
-
-      // 2b. Monthly Spending
-      try {
-          const pos = posRes.data;
-          const spendingMap: Record<string, number> = {};
-          for (let i = 0; i < 6; i++) {
-            const d = new Date();
-            d.setMonth(d.getMonth() - i);
-            const key = d.toLocaleString('id-ID', { month: 'short' });
-            spendingMap[key] = 0;
-          }
-
-          if (pos) {
-            for (const p of pos) {
-                const date = new Date(p.po_date || p.created_at);
-                const key = date.toLocaleString('id-ID', { month: 'short' });
-                if (spendingMap[key] !== undefined) {
-                  spendingMap[key] += p.total_amount || 0;
-                }
-            }
-          }
-          
-          const currentMonthKey = today.toLocaleString('id-ID', { month: 'short' });
-          statsData.monthlyPOSpending = spendingMap[currentMonthKey] || 0;
-          setMonthlySpendingData(Object.entries(spendingMap).map(([name, value]) => ({ name, value })).reverse());
-      } catch (e) { console.error("Spending Data Error:", e); }
-
-      // 2c. Fast Moving Items (Last 30 days)
-      try {
-          const fastStart = new Date();
-          fastStart.setDate(fastStart.getDate() - 30);
-          const startDate = fastStart.toISOString().slice(0, 10);
-          const endDate = today.toISOString().slice(0, 10);
-
-          const { data: issueIds, error: issueIdsErr } = await supabase
-            .from('goods_issues')
-            .select('id')
-            .gte('issue_date', startDate)
-            .lte('issue_date', endDate)
-            .order('issue_date', { ascending: false })
-            .limit(1000);
-
-          if (issueIdsErr) throw issueIdsErr;
-
-          const ids = (issueIds || []).map((x: any) => x.id).filter(Boolean);
-          if (ids.length === 0) {
-            setFastMovingItems([]);
-          } else {
-            const { data: issueItems, error: issueItemsErr } = await supabase
-              .from('goods_issue_items')
-              .select('goods_id, quantity, is_info_only, goods (name, item_code, unit, current_stock)')
-              .in('issue_id', ids)
-              .range(0, 4999);
-
-            if (issueItemsErr) throw issueItemsErr;
-
-            const map = new Map<string, { goods: any; qty: number }>();
-
-            for (const it of issueItems || []) {
-              if ((it as any).is_info_only) continue;
-              const gid = (it as any).goods_id;
-              if (!gid) continue;
-              const q = Number((it as any).quantity || 0);
-              if (!Number.isFinite(q) || q <= 0) continue;
-              const existing = map.get(gid);
-              const goods = (it as any).goods || existing?.goods || null;
-              map.set(gid, { goods, qty: (existing?.qty || 0) + q });
-            }
-
-            const top = Array.from(map.entries())
-              .map(([goods_id, v]) => ({
-                goods_id,
-                qty: v.qty,
-                name: v.goods?.name,
-                item_code: v.goods?.item_code,
-                unit: v.goods?.unit,
-                current_stock: v.goods?.current_stock,
-              }))
-              .sort((a, b) => b.qty - a.qty)
-              .slice(0, 10);
-
-            setFastMovingItems(top);
-          }
-      } catch (e) {
-          console.error('Fast Moving Calc Error:', e);
-          setFastMovingItems([]);
-      }
-
-      // 2d. WO Status & Low Stock
-      try {
-          const wos = wosRes.data;
-          const woStatusCounts = { OPEN: 0, IN_PROGRESS: 0, COMPLETED: 0, CLOSED: 0 };
-          let totalWos = 0;
-          
-          if (wos) {
-            for (const w of wos) {
-                const status = w.status as keyof typeof woStatusCounts;
-                if (woStatusCounts[status] !== undefined) {
-                    woStatusCounts[status]++;
-                    totalWos++;
-                }
-            }
-          }
-          
-          setWoStatusData([
-            { name: 'Open', value: woStatusCounts.OPEN, color: '#94a3b8', percentage: totalWos > 0 ? (woStatusCounts.OPEN / totalWos * 100).toFixed(1) : 0 },
-            { name: 'In Progress', value: woStatusCounts.IN_PROGRESS, color: '#3b82f6', percentage: totalWos > 0 ? (woStatusCounts.IN_PROGRESS / totalWos * 100).toFixed(1) : 0 },
-            { name: 'Completed', value: woStatusCounts.COMPLETED, color: '#22c55e', percentage: totalWos > 0 ? (woStatusCounts.COMPLETED / totalWos * 100).toFixed(1) : 0 },
-            { name: 'Closed', value: woStatusCounts.CLOSED, color: '#64748b', percentage: totalWos > 0 ? (woStatusCounts.CLOSED / totalWos * 100).toFixed(1) : 0 },
-          ].filter(d => d.value > 0));
-
-          setLowStockItems(lowStockRes.data || []);
-          statsData.lowStockCount = lowStockRes.data?.length || 0;
-
-      } catch (e) { console.error("WO/Stock/Recent Error:", e); }
-
-      // Finally set stats
-      setStats(statsData);
-
-    } catch (error) {
-      console.error("Fatal Dashboard Error:", error);
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  if (loading) {
-    return <DashboardSkeleton />;
-  }
-
+// Komponen untuk satu kartu statistik
+function StatCard({ title, value, icon: Icon, loading }: { title: string, value: string | number, icon: React.ElementType, loading: boolean }) {
   return (
-    <div className="space-y-6 animate-in fade-in duration-500 pb-10">
-      <div className="flex flex-col md:flex-row justify-between gap-4 md:items-center">
-        <div>
-          <h2 className="text-3xl font-bold tracking-tight text-slate-900">Dashboard v2.2</h2>
-          <p className="text-slate-500 mt-1">Ringkasan aktivitas operasional dan performa bengkel.</p>
-        </div>
-        <div className="flex items-center gap-2">
-          <Badge variant="outline" className="px-3 py-1 bg-white text-slate-600 border-slate-200 shadow-sm">
-            {new Date().toLocaleDateString('id-ID', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
-          </Badge>
-        </div>
-      </div>
-      
-      {/* KPI Cards */}
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-        {user?.role !== 'USER' && (
-          <>
-            <KpiCard 
-              title="Nilai Stok Persediaan" 
-              value={formatCurrency(stats.inventoryPersediaan)} 
-              icon={Package}
-              trend="Barang Persediaan"
-              trendColor="text-slate-500"
-              iconColor="text-emerald-600"
-              bgColor="bg-emerald-50"
-            />
-            <KpiCard 
-              title="Nilai Aset Peralatan" 
-              value={formatCurrency(stats.inventoryPeralatan)} 
-              icon={Wrench}
-              trend="Peralatan Workshop"
-              trendColor="text-slate-500"
-              iconColor="text-blue-600"
-              bgColor="bg-blue-50"
-            />
-            <KpiCard 
-              title="Nilai Inventaris Kantor" 
-              value={formatCurrency(stats.inventoryInventaris)} 
-              icon={ShoppingCart}
-              trend="Inventaris & Furniture"
-              trendColor="text-slate-500"
-              iconColor="text-orange-600"
-              bgColor="bg-orange-50"
-            />
-            <KpiCard 
-              title="Belanja Bulan Ini" 
-              value={formatCurrency(stats.monthlyPOSpending)} 
-              icon={CreditCard}
-              trend="Total PO diterbitkan bulan ini"
-              trendColor="text-slate-500"
-              iconColor="text-indigo-600"
-              bgColor="bg-indigo-50"
-            />
-          </>
-        )}
-      </div>
-
-      <div className={`grid gap-4 ${user?.role !== 'USER' ? 'md:grid-cols-7' : 'md:grid-cols-1'}`}>
-        {/* Charts Section */}
-        {user?.role !== 'USER' && (
-          <Card className="col-span-4 shadow-md border-slate-200">
-            <CardHeader>
-              <CardTitle>Tren Belanja (6 Bulan Terakhir)</CardTitle>
-              <CardDescription>Total nominal Purchase Order per bulan</CardDescription>
-            </CardHeader>
-            <CardContent className="pl-2">
-              <div className="h-[300px] w-full">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={monthlySpendingData}>
-                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
-                    <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fill: '#64748b', fontSize: 12}} dy={10} />
-                    <YAxis 
-                      axisLine={false} 
-                      tickLine={false} 
-                      tick={{fill: '#64748b', fontSize: 12}} 
-                      tickFormatter={(value) => `Rp${(value/1000000).toFixed(0)}jt`}
-                    />
-                    <Tooltip 
-                      cursor={{fill: '#f1f5f9'}}
-                      contentStyle={{borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)'}}
-                      formatter={(value: number) => [formatCurrency(value), 'Total Belanja']}
-                    />
-                    <Bar dataKey="value" fill="#6366f1" radius={[4, 4, 0, 0]} barSize={40} />
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-            </CardContent>
-          </Card>
-        )}
-        
-        {/* WO Status Chart */}
-        <Card className={`${user?.role !== 'USER' ? 'col-span-3' : 'col-span-1'} shadow-md border-slate-200`}>
-          <CardHeader>
-            <CardTitle>Status Work Order</CardTitle>
-            <CardDescription>Distribusi status pekerjaan saat ini</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="h-[300px] w-full flex flex-col items-center justify-center">
-              {woStatusData.length > 0 ? (
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie
-                      data={woStatusData}
-                      cx="50%"
-                      cy="50%"
-                      innerRadius={60}
-                      outerRadius={100}
-                      paddingAngle={5}
-                      dataKey="value"
-                    >
-                      {woStatusData.map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={entry.color} />
-                      ))}
-                    </Pie>
-                    <Tooltip 
-                        formatter={(value: number, name: string, props: any) => [
-                            `${value} Unit (${props.payload.percentage}%)`, 
-                            name
-                        ]}
-                    />
-                    <Legend 
-                        verticalAlign="bottom" 
-                        height={36}
-                        formatter={(value, entry: any) => {
-                            const { payload } = entry;
-                            return `${value}: ${payload.value} (${payload.percentage}%)`;
-                        }}
-                    />
-                  </PieChart>
-                </ResponsiveContainer>
-              ) : (
-                <div className="text-center text-muted-foreground">Belum ada data WO</div>
-              )}
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Monthly Stats Table */}
-      <Card className="shadow-md border-slate-200">
-        <CardHeader>
-          <CardTitle>Rekapitulasi Bulanan ({new Date().getFullYear()})</CardTitle>
-          <CardDescription>Data statistik unit masuk dan pengerjaan per bulan</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="rounded-md border">
-            <Table>
-              <TableHeader>
-                <TableRow className="bg-slate-50">
-                  <TableHead className="w-[200px]">Periode</TableHead>
-                  <TableHead className="text-center">Unit Masuk</TableHead>
-                  <TableHead className="text-center text-orange-600">Unit Belum WO</TableHead>
-                  <TableHead className="text-center text-blue-600">Unit WO Proses</TableHead>
-                  <TableHead className="text-center text-green-600">Unit WO Close</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {monthlyStats.map((row) => (
-                  <TableRow key={row.name}>
-                    <TableCell className="font-medium">{row.name}</TableCell>
-                    <TableCell className="text-center">
-                      <MonthlyTypeBreakdown value={row.unitMasuk} />
-                    </TableCell>
-                    <TableCell className="text-center font-semibold text-orange-600 bg-orange-50/50">
-                      <MonthlyTypeBreakdown value={row.unitBelumWO} />
-                    </TableCell>
-                    <TableCell className="text-center font-semibold text-blue-600 bg-blue-50/50">
-                      <MonthlyTypeBreakdown value={row.unitWoProses} />
-                    </TableCell>
-                    <TableCell className="text-center font-semibold text-green-600 bg-green-50/50">
-                      <MonthlyTypeBreakdown value={row.unitWoClose} />
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
-        </CardContent>
-      </Card>
-
-      <Card className="shadow-md border-slate-200">
-        <CardHeader className="flex flex-row items-center justify-between">
-          <div>
-            <CardTitle className="flex items-center gap-2">
-              <AlertTriangle className="h-5 w-5 text-red-600" />
-              Monitoring Progres Unit
-            </CardTitle>
-            <CardDescription>
-              Notifikasi unit yang melewati tgl estimasi selesai
-            </CardDescription>
-          </div>
-          <Button variant="ghost" size="sm" className="text-xs" asChild>
-            <a href="/transactions/vehicle-entry">Lihat Entry</a>
-          </Button>
-        </CardHeader>
-        <CardContent>
-          {overdueUnits.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-6 text-emerald-600">
-              <CheckCircle className="h-8 w-8 mb-2 opacity-50" />
-              <p className="text-sm font-medium">Tidak ada unit overdue.</p>
-            </div>
-          ) : (
-            <div className="rounded-md border">
-              <Table>
-                <TableHeader>
-                  <TableRow className="bg-slate-50">
-                    <TableHead>Nopol</TableHead>
-                    <TableHead>Est. Selesai</TableHead>
-                    <TableHead className="text-center">Terlambat</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>No. WO</TableHead>
-                    <TableHead>Nota Dinas</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {overdueUnits.map((u: any) => {
-                    const isSeverelyOverdue = u.daysLate > 3;
-                    return (
-                    <TableRow key={u.id} className={isSeverelyOverdue ? "bg-red-100 hover:bg-red-200" : ""}>
-                      <TableCell>
-                        <div className="flex flex-col">
-                          <span className={`font-medium ${isSeverelyOverdue ? 'text-red-950' : ''}`}>{u.license_plate}</span>
-                          <span className={`text-xs ${isSeverelyOverdue ? 'text-red-800' : 'text-muted-foreground'}`}>{u.brand_type}</span>
-                        </div>
-                      </TableCell>
-                      <TableCell className={isSeverelyOverdue ? 'text-red-950 font-medium' : ''}>
-                        {u.estimated_finish_date ? formatDate(u.estimated_finish_date) : '-'}
-                      </TableCell>
-                      <TableCell className="text-center">
-                        <span className={`text-xs font-bold px-2.5 py-1 rounded-full ${isSeverelyOverdue ? 'bg-red-600 text-white shadow-sm animate-pulse' : 'bg-orange-100 text-orange-800'}`}>
-                          {u.daysLate} hari
-                        </span>
-                      </TableCell>
-                      <TableCell className={isSeverelyOverdue ? 'text-red-950' : ''}>{String(u.status || '-')}</TableCell>
-                      <TableCell className={`font-medium ${isSeverelyOverdue ? 'text-red-950' : ''}`}>{u.wo_number || '-'}</TableCell>
-                      <TableCell className={isSeverelyOverdue ? 'text-red-950' : ''}>{u.nota_dinas_number || '-'}</TableCell>
-                    </TableRow>
-                  )})}
-                </TableBody>
-              </Table>
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* Lists Section */}
-      <div className="grid gap-4 md:grid-cols-2">
-        <Card className="shadow-md border-slate-200 col-span-2 md:col-span-1">
-          <CardHeader className="flex flex-row items-center justify-between">
-            <div>
-              <CardTitle className="flex items-center gap-2">
-                <AlertTriangle className="h-5 w-5 text-amber-500" />
-                Peringatan Stok Menipis
-              </CardTitle>
-              <CardDescription>Barang dengan stok kurang dari 10 unit</CardDescription>
-            </div>
-            <Button variant="ghost" size="sm" className="text-xs" asChild>
-              <a href="/master/goods">Kelola Stok</a>
-            </Button>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-4">
-              {lowStockItems.length === 0 ? (
-                <div className="flex flex-col items-center justify-center py-6 text-emerald-600">
-                  <Package className="h-8 w-8 mb-2 opacity-50" />
-                  <p className="text-sm font-medium">Stok aman! Tidak ada peringatan.</p>
-                </div>
-              ) : (
-                lowStockItems.map((item) => (
-                  <div key={item.id} className="flex items-center justify-between border-b border-slate-100 pb-3 last:border-0 last:pb-0">
-                    <div className="flex items-center gap-3">
-                      <div className="h-2 w-2 rounded-full bg-amber-500 animate-pulse" />
-                      <div>
-                        <p className="text-sm font-medium text-slate-900">{item.name}</p>
-                        <p className="text-xs text-slate-500">{item.item_code}</p>
-                      </div>
-                    </div>
-                    <div className="text-right">
-                      <span className="text-sm font-bold text-amber-600">{item.current_stock}</span>
-                      <span className="text-xs text-slate-400 ml-1">{item.unit}</span>
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="shadow-md border-slate-200 col-span-2 md:col-span-1">
-          <CardHeader className="flex flex-row items-center justify-between">
-            <div>
-              <CardTitle className="flex items-center gap-2">
-                <Activity className="h-5 w-5 text-lime-600" />
-                Fast Moving (30 Hari)
-              </CardTitle>
-              <CardDescription>Sparepart paling sering keluar & sisa stok</CardDescription>
-            </div>
-            <Button variant="ghost" size="sm" className="text-xs" asChild>
-              <a href="/reports/item-history">Detail</a>
-            </Button>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-4">
-              {fastMovingItems.length === 0 ? (
-                <div className="flex flex-col items-center justify-center py-6 text-slate-500">
-                  <Activity className="h-8 w-8 mb-2 opacity-40" />
-                  <p className="text-sm font-medium">Belum ada data pemakaian.</p>
-                </div>
-              ) : (
-                fastMovingItems.map((item: any) => (
-                  <div key={item.goods_id} className="flex items-center justify-between border-b border-slate-100 pb-3 last:border-0 last:pb-0">
-                    <div className="flex items-center gap-3">
-                      <div className="h-2 w-2 rounded-full bg-lime-500 animate-pulse" />
-                      <div>
-                        <p className="text-sm font-medium text-slate-900">{item.name || '-'}</p>
-                        <p className="text-xs text-slate-500">{item.item_code || '-'}</p>
-                      </div>
-                    </div>
-                    <div className="text-right">
-                      <div className="text-xs text-slate-500">Keluar: <span className="font-semibold text-slate-700">{item.qty}</span></div>
-                      <div className="text-xs text-slate-500">Sisa: <span className="font-bold text-slate-900">{item.current_stock ?? '-'}</span><span className="text-slate-400 ml-1">{item.unit || ''}</span></div>
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-    </div>
-  );
-}
-
-function KpiCard({ title, value, icon: Icon, trend, trendColor, iconColor, bgColor }: any) {
-  return (
-    <Card className="shadow-sm border-slate-200 hover:shadow-md transition-shadow">
+    <Card>
       <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-        <CardTitle className="text-sm font-medium text-slate-600">{title}</CardTitle>
-        <div className={`p-2 rounded-full ${bgColor}`}>
-          <Icon className={`h-4 w-4 ${iconColor}`} />
-        </div>
+        <CardTitle className="text-sm font-medium">{title}</CardTitle>
+        <Icon className="h-4 w-4 text-muted-foreground" />
       </CardHeader>
       <CardContent>
-        <div className="text-2xl font-bold text-slate-900">{value}</div>
-        <p className={`text-xs mt-1 ${trendColor}`}>{trend}</p>
+        {loading ? (
+          <div className="h-8 w-16 bg-gray-200 rounded animate-pulse" />
+        ) : (
+          <div className="text-2xl font-bold">{value}</div>
+        )}
       </CardContent>
     </Card>
   );
 }
 
-function MonthlyTypeBreakdown({ value }: { value: { total: number; r4: number; r2: number; r2kecil: number } }) {
-  if (!value || value.total <= 0) return <span className="text-slate-400 font-medium">-</span>;
-  return (
-    <div className="flex flex-col items-center leading-tight">
-      <div className="text-sm font-bold text-slate-900">{value.total}</div>
-      <div className="mt-1 flex flex-wrap justify-center gap-1 text-[10px] font-medium text-slate-600">
-        <span className="rounded bg-white/60 px-1.5 py-0.5 border border-slate-200">R4 {value.r4}</span>
-        <span className="rounded bg-white/60 px-1.5 py-0.5 border border-slate-200">R2 {value.r2}</span>
-        <span className="rounded bg-white/60 px-1.5 py-0.5 border border-slate-200">R2K {value.r2kecil}</span>
-      </div>
-    </div>
-  );
-}
+export default function Dashboard() {
+  const [stats, setStats] = useState({
+    workOrders: 0,
+    purchaseOrders: 0,
+    vehiclesInService: 0,
+    cashBalance: 0,
+  });
+  const [loading, setLoading] = useState(true);
 
-function DashboardSkeleton() {
+  useEffect(() => {
+    async function fetchStats() {
+      setLoading(true);
+      try {
+        // 1. Ambil jumlah total Work Order
+        const { count: woCount, error: woError } = await supabase
+          .from('work_orders')
+          .select('*', { count: 'exact', head: true });
+
+        if (woError) throw woError;
+
+        // Untuk saat ini, kita hanya implementasikan satu statistik dulu
+        // Statistik lain akan kita tambahkan nanti
+        setStats({
+          workOrders: woCount || 0,
+          purchaseOrders: 0, // Placeholder
+          vehiclesInService: 0, // Placeholder
+          cashBalance: 0, // Placeholder
+        });
+
+      } catch (error: any) {
+        console.error("Error fetching dashboard stats:", error);
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    fetchStats();
+  }, []);
+
   return (
     <div className="space-y-6">
-      <div className="flex justify-between">
-        <Skeleton className="h-10 w-48" />
-        <Skeleton className="h-8 w-32" />
-      </div>
+      <h2 className="text-3xl font-bold tracking-tight">Dashboard</h2>
+      
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-        {[1, 2, 3, 4].map(i => <Skeleton key={i} className="h-32 rounded-xl" />)}
+        <StatCard 
+          title="Total Work Orders" 
+          value={stats.workOrders} 
+          icon={Wrench} 
+          loading={loading} 
+        />
+        <StatCard 
+          title="Purchase Orders (Pending)" 
+          value="N/A" 
+          icon={ShoppingCart} 
+          loading={loading} 
+        />
+        <StatCard 
+          title="Kendaraan di Bengkel" 
+          value="N/A" 
+          icon={Car} 
+          loading={loading} 
+        />
+        <StatCard 
+          title="Saldo Kas & Bank" 
+          value="N/A" 
+          icon={Wallet} 
+          loading={loading} 
+        />
       </div>
-      <div className="grid gap-4 md:grid-cols-7">
-        <Skeleton className="col-span-4 h-[350px] rounded-xl" />
-        <Skeleton className="col-span-3 h-[350px] rounded-xl" />
+
+      {/* Di sini kita bisa menambahkan komponen lain seperti grafik atau tabel ringkasan nanti */}
+      <div className="grid grid-cols-1 gap-6 mt-6">
+        <Card>
+          <CardHeader>
+            <CardTitle>Aktivitas Terbaru</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-muted-foreground">Komponen aktivitas terbaru akan ditambahkan di sini.</p>
+          </CardContent>
+        </Card>
       </div>
     </div>
   );

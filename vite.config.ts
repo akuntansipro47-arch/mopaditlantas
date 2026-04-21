@@ -15,42 +15,7 @@ export default defineConfig({
     },
   },
   plugins: [
-    react({
-      babel: {
-        plugins: [
-          'react-dev-locator',
-        ],
-      },
-    }), 
+    react(),
     tsconfigPaths(),
-    VitePWA({
-      registerType: 'autoUpdate',
-      injectRegister: 'auto',
-      includeAssets: ['favicon.svg', 'apple-touch-icon.png', 'masked-icon.svg'],
-      workbox: {
-        maximumFileSizeToCacheInBytes: 5 * 1024 * 1024,
-        cleanupOutdatedCaches: true,
-        clientsClaim: true,
-        skipWaiting: true,
-      },
-      manifest: {
-        name: 'OtoSmart "Workshop Monitoring System"',
-        short_name: 'OtoSmart',
-        description: 'OtoSmart Workshop Monitoring System',
-        theme_color: '#ffffff',
-        icons: [
-          {
-            src: 'pwa-192x192.png',
-            sizes: '192x192',
-            type: 'image/png'
-          },
-          {
-            src: 'pwa-512x512.png',
-            sizes: '512x512',
-            type: 'image/png'
-          }
-        ]
-      }
-    })
   ],
 })

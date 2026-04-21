@@ -45,29 +45,32 @@ RETURNS TABLE (
     full_name VARCHAR,
     role VARCHAR,
     allowed_menus JSONB,
-    success BOOLEAN
+    success BOOLEAN,
+    message TEXT
 ) AS $$
 DECLARE
     found_user app_users%ROWTYPE;
 BEGIN
-    SELECT * INTO found_user FROM app_users WHERE app_users.username = p_username;
+    SELECT * INTO found_user FROM app_users WHERE app_users.username = p_username AND is_active = true;
     
-    IF found_user.id IS NOT NULL AND found_user.password = crypt(p_password, found_user.password) THEN
+    IF found_user.id IS NULL THEN
+        RETURN QUERY SELECT 
+            NULL::UUID, NULL::VARCHAR, NULL::VARCHAR, NULL::VARCHAR, NULL::JSONB, false, 'User not found or not active';
+        RETURN;
+    END IF;
+
+    IF found_user.password = crypt(p_password, found_user.password) THEN
         RETURN QUERY SELECT 
             found_user.id, 
             found_user.username, 
             found_user.full_name, 
             found_user.role, 
             found_user.allowed_menus,
-            true;
+            true,
+            'Login successful';
     ELSE
         RETURN QUERY SELECT 
-            NULL::UUID, 
-            NULL::VARCHAR, 
-            NULL::VARCHAR, 
-            NULL::VARCHAR, 
-            NULL::JSONB,
-            false;
+            NULL::UUID, NULL::VARCHAR, NULL::VARCHAR, NULL::VARCHAR, NULL::JSONB, false, 'Invalid password';
     END IF;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
