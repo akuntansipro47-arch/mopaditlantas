@@ -470,134 +470,115 @@ export default function WorkOrderV2() {
 
   // --- Billing / Finishing Logic ---
 
-  const handleFinishWO = async (wo: WOWithDetails) => {
-    setActiveWO(wo);
+  const handleFinishWO = async (wo: any) => {
     setLoading(true);
+    // We open the modal immediately but show a loading state inside
+    setFinishWOModalOpen(true); 
+    setActiveWOForBilling(wo);
 
-    // Reset and fetch data for the gatekeeper
-    setRequiredParts([]);
-    setIssuedParts([]);
+    // Reset states for the modal to clear previous data
+    setBillingItems([]);
     setPartValidationStatus({ isMet: false, missing: [] });
 
-    if (wo.vehicle_entry_id) {
-      // 1. Fetch Required Parts from vehicle_entry_spareparts
-      const { data: requiredData, error: requiredError } = await supabase
-        .from('vehicle_entry_spareparts')
-        .select('sparepart_id, qty, item_name, spareparts(name)')
-        .eq('vehicle_entry_id', wo.vehicle_entry_id);
-
-      if (requiredError) {
-        toast.error('Gagal mengambil daftar kebutuhan sparepart.');
-        console.error(requiredError);
-      } else {
-        setRequiredParts(requiredData || []);
-      }
-
-      // 2. Fetch Issued Parts from goods_issues -> goods_issue_items
-      const { data: issuedData, error: issuedError } = await supabase
-        .from('goods_issues')
-        .select('items:goods_issue_items(goods_id, quantity)')
-        .eq('work_order_id', wo.id);
-      
-      if (issuedError) {
-        toast.error('Gagal mengambil daftar sparepart yang sudah keluar.');
-        console.error(issuedError);
-      } else {
-        const flatIssuedParts = issuedData?.flatMap((issue: any) => issue.items) || [];
-        setIssuedParts(flatIssuedParts);
-      }
-    }
-    
     try {
-      const normalizeText = (v: string) =>
-        String(v || '')
-          .toLowerCase()
-          .replace(/[^a-z0-9]+/g, ' ')
-          .trim()
-          .replace(/\s+/g, ' ');
-
-      const isNameMatch = (a: string, b: string) => {
-        const aa = normalizeText(a);
-        const bb = normalizeText(b);
-        if (!aa || !bb) return false;
-        if (aa === bb) return true;
-        return aa.includes(bb) || bb.includes(aa);
-      };
-
-      // 0. Fetch existing Goods Issues (The Source of Truth for Perbaikan Parts)
-      const { data: issueData } = await supabase
-        .from('goods_issues')
+      // STEP 1: Fetch the FULL, "heavy" details for this specific WO. This is the key fix.
+      const { data: heavyWOData, error: heavyWOError } = await supabase
+        .from('work_orders')
         .select(`
-          goods_issue_items (
-            quantity,
-            goods (*)
+          *,
+          mechanics (*),
+          vehicle_entries (
+            *,
+            vehicles (*),
+            vehicle_entry_jobs (*, job_types(*)),
+            vehicle_entry_spareparts (*, spareparts(*), item_name)
           )
         `)
-        .eq('work_order_id', wo.id);
-
-      const { data: entryPartsData } = await supabase
-        .from('vehicle_entries')
-        .select(`
-          vehicle_entry_spareparts (
-            item_name,
-            estimated_price
-          )
-        `)
-        .eq('id', wo.vehicle_entry_id || '')
+        .eq('id', wo.id)
         .single();
-      const entryParts = entryPartsData?.vehicle_entry_spareparts || [];
 
-      // 1. Try to fetch existing saved billings
-      const { data: existingBillings } = await supabase
-        .from('work_order_billings')
-        .select('*')
+      if (heavyWOError) throw heavyWOError;
+      if (!heavyWOData) throw new Error("Data WO tidak ditemukan untuk diselesaikan.");
+
+      const heavyWO = heavyWOData;
+
+      // STEP 2: Calculate Billing Items from the fresh, heavy data
+      const estimatedParts = heavyWO.vehicle_entries?.vehicle_entry_spareparts || [];
+      const estimatedJobs = heavyWO.vehicle_entries?.vehicle_entry_jobs || [];
+      const tempBillingItems: any[] = []; // Using 'any' temporarily for simplified object creation
+
+      estimatedParts.forEach((part: any) => {
+        tempBillingItems.push({
+          type: 'PART',
+          name: part.spareparts?.name || part.item_name || 'Sparepart tidak dikenal',
+          qty: part.qty || 1,
+          price: part.estimated_price || part.spareparts?.selling_price || 0,
+        });
+      });
+
+      estimatedJobs.forEach((job: any) => {
+        tempBillingItems.push({
+          type: 'JASA',
+          name: job.job_types?.job_name || 'Jasa tidak dikenal',
+          qty: 1,
+          price: job.estimated_price || job.job_types?.selling_price || 0,
+        });
+      });
+      
+      setBillingItems(tempBillingItems as WOBillingItem[]);
+
+      // STEP 3: Perform the Gatekeeper Check (Spare Part Fulfillment Validation)
+      const { data: issuedData, error: issuedError } = await supabase
+        .from('goods_issue_items')
+        .select('sparepart_id, qty')
         .eq('work_order_id', wo.id);
 
-      let items: WOBillingItem[] = [];
-      const existingPerbaikanPriceByGoodsId = new Map<string, number>();
-      let latestEntryJobs: any[] = [];
+      if (issuedError) throw issuedError;
 
-      if (existingBillings && existingBillings.length > 0) {
-        // Use existing billings but REFRESH "Perbaikan" parts from Goods Issue
-        items = existingBillings.map(b => ({
-          id: b.id,
-          item_type: b.item_type as 'JOB' | 'PART',
-          job_type_id: b.job_type_id,
-          goods_id: b.goods_id,
-          item_name: b.item_name,
-          qty: b.qty,
-          unit_price: b.unit_price,
-          total_price: b.total_price,
-          job_group: b.job_group,
-          source: 'WO_INTERFACE' // Default
-        }));
+      const issuedMap = new Map<string, number>();
+      (issuedData || []).forEach((item: any) => {
+        if (item.sparepart_id) {
+          const currentQty = issuedMap.get(item.sparepart_id) || 0;
+          issuedMap.set(item.sparepart_id, currentQty + item.qty);
+        }
+      });
 
-        existingBillings.forEach((b: any) => {
-          if (b?.item_type === 'PART' && String(b?.job_group || '').toUpperCase() === 'PERBAIKAN' && b?.goods_id) {
-            const unit = Number(b.unit_price || 0);
-            existingPerbaikanPriceByGoodsId.set(String(b.goods_id), unit);
-          }
-        });
+      let allPartsMet = true;
+      const missingParts: { name: string; required: number; issued: number; missing: number }[] = [];
 
-        // Remove old Perbaikan parts (source: GOODS_ISSUE) from saved billing to avoid stale data
-        // We will re-inject them from fresh issueData below.
-        items = items.filter(i => !(i.job_group === 'PERBAIKAN' && i.item_type === 'PART'));
+      (estimatedParts || []).forEach((required: any) => {
+        // Ensure required.sparepart_id exists before checking the map
+        if (required.sparepart_id) {
+            const issuedQty = issuedMap.get(required.sparepart_id) || 0;
+            if (issuedQty < required.qty) {
+              allPartsMet = false;
+              missingParts.push({
+                name: required.spareparts?.name || required.item_name || 'Nama Barang Tidak Ditemukan',
+                required: required.qty,
+                issued: issuedQty,
+                missing: required.qty - issuedQty,
+              });
+            }
+        } else if (required.qty > 0) { // Handle parts that were manually added without a master ID
+            allPartsMet = false;
+            missingParts.push({
+                name: required.item_name || 'Barang manual tanpa ID',
+                required: required.qty,
+                issued: 0,
+                missing: required.qty,
+            });
+        }
+      });
 
-      } else {
-        // Fallback: Construct from Jobs (First time opening)
-        const { data: entryData } = await supabase
-            .from('vehicle_entries')
-            .select(`
-            vehicle_entry_jobs (
-                estimated_price,
-                job_types (*)
-            )
-            `)
-            .eq('id', wo.vehicle_entry_id || '')
-            .single();
+      setPartValidationStatus({ isMet: allPartsMet, missing: missingParts });
 
-        if (entryData?.vehicle_entry_jobs) {
-            entryData.vehicle_entry_jobs.forEach((j: any) => {
+    } catch (error: any) {
+      toast.error('Gagal memproses data penyelesaian WO: ' + error.message);
+      setFinishWOModalOpen(false); // Close modal on critical error
+    } finally {
+      setLoading(false);
+    }
+  };
             if (j.job_types) {
                 const est = Number(j.estimated_price || 0);
                 const sp = Number(j.job_types.selling_price || 0);
