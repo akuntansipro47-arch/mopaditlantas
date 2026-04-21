@@ -69,176 +69,18 @@ export default function Dashboard() {
     async function fetchStats() {
       setLoading(true);
       try {
-        // Work Orders R4
-        const { count: woR4Count, error: woR4Error } = await supabase
-          .from('work_orders')
-          .select(`
-            id,
-            vehicle_entries!inner(
-              vehicles!inner(vehicle_type)
-            )
-          `, { count: 'exact', head: true })
-          .eq('vehicle_entries.vehicles.vehicle_type', 'R4');
-
-        // Work Orders R2
-        const { count: woR2Count, error: woR2Error } = await supabase
-          .from('work_orders')
-          .select(`
-            id,
-            vehicle_entries!inner(
-              vehicles!inner(vehicle_type)
-            )
-          `, { count: 'exact', head: true })
-          .in('vehicle_entries.vehicles.vehicle_type', ['R2', 'R2_KECIL']);
-
-        // PO Pending Count
-        const { count: poPendingCount, error: poPendingError } = await supabase
-          .from('purchase_orders')
-          .select('*', { count: 'exact', head: true })
-          .in('status', ['ISSUED', 'RECEIVED_PART']);
-
-        // PO Total Value
-        const { data: poItems, error: poItemsError } = await supabase
-          .from('purchase_order_items')
-          .select('quantity, price');
-
-        // Low Stock Items
-        const { count: lowStockCount, error: lowStockError } = await supabase
-          .from('goods')
-          .select('*', { count: 'exact', head: true })
-          .lt('current_stock', 3);
-
-        // Fast Moving Items (last 90 days)
-        const ninetyDaysAgo = new Date();
-        ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
-        
-        const { data: issuedItems, error: issuedItemsError } = await supabase
-          .from('goods_issue_items')
-          .select(`
-            quantity,
-            goods ( name )
-          `)
-          .gte('created_at', ninetyDaysAgo.toISOString());
-
-        // DIAGNOSTIC STEP 2: Check the raw content of work_orders table
+        // --- DIAGNOSTIC STEP 3: ISOLATED TEST ---
+        // We are only running this single query to get clean results.
         const { data: rawWoData, error: rawWoError } = await supabase
           .from('work_orders')
           .select('id, wo_number, vehicle_entry_id, status, created_at')
           .limit(10);
 
-        console.log('--- DIAGNOSTIC: RAW WORK ORDERS ---');
+        console.log('--- DIAGNOSTIC: RAW WORK ORDERS (ISOLATED) ---');
         console.log(rawWoData);
         console.log('--- ERROR ---', rawWoError);
-
-        // For now, we'll use an empty array to prevent crashes
-        const activeWoData = [];
-        const activeWoError = null;
-
-        // Monthly Progress Data (last 6 months)
-        const sixMonthsAgo = new Date();
-        sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
-        sixMonthsAgo.setDate(1); // Start from the beginning of the month
-
-        const { data: monthlyWoData, error: monthlyWoError } = await supabase
-          .from('work_orders')
-          .select(`
-            status,
-            vehicle_entries!inner (
-              entry_date,
-              vehicles!inner ( vehicle_type )
-            )
-          `)
-          .gte('vehicle_entries.entry_date', sixMonthsAgo.toISOString().split('T')[0]);
-
-
-        if (woR4Error) throw woR4Error;
-        if (woR2Error) throw woR2Error;
-        if (poPendingError) throw poPendingError;
-        if (poItemsError) throw poItemsError;
-        if (lowStockError) throw lowStockError;
-        if (issuedItemsError) throw issuedItemsError;
-        if (activeWoError) throw activeWoError;
-        if (monthlyWoError) throw monthlyWoError;
-
-        const totalValue = poItems.reduce((sum, item) => {
-          return sum + (item.quantity * item.price);
-        }, 0);
         
-        // Process Lead Time Data
-        const formattedLeadTime = activeWoData.map(wo => ({
-          license_plate: (wo.vehicle_entries as any)?.vehicles.license_plate || 'N/A',
-          entry_date: (wo.vehicle_entries as any)?.entry_date,
-          estimated_finish_date: (wo.vehicle_entries as any)?.estimated_finish_date,
-        }));
-        setLeadTimeData(formattedLeadTime);
-
-        // Process Monthly Progress
-        const progress: { [key: string]: MonthlyProgressData } = {};
-        const monthFormatter = new Intl.DateTimeFormat('id-ID', { month: 'long', year: 'numeric' });
-
-        monthlyWoData.forEach(wo => {
-          const entry = wo.vehicle_entries as any;
-          if (!entry || !entry.entry_date) return;
-
-          const entryDate = new Date(entry.entry_date);
-          const monthKey = monthFormatter.format(entryDate);
-          
-          if (!progress[monthKey]) {
-            progress[monthKey] = {
-              month: monthKey,
-              totalIn: { r4: 0, r2: 0 },
-              totalWip: { r4: 0, r2: 0 },
-              totalCompleted: { r4: 0, r2: 0 },
-            };
-          }
-
-          const vehicleType = entry.vehicles.vehicle_type;
-          const isR4 = vehicleType === 'R4';
-          const isR2 = vehicleType === 'R2' || vehicleType === 'R2_KECIL';
-
-          if (isR4) progress[monthKey].totalIn.r4++;
-          if (isR2) progress[monthKey].totalIn.r2++;
-
-          if (wo.status === 'COMPLETED') {
-            if (isR4) progress[monthKey].totalCompleted.r4++;
-            if (isR2) progress[monthKey].totalCompleted.r2++;
-          } else if (wo.status !== 'CLOSED') { // Consider everything else as WIP
-            if (isR4) progress[monthKey].totalWip.r4++;
-            if (isR2) progress[monthKey].totalWip.r2++;
-          }
-        });
-        
-        const sortedProgress = Object.values(progress).sort((a, b) => {
-            const dateA = new Date(a.month.split(' ')[1], new Date(Date.parse(a.month.split(' ')[0] +" 1, 2012")).getMonth());
-            const dateB = new Date(b.month.split(' ')[1], new Date(Date.parse(b.month.split(' ')[0] +" 1, 2012")).getMonth());
-            return dateB.getTime() - dateA.getTime();
-        });
-
-        setMonthlyProgress(sortedProgress);
-        
-        // Process Fast Moving Items
-        const itemCounts: { [key: string]: number } = {};
-        issuedItems.forEach(item => {
-          const itemName = (item.goods as any)?.name;
-          if (itemName) {
-            itemCounts[itemName] = (itemCounts[itemName] || 0) + item.quantity;
-          }
-        });
-
-        const sortedItems = Object.entries(itemCounts)
-          .map(([name, count]) => ({ name, count }))
-          .sort((a, b) => b.count - a.count)
-          .slice(0, 10);
-        
-        setFastMovingItems(sortedItems);
-
-        setStats({
-          woR4: woR4Count || 0,
-          woR2: woR2Count || 0,
-          poPendingCount: poPendingCount || 0,
-          poTotalValue: totalValue,
-          lowStockItems: lowStockCount || 0,
-        });
+        // All other queries are temporarily disabled.
 
       } catch (error: any) {
         console.error("Error fetching dashboard stats:", error);
