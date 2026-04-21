@@ -119,16 +119,21 @@ export default function PurchaseOrderDetailReport() {
       const [
         { data: receipts, error: receiptError },
         { data: invoices, error: invoiceError },
-        { data: workOrders, error: woError }
+        { data: workOrdersResult, error: woError }
       ] = await Promise.all([
         supabase.from('goods_receipts').select('po_id, items:goods_receipt_items(goods_id, quantity_received)').in('po_id', poIds),
         supabase.from('purchase_invoices').select('po_id, status').in('po_id', poIds),
-        supabase.from('work_orders').select('id, wo_number, vehicles(license_plate, brand_type)').in('id', workOrderIds)
+        supabase.from('work_orders').select('id, wo_number, vehicle_id').in('id', workOrderIds)
       ]);
 
       if (receiptError) throw receiptError;
       if (invoiceError) throw invoiceError;
       if (woError) throw woError;
+      
+      const vehicleIds = [...new Set(workOrdersResult?.map(wo => wo.vehicle_id).filter(Boolean))];
+      const { data: vehicles, error: vehiclesError } = await supabase.from('vehicles').select('id, license_plate, brand_type').in('id', vehicleIds);
+
+      if (vehiclesError) throw vehiclesError;
 
       // 3. Create maps for efficient data lookup
       const receivedQtyMap = new Map<string, number>();
@@ -143,7 +148,11 @@ export default function PurchaseOrderDetailReport() {
       const paymentStatusMap = new Map<number, string>();
       invoices?.forEach(inv => paymentStatusMap.set(inv.po_id, inv.status));
 
-      const workOrderMap = new Map(workOrders?.map(wo => [wo.id, wo]));
+      const vehicleMap = new Map(vehicles?.map(v => [v.id, v]));
+      const workOrderMap = new Map(workOrdersResult?.map(wo => {
+        const vehicle = wo.vehicle_id ? vehicleMap.get(wo.vehicle_id) : null;
+        return [wo.id, { ...wo, vehicles: vehicle }];
+      }));
 
       // 4. Combine all data
       const combinedData = poItems.map(item => {
@@ -229,16 +238,21 @@ export default function PurchaseOrderDetailReport() {
       const [
         { data: receipts, error: receiptError },
         { data: invoices, error: invoiceError },
-        { data: workOrders, error: woError }
+        { data: workOrdersResult, error: woError }
       ] = await Promise.all([
         supabase.from('goods_receipts').select('po_id, items:goods_receipt_items(goods_id, quantity_received)').in('po_id', poIds),
         supabase.from('purchase_invoices').select('po_id, status').in('po_id', poIds),
-        supabase.from('work_orders').select('id, wo_number, vehicles(license_plate, brand_type)').in('id', workOrderIds)
+        supabase.from('work_orders').select('id, wo_number, vehicle_id').in('id', workOrderIds)
       ]);
 
       if (receiptError) throw receiptError;
       if (invoiceError) throw invoiceError;
       if (woError) throw woError;
+
+      const vehicleIds = [...new Set(workOrdersResult?.map(wo => wo.vehicle_id).filter(Boolean))];
+      const { data: vehicles, error: vehiclesError } = await supabase.from('vehicles').select('id, license_plate, brand_type').in('id', vehicleIds);
+
+      if (vehiclesError) throw vehiclesError;
 
       const receivedQtyMap = new Map<string, number>();
       receipts?.forEach(receipt => {
@@ -252,7 +266,11 @@ export default function PurchaseOrderDetailReport() {
       const paymentStatusMap = new Map<number, string>();
       invoices?.forEach(inv => paymentStatusMap.set(inv.po_id, inv.status));
 
-      const workOrderMap = new Map(workOrders?.map(wo => [wo.id, wo]));
+      const vehicleMap = new Map(vehicles?.map(v => [v.id, v]));
+      const workOrderMap = new Map(workOrdersResult?.map(wo => {
+        const vehicle = wo.vehicle_id ? vehicleMap.get(wo.vehicle_id) : null;
+        return [wo.id, { ...wo, vehicles: vehicle }];
+      }));
 
       const combinedData = poItems.map(item => {
         const po = item.purchase_orders;
