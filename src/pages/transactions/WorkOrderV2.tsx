@@ -419,7 +419,6 @@ export default function WorkOrderV2() {
       setLoading(false);
     }
   };
-
   const handleFinishWO = async (wo: any) => {
     setLoading(true);
     setFinishWOModalOpen(true); 
@@ -429,6 +428,7 @@ export default function WorkOrderV2() {
     setPartValidationStatus({ isMet: false, missing: [] });
 
     try {
+      // THE FIX IS HERE: Explicitly defining the relationship
       const { data: heavyWOData, error: heavyWOError } = await supabase
         .from('work_orders')
         .select(`
@@ -438,7 +438,11 @@ export default function WorkOrderV2() {
             *,
             vehicles (*),
             vehicle_entry_jobs (*, job_types(*)),
-            vehicle_entry_spareparts (*, spareparts(*), item_name)
+            vehicle_entry_spareparts (
+              *, 
+              item_name,
+              spareparts:sparepart_id (name, selling_price)
+            )
           )
         `)
         .eq('id', wo.id)
@@ -523,7 +527,7 @@ export default function WorkOrderV2() {
       setLoading(false);
     }
   };
-
+  
   const handleSaveBillingAndClose = async () => {
     if (!activeWOForBilling) return;
     setLoading(true);
