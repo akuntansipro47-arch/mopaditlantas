@@ -431,7 +431,7 @@ export default function WorkOrderV2() {
     try {
       const { data: heavyWOData, error: heavyWOError } = await supabase
         .from('work_orders')
-        .select(\`
+        .select(`
           *,
           mechanics (*),
           vehicle_entries (
@@ -440,7 +440,7 @@ export default function WorkOrderV2() {
             vehicle_entry_jobs (*, job_types(*)),
             vehicle_entry_spareparts (*, spareparts(*), item_name)
           )
-        \`)
+        `)
         .eq('id', wo.id)
         .single();
 
