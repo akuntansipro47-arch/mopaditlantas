@@ -120,7 +120,7 @@ export default function Dashboard() {
           `)
           .gte('created_at', ninetyDaysAgo.toISOString());
 
-        // Lead Time Data for Active WO
+        // DIAGNOSTIC: Fetch ALL work orders to check if data exists, ignoring status filter for now.
         const { data: activeWoData, error: activeWoError } = await supabase
           .from('work_orders')
           .select(`
@@ -129,8 +129,7 @@ export default function Dashboard() {
               estimated_finish_date,
               vehicles ( license_plate )
             )
-          `)
-          .not('status', 'in', '("COMPLETED", "CLOSED")');
+          `);
 
         // Monthly Progress Data (last 6 months)
         const sixMonthsAgo = new Date();
