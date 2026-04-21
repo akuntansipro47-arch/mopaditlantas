@@ -517,104 +517,87 @@ export default function WorkOrder() {
             </style>
             {printData && (
               <div className="space-y-6 text-sm font-sans">
-                {/* Header */}
-                <div className="text-center border-b pb-4 mb-4">
-                  <h1 className="text-xl font-bold uppercase">Surat Perintah Kerja (SPK)</h1>
-                  <p className="text-muted-foreground">No. WO: {printData.wo.wo_number}</p>
-                </div>
-
-                {/* Info */}
-                <div className="grid grid-cols-2 gap-8">
-                  <div className="space-y-1">
-                    <p><span className="font-semibold w-24 inline-block">Tanggal:</span> {formatDate(printData.wo.work_date)}</p>
-                    <p><span className="font-semibold w-24 inline-block">Nopol:</span> {printData.wo.vehicle_entries?.vehicles?.license_plate}</p>
-                    <p><span className="font-semibold w-24 inline-block">Kendaraan:</span> {printData.wo.vehicle_entries?.vehicles?.brand_type}</p>
-                    <p><span className="font-semibold w-24 inline-block">Odometer:</span> {printData.entry.current_odometer?.toLocaleString()} km</p>
+                {/* ... content of the print ... */}
+                <div className="flex justify-between items-start">
+                  <div>
+                    <h3 className="font-bold text-lg">Surat Perintah Kerja</h3>
+                    <p className="text-muted-foreground">{printData.wo.wo_number}</p>
                   </div>
-                  <div className="space-y-1">
-                    <p><span className="font-semibold w-24 inline-block">Mekanik:</span> {printData.wo.mechanics?.name}</p>
-                    <p><span className="font-semibold w-24 inline-block">Nota Dinas:</span> {printData.entry.nota_dinas_number}</p>
-                    <p><span className="font-semibold w-24 inline-block">Driver:</span> {printData.entry.driver_name}</p>
+                  <div className="text-right">
+                    <p className="font-semibold">{printData.wo.vehicle_entries?.vehicles?.license_plate}</p>
+                    <p className="text-xs text-muted-foreground">{printData.wo.vehicle_entries?.vehicles?.brand_type}</p>
                   </div>
                 </div>
 
-                {/* Job List */}
-                <div>
-                    <h3 className="font-bold border-b mb-2 pb-1">Daftar Pekerjaan (Jasa)</h3>
-                    <table className="w-full text-left border-collapse">
-                        <thead>
-                            <tr className="border-b">
-                                <th className="py-2 w-10">No</th>
-                                <th className="py-2">Deskripsi Pekerjaan</th>
-                                <th className="py-2 w-1/3">Catatan</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {printData.entry.vehicle_entry_spareparts?.map((part: any, i: number) => (
-                                <tr key={part.id} className="border-b border-slate-100">
-                                    <td className="py-2">{i+1}</td>
-                                    <td className="py-2 font-medium">{part.spareparts?.name}</td>
-                                    <td className="py-2 text-center">{part.quantity}</td>
-                                    <td className="py-2">{part.spareparts?.unit}</td>
-                                </tr>
-                            ))}
-                            {(!printData.entry.vehicle_entry_spareparts || printData.entry.vehicle_entry_spareparts.length === 0) && (
-                                <tr><td colSpan={4} className="py-4 text-center italic text-muted-foreground">Tidak ada sparepart</td></tr>
-                            )}
-                        </tbody>
-                    </table>
+                <div className="grid grid-cols-3 gap-4 text-xs border-t border-b py-2">
+                  <div><span className="text-muted-foreground block">Tanggal WO</span> {formatDate(printData.wo.work_date)}</div>
+                  <div><span className="text-muted-foreground block">Mekanik</span> {printData.wo.mechanics?.name}</div>
+                  <div><span className="text-muted-foreground block">No. Nota Dinas</span> {printData.entry.nota_dinas_number}</div>
                 </div>
 
-                {/* Part List */}
                 <div>
-                    <h3 className="font-bold border-b mb-2 pb-1">Daftar Sparepart / Bahan</h3>
-                    <table className="w-full text-left border-collapse">
-                        <thead>
-                            <tr className="border-b">
-                                <th className="py-2 w-10">No</th>
-                                <th className="py-2">Nama Sparepart</th>
-                                <th className="py-2 w-20 text-center">Qty</th>
-                                <th className="py-2 w-20">Satuan</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {printData.entry.vehicle_entry_spareparts?.map((part: any, i: number) => (
-                                <tr key={i} className="border-b border-slate-100">
-                                    <td className="py-2">{i+1}</td>
-                                    <td className="py-2 font-medium">{part.sparepart_name}</td>
-                                    <td className="py-2 text-center">{part.qty}</td>
-                                    <td className="py-2">{part.unit || 'Pcs'}</td>
-                                </tr>
-                            ))}
-                             {(!printData.entry.vehicle_entry_spareparts || printData.entry.vehicle_entry_spareparts.length === 0) && (
-                                <tr><td colSpan={4} className="py-4 text-center italic text-muted-foreground">Tidak ada sparepart</td></tr>
-                            )}
-                        </tbody>
-                    </table>
+                  <h4 className="font-semibold mb-2">Daftar Pekerjaan</h4>
+                  <table className="w-full text-left text-xs">
+                    <thead className="bg-slate-50">
+                      <tr className="border-b border-slate-200">
+                        <th className="p-2 font-semibold">No</th>
+                        <th className="p-2 font-semibold">Jenis Pekerjaan</th>
+                        <th className="p-2 font-semibold">Catatan</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {printData.entry.vehicle_entry_jobs?.map((job: any, i: number) => (
+                        <tr key={i} className="border-b border-slate-100">
+                          <td className="p-2">{i + 1}</td>
+                          <td className="p-2 font-medium">{job.job_types?.job_name}</td>
+                          <td className="p-2 text-muted-foreground italic">{job.notes || '-'}</td>
+                        </tr>
+                      ))}
+                      {(!printData.entry.vehicle_entry_jobs || printData.entry.vehicle_entry_jobs.length === 0) && (
+                        <tr><td colSpan={3} className="p-4 text-center italic text-muted-foreground">Tidak ada jasa</td></tr>
+                      )}
+                    </tbody>
+                  </table>
                 </div>
 
-                {/* Signatures */}
-                <div className="grid grid-cols-3 gap-4 pt-12 mt-8 text-center">
-                    <div>
-                        <p className="mb-16">Kepala Mekanik</p>
-                        <p className="font-bold underline">( ....................... )</p>
-                    </div>
-                     <div>
-                        <p className="mb-16">Mekanik</p>
-                        <p className="font-bold underline">( {printData.wo.mechanics?.name} )</p>
-                    </div>
-                    <div>
-                        <p className="mb-16">Pengemudi</p>
-                        <p className="font-bold underline">( {printData.entry.driver_name || '.......................'} )</p>
-                    </div>
+                <div>
+                  <h4 className="font-semibold mb-2">Daftar Sparepart / Bahan</h4>
+                  <table className="w-full text-left text-xs">
+                    <thead className="bg-slate-50">
+                      <tr className="border-b border-slate-200">
+                        <th className="p-2 font-semibold">No</th>
+                        <th className="p-2 font-semibold">Nama Sparepart</th>
+                        <th className="p-2 font-semibold text-center">Qty</th>
+                        <th className="p-2 font-semibold">Satuan</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {printData.entry.vehicle_entry_spareparts?.map((part: any, i: number) => (
+                        <tr key={part.id} className="border-b border-slate-100">
+                          <td className="p-2">{i + 1}</td>
+                          <td className="p-2 font-medium">{part.spareparts?.name}</td>
+                          <td className="p-2 text-center">{part.quantity}</td>
+                          <td className="p-2">{part.spareparts?.unit}</td>
+                        </tr>
+                      ))}
+                      {(!printData.entry.vehicle_entry_spareparts || printData.entry.vehicle_entry_spareparts.length === 0) && (
+                        <tr><td colSpan={4} className="p-4 text-center italic text-muted-foreground">Tidak ada sparepart</td></tr>
+                      )}
+                    </tbody>
+                  </table>
                 </div>
+
+                <div className="pt-4 text-xs">
+                  <p className="font-semibold">Catatan WO:</p>
+                  <p className="text-muted-foreground italic">{printData.wo.notes || 'Tidak ada catatan.'}</p>
+                </div>
+
               </div>
             )}
           </div>
-
           <DialogFooter className="no-print">
-             <Button variant="outline" onClick={() => setIsPrintDialogOpen(false)}>Tutup</Button>
-             <Button onClick={() => window.print()}><ClipboardCheck className="mr-2 h-4 w-4" /> Cetak Sekarang</Button>
+            <Button variant="outline" onClick={() => setIsPrintDialogOpen(false)}>Tutup</Button>
+            <Button onClick={() => window.print()}><ClipboardCheck className="h-4 w-4 mr-2" /> Cetak Sekarang</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
