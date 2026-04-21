@@ -182,6 +182,19 @@ export default function WorkOrder() {
     }
   };
 
+  const handleDelete = async (id: string) => {
+    if (window.confirm('Apakah Anda yakin ingin menghapus Work Order ini?')) {
+      try {
+        const { error } = await supabase.from('work_orders').delete().eq('id', id);
+        if (error) throw error;
+        toast.success('Work Order berhasil dihapus');
+        fetchWOs();
+      } catch (error: any) {
+        toast.error('Gagal menghapus WO: ' + error.message);
+      }
+    }
+  };
+
   const handlePrint = async (wo: WOWithDetails) => {
     // Fetch full details for printing
     try {
