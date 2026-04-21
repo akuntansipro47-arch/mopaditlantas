@@ -156,6 +156,32 @@ export default function WorkOrder() {
     }
   };
 
+  const handleDelete = async (id: string) => {
+    if (window.confirm('Apakah Anda yakin ingin menghapus Work Order ini?')) {
+      try {
+        const { error } = await supabase.from('work_orders').delete().eq('id', id);
+        if (error) throw error;
+        toast.success('Work Order berhasil dihapus');
+        fetchWOs();
+      } catch (error: any) {
+        toast.error('Gagal menghapus WO: ' + error.message);
+      }
+    }
+  };
+
+  const handleDelete = async (id: string) => {
+    if (window.confirm('Apakah Anda yakin ingin menghapus Work Order ini?')) {
+      try {
+        const { error } = await supabase.from('work_orders').delete().eq('id', id);
+        if (error) throw error;
+        toast.success('Work Order berhasil dihapus');
+        fetchWOs();
+      } catch (error: any) {
+        toast.error('Gagal menghapus WO: ' + error.message);
+      }
+    }
+  };
+
   const handlePrint = async (wo: WOWithDetails) => {
     // Fetch full details for printing
     try {
@@ -167,7 +193,13 @@ export default function WorkOrder() {
             *,
             job_types (*)
           ),
-          vehicle_entry_spareparts (*)
+          vehicle_entry_spareparts (
+            *,
+            spareparts (
+              name,
+              unit
+            )
+          )
         `)
         .eq('id', wo.vehicle_entry_id || '')
         .single();
@@ -448,6 +480,11 @@ export default function WorkOrder() {
                              <ClipboardCheck className="h-4 w-4 mr-1" /> SPK
                           </Button>
                           <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => handleEdit(item)}><Eye className="h-4 w-4" /></Button>
+                          {item.status === 'OPEN' && (
+                            <Button variant="destructive" size="icon" className="h-8 w-8" onClick={() => handleDelete(item.id)}>
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          )}
                         </div>
                       </TableCell>
                     </TableRow>
@@ -502,15 +539,16 @@ export default function WorkOrder() {
                             </tr>
                         </thead>
                         <tbody>
-                            {printData.entry.vehicle_entry_jobs?.map((job: any, i: number) => (
-                                <tr key={i} className="border-b border-slate-100">
+                            {printData.entry.vehicle_entry_spareparts?.map((part: any, i: number) => (
+                                <tr key={part.id} className="border-b border-slate-100">
                                     <td className="py-2">{i+1}</td>
-                                    <td className="py-2 font-medium">{job.job_types?.job_name}</td>
-                                    <td className="py-2 text-muted-foreground italic">{job.notes || '-'}</td>
+                                    <td className="py-2 font-medium">{part.spareparts?.name}</td>
+                                    <td className="py-2 text-center">{part.quantity}</td>
+                                    <td className="py-2">{part.spareparts?.unit}</td>
                                 </tr>
                             ))}
-                            {(!printData.entry.vehicle_entry_jobs || printData.entry.vehicle_entry_jobs.length === 0) && (
-                                <tr><td colSpan={3} className="py-4 text-center italic text-muted-foreground">Tidak ada jasa</td></tr>
+                            {(!printData.entry.vehicle_entry_spareparts || printData.entry.vehicle_entry_spareparts.length === 0) && (
+                                <tr><td colSpan={4} className="py-4 text-center italic text-muted-foreground">Tidak ada sparepart</td></tr>
                             )}
                         </tbody>
                     </table>
