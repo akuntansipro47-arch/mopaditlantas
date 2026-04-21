@@ -90,10 +90,6 @@ export default function PurchaseOrderDetailReport() {
         .lte('purchase_orders.created_at', endDate)
         .order('created_at', { foreignTable: 'purchase_orders', ascending: false })
         .range(from, to);
-      
-      if (searchQuery) {
-        poQuery = poQuery.or(`purchase_orders.po_number.ilike.%${searchQuery}%,goods.name.ilike.%${searchQuery}%,purchase_orders.suppliers.name.ilike.%${searchQuery}%`);
-      }
 
       const { data: poItems, error: poError, count: totalCount } = await poQuery;
 
@@ -179,12 +175,19 @@ export default function PurchaseOrderDetailReport() {
         };
       }).filter(Boolean) as ReportData[];
 
-      // Search filtering for WO and Vehicle data, which couldn't be done in the main query
+      // Search filtering is now more comprehensive and done on the client-side
       const finalData = searchQuery
-        ? combinedData.filter(d => 
-            d.no_wo.toLowerCase().includes(searchQuery.toLowerCase()) || 
-            d.nopol.toLowerCase().includes(searchQuery.toLowerCase())
-          )
+        ? combinedData.filter(d => {
+            const query = searchQuery.toLowerCase();
+            return (
+              d.no_po.toLowerCase().includes(query) ||
+              (d.supplier && d.supplier.toLowerCase().includes(query)) ||
+              d.kendaraan.toLowerCase().includes(query) ||
+              d.nopol.toLowerCase().includes(query) ||
+              d.no_wo.toLowerCase().includes(query) ||
+              (d.nama_barang && d.nama_barang.toLowerCase().includes(query))
+            );
+          })
         : combinedData;
 
       setData(finalData);
@@ -214,10 +217,6 @@ export default function PurchaseOrderDetailReport() {
         .gte('purchase_orders.created_at', dateRange.start)
         .lte('purchase_orders.created_at', `${dateRange.end} 23:59:59`)
         .order('created_at', { foreignTable: 'purchase_orders', ascending: false });
-
-      if (searchQuery) {
-        poQuery = poQuery.or(`purchase_orders.po_number.ilike.%${searchQuery}%,goods.name.ilike.%${searchQuery}%,purchase_orders.suppliers.name.ilike.%${searchQuery}%`);
-      }
 
       const { data: poItems, error: poError } = await poQuery;
   
@@ -289,10 +288,17 @@ export default function PurchaseOrderDetailReport() {
       }).filter(Boolean) as ReportData[];
 
       const finalData = searchQuery
-        ? combinedData.filter(d => 
-            d.no_wo.toLowerCase().includes(searchQuery.toLowerCase()) || 
-            d.nopol.toLowerCase().includes(searchQuery.toLowerCase())
-          )
+        ? combinedData.filter(d => {
+            const query = searchQuery.toLowerCase();
+            return (
+              d.no_po.toLowerCase().includes(query) ||
+              (d.supplier && d.supplier.toLowerCase().includes(query)) ||
+              d.kendaraan.toLowerCase().includes(query) ||
+              d.nopol.toLowerCase().includes(query) ||
+              d.no_wo.toLowerCase().includes(query) ||
+              (d.nama_barang && d.nama_barang.toLowerCase().includes(query))
+            );
+          })
         : combinedData;
   
       return finalData;
