@@ -41,7 +41,8 @@ export default function WorkOrderReport() {
             item_name,
             qty,
             unit_price,
-            total_price
+            total_price,
+            is_info_only
           )
         `)
         .gte('work_date', dateRange.start)
@@ -81,52 +82,71 @@ export default function WorkOrderReport() {
 
   const filteredData = data.filter(item => 
     (item.wo_number && item.wo_number.toLowerCase().includes(search.toLowerCase())) ||
-    (item.vehicle_entries?.vehicles?.license_plate && item.vehicle_entries.vehicles.license_plate.toLowerCase().includes(search.toLowerCase()))
+    (item.vehicle_entries?.vehicles?.license_plate && item.vehicle_entries.vehicles.license_plate.toLowerCase().includes(search.toLowerCase())) ||
+    (item.vehicle_entries?.vehicles?.brand_type && item.vehicle_entries.vehicles.brand_type.toLowerCase().includes(search.toLowerCase()))
   );
 
-  const calculateTotal = (wo: any) => {
-      // If billings exist, use them. 
+  const calculateTotalEstimate = (wo: any) => {
+    if (wo.billings && wo.billings.length > 0) {
+      return wo.billings
+        .filter((b: any) => b.is_info_only === true)
+        .reduce((sum: number, b: any) => sum + (b.total_price || 0), 0);
+    }
+    return 0;
+  };
+
+  const calculateTotalFinal = (wo: any) => {
       if (wo.billings && wo.billings.length > 0) {
-          return wo.billings.reduce((sum: number, b: any) => sum + (b.total_price || 0), 0);
+          return wo.billings
+            .filter((b: any) => b.is_info_only !== true)
+            .reduce((sum: number, b: any) => sum + (b.total_price || 0), 0);
       }
-      // Fallback: If no billings (e.g. old data), use estimated cost if available? 
-      // Or simply return 0.
       return 0;
   };
 
   const getVehicleGroupLabel = (wo: any) => {
-    const sg = String(wo.vehicle_entries?.service_group || '').toUpperCase();
-    if (sg.includes('R2_KECIL') || sg.includes('R2 KECIL') || sg.includes('KECIL')) return 'R2 Kecil';
-    if (sg.includes('R4')) return 'R4';
-    if (sg.includes('R2')) return 'R2';
-    const vt = String(wo.vehicle_entries?.vehicles?.vehicle_type || '').toUpperCase();
-    if (vt.includes('R2_KECIL') || vt.includes('R2 KECIL') || vt.includes('KECIL')) return 'R2 Kecil';
-    if (vt === 'R4' || vt.includes('R4') || vt.includes('MOBIL')) return 'R4';
-    if (vt === 'R2' || vt.includes('R2') || vt.includes('MOTOR')) return 'R2';
-    return '-';
+    const vehicleType = String(wo.vehicle_entries?.vehicles?.vehicle_type || '').toUpperCase();
+    if (vehicleType.includes('R2 KECIL') || vehicleType.includes('R2_KECIL')) return 'R2 Kecil';
+    if (vehicleType.includes('R2')) return 'R2';
+    if (vehicleType.includes('R4')) return 'R4';
+    
+    // Fallback to service_group if vehicle_type is not specific enough
+    const serviceGroup = String(wo.vehicle_entries?.service_group || '').toUpperCase();
+    if (serviceGroup.includes('R2 KECIL') || serviceGroup.includes('R2_KECIL')) return 'R2 Kecil';
+    if (serviceGroup.includes('R2')) return 'R2';
+    if (serviceGroup.includes('R4')) return 'R4';
+
+    return 'Lainnya';
   };
 
   const exportToExcel = () => {
-    const flattenData = filteredData.flatMap(wo => {
-        // Handle cases with no billings gracefully
-        const billings = wo.billings && wo.billings.length > 0 ? wo.billings : [{}];
-        
-        return billings.map((bill: any) => ({
-            'No. WO': wo.wo_number,
-            'Tanggal': formatDate(wo.work_date), // Changed from start_date to work_date
-            'Status': wo.status,
-            'Mekanik': wo.mechanics?.name || '-',
-            'No. Polisi': wo.vehicle_entries?.vehicles?.license_plate || '-',
-            'Merk/Type': wo.vehicle_entries?.vehicles?.brand_type || '-',
-            'Group': getVehicleGroupLabel(wo),
-            'Item Pekerjaan/Part': bill.item_name || '-',
-            'Tipe': bill.item_type || '-',
-            'Qty': bill.qty || 0,
-            'Total Harga': bill.total_price || 0
-        }));
-    });
+    const dataForExport = filteredData.map(wo => ({
+        'No. WO': wo.wo_number,
+        'Tanggal': formatDate(wo.work_date),
+        'Status': wo.status,
+        'Mekanik': wo.mechanics?.name || '-',
+        'No. Polisi': wo.vehicle_entries?.vehicles?.license_plate || '-',
+        'Nama Kendaraan': wo.vehicle_entries?.vehicles?.brand_type || '-',
+        'Group': getVehicleGroupLabel(wo),
+        'Total Estimasi': calculateTotalEstimate(wo),
+        'Total Biaya Final': calculateTotalFinal(wo),
+    }));
 
-    const ws = XLSX.utils.json_to_sheet(flattenData);
+    const ws = XLSX.utils.json_to_sheet(dataForExport);
+    
+    // Set column widths
+    ws['!cols'] = [
+      { wch: 15 }, // No. WO
+      { wch: 12 }, // Tanggal
+      { wch: 15 }, // Status
+      { wch: 20 }, // Mekanik
+      { wch: 15 }, // No. Polisi
+      { wch: 20 }, // Nama Kendaraan
+      { wch: 10 }, // Group
+      { wch: 18 }, // Total Estimasi
+      { wch: 18 }, // Total Biaya Final
+    ];
+
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Laporan WO");
     XLSX.writeFile(wb, `Laporan_WO_${dateRange.start}_${dateRange.end}.xlsx`);
@@ -167,7 +187,7 @@ export default function WorkOrderReport() {
             <CardTitle>Rincian Work Order</CardTitle>
             <div className="relative w-64">
               <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
-              <Input placeholder="Cari No WO / Nopol..." className="pl-8" value={search} onChange={e => setSearch(e.target.value)} />
+              <Input placeholder="Cari No WO / Nopol / Kendaraan..." className="pl-8" value={search} onChange={e => setSearch(e.target.value)} />
             </div>
           </div>
         </CardHeader>
@@ -178,21 +198,24 @@ export default function WorkOrderReport() {
                 <TableHead>No. WO</TableHead>
                 <TableHead>Tanggal</TableHead>
                 <TableHead>No. Polisi</TableHead>
+                <TableHead>Nama Kendaraan</TableHead>
                 <TableHead>Group</TableHead>
                 <TableHead>Mekanik</TableHead>
                 <TableHead>Status</TableHead>
-                <TableHead className="text-right">Total Biaya</TableHead>
+                <TableHead className="text-right">Total Estimasi</TableHead>
+                <TableHead className="text-right">Total Biaya Final</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {filteredData.length === 0 ? (
-                <TableRow><TableCell colSpan={7} className="text-center py-8">Tidak ada data.</TableCell></TableRow>
+                <TableRow><TableCell colSpan={9} className="text-center py-8">Tidak ada data.</TableCell></TableRow>
               ) : (
                 filteredData.map((wo) => (
                   <TableRow key={wo.id}>
                     <TableCell className="font-medium">{wo.wo_number}</TableCell>
                     <TableCell>{formatDate(wo.work_date)}</TableCell>
                     <TableCell>{wo.vehicle_entries?.vehicles?.license_plate}</TableCell>
+                    <TableCell>{wo.vehicle_entries?.vehicles?.brand_type}</TableCell>
                     <TableCell>
                       <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-slate-100 text-slate-700">
                         {getVehicleGroupLabel(wo)}
@@ -205,7 +228,8 @@ export default function WorkOrderReport() {
                         {wo.status}
                       </span>
                     </TableCell>
-                    <TableCell className="text-right font-bold">{formatCurrency(calculateTotal(wo))}</TableCell>
+                    <TableCell className="text-right">{formatCurrency(calculateTotalEstimate(wo))}</TableCell>
+                    <TableCell className="text-right font-bold">{formatCurrency(calculateTotalFinal(wo))}</TableCell>
                   </TableRow>
                 ))
               )}
