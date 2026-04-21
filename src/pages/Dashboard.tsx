@@ -3,6 +3,16 @@ import { supabase } from '@/lib/supabase';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Wrench, ShoppingCart, Car, Wallet } from 'lucide-react';
 
+// Fungsi untuk format mata uang
+const formatCurrency = (value: number) => {
+  return new Intl.NumberFormat('id-ID', {
+    style: 'currency',
+    currency: 'IDR',
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0,
+  }).format(value);
+};
+
 // Komponen untuk satu kartu statistik
 function StatCard({ title, value, icon: Icon, loading }: { title: string, value: string | number, icon: React.ElementType, loading: boolean }) {
   return (
@@ -13,7 +23,7 @@ function StatCard({ title, value, icon: Icon, loading }: { title: string, value:
       </CardHeader>
       <CardContent>
         {loading ? (
-          <div className="h-8 w-16 bg-gray-200 rounded animate-pulse" />
+          <div className="h-8 w-24 bg-gray-200 rounded animate-pulse" />
         ) : (
           <div className="text-2xl font-bold">{value}</div>
         )}
@@ -35,20 +45,55 @@ export default function Dashboard() {
     async function fetchStats() {
       setLoading(true);
       try {
-        // 1. Ambil jumlah total Work Order
-        const { count: woCount, error: woError } = await supabase
-          .from('work_orders')
-          .select('*', { count: 'exact', head: true });
+        // Secara paralel, jalankan semua query
+        const [
+          { count: woCount, error: woError },
+          { count: poCount, error: poError },
+          { count: vehiclesInServiceCount, error: vehiclesError },
+          { data: cashBankAccounts, error: accError }
+        ] = await Promise.all([
+          supabase.from('work_orders').select('*', { count: 'exact', head: true }),
+          supabase.from('purchase_orders').select('*', { count: 'exact', head: true }).in('status', ['ISSUED', 'RECEIVED_PART']),
+          supabase.from('work_orders').select('*', { count: 'exact', head: true }).in('status', ['OPEN', 'IN_PROGRESS']),
+          supabase.from('chart_of_accounts').select('id, balance_type').in('account_category', ['KAS', 'BANK'])
+        ]);
 
         if (woError) throw woError;
+        if (poError) throw poError;
+        if (vehiclesError) throw vehiclesError;
+        if (accError) throw accError;
 
-        // Untuk saat ini, kita hanya implementasikan satu statistik dulu
-        // Statistik lain akan kita tambahkan nanti
+        // Hitung Saldo Kas & Bank
+        let totalCashBalance = 0;
+        if (cashBankAccounts) {
+          const balancePromises = cashBankAccounts.map(async (account) => {
+            const { data: items, error: itemsError } = await supabase
+              .from('journal_entry_items')
+              .select('debit, credit')
+              .eq('account_id', account.id);
+            
+            if (itemsError) throw itemsError;
+
+            let accountBalance = 0;
+            items.forEach(item => {
+              if (account.balance_type === 'DEBIT') {
+                accountBalance += (item.debit || 0) - (item.credit || 0);
+              } else {
+                accountBalance += (item.credit || 0) - (item.debit || 0);
+              }
+            });
+            return accountBalance;
+          });
+          
+          const balances = await Promise.all(balancePromises);
+          totalCashBalance = balances.reduce((sum, current) => sum + current, 0);
+        }
+
         setStats({
           workOrders: woCount || 0,
-          purchaseOrders: 0, // Placeholder
-          vehiclesInService: 0, // Placeholder
-          cashBalance: 0, // Placeholder
+          purchaseOrders: poCount || 0,
+          vehiclesInService: vehiclesInServiceCount || 0,
+          cashBalance: totalCashBalance,
         });
 
       } catch (error: any) {
@@ -74,19 +119,19 @@ export default function Dashboard() {
         />
         <StatCard 
           title="Purchase Orders (Pending)" 
-          value="N/A" 
+          value={stats.purchaseOrders} 
           icon={ShoppingCart} 
           loading={loading} 
         />
         <StatCard 
           title="Kendaraan di Bengkel" 
-          value="N/A" 
+          value={stats.vehiclesInService} 
           icon={Car} 
           loading={loading} 
         />
         <StatCard 
           title="Saldo Kas & Bank" 
-          value="N/A" 
+          value={formatCurrency(stats.cashBalance)} 
           icon={Wallet} 
           loading={loading} 
         />
@@ -97,7 +142,7 @@ export default function Dashboard() {
         <Card>
           <CardHeader>
             <CardTitle>Aktivitas Terbaru</CardTitle>
-          </CardHeader>
+          </Header>
           <CardContent>
             <p className="text-muted-foreground">Komponen aktivitas terbaru akan ditambahkan di sini.</p>
           </CardContent>
