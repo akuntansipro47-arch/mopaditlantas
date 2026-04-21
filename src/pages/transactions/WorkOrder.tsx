@@ -13,6 +13,8 @@ import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger,
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
+import { Combobox } from "@/components/ui/combobox";
+import { Combobox } from "@/components/ui/combobox";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
@@ -278,24 +280,18 @@ export default function WorkOrder() {
 
                 <div className="space-y-2">
                   <Label>Referensi Nota Dinas (Entry Kendaraan)</Label>
-                  <Select value={formData.vehicle_entry_id} onValueChange={(v) => handleSelectChange('vehicle_entry_id', v)} disabled={isEditing}>
-                    <SelectTrigger><SelectValue placeholder="Pilih Kendaraan Masuk" /></SelectTrigger>
-                    <SelectContent>
-                      {entries.length === 0 && !isEditing ? (
-                        <SelectItem value="none" disabled>Tidak ada kendaraan masuk status OPEN</SelectItem>
-                      ) : (
-                        entries.map(e => (
-                          <SelectItem key={e.id} value={e.id}>
-                            {e.entry_number} - {e.vehicles?.license_plate} ({e.vehicles?.brand_type})
-                          </SelectItem>
-                        ))
-                      )}
-                      {isEditing && formData.vehicle_entry_id && (
-                         // Hack to show current selected value if list is filtered out because status changed
-                         <SelectItem value={formData.vehicle_entry_id} disabled>Current Selection</SelectItem>
-                      )}
-                    </SelectContent>
-                  </Select>
+                  <Combobox
+                    options={entries.map(e => ({
+                      value: e.id,
+                      label: `${e.vehicles?.license_plate} (${e.vehicles?.brand_type}) - ${new Date(e.entry_date).toLocaleDateString('id-ID')}`
+                    }))}
+                    value={formData.vehicle_entry_id}
+                    onChange={(v) => handleSelectChange('vehicle_entry_id', v)}
+                    placeholder="Pilih Kendaraan Masuk"
+                    searchPlaceholder="Cari plat nomor atau merk..."
+                    emptyText="Tidak ada kendaraan masuk status OPEN."
+                    disabled={isEditing}
+                  />
                   <p className="text-xs text-muted-foreground">Hanya menampilkan kendaraan masuk yang belum diproses.</p>
                 </div>
 
