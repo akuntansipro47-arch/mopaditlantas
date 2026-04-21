@@ -72,6 +72,11 @@ export default function WorkOrderV2() {
   const [itemSearchQuery, setItemSearchQuery] = useState('');
   const [serviceRinganFilter, setServiceRinganFilter] = useState(false);
   const [activeBillingIndex, setActiveBillingIndex] = useState<number | null>(null);
+
+  // States for Spare Part Validation Gatekeeper
+  const [requiredParts, setRequiredParts] = useState<any[]>([]);
+  const [issuedParts, setIssuedParts] = useState<any[]>([]);
+  const [partValidationStatus, setPartValidationStatus] = useState<{isMet: boolean, missing: any[]}>({ isMet: false, missing: [] });
   
   // Entry Search Dialog
   const [isEntrySearchOpen, setIsEntrySearchOpen] = useState(false);
@@ -376,14 +381,13 @@ export default function WorkOrderV2() {
     window.open(`/print/surat-jalan/${woId}`, '_blank');
   };
 
-  const handleStatusChange = async (id: string, newStatus: string) => {
+  const handleStatusChange = async (id: string, newStatus: string, currentStatus?: string) => {
     if (newStatus === 'CLOSED' && !confirm('Apakah Anda yakin ingin menutup WO ini? Pastikan semua pekerjaan selesai.')) {
       return;
     }
     
     // Check permission for Re-open or Editing Closed/Completed WO
-    if (activeWO?.status === 'CLOSED' || activeWO?.status === 'COMPLETED') { 
-        // Allow ADMIN and SUPER_ADMIN to reopen/edit
+    if (currentStatus === 'CLOSED' || currentStatus === 'COMPLETED') { 
         const hasReopenAccess = user?.role === 'SUPER_ADMIN' || (user?.role === 'ADMIN' && user?.allowed_menus?.includes('trans_wo_reopen'));
         
         if (!hasReopenAccess) {
@@ -393,9 +397,16 @@ export default function WorkOrderV2() {
     }
 
     try {
+      const updatePayload: { status: string; work_started_at?: string; } = { status: newStatus };
+
+      // Set start time only when moving from OPEN to IN_PROGRESS
+      if (newStatus === 'IN_PROGRESS' && currentStatus === 'OPEN') {
+        updatePayload.work_started_at = new Date().toISOString();
+      }
+
       const { error } = await supabase
         .from('work_orders')
-        .update({ status: newStatus } as any)
+        .update(updatePayload as any)
         .eq('id', id);
       
       if (error) throw error;
@@ -462,6 +473,74 @@ export default function WorkOrderV2() {
   const handleFinishWO = async (wo: WOWithDetails) => {
     setActiveWO(wo);
     setLoading(true);
+
+    // Reset and fetch data for the gatekeeper
+    setRequiredParts([]);
+    setIssuedParts([]);
+    setPartValidationStatus({ isMet: false, missing: [] });
+
+    if (wo.vehicle_entry_id) {
+      // 1. Fetch Required Parts from vehicle_entry_spareparts
+      const { data: requiredData, error: requiredError } = await supabase
+        .from('vehicle_entry_spareparts')
+        .select('goods_id, qty, goods(name)')
+        .eq('vehicle_entry_id', wo.vehicle_entry_id);
+
+      if (requiredError) {
+        toast.error('Gagal mengambil daftar kebutuhan sparepart.');
+        console.error(requiredError);
+      } else {
+        setRequiredParts(requiredData || []);
+      }
+
+      // 2. Fetch Issued Parts from goods_issues -> goods_issue_items
+      const { data: issuedData, error: issuedError } = await supabase
+        .from('goods_issues')
+        .select('items:goods_issue_items(goods_id, quantity)')
+        .eq('work_order_id', wo.id);
+      
+      if (issuedError) {
+        toast.error('Gagal mengambil daftar sparepart yang sudah keluar.');
+        console.error(issuedError);
+      } else {
+        const flatIssuedParts = issuedData?.flatMap((issue: any) => issue.items) || [];
+        setIssuedParts(flatIssuedParts);
+      }
+    }
+
+    // Reset and fetch data for the gatekeeper
+    setRequiredParts([]);
+    setIssuedParts([]);
+    setPartValidationStatus({ isMet: false, missing: [] });
+
+    if (wo.vehicle_entry_id) {
+      // 1. Fetch Required Parts from vehicle_entry_spareparts
+      const { data: requiredData, error: requiredError } = await supabase
+        .from('vehicle_entry_spareparts')
+        .select('goods_id, qty, goods(name)')
+        .eq('vehicle_entry_id', wo.vehicle_entry_id);
+
+      if (requiredError) {
+        toast.error('Gagal mengambil daftar kebutuhan sparepart.');
+        console.error(requiredError);
+      } else {
+        setRequiredParts(requiredData || []);
+      }
+
+      // 2. Fetch Issued Parts from goods_issues -> goods_issue_items
+      const { data: issuedData, error: issuedError } = await supabase
+        .from('goods_issues')
+        .select('items:goods_issue_items(goods_id, quantity)')
+        .eq('work_order_id', wo.id);
+      
+      if (issuedError) {
+        toast.error('Gagal mengambil daftar sparepart yang sudah keluar.');
+        console.error(issuedError);
+      } else {
+        const flatIssuedParts = issuedData?.flatMap((issue: any) => issue.items) || [];
+        setIssuedParts(flatIssuedParts);
+      }
+    }
     
     try {
       const normalizeText = (v: string) =>
@@ -773,6 +852,17 @@ export default function WorkOrderV2() {
 
   const handleSaveBilling = async (): Promise<boolean> => {
     if (!activeWO) return false;
+
+    const isBillingValid = billingItems.every(item => 
+      !isServiceRingan(item.job_group) || 
+      (isServiceRingan(item.job_group) && item.goods_id)
+    );
+
+    if (!isBillingValid) {
+      toast.error("Tidak bisa menutup WO. Pastikan semua pekerjaan 'Service Ringan' sudah memilih sparepart.");
+      return false;
+    }
+
     setLoading(true);
 
     try {
@@ -797,10 +887,13 @@ export default function WorkOrderV2() {
 
         if (billingError) throw billingError;
 
-        // 3. Update WO Status to COMPLETED
+        // 3. Update WO Status to CLOSED
         await supabase
             .from('work_orders')
-            .update({ status: 'COMPLETED' } as any)
+            .update({ 
+              status: 'CLOSED',
+              work_completed_at: new Date().toISOString()
+            } as any)
             .eq('id', activeWO.id);
         
         // 4. Update Vehicle Entry Status to COMPLETED
@@ -811,7 +904,7 @@ export default function WorkOrderV2() {
                 .eq('id', activeWO.vehicle_entry_id);
         }
         
-        toast.success("WO Selesai & Tagihan Disimpan");
+        toast.success("WO Ditutup & Tagihan Disimpan");
         setIsBillingOpen(false);
         fetchWOs();
         return true;
@@ -827,6 +920,72 @@ export default function WorkOrderV2() {
   const calculateGrandTotal = () => {
     return billingItems.reduce((acc, item) => acc + (item.total_price || 0), 0);
   };
+
+  // Gatekeeper Logic: Compare required vs issued parts
+  useEffect(() => {
+    if (!isBillingOpen || requiredParts.length === 0) {
+      // If no parts were estimated, requirement is met by default
+      setPartValidationStatus({ isMet: true, missing: [] });
+      return;
+    }
+
+    const issuedMap = new Map<string, number>();
+    issuedParts.forEach(part => {
+      issuedMap.set(part.sparepart_id, (issuedMap.get(part.sparepart_id) || 0) + part.qty);
+    });
+
+    const missingParts: any[] = [];
+    let allPartsMet = true;
+
+    requiredParts.forEach(required => {
+      const issuedQty = issuedMap.get(required.sparepart_id) || 0;
+      if (issuedQty < required.qty) {
+        allPartsMet = false;
+        missingParts.push({ 
+          name: required.spareparts.name, 
+          required: required.qty, 
+          issued: issuedQty, 
+          missing: required.qty - issuedQty 
+        });
+      }
+    });
+
+    setPartValidationStatus({ isMet: allPartsMet, missing: missingParts });
+
+  }, [requiredParts, issuedParts, isBillingOpen]);
+
+  // Gatekeeper Logic: Compare required vs issued parts
+  useEffect(() => {
+    if (!isBillingOpen || requiredParts.length === 0) {
+      // If no parts were estimated, requirement is met by default
+      setPartValidationStatus({ isMet: true, missing: [] });
+      return;
+    }
+
+    const issuedMap = new Map<string, number>();
+    issuedParts.forEach(part => {
+      issuedMap.set(part.sparepart_id, (issuedMap.get(part.sparepart_id) || 0) + part.qty);
+    });
+
+    const missingParts: any[] = [];
+    let allPartsMet = true;
+
+    requiredParts.forEach(required => {
+      const issuedQty = issuedMap.get(required.sparepart_id) || 0;
+      if (issuedQty < required.qty) {
+        allPartsMet = false;
+        missingParts.push({ 
+          name: required.spareparts.name, 
+          required: required.qty, 
+          issued: issuedQty, 
+          missing: required.qty - issuedQty 
+        });
+      }
+    });
+
+    setPartValidationStatus({ isMet: allPartsMet, missing: missingParts });
+
+  }, [requiredParts, issuedParts, isBillingOpen]);
 
   const handleDelete = async (id: string) => {
     // Check permission: SUPER_ADMIN or ADMIN with 'trans_wo_delete' (assuming we add this key or reuse reopen for advanced actions)
@@ -1423,7 +1582,13 @@ export default function WorkOrderV2() {
                               )}
                             </>
                           )}
-                          <Button variant="ghost" size="icon" onClick={() => handlePrintSuratJalan(item.id)} title="Cetak Surat Jalan / WO">
+                          <Button 
+                            variant="ghost" 
+                            size="icon" 
+                            onClick={() => handlePrintSuratJalan(item.id)} 
+                            title={item.status === 'CLOSED' ? "Cetak Surat Jalan / WO" : "Surat Jalan hanya bisa dicetak jika WO sudah ditutup"}
+                            disabled={item.status !== 'CLOSED'}
+                          >
                               <Printer className="h-4 w-4" />
                           </Button>
                           <Button variant="ghost" size="icon" onClick={() => { 
@@ -1473,6 +1638,25 @@ export default function WorkOrderV2() {
             </DialogHeader>
 
             <div className="flex-1 overflow-y-auto py-4">
+                 {/* Spare Part Validation Status */}
+                 <div className="my-4 p-3 rounded-md border mx-6">
+                    <h4 className="font-semibold mb-2">Status Pemenuhan Sparepart</h4>
+                    {partValidationStatus.isMet ? (
+                    <div className="text-green-600">
+                        <p>✅ Semua sparepart yang diestimasi sudah terpenuhi.</p>
+                    </div>
+                    ) : (
+                    <div className="text-red-600">
+                        <p>❌ Ada sparepart yang belum terpenuhi:</p>
+                        <ul className="list-disc pl-5 mt-1 text-sm">
+                        {partValidationStatus.missing.map((p, i) => (
+                            <li key={i}>{p.name} (kurang {p.missing} unit)</li>
+                        ))}
+                        </ul>
+                    </div>
+                    )}
+                </div>
+
                  {hasEstimateChange && (
                    <div className="mb-3 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900">
                      Estimasi pekerjaan sudah berubah. Klik "Sync dari Estimasi" agar detail mengikuti data terbaru.
