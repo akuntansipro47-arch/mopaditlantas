@@ -417,7 +417,6 @@ export default function WorkOrderV2() {
       toast.error('Gagal update status: ' + error.message);
     }
   };
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
@@ -453,6 +452,133 @@ export default function WorkOrderV2() {
              .update({ status: 'PROCESSED' } as any)
              .eq('id', formData.vehicle_entry_id);
         }
+
+        toast.success('WO berhasil dibuat');
+      }
+      
+      setIsDialogOpen(false);
+      resetForm();
+      fetchWOs();
+      fetchMasterData(); // Refresh available entries
+    } catch (error: any) {
+      toast.error('Gagal menyimpan WO: ' + error.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // --- Billing / Finishing Logic ---
+
+  const handleFinishWO = async (wo: any) => {
+    setLoading(true);
+    // We open the modal immediately but show a loading state inside
+    setFinishWOModalOpen(true); 
+    setActiveWOForBilling(wo);
+
+    // Reset states for the modal to clear previous data
+    setBillingItems([]);
+    setPartValidationStatus({ isMet: false, missing: [] });
+
+    try {
+      // STEP 1: Fetch the FULL, "heavy" details for this specific WO. This is the key fix.
+      const { data: heavyWOData, error: heavyWOError } = await supabase
+        .from('work_orders')
+        .select(`
+          *,
+          mechanics (*),
+          vehicle_entries (
+            *,
+            vehicles (*),
+            vehicle_entry_jobs (*, job_types(*)),
+            vehicle_entry_spareparts (*, spareparts(*), item_name)
+          )
+        `)
+        .eq('id', wo.id)
+        .single();
+
+      if (heavyWOError) throw heavyWOError;
+      if (!heavyWOData) throw new Error("Data WO tidak ditemukan untuk diselesaikan.");
+
+      const heavyWO = heavyWOData;
+
+      // STEP 2: Calculate Billing Items from the fresh, heavy data
+      const estimatedParts = heavyWO.vehicle_entries?.vehicle_entry_spareparts || [];
+      const estimatedJobs = heavyWO.vehicle_entries?.vehicle_entry_jobs || [];
+      const tempBillingItems: any[] = []; // Using 'any' temporarily for simplified object creation
+
+      estimatedParts.forEach((part: any) => {
+        tempBillingItems.push({
+          type: 'PART',
+          name: part.spareparts?.name || part.item_name || 'Sparepart tidak dikenal',
+          qty: part.qty || 1,
+          price: part.estimated_price || part.spareparts?.selling_price || 0,
+        });
+      });
+
+      estimatedJobs.forEach((job: any) => {
+        tempBillingItems.push({
+          type: 'JASA',
+          name: job.job_types?.job_name || 'Jasa tidak dikenal',
+          qty: 1,
+          price: job.estimated_price || job.job_types?.selling_price || 0,
+        });
+      });
+      
+      setBillingItems(tempBillingItems as WOBillingItem[]);
+
+      // STEP 3: Perform the Gatekeeper Check (Spare Part Fulfillment Validation)
+      const { data: issuedData, error: issuedError } = await supabase
+        .from('goods_issue_items')
+        .select('sparepart_id, qty')
+        .eq('work_order_id', wo.id);
+
+      if (issuedError) throw issuedError;
+
+      const issuedMap = new Map<string, number>();
+      (issuedData || []).forEach((item: any) => {
+        if (item.sparepart_id) {
+          const currentQty = issuedMap.get(item.sparepart_id) || 0;
+          issuedMap.set(item.sparepart_id, currentQty + item.qty);
+        }
+      });
+
+      let allPartsMet = true;
+      const missingParts: { name: string; required: number; issued: number; missing: number }[] = [];
+
+      (estimatedParts || []).forEach((required: any) => {
+        // Ensure required.sparepart_id exists before checking the map
+        if (required.sparepart_id) {
+            const issuedQty = issuedMap.get(required.sparepart_id) || 0;
+            if (issuedQty < required.qty) {
+              allPartsMet = false;
+              missingParts.push({
+                name: required.spareparts?.name || required.item_name || 'Nama Barang Tidak Ditemukan',
+                required: required.qty,
+                issued: issuedQty,
+                missing: required.qty - issuedQty,
+              });
+            }
+        } else if (required.qty > 0) { // Handle parts that were manually added without a master ID
+            allPartsMet = false;
+            missingParts.push({
+                name: required.item_name || 'Barang manual tanpa ID',
+                required: required.qty,
+                issued: 0,
+                missing: required.qty,
+            });
+        }
+      });
+
+      setPartValidationStatus({ isMet: allPartsMet, missing: missingParts });
+
+    } catch (error: any) {
+      toast.error('Gagal memproses data penyelesaian WO: ' + error.message);
+      setFinishWOModalOpen(false); // Close modal on critical error
+    } finally {
+      setLoading(false);
+    }
+  };
+  
 
         toast.success('WO berhasil dibuat');
       }
