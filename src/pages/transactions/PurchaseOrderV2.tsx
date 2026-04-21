@@ -692,10 +692,14 @@ export default function PurchaseOrderV2() {
                         {workOrders
                           .filter((wo: any) => {
                              const searchLower = woSearchQuery.toLowerCase();
+                             const woNumber = wo.wo_number?.toLowerCase() || '';
+                             const entryNumber = String(wo.vehicle_entries?.entry_number || '').toLowerCase();
+                             const licensePlate = wo.vehicle_entries?.vehicles?.license_plate?.toLowerCase() || '';
+
                              return (
-                               wo.wo_number.toLowerCase().includes(searchLower) ||
-                               String(wo.vehicle_entries?.entry_number || '').toLowerCase().includes(searchLower) ||
-                               wo.vehicle_entries?.vehicles?.license_plate?.toLowerCase().includes(searchLower)
+                               woNumber.includes(searchLower) ||
+                               entryNumber.includes(searchLower) ||
+                               licensePlate.includes(searchLower)
                              );
                           })
                           .map((wo: any) => (
