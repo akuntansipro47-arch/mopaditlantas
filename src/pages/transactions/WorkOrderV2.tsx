@@ -224,7 +224,6 @@ export default function WorkOrderV2() {
     const [formData, setFormData] = useState({
         vehicle_entry_id: '',
         mechanic_id: '',
-        status: 'PENDING',
     });
 
     const [entries, setEntries] = useState([]);
@@ -236,7 +235,8 @@ export default function WorkOrderV2() {
     
     const [woToPrint, setWoToPrint] = useState(null);
 
-    // *** FINAL FIX: This query is now explicit to prevent ambiguity errors ***
+    // *** PERBAIKAN FINAL 1: Mengatasi error 'vehicles_2.model' ***
+    // Query diubah agar tidak ambigu, lalu hasilnya diolah di JavaScript.
     const fetchWOs = useCallback(async () => {
         setIsLoading(true);
         setError(null);
@@ -248,17 +248,17 @@ export default function WorkOrderV2() {
                     wo_number,
                     status,
                     created_at,
-                    vehicle_entry:vehicle_entries!inner(
+                    vehicle_entries!inner(
                         id,
                         entry_date,
                         complaint,
-                        vehicle:vehicles!inner(
+                        vehicles!inner(
                             license_plate,
                             owner_name,
                             model
                         )
                     ),
-                    mechanic:mechanics!inner(
+                    mechanics!inner(
                         id,
                         name
                     )
@@ -266,8 +266,19 @@ export default function WorkOrderV2() {
                 .order('created_at', { ascending: false });
 
             if (error) throw error;
-            setWos(data);
-            setFilteredWos(data);
+
+            const transformedData = data.map(wo => ({
+                ...wo,
+                vehicle_entry: {
+                    ...wo.vehicle_entries,
+                    vehicle: wo.vehicle_entries.vehicles
+                },
+                mechanic: wo.mechanics
+            }));
+
+            setWos(transformedData);
+            setFilteredWos(transformedData);
+
         } catch (err) {
             setError(`Gagal mengambil data WO: ${err.message}`);
             toast.error(`Gagal mengambil data WO: ${err.message}`);
@@ -276,16 +287,26 @@ export default function WorkOrderV2() {
         }
     }, []);
 
+    // *** PERBAIKAN FINAL 2: Memfilter antrian yang sudah punya WO ***
     const fetchDependencies = useCallback(async () => {
         try {
-            const [entriesRes, mechanicsRes] = await Promise.all([
-                supabase.from('vehicle_entries').select('*, vehicles(*)').eq('status', 'OPEN'),
-                supabase.from('mechanics').select('*')
-            ]);
-            if (entriesRes.error) throw entriesRes.error;
-            if (mechanicsRes.error) throw mechanicsRes.error;
-            setEntries(entriesRes.data);
-            setMechanics(mechanicsRes.data);
+            const { data: openEntries, error: entriesError } = await supabase
+                .from('vehicle_entries')
+                .select('*, vehicles(*)')
+                .eq('status', 'OPEN');
+            if (entriesError) throw entriesError;
+
+            const { data: allWos, error: wosError } = await supabase.from('work_orders').select('vehicle_entry_id');
+            if (wosError) throw wosError;
+            const usedEntryIds = new Set(allWos.map(wo => wo.vehicle_entry_id));
+
+            const availableEntries = openEntries.filter(entry => !usedEntryIds.has(entry.id));
+
+            const { data: mechanics, error: mechanicsError } = await supabase.from('mechanics').select('*');
+            if (mechanicsError) throw mechanicsError;
+
+            setEntries(availableEntries);
+            setMechanics(mechanics);
         } catch (err) {
             toast.error(`Gagal memuat data antrian/mekanik: ${err.message}`);
         }
@@ -307,11 +328,6 @@ export default function WorkOrderV2() {
         setFilteredWos(filtered);
     }, [searchTerm, wos]);
 
-    const handleInputChange = (e) => {
-        const { name, value } = e.target;
-        setFormData(prev => ({ ...prev, [name]: value }));
-    };
-
     const handleSelectChange = (name, value) => {
         setFormData(prev => ({ ...prev, [name]: value }));
     };
@@ -320,7 +336,6 @@ export default function WorkOrderV2() {
         setFormData({
             vehicle_entry_id: '',
             mechanic_id: '',
-            status: 'PENDING',
         });
         setCurrentWo(null);
     };
@@ -332,7 +347,6 @@ export default function WorkOrderV2() {
             setFormData({
                 vehicle_entry_id: wo.vehicle_entry?.id || '',
                 mechanic_id: wo.mechanic?.id || '',
-                status: wo.status,
             });
         } else {
             resetFormData();
@@ -358,21 +372,24 @@ export default function WorkOrderV2() {
             const payload = {
                 vehicle_entry_id: formData.vehicle_entry_id,
                 mechanic_id: formData.mechanic_id,
-                status: formData.status,
+                status: dialogMode === 'add' ? 'PENDING' : currentWo.status, // Status PENDING untuk WO baru
             };
 
             if (dialogMode === 'add') {
                 result = await supabase.from('work_orders').insert(payload).select().single();
             } else {
-                result = await supabase.from('work_orders').update(payload).eq('id', currentWo.id).select().single();
+                // Jika edit, hanya update mekanik
+                result = await supabase.from('work_orders').update({ mechanic_id: payload.mechanic_id }).eq('id', currentWo.id).select().single();
             }
 
             if (result.error) throw result.error;
             
-            await supabase
-                .from('vehicle_entries')
-                .update({ status: 'IN_PROGRESS' })
-                .eq('id', formData.vehicle_entry_id);
+            if (dialogMode === 'add') {
+                await supabase
+                    .from('vehicle_entries')
+                    .update({ status: 'IN_PROGRESS' })
+                    .eq('id', formData.vehicle_entry_id);
+            }
 
             toast.success(`Work Order berhasil ${dialogMode === 'add' ? 'dibuat' : 'diperbarui'}.`);
             handleCloseDialog();
@@ -520,10 +537,25 @@ export default function WorkOrderV2() {
                                     variant="outline"
                                     className="w-full justify-start text-left font-normal mt-1"
                                     onClick={() => setIsEntrySearchOpen(true)}
+                                    disabled={dialogMode === 'edit'}
                                 >
                                     {selectedEntry ? `${selectedEntry.vehicles?.license_plate} - ${selectedEntry.complaint}` : "Pilih dari antrian..."}
                                 </Button>
                             </div>
+                            
+                            {/* *** PERBAIKAN FINAL 3: Menampilkan tanggal masuk & menghilangkan status *** */}
+                            {selectedEntry && (
+                                <div>
+                                    <label>Tanggal Masuk</label>
+                                    <Input
+                                        type="text"
+                                        value={formatDate(selectedEntry.entry_date)}
+                                        disabled
+                                        className="mt-1"
+                                    />
+                                </div>
+                            )}
+
                             <div>
                                 <label htmlFor="mechanic_id">Mekanik</label>
                                 <Select name="mechanic_id" value={formData.mechanic_id} onValueChange={(value) => handleSelectChange('mechanic_id', value)}>
@@ -532,19 +564,6 @@ export default function WorkOrderV2() {
                                     </SelectTrigger>
                                     <SelectContent>
                                         {mechanics.map(m => <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>)}
-                                    </SelectContent>
-                                </Select>
-                            </div>
-                            <div>
-                                <label htmlFor="status">Status</label>
-                                <Select name="status" value={formData.status} onValueChange={(value) => handleSelectChange('status', value)}>
-                                    <SelectTrigger>
-                                        <SelectValue placeholder="Pilih Status" />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        <SelectItem value="PENDING">Pending</SelectItem>
-                                        <SelectItem value="IN_PROGRESS">In Progress</SelectItem>
-                                        <SelectItem value="FINISHED">Finished</SelectItem>
                                     </SelectContent>
                                 </Select>
                             </div>
@@ -567,11 +586,10 @@ export default function WorkOrderV2() {
                             onValueChange={setEntrySearchQuery}
                         />
                         <CommandList>
-                            <CommandEmpty>Tidak ada antrian ditemukan.</CommandEmpty>
-                            <CommandGroup heading="Antrian Kendaraan (Status OPEN)">
+                            <CommandEmpty>Tidak ada antrian yang tersedia.</CommandEmpty>
+                            <CommandGroup heading="Antrian Kendaraan Tersedia">
                                 {entries
                                     .filter(entry => {
-                                        if (entry.status !== 'OPEN') return false;
                                         const searchTerm = entrySearchQuery.toLowerCase();
                                         const licensePlate = entry.vehicles?.license_plate?.toLowerCase() || '';
                                         const complaint = entry.complaint?.toLowerCase() || '';
@@ -586,9 +604,13 @@ export default function WorkOrderV2() {
                                             setEntrySearchQuery('');
                                         }}
                                     >
-                                        <div className="flex justify-between w-full">
-                                            <span>{entry.vehicles?.license_plate}</span>
-                                            <span className="text-muted-foreground text-xs">{entry.complaint}</span>
+                                        {/* *** PERBAIKAN FINAL 4: Tampilan info di pencarian lebih lengkap *** */}
+                                        <div className="flex justify-between w-full items-center">
+                                            <div>
+                                                <span className="font-medium">{entry.vehicles?.license_plate}</span>
+                                                <p className="text-xs text-muted-foreground">{entry.complaint}</p>
+                                            </div>
+                                            <span className="text-xs text-muted-foreground">{formatDate(entry.entry_date).split(',')[0]}</span>
                                         </div>
                                     </CommandItem>
                                 ))}
