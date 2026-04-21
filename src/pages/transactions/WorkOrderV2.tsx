@@ -10,7 +10,7 @@ import { Label } from '@/components/ui/label';
 import { toast } from 'sonner';
 import { PlusCircle, Edit, Trash2, CheckCircle, XCircle, RefreshCw, Wrench, ClipboardCheck, Search, AlertTriangle, BadgeCheck, X, ShoppingCart } from 'lucide-react';
 import { generateTransactionNumber, formatDate } from '@/lib/utils';
-import { Command, CommandDialog, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { Badge } from '@/components/ui/badge';
 import ReactToPrint, { useReactToPrint } from 'react-to-print';
 
@@ -436,27 +436,30 @@ export default function WorkOrderV2() {
           </form>
         </DialogContent>
       </Dialog>
-
-      {/* Vehicle Entry Search Command */}
-      <CommandDialog open={isEntrySearchOpen} onOpenChange={setIsEntrySearchOpen}>
-        <CommandInput placeholder="Cari No. Polisi atau Keluhan..." />
-        <CommandList>
-          <CommandEmpty>Tidak ada antrian tersedia.</CommandEmpty>
-          <CommandGroup heading="Antrian Kendaraan (Status OPEN)">
-            {availableEntries.map((entry) => (
-              <CommandItem
-                key={entry.id}
-                onSelect={() => {
-                  handleSelectChange('vehicle_entry_id', entry.id);
-                  setIsEntrySearchOpen(false);
-                }}
-              >
-                {entry.vehicles?.license_plate} - {entry.complaint}
-              </CommandItem>
-            ))}
-          </CommandGroup>
-        </CommandList>
-      </CommandDialog>
+{/* Vehicle Entry Search Command */}
+<Dialog open={isEntrySearchOpen} onOpenChange={setIsEntrySearchOpen}>
+  <DialogContent className="p-0">
+    <Command>
+      <CommandInput placeholder="Cari No. Polisi atau Keluhan..." />
+      <CommandList>
+        <CommandEmpty>Tidak ada antrian tersedia.</CommandEmpty>
+        <CommandGroup heading="Antrian Kendaraan (Status OPEN)">
+          {availableEntries.map((entry) => (
+            <CommandItem
+              key={entry.id}
+              onSelect={() => {
+                handleSelectChange('vehicle_entry_id', entry.id);
+                setIsEntrySearchOpen(false);
+              }}
+            >
+              {entry.vehicles?.license_plate} - {entry.complaint}
+            </CommandItem>
+          ))}
+        </CommandGroup>
+      </CommandList>
+    </Command>
+  </DialogContent>
+</Dialog>
 
       {/* SPK Print Dialog */}
       <Dialog open={isPrintDialogOpen} onOpenChange={setIsPrintDialogOpen}>
