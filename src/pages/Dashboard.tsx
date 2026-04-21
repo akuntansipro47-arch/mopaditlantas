@@ -69,17 +69,6 @@ export default function Dashboard() {
     async function fetchStats() {
       setLoading(true);
       try {
-        // --- DIAGNOSTIC STEP 4: Check the corresponding vehicle_entry ---
-        const test_vehicle_entry_id = "cd14e4eb-8f9e-4686-ba10-1ed7e83cc2a3"; // From previous log
-        const { data: vehicleEntryData, error: vehicleEntryError } = await supabase
-          .from('vehicle_entries')
-          .select('*')
-          .eq('id', test_vehicle_entry_id);
-
-        console.log(`--- DIAGNOSTIC: CHECKING VEHICLE ENTRY with ID: ${test_vehicle_entry_id} ---`);
-        console.log('Data:', vehicleEntryData);
-        console.log('Error:', vehicleEntryError);
-
         // Work Orders R4
         const { count: woR4Count, error: woR4Error } = await supabase
           .from('work_orders')
@@ -111,7 +100,7 @@ export default function Dashboard() {
         // PO Total Value
         const { data: poItems, error: poItemsError } = await supabase
           .from('purchase_order_items')
-          .select('quantity, price');
+          .select('quantity, unit_price');
 
         // Low Stock Items
         const { count: lowStockCount, error: lowStockError } = await supabase
@@ -171,7 +160,7 @@ export default function Dashboard() {
         if (monthlyWoError) throw monthlyWoError;
 
         const totalValue = poItems.reduce((sum, item) => {
-          return sum + (item.quantity * item.price);
+          return sum + (item.quantity * item.unit_price);
         }, 0);
         
         // Process Lead Time Data
