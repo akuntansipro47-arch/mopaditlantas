@@ -40,11 +40,9 @@ const SPKPrintDialog = ({ wo, onClose }) => {
     const handlePrint = useReactToPrint({
         content: () => printRef.current,
         documentTitle: `SPK-${wo?.wo_number || 'N/A'}`,
-        // Simple callback to close dialog after print window is closed
         onAfterPrint: () => onClose(),
     });
 
-    // CSS for printing
     const printStyles = `
     @media print {
         body {
@@ -113,8 +111,8 @@ const SPKPrintDialog = ({ wo, onClose }) => {
 
     if (!wo) return null;
 
-    const vehicle = wo.vehicle_entries?.vehicles;
-    const entry = wo.vehicle_entries;
+    const vehicle = wo.vehicle_entry?.vehicle;
+    const entry = wo.vehicle_entry;
 
     return (
         <Dialog open={true} onOpenChange={onClose}>
@@ -143,7 +141,7 @@ const SPKPrintDialog = ({ wo, onClose }) => {
                         <dt>Tipe Kendaraan</dt>
                         <dd>: {vehicle?.model}</dd>
                         <dt>Mekanik</dt>
-                        <dd>: {wo.mechanics?.name || 'N/A'}</dd>
+                        <dd>: {wo.mechanic?.name || 'N/A'}</dd>
                     </div>
 
                     <div className="print-section">
@@ -221,7 +219,7 @@ export default function WorkOrderV2() {
     const [error, setError] = useState(null);
 
     const [isDialogOpen, setIsDialogOpen] = useState(false);
-    const [dialogMode, setDialogMode] = useState('add'); // 'add' or 'edit'
+    const [dialogMode, setDialogMode] = useState('add');
     const [currentWo, setCurrentWo] = useState(null);
     const [formData, setFormData] = useState({
         vehicle_entry_id: '',
@@ -238,7 +236,7 @@ export default function WorkOrderV2() {
     
     const [woToPrint, setWoToPrint] = useState(null);
 
-    // *** FIX: Corrected the fetchWOs query to avoid ambiguous column errors ***
+    // *** FINAL FIX: This query is now explicit to prevent ambiguity errors ***
     const fetchWOs = useCallback(async () => {
         setIsLoading(true);
         setError(null);
@@ -250,7 +248,7 @@ export default function WorkOrderV2() {
                     wo_number,
                     status,
                     created_at,
-                                        vehicle_entry:vehicle_entry_id!inner(
+                    vehicle_entry:vehicle_entries!inner(
                         id,
                         entry_date,
                         complaint,
@@ -260,8 +258,7 @@ export default function WorkOrderV2() {
                             model
                         )
                     ),
-                    mechanic:mechanic_id!inner(
-
+                    mechanic:mechanics!inner(
                         id,
                         name
                     )
@@ -372,7 +369,6 @@ export default function WorkOrderV2() {
 
             if (result.error) throw result.error;
             
-            // Update vehicle_entry status to 'IN_PROGRESS'
             await supabase
                 .from('vehicle_entries')
                 .update({ status: 'IN_PROGRESS' })
@@ -381,7 +377,7 @@ export default function WorkOrderV2() {
             toast.success(`Work Order berhasil ${dialogMode === 'add' ? 'dibuat' : 'diperbarui'}.`);
             handleCloseDialog();
             fetchWOs();
-            fetchDependencies(); // Refresh dependencies
+            fetchDependencies();
         } catch (err) {
             toast.error(`Terjadi kesalahan: ${err.message}`);
         } finally {
@@ -397,19 +393,15 @@ export default function WorkOrderV2() {
 
         setIsLoading(true);
         try {
-            // Update WO status
-            const { error: updateWoError } = await supabase
+            await supabase
                 .from('work_orders')
                 .update({ status: 'FINISHED' })
                 .eq('id', wo.id);
-            if (updateWoError) throw updateWoError;
 
-            // Update Vehicle Entry status
-            const { error: updateEntryError } = await supabase
+            await supabase
                 .from('vehicle_entries')
                 .update({ status: 'DONE' })
                 .eq('id', wo.vehicle_entry.id);
-            if (updateEntryError) throw updateEntryError;
 
             toast.success(`Work Order ${wo.wo_number} telah selesai.`);
             fetchWOs();
@@ -428,10 +420,10 @@ export default function WorkOrderV2() {
                 .from('work_orders')
                 .select(`
                   *,
-                  mechanics (*),
-                  vehicle_entries (
+                  mechanic:mechanics(*),
+                  vehicle_entry:vehicle_entries (
                     *,
-                    vehicles (*),
+                    vehicle:vehicles (*),
                     vehicle_entry_jobs (*, job_types(*)),
                     vehicle_entry_spareparts (
                       *, 
