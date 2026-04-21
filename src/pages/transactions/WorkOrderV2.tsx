@@ -580,14 +580,6 @@ export default function WorkOrderV2() {
     }
   };
 
-                    });
-                }
-              }
-            });
-          }
-        });
-      }
-
       try {
         const latestJobTypeIds = new Set<string>(
           (latestEntryJobs || [])
