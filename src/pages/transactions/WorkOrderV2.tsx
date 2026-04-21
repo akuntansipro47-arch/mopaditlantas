@@ -235,59 +235,65 @@ export default function WorkOrderV2() {
     
     const [woToPrint, setWoToPrint] = useState(null);
 
-    // *** PERBAIKAN FINAL 1: Mengatasi error 'vehicles_2.model' ***
-    // Query diubah agar tidak ambigu, lalu hasilnya diolah di JavaScript.
+    // --- STRATEGI BARU: Ambil data secara terpisah untuk menghindari error ambiguitas ---
     const fetchWOs = useCallback(async () => {
         setIsLoading(true);
         setError(null);
         try {
-            const { data, error } = await supabase
+            // 1. Ambil data dasar Work Order
+            const { data: woData, error: woError } = await supabase
                 .from('work_orders')
-                .select(`
-                    id,
-                    wo_number,
-                    status,
-                    created_at,
-                    vehicle_entries!inner(
-                        id,
-                        entry_date,
-                        complaint,
-                        vehicles!inner(
-                            license_plate,
-                            owner_name,
-                            model
-                        )
-                    ),
-                    mechanics!inner(
-                        id,
-                        name
-                    )
-                `)
+                .select('id, wo_number, status, created_at, vehicle_entry_id, mechanic_id')
                 .order('created_at', { ascending: false });
+            if (woError) throw woError;
+            if (!woData) {
+                setWos([]);
+                setFilteredWos([]);
+                return;
+            }
 
-            if (error) throw error;
+            // 2. Kumpulkan semua ID yang dibutuhkan
+            const entryIds = [...new Set(woData.map(wo => wo.vehicle_entry_id).filter(id => id))];
+            const mechanicIds = [...new Set(woData.map(wo => wo.mechanic_id).filter(id => id))];
 
-            const transformedData = data.map(wo => ({
-                ...wo,
-                vehicle_entry: {
-                    ...wo.vehicle_entries,
-                    vehicle: wo.vehicle_entries.vehicles
-                },
-                mechanic: wo.mechanics
-            }));
+            // 3. Ambil data detailnya berdasarkan ID yang ada
+            const [entriesRes, mechanicsRes] = await Promise.all([
+                entryIds.length > 0 ? supabase.from('vehicle_entries').select('id, entry_date, complaint, vehicles(license_plate, owner_name, model)').in('id', entryIds) : Promise.resolve({ data: [] }),
+                mechanicIds.length > 0 ? supabase.from('mechanics').select('id, name').in('id', mechanicIds) : Promise.resolve({ data: [] })
+            ]);
 
-            setWos(transformedData);
-            setFilteredWos(transformedData);
+            if (entriesRes.error) throw entriesRes.error;
+            if (mechanicsRes.error) throw mechanicsRes.error;
+
+            // 4. Buat "kamus" untuk pencarian data cepat
+            const entriesMap = new Map(entriesRes.data.map(e => [e.id, e]));
+            const mechanicsMap = new Map(mechanicsRes.data.map(m => [m.id, m]));
+
+            // 5. Gabungkan semua data di JavaScript
+            const combinedData = woData.map(wo => {
+                const entry = entriesMap.get(wo.vehicle_entry_id);
+                return {
+                    ...wo,
+                    vehicle_entry: entry ? {
+                        ...entry,
+                        vehicle: entry.vehicles
+                    } : null,
+                    mechanic: mechanicsMap.get(wo.mechanic_id) || null
+                };
+            });
+
+            setWos(combinedData);
+            setFilteredWos(combinedData);
 
         } catch (err) {
-            setError(`Gagal mengambil data WO: ${err.message}`);
-            toast.error(`Gagal mengambil data WO: ${err.message}`);
+            const errorMessage = `Gagal mengambil data WO: ${err.message}`;
+            setError(errorMessage);
+            toast.error(errorMessage);
         } finally {
             setIsLoading(false);
         }
     }, []);
 
-    // *** PERBAIKAN FINAL 2: Memfilter antrian yang sudah punya WO ***
     const fetchDependencies = useCallback(async () => {
         try {
             const { data: openEntries, error: entriesError } = await supabase
@@ -372,13 +378,12 @@ export default function WorkOrderV2() {
             const payload = {
                 vehicle_entry_id: formData.vehicle_entry_id,
                 mechanic_id: formData.mechanic_id,
-                status: dialogMode === 'add' ? 'PENDING' : currentWo.status, // Status PENDING untuk WO baru
+                status: dialogMode === 'add' ? 'PENDING' : currentWo.status,
             };
 
             if (dialogMode === 'add') {
                 result = await supabase.from('work_orders').insert(payload).select().single();
             } else {
-                // Jika edit, hanya update mekanik
                 result = await supabase.from('work_orders').update({ mechanic_id: payload.mechanic_id }).eq('id', currentWo.id).select().single();
             }
 
@@ -543,7 +548,6 @@ export default function WorkOrderV2() {
                                 </Button>
                             </div>
                             
-                            {/* *** PERBAIKAN FINAL 3: Menampilkan tanggal masuk & menghilangkan status *** */}
                             {selectedEntry && (
                                 <div>
                                     <label>Tanggal Masuk</label>
@@ -604,7 +608,6 @@ export default function WorkOrderV2() {
                                             setEntrySearchQuery('');
                                         }}
                                     >
-                                        {/* *** PERBAIKAN FINAL 4: Tampilan info di pencarian lebih lengkap *** */}
                                         <div className="flex justify-between w-full items-center">
                                             <div>
                                                 <span className="font-medium">{entry.vehicles?.license_plate}</span>
