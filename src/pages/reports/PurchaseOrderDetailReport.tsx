@@ -78,25 +78,29 @@ export default function PurchaseOrderDetailReport() {
       const from = (page - 1) * ITEMS_PER_PAGE;
       const to = from + ITEMS_PER_PAGE - 1;
 
-      const { data: poItems, error: poError, count: totalCount } = await supabase
+      // 1. Main query for PO Items, POs, Suppliers, and Goods
+      let poQuery = supabase
         .from('purchase_order_items')
         .select(`
           *,
-          purchase_orders!inner(*, suppliers:supplier_id(name), work_orders(wo_number, vehicle_id, vehicles(license_plate, brand_type))),
+          purchase_orders!inner(*, suppliers:supplier_id(name)),
           goods(name)
-        `)
+        `, { count: 'exact' })
         .gte('purchase_orders.created_at', startDate)
         .lte('purchase_orders.created_at', endDate)
-        .or(searchQuery ? `purchase_orders.po_number.ilike.%${searchQuery}%,purchase_orders.work_orders.wo_number.ilike.%${searchQuery}%,purchase_orders.work_orders.vehicles.license_plate.ilike.%${searchQuery}%,goods.name.ilike.%${searchQuery}%,purchase_orders.suppliers.name.ilike.%${searchQuery}%` : '')
         .order('created_at', { foreignTable: 'purchase_orders', ascending: false })
         .range(from, to);
+      
+      if (searchQuery) {
+        poQuery = poQuery.or(`purchase_orders.po_number.ilike.%${searchQuery}%,goods.name.ilike.%${searchQuery}%,purchase_orders.suppliers.name.ilike.%${searchQuery}%`);
+      }
+
+      const { data: poItems, error: poError, count: totalCount } = await poQuery;
+
+      if (poError) throw poError;
 
       if (page === 1) {
-        if (totalCount) {
-          setTotalPages(Math.ceil(totalCount / ITEMS_PER_PAGE));
-        } else {
-          setTotalPages(0);
-        }
+        setTotalPages(totalCount ? Math.ceil(totalCount / ITEMS_PER_PAGE) : 0);
       }
 
       if (!poItems || poItems.length === 0) {
@@ -109,62 +113,61 @@ export default function PurchaseOrderDetailReport() {
       }
 
       const poIds = [...new Set(poItems.map(item => item.purchase_orders.id))];
+      const workOrderIds = [...new Set(poItems.map(item => item.purchase_orders.work_order_id).filter(Boolean))];
 
-      const { data: receipts, error: receiptError } = await supabase
-        .from('goods_receipts')
-        .select('po_id, items:goods_receipt_items(goods_id, quantity_received)')
-        .in('po_id', poIds);
+      // 2. Fetch related data in parallel
+      const [
+        { data: receipts, error: receiptError },
+        { data: invoices, error: invoiceError },
+        { data: workOrders, error: woError }
+      ] = await Promise.all([
+        supabase.from('goods_receipts').select('po_id, items:goods_receipt_items(goods_id, quantity_received)').in('po_id', poIds),
+        supabase.from('purchase_invoices').select('po_id, status').in('po_id', poIds),
+        supabase.from('work_orders').select('id, wo_number, vehicles(license_plate, brand_type)').in('id', workOrderIds)
+      ]);
 
       if (receiptError) throw receiptError;
+      if (invoiceError) throw invoiceError;
+      if (woError) throw woError;
 
+      // 3. Create maps for efficient data lookup
       const receivedQtyMap = new Map<string, number>();
       receipts?.forEach(receipt => {
         if (!receipt.po_id) return;
         receipt.items.forEach(item => {
           const key = `${receipt.po_id}-${item.goods_id}`;
-          const currentQty = receivedQtyMap.get(key) || 0;
-          receivedQtyMap.set(key, currentQty + item.quantity_received);
+          receivedQtyMap.set(key, (receivedQtyMap.get(key) || 0) + item.quantity_received);
         });
       });
 
-      const { data: invoices, error: invoiceError } = await supabase
-        .from('purchase_invoices')
-        .select('po_id, status')
-        .in('po_id', poIds);
-
-      if (invoiceError) throw invoiceError;
-
       const paymentStatusMap = new Map<number, string>();
-      invoices?.forEach(inv => {
-        paymentStatusMap.set(inv.po_id, inv.status);
-      });
+      invoices?.forEach(inv => paymentStatusMap.set(inv.po_id, inv.status));
 
+      const workOrderMap = new Map(workOrders?.map(wo => [wo.id, wo]));
+
+      // 4. Combine all data
       const combinedData = poItems.map(item => {
         const po = item.purchase_orders;
         if (!po) return null;
 
+        const workOrder = po.work_order_id ? workOrderMap.get(po.work_order_id) : null;
         const paymentStatus = paymentStatusMap.get(po.id);
 
         let statusBayar = 'Belum Ditagih';
-        if (paymentStatus === 'PAID') {
-          statusBayar = 'Lunas';
-        } else if (paymentStatus === 'PARTIAL') {
-          statusBayar = 'Bayar Sebagian';
-        } else if (paymentStatus) { // UNPAID, OVERDUE
-          statusBayar = 'Belum Lunas';
-        }
+        if (paymentStatus === 'PAID') statusBayar = 'Lunas';
+        else if (paymentStatus === 'PARTIAL') statusBayar = 'Bayar Sebagian';
+        else if (paymentStatus) statusBayar = 'Belum Lunas';
 
-        const receivedQtyKey = `${po.id}-${item.goods?.id}`;
-        const receivedQty = receivedQtyMap.get(receivedQtyKey) || 0;
+        const receivedQty = receivedQtyMap.get(`${po.id}-${item.goods_id}`) || 0;
 
         return {
           id: item.id,
           tgl: po.created_at,
           no_po: po.po_number,
           supplier: po.suppliers?.name || '-',
-          kendaraan: po.work_orders?.vehicles?.brand_type || '-',
-          nopol: po.work_orders?.vehicles?.license_plate || '-',
-          no_wo: po.work_orders?.wo_number || '-',
+          kendaraan: workOrder?.vehicles?.brand_type || '-',
+          nopol: workOrder?.vehicles?.license_plate || '-',
+          no_wo: workOrder?.wo_number || '-',
           tipe: item.goods?.name || '-',
           nama_barang: item.goods?.name || '-',
           qty: item.quantity,
@@ -175,7 +178,15 @@ export default function PurchaseOrderDetailReport() {
         };
       }).filter(Boolean) as ReportData[];
 
-      setData(combinedData);
+      // Search filtering for WO and Vehicle data, which couldn't be done in the main query
+      const finalData = searchQuery
+        ? combinedData.filter(d => 
+            d.no_wo.toLowerCase().includes(searchQuery.toLowerCase()) || 
+            d.nopol.toLowerCase().includes(searchQuery.toLowerCase())
+          )
+        : combinedData;
+
+      setData(finalData);
     } catch (error: any) {
       console.error("Error fetching detailed PO report:", error);
       toast.error('Gagal memuat laporan: ' + error.message);
@@ -192,56 +203,62 @@ export default function PurchaseOrderDetailReport() {
     }
   
     try {
-      const { data: poItems, error: poError } = await supabase
+      let poQuery = supabase
         .from('purchase_order_items')
         .select(`
           *,
-          purchase_orders!inner(*, suppliers:supplier_id(name), work_orders(wo_number, vehicle_id, vehicles(license_plate, brand_type))),
+          purchase_orders!inner(*, suppliers:supplier_id(name)),
           goods(name)
         `)
         .gte('purchase_orders.created_at', dateRange.start)
         .lte('purchase_orders.created_at', `${dateRange.end} 23:59:59`)
-        .or(searchQuery ? `purchase_orders.po_number.ilike.%${searchQuery}%,purchase_orders.work_orders.wo_number.ilike.%${searchQuery}%,purchase_orders.work_orders.vehicles.license_plate.ilike.%${searchQuery}%,goods.name.ilike.%${searchQuery}%,purchase_orders.suppliers.name.ilike.%${searchQuery}%` : '')
         .order('created_at', { foreignTable: 'purchase_orders', ascending: false });
+
+      if (searchQuery) {
+        poQuery = poQuery.or(`purchase_orders.po_number.ilike.%${searchQuery}%,goods.name.ilike.%${searchQuery}%,purchase_orders.suppliers.name.ilike.%${searchQuery}%`);
+      }
+
+      const { data: poItems, error: poError } = await poQuery;
   
       if (poError) throw poError;
       if (!poItems || poItems.length === 0) return [];
   
       const poIds = [...new Set(poItems.map(item => item.purchase_orders.id))];
-  
-      const { data: receipts, error: receiptError } = await supabase
-        .from('goods_receipts')
-        .select('po_id, items:goods_receipt_items(goods_id, quantity_received)')
-        .in('po_id', poIds);
-  
+      const workOrderIds = [...new Set(poItems.map(item => item.purchase_orders.work_order_id).filter(Boolean))];
+
+      const [
+        { data: receipts, error: receiptError },
+        { data: invoices, error: invoiceError },
+        { data: workOrders, error: woError }
+      ] = await Promise.all([
+        supabase.from('goods_receipts').select('po_id, items:goods_receipt_items(goods_id, quantity_received)').in('po_id', poIds),
+        supabase.from('purchase_invoices').select('po_id, status').in('po_id', poIds),
+        supabase.from('work_orders').select('id, wo_number, vehicles(license_plate, brand_type)').in('id', workOrderIds)
+      ]);
+
       if (receiptError) throw receiptError;
-  
+      if (invoiceError) throw invoiceError;
+      if (woError) throw woError;
+
       const receivedQtyMap = new Map<string, number>();
       receipts?.forEach(receipt => {
         if (!receipt.po_id) return;
         receipt.items.forEach(item => {
           const key = `${receipt.po_id}-${item.goods_id}`;
-          const currentQty = receivedQtyMap.get(key) || 0;
-          receivedQtyMap.set(key, currentQty + item.quantity_received);
+          receivedQtyMap.set(key, (receivedQtyMap.get(key) || 0) + item.quantity_received);
         });
       });
-  
-      const { data: invoices, error: invoiceError } = await supabase
-        .from('purchase_invoices')
-        .select('po_id, status')
-        .in('po_id', poIds);
-  
-      if (invoiceError) throw invoiceError;
-  
+
       const paymentStatusMap = new Map<number, string>();
-      invoices?.forEach(inv => {
-        paymentStatusMap.set(inv.po_id, inv.status);
-      });
-  
+      invoices?.forEach(inv => paymentStatusMap.set(inv.po_id, inv.status));
+
+      const workOrderMap = new Map(workOrders?.map(wo => [wo.id, wo]));
+
       const combinedData = poItems.map(item => {
         const po = item.purchase_orders;
         if (!po) return null;
 
+        const workOrder = po.work_order_id ? workOrderMap.get(po.work_order_id) : null;
         const paymentStatus = paymentStatusMap.get(po.id);
 
         let statusBayar = 'Belum Ditagih';
@@ -249,17 +266,16 @@ export default function PurchaseOrderDetailReport() {
         else if (paymentStatus === 'PARTIAL') statusBayar = 'Bayar Sebagian';
         else if (paymentStatus) statusBayar = 'Belum Lunas';
 
-        const receivedQtyKey = `${po.id}-${item.goods?.id}`;
-        const receivedQty = receivedQtyMap.get(receivedQtyKey) || 0;
+        const receivedQty = receivedQtyMap.get(`${po.id}-${item.goods_id}`) || 0;
 
         return {
           id: item.id,
           tgl: po.created_at,
           no_po: po.po_number,
           supplier: po.suppliers?.name || '-',
-          kendaraan: po.work_orders?.vehicles?.brand_type || '-',
-          nopol: po.work_orders?.vehicles?.license_plate || '-',
-          no_wo: po.work_orders?.wo_number || '-',
+          kendaraan: workOrder?.vehicles?.brand_type || '-',
+          nopol: workOrder?.vehicles?.license_plate || '-',
+          no_wo: workOrder?.wo_number || '-',
           tipe: item.goods?.name || '-',
           nama_barang: item.goods?.name || '-',
           qty: item.quantity,
@@ -269,15 +285,15 @@ export default function PurchaseOrderDetailReport() {
           total: item.total_price,
         };
       }).filter(Boolean) as ReportData[];
+
+      const finalData = searchQuery
+        ? combinedData.filter(d => 
+            d.no_wo.toLowerCase().includes(searchQuery.toLowerCase()) || 
+            d.nopol.toLowerCase().includes(searchQuery.toLowerCase())
+          )
+        : combinedData;
   
-      return combinedData;
-  
-    } catch (error: any) {
-      console.error("Error fetching all data for export:", error);
-      toast.error('Gagal mengambil data untuk ekspor: ' + error.message);
-      return null;
-    }
-  }
+      return finalData;
 
   const handleExport = async () => {
     if (data.length === 0 && totalPages === 0) {
