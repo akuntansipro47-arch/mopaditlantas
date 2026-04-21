@@ -579,74 +579,7 @@ export default function WorkOrderV2() {
       setLoading(false);
     }
   };
-            if (j.job_types) {
-                const est = Number(j.estimated_price || 0);
-                const sp = Number(j.job_types.selling_price || 0);
-                const unit = est > 0 ? est : sp;
-                items.push({
-                item_type: 'JOB',
-                job_type_id: j.job_types.id,
-                goods_id: null,
-                item_name: j.job_types.job_name,
-                job_group: j.job_types.job_group,
-                qty: 1,
-                unit_price: unit,
-                total_price: unit,
-                source: 'WO_INTERFACE'
-                });
-            }
-            });
-        }
-      }
 
-      if (wo.vehicle_entry_id) {
-        const { data: entryDataLatest } = await supabase
-          .from('vehicle_entries')
-          .select(`
-            vehicle_entry_jobs (
-              estimated_price,
-              job_types (*)
-            )
-          `)
-          .eq('id', wo.vehicle_entry_id)
-          .single();
-        latestEntryJobs = entryDataLatest?.vehicle_entry_jobs || [];
-      }
-
-      // 2. INJECT Issued Goods (Perbaikan) - Always fresh from Goods Issue
-      if (issueData) {
-        issueData.forEach((issue: any) => {
-          if (issue.goods_issue_items) {
-            issue.goods_issue_items.forEach((item: any) => {
-              if (item.goods) {
-                // Only inject if not Service Ringan (Service Ringan is handled in WO Interface)
-                // But wait, user said "Perbaikan" parts come from Goods Issue.
-                // We assume anything issued manually is "Perbaikan" or general part.
-                // We should display it here as Read-Only.
-                
-                // Check if this good is already in items (e.g. added as Service Ringan).
-                // If it is Service Ringan, we leave it alone (it's managed by WO).
-                // If it's NOT Service Ringan, we add it as Perbaikan (Read Only).
-                
-                const exists = items.find(i => i.goods_id === item.goods.id && isServiceRingan(i.job_group));
-                if (!exists) {
-                     const overrideUnit = existingPerbaikanPriceByGoodsId.get(String(item.goods.id));
-                     let unitPrice = overrideUnit !== undefined ? overrideUnit : (item.goods.selling_price || 0);
-                     if (!unitPrice && entryParts.length > 0) {
-                       const matched = entryParts.find((ep: any) => isNameMatch(ep?.item_name || '', item.goods?.name || ''));
-                       const ep = Number(matched?.estimated_price || 0);
-                       if (ep > 0) unitPrice = ep;
-                     }
-                     items.push({
-                        item_type: 'PART',
-                        job_type_id: null,
-                        goods_id: item.goods.id,
-                        item_name: `Penggantian ${item.goods.name}`,
-                        job_group: 'PERBAIKAN',
-                        qty: item.quantity,
-                        unit_price: unitPrice,
-                        total_price: unitPrice * item.quantity,
-                        source: 'GOODS_ISSUE' // Flag as from Goods Issue
                     });
                 }
               }
