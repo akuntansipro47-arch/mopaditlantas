@@ -754,34 +754,51 @@ export default function WorkOrderV2() {
           )}
         </DialogContent>
       </Dialog>
-
       {/* Dialog Print SPK */}
       <Dialog open={isPrintDialogOpen} onOpenChange={setIsPrintDialogOpen}>
-        <DialogContent>
+        <DialogContent className="max-w-2xl">
           <DialogHeader>
             <DialogTitle>Cetak SPK</DialogTitle>
           </DialogHeader>
-          <div id="printable-spk">
-            <h2>Surat Perintah Kerja</h2>
-            <p><strong>No. WO:</strong> {printData?.wo.wo_number}</p>
-            <p><strong>Tanggal:</strong> {formatDate(printData?.wo.work_date)}</p>
-            <p><strong>Nopol:</strong> {printData?.wo.vehicle_entries?.vehicles?.license_plate}</p>
-            <p><strong>Mekanik:</strong> {printData?.wo.mechanics?.name}</p>
-            <hr />
-            <h3>Pekerjaan:</h3>
-            <ul>
-              {printData?.entry.vehicle_entry_jobs.map((j: any) => <li key={j.id}>{j.job_types?.job_name}</li>)}
-            </ul>
-            <h3>Estimasi Sparepart:</h3>
-            <ul>
-              {printData?.entry.vehicle_entry_spareparts.map((p: any) => <li key={p.id}>{p.item_name} (Qty: {p.qty})</li>)}
-            </ul>
+          <div id="printable-spk" className="text-sm">
+            <div className="p-4 border rounded-lg">
+              <div className="text-center mb-4">
+                <h2 className="text-lg font-bold">SURAT PERINTAH KERJA</h2>
+                <p className="text-xs">No. WO: {printData?.wo.wo_number}</p>
+              </div>
+              <div className="grid grid-cols-2 gap-x-4 gap-y-1 mb-4">
+                <div><strong>Tanggal:</strong> {formatDate(printData?.wo.work_date)}</div>
+                <div><strong>Nopol:</strong> {printData?.wo.vehicle_entries?.vehicles?.license_plate}</div>
+                <div><strong>Mekanik:</strong> {printData?.wo.mechanics?.name}</div>
+                <div><strong>Tipe Kendaraan:</strong> {printData?.wo.vehicle_entries?.vehicles?.brand_type}</div>
+              </div>
+              
+              <div className="mb-4">
+                <h3 className="font-bold border-b pb-1 mb-2">Pekerjaan:</h3>
+                <ul className="list-disc list-inside">
+                  {printData?.entry.vehicle_entry_jobs.map((j: any) => (
+                    <li key={j.id}>{j.job_types?.job_name || 'Pekerjaan custom'}</li>
+                  ))}
+                </ul>
+              </div>
+
+              <div>
+                <h3 className="font-bold border-b pb-1 mb-2">Estimasi Sparepart:</h3>
+                <ul className="list-disc list-inside">
+                  {printData?.entry.vehicle_entry_spareparts.map((p: any) => (
+                    <li key={p.id}>{p.item_name} (Qty: {p.qty})</li>
+                  ))}
+                </ul>
+              </div>
+            </div>
           </div>
-          <DialogFooter>
-            <Button onClick={handlePrintSPK}>Cetak</Button>
+          <DialogFooter className="mt-4">
+            <Button onClick={handlePrintSPK}><Printer className="mr-2 h-4 w-4" />Cetak</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      
+    
     </div>
   );
 }
