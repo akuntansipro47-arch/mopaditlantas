@@ -13,6 +13,7 @@ import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, Command
 import { Badge } from '@/components/ui/badge';
 import ReactToPrint, { useReactToPrint } from 'react-to-print';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { addDays } from 'date-fns';
 const [dateRange, setDateRange] = useState<DateRange | undefined>({
   from: addDays(new Date(), -30),
   to: new Date(),
