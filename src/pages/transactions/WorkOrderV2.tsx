@@ -13,9 +13,10 @@ import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, Command
 import { Badge } from '@/components/ui/badge';
 import ReactToPrint, { useReactToPrint } from 'react-to-print';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { DateRange } from 'react-day-picker';
-import { DatePickerWithRange } from '@/components/ui/date-range-picker';
-import { addDays } from 'date-fns';
+const [dateRange, setDateRange] = useState<DateRange | undefined>({
+  from: addDays(new Date(), -30),
+  to: new Date(),
+});
 
 // Type definitions
 interface Vehicle {
@@ -144,7 +145,7 @@ const WorkOrderV2 = () => {
     } finally {
       setLoading(false);
     }
-  }, [dateRange]);
+  }, []);
 
   const fetchAvailableEntries = async () => {
     try {
@@ -275,8 +276,7 @@ const WorkOrderV2 = () => {
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">Daftar Work Order (SPK)</h1>
         <div className="flex items-center gap-2">
-          <DatePickerWithRange date={dateRange} setDate={setDateRange} />
-          <Button onClick={() => { resetForm(); setIsDialogOpen(true); }}>
+                    <Button onClick={() => { resetForm(); setIsDialogOpen(true); }}>
             <PlusCircle className="mr-2 h-4 w-4" /> Tambah WO
           </Button>
         </div>
