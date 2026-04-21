@@ -6,7 +6,7 @@ import {
 } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Plus, Search, Eye, Trash2, ClipboardCheck, Play, CheckCircle } from 'lucide-react';
+import { Plus, Search, Eye, Trash2, ClipboardCheck, Play, CheckCircle, RefreshCw } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { toast } from 'sonner';
 import {
@@ -37,6 +37,7 @@ export default function WorkOrder() {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [currentId, setCurrentId] = useState<string | null>(null);
+  const [userRole, setUserRole] = useState<string | null>(null);
   
   // Print State
   const [isPrintDialogOpen, setIsPrintDialogOpen] = useState(false);
@@ -59,8 +60,16 @@ export default function WorkOrder() {
   const [selectedEntryDetails, setSelectedEntryDetails] = useState<any>(null);
 
   useEffect(() => {
+    async function fetchUserRole() {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session) {
+        setUserRole(session.user.user_metadata.role);
+      }
+    }
+
     fetchWOs();
     fetchMasterData();
+    fetchUserRole();
   }, []);
 
   useEffect(() => {
@@ -200,17 +209,6 @@ export default function WorkOrder() {
       }
     } catch (e) {
       toast.error("Gagal memuat data cetak");
-    }
-  };
-
-  const handlePrintSPK = () => {
-    const printContent = document.getElementById('printable-spk');
-    if (printContent) {
-      const originalContents = document.body.innerHTML;
-      document.body.innerHTML = printContent.innerHTML;
-      window.print();
-      document.body.innerHTML = originalContents;
-      window.location.reload(); // Reload to restore event handlers
     }
   };
 
@@ -463,6 +461,11 @@ export default function WorkOrder() {
                               <CheckCircle className="h-4 w-4 mr-1" /> Selesai
                             </Button>
                           )}
+                          {item.status === 'COMPLETED' && (userRole === 'superadmin' || userRole === 'admin') && (
+                            <Button size="sm" variant="secondary" className="h-8" onClick={() => handleStatusChange(item.id, 'IN_PROGRESS')}>
+                              <RefreshCw className="h-4 w-4 mr-1" /> Re-open
+                            </Button>
+                          )}
                           <Button variant="outline" size="sm" className="h-8" onClick={() => handlePrint(item)}>
                              <ClipboardCheck className="h-4 w-4 mr-1" /> SPK
                           </Button>
@@ -486,11 +489,32 @@ export default function WorkOrder() {
       {/* Print SPK Dialog */}
       <Dialog open={isPrintDialogOpen} onOpenChange={setIsPrintDialogOpen}>
         <DialogContent className="max-w-3xl">
-          <DialogHeader>
+          <DialogHeader className="no-print">
             <DialogTitle>Cetak Surat Perintah Kerja (SPK)</DialogTitle>
           </DialogHeader>
           
-          <div className="border p-4 rounded bg-white max-h-[60vh] overflow-y-auto" id="printable-spk">
+          <div className="border p-4 rounded bg-white max-h-[70vh] overflow-y-auto" id="printable-spk">
+            <style>
+              {`
+                @media print {
+                  body * {
+                    visibility: hidden;
+                  }
+                  #printable-spk, #printable-spk * {
+                    visibility: visible;
+                  }
+                  #printable-spk {
+                    position: absolute;
+                    left: 0;
+                    top: 0;
+                    width: 100%;
+                  }
+                  .no-print {
+                    display: none !important;
+                  }
+                }
+              `}
+            </style>
             {printData && (
               <div className="space-y-6 text-sm font-sans">
                 {/* Header */}
@@ -588,9 +612,9 @@ export default function WorkOrder() {
             )}
           </div>
 
-          <DialogFooter>
+          <DialogFooter className="no-print">
              <Button variant="outline" onClick={() => setIsPrintDialogOpen(false)}>Tutup</Button>
-             <Button onClick={handlePrintSPK}><ClipboardCheck className="mr-2 h-4 w-4" /> Cetak Sekarang</Button>
+             <Button onClick={() => window.print()}><ClipboardCheck className="mr-2 h-4 w-4" /> Cetak Sekarang</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
