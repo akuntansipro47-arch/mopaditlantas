@@ -3,6 +3,7 @@ import { supabase } from '@/lib/supabase';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Wrench, ShoppingCart, Car, Wallet, Tractor, Truck, ArchiveX } from 'lucide-react';
 
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 
 // Fungsi untuk format mata uang
@@ -52,17 +53,22 @@ interface MonthlyProgressData {
   totalCompleted: { r4: number; r2: number };
 }
 
+interface MonthlyPoData {
+  month: string;
+  total: number;
+}
+
 export default function Dashboard() {
   const [stats, setStats] = useState({
     woR4: 0,
     woR2: 0,
     poPendingCount: 0,
-    poTotalValue: 0,
     lowStockItems: 0,
   });
   const [fastMovingItems, setFastMovingItems] = useState<FastMovingItem[]>([]);
   const [leadTimeData, setLeadTimeData] = useState<LeadTimeData[]>([]);
   const [monthlyProgress, setMonthlyProgress] = useState<MonthlyProgressData[]>([]);
+  const [monthlyPoData, setMonthlyPoData] = useState<MonthlyPoData[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -97,10 +103,10 @@ export default function Dashboard() {
           .select('*', { count: 'exact', head: true })
           .in('status', ['ISSUED', 'RECEIVED_PART']);
 
-        // PO Total Value
+        // PO Total Value & Monthly Data
         const { data: poItems, error: poItemsError } = await supabase
           .from('purchase_order_items')
-          .select('quantity, unit_price');
+          .select('quantity, unit_price, created_at');
 
         // Low Stock Items
         const { count: lowStockCount, error: lowStockError } = await supabase
@@ -159,9 +165,30 @@ export default function Dashboard() {
         if (activeWoError) throw activeWoError;
         if (monthlyWoError) throw monthlyWoError;
 
-        const totalValue = poItems.reduce((sum, item) => {
-          return sum + (item.quantity * item.unit_price);
-        }, 0);
+        // Process PO Monthly Data
+        const poByMonth: { [key: string]: number } = {};
+        const monthShortFormatter = new Intl.DateTimeFormat('en-US', { month: 'short' });
+        
+        poItems.forEach(item => {
+          const itemDate = new Date(item.created_at);
+          const monthKey = monthShortFormatter.format(itemDate);
+          const total = item.quantity * item.unit_price;
+          poByMonth[monthKey] = (poByMonth[monthKey] || 0) + total;
+        });
+
+        const currentMonth = new Date().getMonth();
+        const currentYear = new Date().getFullYear();
+        const monthOrder = Array.from({ length: 6 }, (_, i) => {
+            const d = new Date(currentYear, currentMonth - 5 + i, 1);
+            return monthShortFormatter.format(d);
+        });
+
+        const sortedPoData = monthOrder.map(month => ({
+          month,
+          total: poByMonth[month] || 0,
+        }));
+
+        setMonthlyPoData(sortedPoData);
         
         // Process Lead Time Data
         const formattedLeadTime = activeWoData.map(wo => ({
@@ -235,7 +262,6 @@ export default function Dashboard() {
           woR4: woR4Count || 0,
           woR2: woR2Count || 0,
           poPendingCount: poPendingCount || 0,
-          poTotalValue: totalValue,
           lowStockItems: lowStockCount || 0,
         });
 
@@ -253,7 +279,8 @@ export default function Dashboard() {
     <div className="space-y-6">
       <h2 className="text-3xl font-bold tracking-tight">Dashboard</h2>
       
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-5">
+      {/* Stat Cards Row */}
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         <StatCard 
           title="Total WO Roda 4" 
           value={stats.woR4} 
@@ -273,12 +300,6 @@ export default function Dashboard() {
           loading={loading} 
         />
         <StatCard 
-          title="Total Pembelanjaan (PO)" 
-          value={formatCurrency(stats.poTotalValue)} 
-          icon={Wallet} 
-          loading={loading} 
-        />
-        <StatCard 
           title="Stok Mau Habis (< 3)" 
           value={stats.lowStockItems} 
           icon={ArchiveX} 
@@ -286,8 +307,25 @@ export default function Dashboard() {
         />
       </div>
 
-      <div className="grid grid-cols-1 gap-6 mt-6">
-        <Card>
+      {/* Main Charts Row */}
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-7">
+        <Card className="lg:col-span-4">
+          <CardHeader>
+            <CardTitle>Total Pembelanjaan (PO) per Bulan</CardTitle>
+          </CardHeader>
+          <CardContent className="pl-2">
+            <ResponsiveContainer width="100%" height={350}>
+              <BarChart data={monthlyPoData}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis dataKey="month" stroke="#888888" fontSize={12} tickLine={false} axisLine={false} />
+                <YAxis stroke="#888888" fontSize={12} tickLine={false} axisLine={false} tickFormatter={(value) => `${new Intl.NumberFormat('id-ID').format(value as number)}`}/>
+                <Tooltip formatter={(value) => formatCurrency(value as number)} />
+                <Bar dataKey="total" fill="#8884d8" radius={[4, 4, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </CardContent>
+        </Card>
+        <Card className="lg:col-span-3">
           <CardHeader>
             <CardTitle>Lead Time Kendaraan (WIP)</CardTitle>
           </CardHeader>
@@ -297,17 +335,16 @@ export default function Dashboard() {
                 <TableRow>
                   <TableHead>No. Polisi</TableHead>
                   <TableHead>Tgl Masuk</TableHead>
-                  <TableHead>Estimasi Selesai</TableHead>
                   <TableHead className="text-right">Durasi (Hari)</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {loading ? (
                   <TableRow>
-                    <TableCell colSpan={4} className="text-center">Memuat data...</TableCell>
+                    <TableCell colSpan={3} className="text-center">Memuat data...</TableCell>
                   </TableRow>
                 ) : leadTimeData.length > 0 ? (
-                  leadTimeData.map((wo, index) => {
+                  leadTimeData.slice(0, 7).map((wo, index) => {
                     const entryDate = new Date(wo.entry_date);
                     const today = new Date();
                     const duration = Math.ceil((today.getTime() - entryDate.getTime()) / (1000 * 3600 * 24));
@@ -317,14 +354,13 @@ export default function Dashboard() {
                       <TableRow key={index}>
                         <TableCell className="font-medium">{wo.license_plate}</TableCell>
                         <TableCell>{new Intl.DateTimeFormat('id-ID').format(entryDate)}</TableCell>
-                        <TableCell>{wo.estimated_finish_date ? new Intl.DateTimeFormat('id-ID').format(new Date(wo.estimated_finish_date)) : 'N/A'}</TableCell>
                         <TableCell className={`text-right font-bold ${isOverdue ? 'text-red-500' : ''}`}>{duration}</TableCell>
                       </TableRow>
                     );
                   })
                 ) : (
                   <TableRow>
-                    <TableCell colSpan={4} className="text-center">Tidak ada kendaraan yang sedang dalam pengerjaan.</TableCell>
+                    <TableCell colSpan={3} className="text-center">Tidak ada kendaraan yang sedang dalam pengerjaan.</TableCell>
                   </TableRow>
                 )}
               </TableBody>
@@ -333,47 +369,8 @@ export default function Dashboard() {
         </Card>
       </div>
 
-      <div className="grid grid-cols-1 gap-6 mt-6">
-        <Card>
-          <CardHeader>
-            <CardTitle>Laporan Progress Kendaraan Bulanan</CardTitle>
-          </CardHeader>
-          <CardContent>
-          <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Bulan</TableHead>
-                  <TableHead>Total Masuk (R4/R2)</TableHead>
-                  <TableHead>Total WIP (R4/R2)</TableHead>
-                  <TableHead>Total Selesai (R4/R2)</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {loading ? (
-                  <TableRow>
-                    <TableCell colSpan={4} className="text-center">Memuat data...</TableCell>
-                  </TableRow>
-                ) : monthlyProgress.length > 0 ? (
-                  monthlyProgress.map((data) => (
-                    <TableRow key={data.month}>
-                      <TableCell className="font-medium">{data.month}</TableCell>
-                      <TableCell>{data.totalIn.r4} / {data.totalIn.r2}</TableCell>
-                      <TableCell>{data.totalWip.r4} / {data.totalWip.r2}</TableCell>
-                      <TableCell>{data.totalCompleted.r4} / {data.totalCompleted.r2}</TableCell>
-                    </TableRow>
-                  ))
-                ) : (
-                  <TableRow>
-                    <TableCell colSpan={4} className="text-center">Tidak ada data work order dalam 6 bulan terakhir.</TableCell>
-                  </TableRow>
-                )}
-              </TableBody>
-            </Table>
-          </CardContent>
-        </Card>
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6">
+      {/* Bottom Tables Row */}
+      <div className="grid gap-4 md:grid-cols-1 lg:grid-cols-2">
         <Card>
           <CardHeader>
             <CardTitle>Top 10 Fast Moving Items (90 Hari Terakhir)</CardTitle>
@@ -397,10 +394,39 @@ export default function Dashboard() {
         </Card>
         <Card>
           <CardHeader>
-            <CardTitle>Aktivitas Terbaru</CardTitle>
+            <CardTitle>Laporan Progress Kendaraan Bulanan</CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-muted-foreground">Komponen aktivitas terbaru akan ditambahkan di sini.</p>
+          <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Bulan</TableHead>
+                  <TableHead>Masuk (R4/R2)</TableHead>
+                  <TableHead>WIP (R4/R2)</TableHead>
+                  <TableHead>Selesai (R4/R2)</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {loading ? (
+                  <TableRow>
+                    <TableCell colSpan={4} className="text-center">Memuat data...</TableCell>
+                  </TableRow>
+                ) : monthlyProgress.length > 0 ? (
+                  monthlyProgress.map((data) => (
+                    <TableRow key={data.month}>
+                      <TableCell className="font-medium">{data.month}</TableCell>
+                      <TableCell>{data.totalIn.r4} / {data.totalIn.r2}</TableCell>
+                      <TableCell>{data.totalWip.r4} / {data.totalWip.r2}</TableCell>
+                      <TableCell>{data.totalCompleted.r4} / {data.totalCompleted.r2}</TableCell>
+                    </TableRow>
+                  ))
+                ) : (
+                  <TableRow>
+                    <TableCell colSpan={4} className="text-center">Tidak ada data work order dalam 6 bulan terakhir.</TableCell>
+                  </TableRow>
+                )}
+              </TableBody>
+            </Table>
           </CardContent>
         </Card>
       </div>
