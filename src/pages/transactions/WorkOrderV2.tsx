@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
 import { Button } from '@/components/ui/button';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogTrigger } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -12,8 +12,7 @@ import { generateTransactionNumber, formatDate } from '@/lib/utils';
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 
 import ReactToPrint from 'react-to-print';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { addDays } from 'date-fns';
+import { Card, CardContent } from '@/components/ui/card';
 
 
 // Type definitions
@@ -58,10 +57,6 @@ const WorkOrderV2 = () => {
   const [currentWo, setCurrentWo] = useState<Partial<WorkOrder>>({});
   const [availableEntries, setAvailableEntries] = useState<VehicleEntry[]>([]);
   const [mechanics, setMechanics] = useState<Mechanic[]>([]);
-  const [dateRange, setDateRange] = useState<DateRange | undefined>({
-    from: addDays(new Date(), -30),
-    to: new Date(),
-  });
   const printComponentRef = useRef<HTMLDivElement>(null);
   const [selectedWoForPrint, setSelectedWoForPrint] = useState<WorkOrder | null>(null);
 
@@ -70,8 +65,6 @@ const WorkOrderV2 = () => {
     try {
       // Step 1: Fetch base WO data
       let woQuery = supabase.from('work_orders').select('id, wo_number, status, work_date, created_at, vehicle_entry_id, mechanic_id').order('created_at', { ascending: false });
-      if (dateRange?.from) woQuery = woQuery.gte('work_date', formatDate(dateRange.from));
-      if (dateRange?.to) woQuery = woQuery.lte('work_date', formatDate(dateRange.to));
       const { data: woData, error: woError } = await woQuery;
       if (woError) throw new Error(`Work Orders: ${woError.message}`);
       if (!woData || woData.length === 0) {
