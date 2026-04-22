@@ -353,7 +353,11 @@ export default function WorkOrder() {
 
   useEffect(() => {
     if (printData) {
-      handlePrintTrigger();
+      // Memberikan waktu bagi React untuk merender komponen sebelum memicu cetak
+      const timer = setTimeout(() => {
+        handlePrintTrigger();
+      }, 500);
+      return () => clearTimeout(timer);
     }
   }, [printData]);
 
@@ -635,7 +639,8 @@ export default function WorkOrder() {
         </CardContent>
       </Card>
 
-      <div style={{ display: "none" }}>
+      {/* Komponen cetak yang disembunyikan (tetap dirender agar terbaca oleh library) */}
+      <div className="opacity-0 absolute pointer-events-none -z-50 overflow-hidden h-0 w-0">
         {printData && <div ref={printComponentRef}><PrintSPK data={printData} /></div>}
       </div>
     </div>
