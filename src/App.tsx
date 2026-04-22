@@ -38,6 +38,7 @@ import EmployeeData from "@/pages/hr/EmployeeData";
 import UserManagement from "@/pages/admin/UserManagement";
 import AgencyProfile from "@/pages/admin/AgencyProfile";
 import DebugSync from "@/pages/DebugSync";
+import PrintSuratJalan from "@/pages/print/PrintSuratJalan";
 
 export default function App() {
   return (
@@ -82,6 +83,9 @@ export default function App() {
               <Route path="/admin/users" element={<UserManagement />} />
               <Route path="/admin/agency" element={<AgencyProfile />} />
               <Route path="/debug-sync" element={<DebugSync />} />
+
+              {/* Print */}
+              <Route path="/print/surat-jalan/:id" element={<PrintSuratJalan />} />
 
             </Route>
           </Route>

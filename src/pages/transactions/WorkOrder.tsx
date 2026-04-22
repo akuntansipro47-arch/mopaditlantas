@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
 import { Database } from '@/types/supabase';
 import { 
@@ -6,7 +6,7 @@ import {
 } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Plus, Search, Eye, Trash2, ClipboardCheck, Play, CheckCircle, RefreshCw } from 'lucide-react';
+import { Plus, Search, Eye, Trash2, ClipboardCheck, Play, CheckCircle, RefreshCw, Printer } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { toast } from 'sonner';
 import {
@@ -18,38 +18,37 @@ import {
 } from "@/components/ui/select";
 import { formatDate } from '@/lib/utils';
 import { Badge } from "@/components/ui/badge";
+import { useReactToPrint } from 'react-to-print';
+import PrintSPK from '@/components/ui/PrintSPK';
+import { useAuth } from '@/context/AuthContext';
 
 type WO = Database['public']['Tables']['work_orders']['Row'];
 type VehicleEntry = Database['public']['Tables']['vehicle_entries']['Row'];
 type Vehicle = Database['public']['Tables']['vehicles']['Row'];
 type Mechanic = Database['public']['Tables']['mechanics']['Row'];
 
-type WOWithDetails = WO & {
+export type WOWithDetails = WO & {
   vehicle_entries: (VehicleEntry & { vehicles: Vehicle | null }) | null;
   mechanics: Mechanic | null;
 };
 
 export default function WorkOrder() {
+  const { user } = useAuth();
   const [wos, setWos] = useState<WOWithDetails[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [currentId, setCurrentId] = useState<string | null>(null);
-  const [userRole, setUserRole] = useState<string | null>(null);
-  
-  // Print State
-  const [isPrintDialogOpen, setIsPrintDialogOpen] = useState(false);
-  const [printData, setPrintData] = useState<any>(null);
+  const [printData, setPrintData] = useState<{ wo: WOWithDetails; entry: any } | null>(null);
+  const printComponentRef = useRef<HTMLDivElement>(null);
 
-  // Master Data
   const [entries, setEntries] = useState<(VehicleEntry & { vehicles: Vehicle | null })[]>([]);
   const [mechanics, setMechanics] = useState<Mechanic[]>([]);
   
   const [isVehicleSearchOpen, setIsVehicleSearchOpen] = useState(false);
   const [vehicleSearchQuery, setVehicleSearchQuery] = useState('');
   
-  // Form State
   const [formData, setFormData] = useState({
     work_date: new Date().toISOString().split('T')[0],
     vehicle_entry_id: '',
@@ -59,16 +58,8 @@ export default function WorkOrder() {
   const [selectedEntryDetails, setSelectedEntryDetails] = useState<any>(null);
 
   useEffect(() => {
-    async function fetchUserRole() {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (session) {
-        setUserRole(session.user.user_metadata.role);
-      }
-    }
-
     fetchWOs();
     fetchMasterData();
-    fetchUserRole();
   }, []);
 
   useEffect(() => {
@@ -81,7 +72,6 @@ export default function WorkOrder() {
   }, [formData.vehicle_entry_id, entries]);
 
   async function fetchMasterData() {
-    // Fetch OPEN Vehicle Entries that haven't been processed yet
     const { data: e } = await supabase
       .from('vehicle_entries')
       .select(`
@@ -138,6 +128,10 @@ export default function WorkOrder() {
   };
 
   const handleEdit = (item: WOWithDetails) => {
+    if (item.status !== 'IN_PROGRESS') {
+      toast.warning('Hanya Work Order dengan status IN_PROGRESS yang dapat diedit.');
+      return;
+    }
     setFormData({
       work_date: item.work_date,
       vehicle_entry_id: item.vehicle_entry_id || '',
@@ -146,6 +140,96 @@ export default function WorkOrder() {
     setIsEditing(true);
     setCurrentId(item.id);
     setIsDialogOpen(true);
+  };
+
+  const checkSparepartsIssued = async (wo: WOWithDetails): Promise<{ valid: boolean; message: string; unissued: string[] }> => {
+    if (!wo.vehicle_entry_id) {
+      return { valid: true, message: 'Tidak ada sparepart', unissued: [] };
+    }
+
+    const { data: estItems, error: estError } = await supabase
+      .from('vehicle_entry_spareparts')
+      .select('id, goods_id, item_name, qty, value_only')
+      .eq('vehicle_entry_id', wo.vehicle_entry_id);
+
+    if (estError) {
+      return { valid: false, message: 'Gagal mengambil data sparepart', unissued: [] };
+    }
+
+    const nonValueOnlyItems = (estItems || []).filter((item: any) => !item.value_only);
+    if (nonValueOnlyItems.length === 0) {
+      return { valid: true, message: 'Tidak ada sparepart yang perlu dikeluarkan', unissued: [] };
+    }
+
+    const { data: issuedItems, error: issuedError } = await supabase
+      .from('goods_issue_items')
+      .select('goods_id, quantity, value_only, goods_issues!inner(work_order_id)')
+      .eq('goods_issues.work_order_id', wo.id);
+
+    if (issuedError) {
+      return { valid: false, message: 'Gagal mengambil data barang keluar', unissued: [] };
+    }
+
+    const issuedMap = new Map<string, number>();
+    (issuedItems || []).forEach((item: any) => {
+      if (!item.value_only && item.goods_id) {
+        const current = issuedMap.get(item.goods_id) || 0;
+        issuedMap.set(item.goods_id, current + (item.quantity || 0));
+      }
+    });
+
+    const unissued: string[] = [];
+    for (const item of nonValueOnlyItems) {
+      const goodsId = item.goods_id;
+      if (!goodsId) {
+        unissued.push(item.item_name || 'Item tanpa nama');
+        continue;
+      }
+      const issuedQty = issuedMap.get(goodsId) || 0;
+      if (issuedQty < (item.qty || 0)) {
+        unissued.push(item.item_name || 'Item');
+      }
+    }
+
+    if (unissued.length > 0) {
+      return { 
+        valid: false, 
+        message: `Sparepart berikut belum/tidak cukup keluar: ${unissued.slice(0, 5).join(', ')}${unissued.length > 5 ? '...' : ''}`,
+        unissued 
+      };
+    }
+
+    return { valid: true, message: 'Semua sparepart sudah dikeluarkan', unissued: [] };
+  };
+
+  const handleCompleteWO = async (wo: WOWithDetails) => {
+    const { valid, message } = await checkSparepartsIssued(wo);
+    if (!valid) {
+      toast.error(`Tidak dapat menyelesaikan WO: ${message}`);
+      return;
+    }
+
+    if (!window.confirm(`Yakin ingin menyelesaikan Work Order "${wo.wo_number}"?\n\n${message}`)) {
+      return;
+    }
+
+    await handleStatusChange(wo.id, 'COMPLETED');
+  };
+
+  const handleReopenWO = async (wo: WOWithDetails) => {
+    const canReopen = user?.role === 'SUPER_ADMIN' || 
+                      (user?.role === 'ADMIN' && user?.allowed_menus?.includes('trans_wo_reopen'));
+
+    if (!canReopen) {
+      toast.error('Anda tidak memiliki akses untuk me-reopen Work Order. Hubungi Super Admin.');
+      return;
+    }
+
+    if (!window.confirm(`Yakin ingin me-reopen Work Order "${wo.wo_number}"?`)) {
+      return;
+    }
+
+    await handleStatusChange(wo.id, 'IN_PROGRESS');
   };
 
   const handleStatusChange = async (id: string, newStatus: string) => {
@@ -158,29 +242,53 @@ export default function WorkOrder() {
       if (error) throw error;
       
       toast.success(`Status WO diubah menjadi ${newStatus}`);
-      fetchWOs();
+      await fetchWOs();
     } catch (error: any) {
       toast.error('Gagal update status: ' + error.message);
     }
   };
 
-  const handleDelete = async (id: string) => {
-    if (window.confirm('Apakah Anda yakin ingin menghapus Work Order ini?')) {
+  const handleDelete = async (id: string, vehicleEntryId: string | null) => {
+    if (window.confirm('Apakah Anda yakin ingin menghapus Work Order ini? Tindakan ini tidak dapat dibatalkan.')) {
       try {
-        const { error } = await supabase.from('work_orders').delete().eq('id', id);
-        if (error) throw error;
+        const { error: deleteError } = await supabase.from('work_orders').delete().eq('id', id);
+        if (deleteError) throw deleteError;
+
+        if (vehicleEntryId) {
+          const { error: updateError } = await supabase
+            .from('vehicle_entries')
+            .update({ status: 'OPEN' })
+            .eq('id', vehicleEntryId);
+          
+          if (updateError) {
+            toast.warning('WO dihapus, tapi gagal mengembalikan status Nota Dinas. Harap periksa manual.');
+          }
+        }
+
         toast.success('Work Order berhasil dihapus');
-        fetchWOs();
+        await fetchWOs();
+        await fetchMasterData();
       } catch (error: any) {
         toast.error('Gagal menghapus WO: ' + error.message);
       }
     }
   };
 
+  const handlePrintTrigger = useReactToPrint({
+    content: () => printComponentRef.current,
+    onAfterPrint: () => setPrintData(null),
+  });
+
   const handlePrint = async (wo: WOWithDetails) => {
-    // Fetch full details for printing
+    if (!wo.vehicle_entry_id) {
+      toast.error("Error: Work Order ini tidak terhubung dengan Kendaraan Masuk.");
+      return;
+    }
     try {
-      const { data: entry } = await supabase
+      toast.info("Mempersiapkan data untuk dicetak...");
+
+      // Step 1: Fetch entry with jobs and sparepart IDs
+      const { data: entry, error: entryError } = await supabase
         .from('vehicle_entries')
         .select(`
           *,
@@ -188,28 +296,60 @@ export default function WorkOrder() {
             *,
             job_types (*)
           ),
-          vehicle_entry_spareparts (
-            *,
-            spareparts (
-              name,
-              unit
-            )
-          )
+          vehicle_entry_spareparts (*)
         `)
-        .eq('id', wo.vehicle_entry_id || '')
+        .eq('id', wo.vehicle_entry_id)
         .single();
 
-      if (entry) {
-        setPrintData({
-          wo,
-          entry
-        });
-        setIsPrintDialogOpen(true);
+      if (entryError) {
+        throw new Error(`Gagal mengambil detail entry: ${entryError.message}`);
       }
-    } catch (e) {
-      toast.error("Gagal memuat data cetak");
+
+      if (!entry) {
+        toast.error("Data entry kendaraan tidak ditemukan.");
+        return;
+      }
+
+      // Step 2: If there are spareparts, fetch their details separately
+      if (entry.vehicle_entry_spareparts && entry.vehicle_entry_spareparts.length > 0) {
+        const sparepartIds = entry.vehicle_entry_spareparts.map((sp: any) => sp.sparepart_id);
+        
+        const { data: sparepartsData, error: sparepartsError } = await supabase
+          .from('sparepart')
+          .select('*')
+          .in('id', sparepartIds);
+
+        if (sparepartsError) {
+          throw new Error(`Gagal mengambil detail sparepart: ${sparepartsError.message}`);
+        }
+
+        // Step 3: Combine the data
+        const sparepartsMap = new Map(sparepartsData.map((sp: any) => [sp.id, sp]));
+        const enrichedSpareparts = entry.vehicle_entry_spareparts.map((sp: any) => ({
+          ...sp,
+          spareparts: sparepartsMap.get(sp.sparepart_id) || null,
+        }));
+
+        const enrichedEntry = { ...entry, vehicle_entry_spareparts: enrichedSpareparts };
+        setPrintData({ wo, entry: enrichedEntry });
+
+      } else {
+        // No spareparts, just set the data
+        setPrintData({ wo, entry });
+      }
+
+    } catch (e: any) {
+      console.error(e);
+      toast.error(e.message);
+      setPrintData(null);
     }
   };
+
+  useEffect(() => {
+    if (printData) {
+      handlePrintTrigger();
+    }
+  }, [printData]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -220,7 +360,6 @@ export default function WorkOrder() {
         work_date: formData.work_date,
         vehicle_entry_id: formData.vehicle_entry_id,
         mechanic_id: formData.mechanic_id,
-        status: 'OPEN',
       };
 
       if (isEditing && currentId) {
@@ -233,10 +372,9 @@ export default function WorkOrder() {
       } else {
         const { error } = await supabase
           .from('work_orders')
-          .insert([payload as any]);
+          .insert([{ ...payload, status: 'OPEN' } as any]);
         if (error) throw error;
         
-        // Also update Vehicle Entry status to PROCESSED
         if (formData.vehicle_entry_id) {
            await supabase
              .from('vehicle_entries')
@@ -250,7 +388,7 @@ export default function WorkOrder() {
       setIsDialogOpen(false);
       resetForm();
       fetchWOs();
-      fetchMasterData(); // Refresh available entries
+      fetchMasterData();
     } catch (error: any) {
       toast.error('Gagal menyimpan WO: ' + error.message);
     } finally {
@@ -300,7 +438,7 @@ export default function WorkOrder() {
                   <Label>Referensi Nota Dinas (Entry Kendaraan)</Label>
                   <Dialog open={isVehicleSearchOpen} onOpenChange={setIsVehicleSearchOpen}>
                     <DialogTrigger asChild>
-                      <Button variant="outline" className="w-full justify-start text-left font-normal" disabled={isEditing}>
+                      <Button variant="outline" className="w-full justify-start text-left font-normal">
                         {selectedEntryDetails ? 
                           `${selectedEntryDetails.vehicles?.license_plate} (${selectedEntryDetails.vehicles?.brand_type})` : 
                           "Pilih Kendaraan Masuk..."}
@@ -347,7 +485,6 @@ export default function WorkOrder() {
                   <p className="text-xs text-muted-foreground">Hanya menampilkan kendaraan masuk yang belum diproses.</p>
                 </div>
 
-                {/* Entry Details Preview */}
                 {selectedEntryDetails && (
                   <div className="space-y-3 border rounded-md p-3 bg-slate-50">
                     <div className="flex justify-between">
@@ -456,23 +593,28 @@ export default function WorkOrder() {
                             </Button>
                           )}
                           {item.status === 'IN_PROGRESS' && (
-                            <Button size="sm" className="bg-green-600 hover:bg-green-700 h-8" onClick={() => handleStatusChange(item.id, 'COMPLETED')}>
+                            <Button size="sm" className="bg-green-600 hover:bg-green-700 h-8" onClick={() => handleCompleteWO(item)}>
                               <CheckCircle className="h-4 w-4 mr-1" /> Selesai
                             </Button>
                           )}
-                          {item.status === 'COMPLETED' && (userRole === 'superadmin' || userRole === 'admin') && (
-                            <Button size="sm" variant="secondary" className="h-8" onClick={() => handleStatusChange(item.id, 'IN_PROGRESS')}>
+                          {item.status === 'COMPLETED' && (
+                            <Button size="sm" variant="outline" className="h-8 bg-blue-50 hover:bg-blue-100 text-blue-700 border-blue-200" onClick={() => window.open(`/print/surat-jalan/${item.id}`, '_blank')}>
+                              <Printer className="h-4 w-4 mr-1" /> Surat Jalan
+                            </Button>
+                          )}
+                          {item.status === 'COMPLETED' && (
+                            <Button size="sm" variant="secondary" className="h-8" onClick={() => handleReopenWO(item)}>
                               <RefreshCw className="h-4 w-4 mr-1" /> Re-open
                             </Button>
                           )}
-                          <Button variant="outline" size="sm" className="h-8" onClick={() => handlePrint(item)}>
-                             <ClipboardCheck className="h-4 w-4 mr-1" /> SPK
+                          <Button variant="outline" size="sm" className="h-8" onClick={() => handlePrint(item)} disabled={item.status !== 'IN_PROGRESS'}>
+                             <Printer className="h-4 w-4 mr-1" /> SPK
                           </Button>
-                          <Button variant="outline" size="sm" className="h-8" onClick={() => handleEdit(item)}>
+                          <Button variant="outline" size="sm" className="h-8" onClick={() => handleEdit(item)} disabled={item.status !== 'IN_PROGRESS'}>
                             <Eye className="h-4 w-4 mr-1" /> Edit
                           </Button>
-                          {item.status === 'OPEN' && (
-                            <Button variant="destructive" size="icon" className="h-8 w-8" onClick={() => handleDelete(item.id)}>
+                          {item.status !== 'COMPLETED' && (
+                            <Button variant="destructive" size="icon" className="h-8 w-8" onClick={() => handleDelete(item.id, item.vehicle_entry_id)}>
                               <Trash2 className="h-4 w-4" />
                             </Button>
                           )}
@@ -487,121 +629,9 @@ export default function WorkOrder() {
         </CardContent>
       </Card>
 
-      {/* Print SPK Dialog */}
-      <Dialog open={isPrintDialogOpen} onOpenChange={setIsPrintDialogOpen}>
-        <DialogContent className="max-w-3xl">
-          <DialogHeader className="no-print">
-            <DialogTitle>Cetak Surat Perintah Kerja (SPK)</DialogTitle>
-          </DialogHeader>
-          
-          <div className="border p-4 rounded bg-white max-h-[70vh] overflow-y-auto" id="printable-spk">
-            <style>
-              {`
-                @media print {
-                  body * {
-                    visibility: hidden;
-                  }
-                  #printable-spk, #printable-spk * {
-                    visibility: visible;
-                  }
-                  #printable-spk {
-                    position: absolute;
-                    left: 0;
-                    top: 0;
-                    width: 100%;
-                  }
-                  .no-print {
-                    display: none !important;
-                  }
-                }
-              `}
-            </style>
-            {printData && (
-              <div className="space-y-6 text-sm font-sans">
-                {/* ... content of the print ... */}
-                <div className="flex justify-between items-start">
-                  <div>
-                    <h3 className="font-bold text-lg">Surat Perintah Kerja</h3>
-                    <p className="text-muted-foreground">{printData.wo.wo_number}</p>
-                  </div>
-                  <div className="text-right">
-                    <p className="font-semibold">{printData.wo.vehicle_entries?.vehicles?.license_plate}</p>
-                    <p className="text-xs text-muted-foreground">{printData.wo.vehicle_entries?.vehicles?.brand_type}</p>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-3 gap-4 text-xs border-t border-b py-2">
-                  <div><span className="text-muted-foreground block">Tanggal WO</span> {formatDate(printData.wo.work_date)}</div>
-                  <div><span className="text-muted-foreground block">Mekanik</span> {printData.wo.mechanics?.name}</div>
-                  <div><span className="text-muted-foreground block">No. Nota Dinas</span> {printData.entry.nota_dinas_number}</div>
-                </div>
-
-                <div>
-                  <h4 className="font-semibold mb-2">Daftar Pekerjaan</h4>
-                  <table className="w-full text-left text-xs">
-                    <thead className="bg-slate-50">
-                      <tr className="border-b border-slate-200">
-                        <th className="p-2 font-semibold">No</th>
-                        <th className="p-2 font-semibold">Jenis Pekerjaan</th>
-                        <th className="p-2 font-semibold">Catatan</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {printData.entry.vehicle_entry_jobs?.map((job: any, i: number) => (
-                        <tr key={i} className="border-b border-slate-100">
-                          <td className="p-2">{i + 1}</td>
-                          <td className="p-2 font-medium">{job.job_types?.job_name}</td>
-                          <td className="p-2 text-muted-foreground italic">{job.notes || '-'}</td>
-                        </tr>
-                      ))}
-                      {(!printData.entry.vehicle_entry_jobs || printData.entry.vehicle_entry_jobs.length === 0) && (
-                        <tr><td colSpan={3} className="p-4 text-center italic text-muted-foreground">Tidak ada jasa</td></tr>
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-
-                <div>
-                  <h4 className="font-semibold mb-2">Daftar Sparepart / Bahan</h4>
-                  <table className="w-full text-left text-xs">
-                    <thead className="bg-slate-50">
-                      <tr className="border-b border-slate-200">
-                        <th className="p-2 font-semibold">No</th>
-                        <th className="p-2 font-semibold">Nama Sparepart</th>
-                        <th className="p-2 font-semibold text-center">Qty</th>
-                        <th className="p-2 font-semibold">Satuan</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {printData.entry.vehicle_entry_spareparts?.map((part: any, i: number) => (
-                        <tr key={part.id} className="border-b border-slate-100">
-                          <td className="p-2">{i + 1}</td>
-                          <td className="p-2 font-medium">{part.spareparts?.name}</td>
-                          <td className="p-2 text-center">{part.quantity}</td>
-                          <td className="p-2">{part.spareparts?.unit}</td>
-                        </tr>
-                      ))}
-                      {(!printData.entry.vehicle_entry_spareparts || printData.entry.vehicle_entry_spareparts.length === 0) && (
-                        <tr><td colSpan={4} className="p-4 text-center italic text-muted-foreground">Tidak ada sparepart</td></tr>
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-
-                <div className="pt-4 text-xs">
-                  <p className="font-semibold">Catatan WO:</p>
-                  <p className="text-muted-foreground italic">{printData.wo.notes || 'Tidak ada catatan.'}</p>
-                </div>
-
-              </div>
-            )}
-          </div>
-          <DialogFooter className="no-print">
-            <Button variant="outline" onClick={() => setIsPrintDialogOpen(false)}>Tutup</Button>
-            <Button onClick={() => window.print()}><ClipboardCheck className="h-4 w-4 mr-2" /> Cetak Sekarang</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <div style={{ display: "none" }}>
+        {printData && <div ref={printComponentRef}><PrintSPK data={printData} /></div>}
+      </div>
     </div>
   );
 }
