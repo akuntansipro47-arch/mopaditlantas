@@ -78,7 +78,7 @@ export default function VehicleEntryPrint({ id }: VehicleEntryPrintProps) {
   const totalEstimation = totalJobEstimation + totalPartEstimation;
 
   return (
-    <div className="p-8 max-w-[210mm] mx-auto bg-white min-h-screen font-sans text-[11px] leading-relaxed">
+    <div className="printable-area p-8 max-w-[210mm] mx-auto bg-white min-h-screen font-sans text-[11px] leading-relaxed">
       {/* Header */}
       <div className="border-b border-gray-800 pb-4 mb-6">
         <div className="flex justify-between items-start">

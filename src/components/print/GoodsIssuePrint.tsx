@@ -71,7 +71,7 @@ export default function GoodsIssuePrint({ id }: GoodsIssuePrintProps) {
   if (!issue) return <div>Data Barang Keluar tidak ditemukan.</div>;
 
   return (
-    <div className="p-2 max-w-[210mm] mx-auto bg-white min-h-screen text-[10px] font-sans leading-tight">
+    <div className="printable-area p-2 max-w-[210mm] mx-auto bg-white min-h-screen text-[10px] font-sans leading-tight">
       {/* Header */}
       <div className="border-b-2 border-black pb-1 mb-2">
         <div className="flex justify-between items-start">

@@ -68,7 +68,7 @@ export default function InvoicePrint({ id }: InvoicePrintProps) {
   const totalAmount = billings.reduce((sum, item) => sum + item.total_price, 0);
 
   return (
-    <div className="p-2 max-w-[215mm] mx-auto bg-white min-h-screen font-sans text-[10px] leading-tight">
+    <div className="printable-area p-2 max-w-[215mm] mx-auto bg-white min-h-screen font-sans text-[10px] leading-tight">
       {/* Header */}
       <div className="border-b-2 border-black pb-2 mb-2">
         <div className="flex justify-between items-start">

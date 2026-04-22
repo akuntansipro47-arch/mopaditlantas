@@ -228,7 +228,7 @@ export default function PurchaseOrderPrintDotMatrix({ id }: POPrintProps) {
   if (!po) return <div>Data PO tidak ditemukan.</div>;
 
   return (
-    <div className="min-h-screen bg-white p-0">
+    <div className="printable-area min-h-screen bg-white p-0">
       <pre className="po-dotmatrix">{content}</pre>
       <style>{`
         .po-dotmatrix {

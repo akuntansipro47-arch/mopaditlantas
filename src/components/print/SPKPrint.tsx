@@ -77,7 +77,7 @@ export default function PrintSPK({ id }: { id: string }) {
   // PHASE 1: Loading
   if (phase === 'initial' || phase === 'fetching-agency' || phase === 'fetching-wo' || phase === 'fetching-entry') {
     return (
-      <div style={{ 
+      <div className="printable-area" style={{ 
         minHeight: '100vh', 
         display: 'flex', 
         flexDirection: 'column', 
@@ -108,7 +108,7 @@ export default function PrintSPK({ id }: { id: string }) {
   // PHASE 2: Error
   if (phase === 'error') {
     return (
-      <div style={{ 
+      <div className="printable-area" style={{ 
         minHeight: '100vh', 
         display: 'flex', 
         flexDirection: 'column', 
@@ -142,7 +142,7 @@ export default function PrintSPK({ id }: { id: string }) {
   // PHASE 3: Success - Render Document
   if (!data) {
     return (
-      <div style={{ 
+      <div className="printable-area" style={{ 
         minHeight: '100vh', 
         display: 'flex', 
         flexDirection: 'column', 
@@ -167,7 +167,7 @@ export default function PrintSPK({ id }: { id: string }) {
   const { wo, entry } = data;
 
   return (
-    <div style={{ background: '#f3f4f6', minHeight: '100vh' }}>
+    <div className="printable-area" style={{ background: '#f3f4f6', minHeight: '100vh' }}>
       {/* Control Bar */}
       <div style={{ 
         position: 'sticky', 
