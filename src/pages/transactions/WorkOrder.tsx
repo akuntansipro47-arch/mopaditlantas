@@ -469,7 +469,9 @@ export default function WorkOrder() {
                           <Button variant="outline" size="sm" className="h-8" onClick={() => handlePrint(item)}>
                              <ClipboardCheck className="h-4 w-4 mr-1" /> SPK
                           </Button>
-                          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => handleEdit(item)}><Eye className="h-4 w-4" /></Button>
+                          <Button variant="outline" size="sm" className="h-8" onClick={() => handleEdit(item)}>
+                            <Eye className="h-4 w-4 mr-1" /> Edit
+                          </Button>
                           {item.status === 'OPEN' && (
                             <Button variant="destructive" size="icon" className="h-8 w-8" onClick={() => handleDelete(item.id)}>
                               <Trash2 className="h-4 w-4" />
