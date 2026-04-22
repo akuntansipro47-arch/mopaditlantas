@@ -7,17 +7,14 @@ import { Label } from '@/components/ui/label';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { toast } from 'sonner';
 import { useAuth } from '@/context/AuthContext';
-import { PlusCircle, Edit, Trash2, CheckCircle, XCircle, RefreshCw, Wrench, ClipboardCheck, Search, AlertTriangle, Barcode } from 'lucide-react';
+import { PlusCircle, Edit, Trash2, CheckCircle, Search, Barcode, RefreshCw } from 'lucide-react';
 import { generateTransactionNumber, formatDate } from '@/lib/utils';
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
-import { Badge } from '@/components/ui/badge';
-import ReactToPrint, { useReactToPrint } from 'react-to-print';
+
+import ReactToPrint from 'react-to-print';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { addDays } from 'date-fns';
-const [dateRange, setDateRange] = useState<DateRange | undefined>({
-  from: addDays(new Date(), -30),
-  to: new Date(),
-});
+
 
 // Type definitions
 interface Vehicle {
@@ -67,22 +64,6 @@ const WorkOrderV2 = () => {
   });
   const printComponentRef = useRef<HTMLDivElement>(null);
   const [selectedWoForPrint, setSelectedWoForPrint] = useState<WorkOrder | null>(null);
-
-  const handlePrint = useReactToPrint({
-    content: () => printComponentRef.current,
-    documentTitle: `SPK-${selectedWoForPrint?.wo_number}`,
-    onAfterPrint: () => setSelectedWoForPrint(null),
-  });
-
-  const triggerPrint = (wo: WorkOrder) => {
-    setSelectedWoForPrint(wo);
-  };
-
-  useEffect(() => {
-    if (selectedWoForPrint) {
-      handlePrint();
-    }
-  }, [selectedWoForPrint, handlePrint]);
 
   const fetchWOs = useCallback(async () => {
     setLoading(true);
@@ -270,6 +251,19 @@ const WorkOrderV2 = () => {
     }
   };
 
+  const handleReopenWO = async (woId: string) => {
+    if (window.confirm("Apakah Anda yakin ingin membuka kembali Work Order ini?")) {
+      try {
+        const { error } = await supabase.from('work_orders').update({ status: 'OPEN' }).eq('id', woId);
+        if (error) throw error;
+        toast.success("Work Order telah dibuka kembali.");
+        fetchWOs();
+      } catch (error: any) {
+        toast.error("Gagal membuka kembali WO: " + error.message);
+      }
+    }
+  };
+
   const selectedEntry = availableEntries.find(entry => entry.id === currentWo.vehicle_entry_id);
 
   return (
@@ -319,19 +313,33 @@ const WorkOrderV2 = () => {
                       <TableCell className="max-w-[300px] truncate">{wo.vehicle_entries?.complaint || '-'}</TableCell>
                       <TableCell>{wo.mechanics?.name || '-'}</TableCell>
                       <TableCell className="text-right">
-                        <Button variant="ghost" size="icon" onClick={() => triggerPrint(wo)} title="Cetak SPK">
-                          <Barcode className="h-4 w-4" />
-                        </Button>
+                        <ReactToPrint
+                          trigger={() => (
+                            <Button variant="ghost" size="icon" title="Cetak SPK">
+                              <Barcode className="h-4 w-4" />
+                            </Button>
+                          )}
+                          content={() => printComponentRef.current}
+                          documentTitle={`SPK-${selectedWoForPrint?.wo_number}`}
+                          onBeforeGetContent={() => setSelectedWoForPrint(wo)}
+                          onAfterPrint={() => setSelectedWoForPrint(null)}
+                        />
                         <Button variant="ghost" size="icon" onClick={() => handleEdit(wo)} title="Edit">
                           <Edit className="h-4 w-4" />
                         </Button>
                         <Button variant="ghost" size="icon" onClick={() => handleDelete(wo.id)} title="Hapus">
                           <Trash2 className="h-4 w-4 text-red-500" />
                         </Button>
-                        {wo.status !== 'COMPLETED' && (
+                        {wo.status !== 'COMPLETED' ? (
                           <Button variant="outline" size="sm" onClick={() => handleFinishWO(wo.id)} className="ml-2">
                             <CheckCircle className="mr-2 h-4 w-4" /> Selesaikan
                           </Button>
+                        ) : (
+                          (user?.role === 'SUPER_ADMIN' || user?.role === 'ADMIN') && (
+                            <Button variant="outline" size="sm" onClick={() => handleReopenWO(wo.id)} className="ml-2">
+                              <RefreshCw className="mr-2 h-4 w-4" /> Re-open
+                            </Button>
+                          )
                         )}
                       </TableCell>
                     </TableRow>
