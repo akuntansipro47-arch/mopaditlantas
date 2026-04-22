@@ -75,6 +75,8 @@ export default function PurchaseOrderV2() {
     quantity: number;
     unit_price: number;
     estimated_name?: string;
+    locked_unit_price?: boolean;
+    from_work_order?: boolean;
   }[]>([{ line_type: 'PART', goods_id: '', job_type_id: '', service_name: '', brand: '', quantity: 1, unit_price: 0 }]);
 
   const [itemSearchOpen, setItemSearchOpen] = useState(false);
@@ -728,6 +730,8 @@ export default function PurchaseOrderV2() {
                                         if (sp > 0) return sp;
                                         return 0;
                                       })(),
+                                      from_work_order: true,
+                                      locked_unit_price: true,
                                     }))
                                     .filter((x: any) => (x.job_type_id || String(x.service_name || '').trim()) && Number(x.unit_price || 0) > 0)
                                 : [];
@@ -764,6 +768,8 @@ export default function PurchaseOrderV2() {
                                         quantity: p.qty || 1,
                                         unit_price: p.estimated_price || 0,
                                         estimated_name: p.item_name,
+                                        from_work_order: true,
+                                        locked_unit_price: true,
                                       };
                                     })
                                     .filter((x: any) => {
@@ -963,7 +969,7 @@ export default function PurchaseOrderV2() {
                                 const val = e.target.value.replace(/[^0-9]/g, '');
                                 handleItemChange(index, 'unit_price', val ? parseInt(val) : 0);
                               }} 
-                              disabled={isReadOnly}
+                              disabled={isReadOnly || Boolean((item as any).locked_unit_price)}
                             />
                           </TableCell>
                           <TableCell>
@@ -1253,39 +1259,46 @@ export default function PurchaseOrderV2() {
 
       {/* Supplier Search Dialog - Radix Modal Sejajar dengan Form PO */}
       <Dialog open={supplierSearchOpen} onOpenChange={setSupplierSearchOpen}>
-        <DialogContent className="sm:max-w-[500px]" style={{ zIndex: 100000 }}>
-          <DialogHeader>
-            <DialogTitle>Cari Supplier</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4">
-            <Input 
-              placeholder="Cari nama supplier atau kontak person..." 
-              value={supplierSearchQuery} 
-              onChange={(e) => setSupplierSearchQuery(e.target.value)}
-              autoFocus
+        <DialogContent className="sm:max-w-[600px] p-0 gap-0" style={{ zIndex: 100000 }}>
+          <Command className="rounded-lg border shadow-md">
+            <CommandInput
+              placeholder="Cari supplier (nama/kontak/telp/kota)..."
+              value={supplierSearchQuery}
+              onValueChange={(val: string) => setSupplierSearchQuery(val)}
             />
-            <div className="max-h-[300px] overflow-y-auto border rounded-md">
-              {filteredSuppliers.length === 0 ? (
-                <div className="p-4 text-center text-sm text-gray-500">Supplier tidak ditemukan.</div>
-              ) : (
-                <Table>
-                  <TableBody>
-                    {filteredSuppliers.map((s) => (
-                      <TableRow 
-                        key={s.id} 
-                        className="cursor-pointer hover:bg-slate-50"
-                        onClick={() => handleSupplierSelect(s)}
-                      >
-                        <TableCell className="font-medium">{s.name}</TableCell>
-                        <TableCell>{(s as any).contact_person || '-'}</TableCell>
-                        <TableCell className="text-right text-xs text-gray-500">{(s as any).city || '-'}</TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              )}
-            </div>
-          </div>
+            <CommandList className="max-h-[360px] overflow-y-auto">
+              <CommandEmpty className="py-6 text-center text-sm">Supplier tidak ditemukan.</CommandEmpty>
+              <CommandGroup heading="Supplier">
+                {filteredSuppliers.map((s: any) => (
+                  <CommandItem
+                    key={s.id}
+                    onSelect={() => {
+                      handleSupplierSelect(s);
+                      setSupplierSearchQuery('');
+                    }}
+                    className="cursor-pointer p-3 hover:bg-slate-100 border-b last:border-0 aria-selected:bg-slate-100"
+                  >
+                    <div className="flex flex-col w-full gap-1">
+                      <div className="flex justify-between items-center">
+                        <span className="font-bold text-sm">{s.name}</span>
+                        <span className="text-[10px] text-muted-foreground">{s.city || '-'}</span>
+                      </div>
+                      <div className="flex justify-between items-center text-xs text-muted-foreground">
+                        <span>{s.contact_person || '-'}</span>
+                        <span>{s.phone || '-'}</span>
+                      </div>
+                      {s.address && (
+                        <div className="text-[11px] text-slate-600 line-clamp-2">
+                          {s.address}
+                        </div>
+                      )}
+                    </div>
+                    {formData.supplier_id === s.id && <Check className="ml-2 h-4 w-4 text-green-600" />}
+                  </CommandItem>
+                ))}
+              </CommandGroup>
+            </CommandList>
+          </Command>
         </DialogContent>
       </Dialog>
     </div>

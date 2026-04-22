@@ -19,7 +19,7 @@ import ChartOfAccounts from "@/pages/master/ChartOfAccounts";
 // Transaksi
 import VehicleEntry from "@/pages/transactions/VehicleEntry";
 import WorkOrder from "@/pages/transactions/WorkOrder";
-import PurchaseOrder from "@/pages/transactions/PurchaseOrder";
+import PurchaseOrderV2 from "@/pages/transactions/PurchaseOrderV2";
 import GoodsReceipt from "@/pages/transactions/GoodsReceipt";
 import GoodsIssue from "@/pages/transactions/GoodsIssue";
 import PurchaseOrderReturn from "@/pages/transactions/PurchaseOrderReturn";
@@ -40,6 +40,8 @@ import AgencyProfile from "@/pages/admin/AgencyProfile";
 import DebugSync from "@/pages/DebugSync";
 import PrintSuratJalan from "@/pages/print/PrintSuratJalan";
 import PrintSPK from "@/pages/print/PrintSPK";
+import PrintPO from "@/pages/print/PrintPO";
+import PrintPODotMatrix from "@/pages/print/PrintPODotMatrix";
 
 export default function App() {
   return (
@@ -65,7 +67,7 @@ export default function App() {
               {/* Transaksi */}
               <Route path="/transactions/entry" element={<VehicleEntry />} />
               <Route path="/transactions/wo" element={<WorkOrder />} />
-              <Route path="/transactions/po" element={<PurchaseOrder />} />
+              <Route path="/transactions/po" element={<PurchaseOrderV2 />} />
               <Route path="/transactions/receive" element={<GoodsReceipt />} />
               <Route path="/transactions/issue" element={<GoodsIssue />} />
               <Route path="/transactions/po-return" element={<PurchaseOrderReturn />} />
@@ -90,6 +92,8 @@ export default function App() {
             {/* Print Routes (Outside DashboardLayout for clean printing) */}
             <Route path="/print/surat-jalan/:id" element={<PrintSuratJalan />} />
             <Route path="/print/spk/:id" element={<PrintSPK />} />
+            <Route path="/print/po/:id" element={<PrintPO />} />
+            <Route path="/print/po-dot/:id" element={<PrintPODotMatrix />} />
           </Route>
         </Routes>
       </Router>
