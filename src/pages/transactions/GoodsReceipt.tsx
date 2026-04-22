@@ -52,6 +52,8 @@ export default function GoodsReceipt() {
   const [historySearch, setHistorySearch] = useState('');
   const [selectedPO, setSelectedPO] = useState<POWithDetails | null>(null);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [selectedReceipt, setSelectedReceipt] = useState<GoodsReceiptWithDetails | null>(null);
+  const [isDetailOpen, setIsDetailOpen] = useState(false);
   
   // Receipt State
   const [receiptData, setReceiptData] = useState({
@@ -1123,10 +1125,10 @@ export default function GoodsReceipt() {
                       <TableCell>{item.notes || '-'}</TableCell>
                       <TableCell className="text-right">
                         <div className="flex space-x-2 justify-end">
-                          <Button variant="outline" size="icon" onClick={() => toast.info('Print belum tersedia')}>
+                          <Button variant="outline" size="icon" onClick={() => window.open(`/print/receive/${item.id}`, '_blank')}>
                             <Printer className="h-4 w-4" />
                           </Button>
-                          <Button variant="outline" size="icon" onClick={() => toast.info('Lihat detail belum tersedia')}>
+                          <Button variant="outline" size="icon" onClick={() => { setSelectedReceipt(item); setIsDetailOpen(true); }}>
                             <Eye className="h-4 w-4" />
                           </Button>
                           <Button variant="destructive" size="sm" onClick={() => handleCancelReceipt(item)}>
@@ -1304,6 +1306,81 @@ export default function GoodsReceipt() {
                 return hasGoods ? 'Konfirmasi Terima Barang' : 'Close PO Jasa';
               })()}
             </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={isDetailOpen} onOpenChange={setIsDetailOpen}>
+        <DialogContent className="sm:max-w-[900px]">
+          <DialogHeader>
+            <DialogTitle>Detail Penerimaan Barang</DialogTitle>
+            <DialogDescription>
+              No. Receipt: <b>{selectedReceipt?.receipt_number || '-'}</b>
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="grid grid-cols-2 gap-4 text-sm">
+            <div className="space-y-1">
+              <div className="flex justify-between gap-2">
+                <span className="text-muted-foreground">Tanggal Terima</span>
+                <span className="font-medium">{selectedReceipt ? formatDate(selectedReceipt.receipt_date) : '-'}</span>
+              </div>
+              <div className="flex justify-between gap-2">
+                <span className="text-muted-foreground">No. PO</span>
+                <span className="font-medium">{selectedReceipt?.purchase_orders?.po_number || '-'}</span>
+              </div>
+              <div className="flex justify-between gap-2">
+                <span className="text-muted-foreground">Supplier</span>
+                <span className="font-medium">{selectedReceipt?.purchase_orders?.suppliers?.name || '-'}</span>
+              </div>
+            </div>
+            <div className="space-y-1">
+              <div className="flex justify-between gap-2">
+                <span className="text-muted-foreground">No. WO</span>
+                <span className="font-medium">{selectedReceipt?.purchase_orders?.work_orders?.wo_number || '-'}</span>
+              </div>
+              <div className="flex justify-between gap-2">
+                <span className="text-muted-foreground">Kendaraan</span>
+                <span className="font-medium">{selectedReceipt?.purchase_orders?.work_orders?.vehicle_entries?.vehicles?.license_plate || '-'}</span>
+              </div>
+              <div className="flex justify-between gap-2">
+                <span className="text-muted-foreground">Catatan</span>
+                <span className="font-medium">{selectedReceipt?.notes || '-'}</span>
+              </div>
+            </div>
+          </div>
+
+          <div className="rounded-md border mt-4">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Barang</TableHead>
+                  <TableHead className="w-40">Qty Diterima</TableHead>
+                  <TableHead>Catatan</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {(selectedReceipt?.items || []).map((it: any) => (
+                  <TableRow key={it.id}>
+                    <TableCell>
+                      <div className="font-medium">{it.goods?.name || '-'}</div>
+                      <div className="text-xs text-muted-foreground">{it.goods?.item_code || it.goods_id}</div>
+                    </TableCell>
+                    <TableCell>{it.quantity_received}</TableCell>
+                    <TableCell>{it.notes || '-'}</TableCell>
+                  </TableRow>
+                ))}
+                {(selectedReceipt?.items || []).length === 0 && (
+                  <TableRow>
+                    <TableCell colSpan={3} className="text-center h-20">Tidak ada item.</TableCell>
+                  </TableRow>
+                )}
+              </TableBody>
+            </Table>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsDetailOpen(false)}>Tutup</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
