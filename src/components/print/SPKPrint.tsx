@@ -262,5 +262,3 @@ export default function PrintSPK({ id }: PrintSPKProps) {
     </div>
   );
 }
-  );
-}
