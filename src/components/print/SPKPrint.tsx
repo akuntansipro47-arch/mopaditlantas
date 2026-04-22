@@ -1,8 +1,7 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import { formatDate } from '@/lib/utils';
-import { Loader2 } from 'lucide-react';
-import { Badge } from '@/components/ui/badge';
+import { Loader2, Printer, X } from 'lucide-react';
 
 interface PrintSPKProps {
   id: string;
@@ -17,13 +16,23 @@ export default function PrintSPK({ id }: PrintSPKProps) {
     fetchData();
   }, [id]);
 
+  // Trigger cetak hanya setelah data benar-benar siap dan loading selesai
+  useEffect(() => {
+    if (!loading && data && agency) {
+      const timer = setTimeout(() => {
+        window.print();
+      }, 3000); // Jeda 3 detik agar render stabil
+      return () => clearTimeout(timer);
+    }
+  }, [loading, data, agency]);
+
   async function fetchData() {
     try {
-      // 0. Fetch Agency Profile
+      // 1. Fetch Agency Profile
       const { data: agencyData } = await supabase.from('agency_profile').select('*').single();
       setAgency(agencyData);
 
-      // 1. Fetch WO with basic details
+      // 2. Fetch WO with basic details
       const { data: wo, error: woError } = await supabase
         .from('work_orders')
         .select(`
@@ -39,7 +48,7 @@ export default function PrintSPK({ id }: PrintSPKProps) {
 
       if (woError) throw woError;
 
-      // 2. Fetch entry with jobs and spareparts
+      // 3. Fetch entry with jobs and spareparts
       const { data: entry, error: entryError } = await supabase
         .from('vehicle_entries')
         .select(`
@@ -55,7 +64,7 @@ export default function PrintSPK({ id }: PrintSPKProps) {
 
       if (entryError) throw entryError;
 
-      // 3. Fetch spareparts detail from 'goods' table
+      // 4. Fetch spareparts detail from 'goods' table
       let enrichedSpareparts = [];
       if (entry.vehicle_entry_spareparts && entry.vehicle_entry_spareparts.length > 0) {
         const goodsIds = entry.vehicle_entry_spareparts
@@ -83,11 +92,6 @@ export default function PrintSPK({ id }: PrintSPKProps) {
         entry: { ...entry, vehicle_entry_spareparts: enrichedSpareparts }
       });
 
-      // 4. Auto print after state is stable
-      setTimeout(() => {
-        window.print();
-      }, 2000);
-
     } catch (error) {
       console.error('Error fetching SPK data:', error);
     } finally {
@@ -96,167 +100,198 @@ export default function PrintSPK({ id }: PrintSPKProps) {
   }
 
   if (loading) {
-    return <div className="flex justify-center items-center h-screen"><Loader2 className="animate-spin h-8 w-8" /></div>;
+    return (
+      <div className="flex flex-col justify-center items-center h-screen gap-4">
+        <Loader2 className="animate-spin h-10 w-10 text-blue-600" />
+        <p className="text-slate-500 font-medium">Menyiapkan Dokumen SPK...</p>
+      </div>
+    );
   }
 
-  if (!data) return <div className="p-8 text-center">Data SPK tidak ditemukan.</div>;
+  if (!data) return <div className="p-8 text-center font-bold text-red-500">Data SPK tidak ditemukan atau gagal dimuat.</div>;
 
   const { wo, entry } = data;
 
   return (
-    <div className="p-8 max-w-[210mm] mx-auto bg-white min-h-screen font-sans text-[11px] leading-relaxed">
+    <div className="bg-white min-h-screen font-sans text-black">
       {/* Control Bar - Only visible on screen */}
-      <div className="no-print mb-6 flex justify-between items-center bg-slate-100 p-4 rounded-lg shadow-sm">
-        <div className="text-slate-600 text-xs">
-          <strong>Mode Cetak:</strong> Jika preview di bawah kosong, klik tombol biru.
+      <div className="no-print sticky top-0 z-50 flex items-center justify-between bg-slate-800 p-4 text-white shadow-lg">
+        <div className="flex items-center gap-2">
+          <div className="h-2 w-2 rounded-full bg-green-500 animate-pulse"></div>
+          <span className="text-sm font-medium">Dokumen Siap Dicetak</span>
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-3">
           <button 
             onClick={() => window.close()} 
-            className="px-4 py-2 bg-white border border-slate-300 hover:bg-slate-50 rounded text-sm font-medium transition-colors"
+            className="flex items-center gap-2 px-4 py-2 bg-slate-700 hover:bg-slate-600 rounded-md text-sm transition-colors"
           >
-            Tutup
+            <X className="h-4 w-4" /> Tutup
           </button>
           <button 
             onClick={() => window.print()} 
-            className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded text-sm font-bold shadow-sm transition-colors"
+            className="flex items-center gap-2 px-6 py-2 bg-blue-600 hover:bg-blue-500 rounded-md text-sm font-bold shadow-md transition-all active:scale-95"
           >
-            Cetak Sekarang
+            <Printer className="h-4 w-4" /> Cetak Sekarang
           </button>
         </div>
       </div>
 
-      {/* Main Print Content */}
-      <div className="print:m-0">
-        <header className="flex justify-between items-start pb-4 border-b-2 border-gray-800 mb-6">
-          <div className="flex gap-4 items-center">
-            {agency?.logo_url && (
-              <img src={agency.logo_url} alt="Logo" className="h-16 w-auto object-contain" />
-            )}
-            <div>
-              <h1 className="text-xl font-bold text-gray-800 uppercase leading-tight">{agency?.name || 'SURAT PERINTAH KERJA'}</h1>
-              <p className="text-[10px] text-gray-500 mt-1 max-w-sm">{agency?.address}</p>
-              <p className="text-[9px] text-gray-400 mt-0.5 italic">Workshop Monitoring System</p>
-            </div>
-          </div>
-          <div className="text-right">
-            <h2 className="text-xl font-black text-slate-800 tracking-tighter">SPK</h2>
-            <p className="text-sm font-bold text-blue-900 mt-1">{wo.wo_number}</p>
-            <p className="text-[10px] text-gray-500 uppercase">{formatDate(wo.work_date)}</p>
-          </div>
-        </header>
+      {/* Main Print Area */}
+      <div className="mx-auto max-w-[210mm] p-10 print:p-0">
+        <div className="border-b-4 border-double border-black pb-4 mb-6">
+          <table className="w-full">
+            <tbody>
+              <tr>
+                <td className="w-20">
+                  {agency?.logo_url && (
+                    <img src={agency.logo_url} alt="Logo" className="h-20 w-auto object-contain" />
+                  )}
+                </td>
+                <td className="pl-6">
+                  <h1 className="text-2xl font-black uppercase leading-none">{agency?.name || 'SURAT PERINTAH KERJA'}</h1>
+                  <p className="text-[11px] mt-2 leading-tight text-gray-700">
+                    {agency?.address}<br />
+                    {agency?.phone && `Telp: ${agency.phone}`} {agency?.email && `| Email: ${agency.email}`}
+                  </p>
+                </td>
+                <td className="text-right align-top">
+                  <div className="inline-block border-2 border-black p-2 text-center">
+                    <h2 className="text-2xl font-black leading-none">SPK</h2>
+                    <p className="text-[10px] font-bold mt-1 uppercase">Work Order</p>
+                  </div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
 
-        <main>
-          <div className="grid grid-cols-2 gap-12 mb-8">
-            <section>
-              <h3 className="font-bold border-b border-gray-300 pb-1 mb-2 uppercase text-[9px] text-gray-500 tracking-widest">Data Kendaraan</h3>
-              <table className="w-full text-[11px]">
-                <tbody>
-                  <tr><td className="w-24 py-0.5 text-gray-500">No. Polisi</td><td className="font-bold">: {wo.vehicle_entries?.vehicles?.license_plate}</td></tr>
-                  <tr><td className="py-0.5 text-gray-500">Merek/Tipe</td><td className="font-semibold">: {wo.vehicle_entries?.vehicles?.brand_type}</td></tr>
-                  <tr><td className="py-0.5 text-gray-500">Nota Dinas</td><td className="">: {wo.vehicle_entries?.nota_dinas_number}</td></tr>
-                </tbody>
-              </table>
-            </section>
-            
-            <section>
-              <h3 className="font-bold border-b border-gray-300 pb-1 mb-2 uppercase text-[9px] text-gray-500 tracking-widest">Data Mekanik</h3>
-              <table className="w-full text-[11px]">
-                <tbody>
-                  <tr><td className="w-24 py-0.5 text-gray-500">Nama</td><td className="font-bold">: {wo.mechanics?.name}</td></tr>
-                  <tr><td className="py-0.5 text-gray-500">Spesialisasi</td><td className="">: {wo.mechanics?.specialization}</td></tr>
-                  <tr><td className="py-0.5 text-gray-500">Status WO</td><td className="uppercase font-medium text-blue-700">: {wo.status}</td></tr>
-                </tbody>
-              </table>
-            </section>
-          </div>
+        <div className="mb-8">
+          <table className="w-full text-xs">
+            <tbody>
+              <tr>
+                <td className="w-1/2 align-top pr-4">
+                  <table className="w-full border-collapse">
+                    <tbody>
+                      <tr><td className="w-24 py-1 font-bold">NOMOR WO</td><td className="py-1">: {wo.wo_number}</td></tr>
+                      <tr><td className="py-1 font-bold">TANGGAL</td><td className="py-1">: {formatDate(wo.work_date)}</td></tr>
+                      <tr><td className="py-1 font-bold">MEKANIK</td><td className="py-1">: <span className="font-black underline">{wo.mechanics?.name}</span></td></tr>
+                    </tbody>
+                  </table>
+                </td>
+                <td className="w-1/2 align-top pl-4 border-l border-gray-300">
+                  <table className="w-full border-collapse">
+                    <tbody>
+                      <tr><td className="w-24 py-1 font-bold">NO. POLISI</td><td className="py-1">: <span className="font-black text-sm">{wo.vehicle_entries?.vehicles?.license_plate}</span></td></tr>
+                      <tr><td className="py-1 font-bold">MERK/TIPE</td><td className="py-1">: {wo.vehicle_entries?.vehicles?.brand_type}</td></tr>
+                      <tr><td className="py-1 font-bold">NOTA DINAS</td><td className="py-1">: {wo.vehicle_entries?.nota_dinas_number}</td></tr>
+                    </tbody>
+                  </table>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
 
-          <section className="mb-8">
-            <h3 className="font-bold uppercase text-[9px] text-gray-500 tracking-widest mb-2">I. Rincian Pekerjaan (Job List)</h3>
-            <table className="w-full border-collapse border border-gray-300">
-              <thead className="bg-gray-50">
-                <tr className="text-[10px] font-bold text-gray-700">
-                  <th className="border border-gray-300 p-2 w-10 text-center">NO</th>
-                  <th className="border border-gray-300 p-2 text-left w-48">JENIS / GRUP</th>
-                  <th className="border border-gray-300 p-2 text-left">DESKRIPSI PEKERJAAN</th>
-                  <th className="border border-gray-300 p-2 text-left w-40">CATATAN</th>
+        <div className="mb-8">
+          <h3 className="text-xs font-black uppercase mb-2 border-b border-black inline-block">I. RINCIAN PEKERJAAN</h3>
+          <table className="w-full border-collapse border-2 border-black text-[11px]">
+            <thead>
+              <tr className="bg-gray-100">
+                <th className="border-2 border-black p-2 w-10 text-center">NO</th>
+                <th className="border-2 border-black p-2 text-left w-40">GRUP</th>
+                <th className="border-2 border-black p-2 text-left">DESKRIPSI PEKERJAAN</th>
+                <th className="border-2 border-black p-2 text-left w-48">CATATAN MEKANIK</th>
+              </tr>
+            </thead>
+            <tbody>
+              {entry?.vehicle_entry_jobs?.map((job: any, index: number) => (
+                <tr key={index}>
+                  <td className="border border-black p-2 text-center font-bold">{index + 1}</td>
+                  <td className="border border-black p-2 uppercase font-medium">{job.job_types?.job_group}</td>
+                  <td className="border border-black p-2 font-black">{job.job_types?.job_name}</td>
+                  <td className="border border-black p-2 italic text-gray-400">....................................</td>
                 </tr>
-              </thead>
-              <tbody className="text-[10px]">
-                {entry?.vehicle_entry_jobs?.map((job: any, index: number) => (
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        <div className="mb-10">
+          <h3 className="text-xs font-black uppercase mb-2 border-b border-black inline-block">II. ESTIMASI SUKU CADANG / MATERIAL</h3>
+          <table className="w-full border-collapse border-2 border-black text-[11px]">
+            <thead>
+              <tr className="bg-gray-100">
+                <th className="border-2 border-black p-2 w-10 text-center">NO</th>
+                <th className="border-2 border-black p-2 text-left">NAMA BARANG / MATERIAL</th>
+                <th className="border-2 border-black p-2 text-center w-20">QTY</th>
+                <th className="border-2 border-black p-2 text-center w-20">SATUAN</th>
+              </tr>
+            </thead>
+            <tbody>
+              {entry?.vehicle_entry_spareparts && entry.vehicle_entry_spareparts.length > 0 ? (
+                entry.vehicle_entry_spareparts.map((sp: any, index: number) => (
                   <tr key={index}>
-                    <td className="border border-gray-300 p-2 text-center">{index + 1}</td>
-                    <td className="border border-gray-300 p-2 font-medium uppercase">{job.job_types?.job_group}</td>
-                    <td className="border border-gray-300 p-2 font-bold">{job.job_types?.job_name}</td>
-                    <td className="border border-gray-300 p-2 italic text-gray-500">{job.notes || '-'}</td>
+                    <td className="border border-black p-2 text-center font-bold">{index + 1}</td>
+                    <td className="border border-black p-2 font-black">{sp.spareparts?.name || sp.item_name}</td>
+                    <td className="border border-black p-2 text-center font-bold">{sp.qty}</td>
+                    <td className="border border-black p-2 text-center uppercase">{sp.spareparts?.unit || '-'}</td>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </section>
-
-          <section className="mb-8">
-            <h3 className="font-bold uppercase text-[9px] text-gray-500 tracking-widest mb-2">II. Estimasi Suku Cadang & Material</h3>
-            <table className="w-full border-collapse border border-gray-300">
-              <thead className="bg-gray-50">
-                <tr className="text-[10px] font-bold text-gray-700">
-                  <th className="border border-gray-300 p-2 w-10 text-center">NO</th>
-                  <th className="border border-gray-300 p-2 text-left">NAMA BARANG / MATERIAL</th>
-                  <th className="border border-gray-300 p-2 text-center w-24">QUANTITY</th>
-                  <th className="border border-gray-300 p-2 text-center w-24">SATUAN</th>
+                ))
+              ) : (
+                <tr>
+                  <td colSpan={4} className="border border-black p-4 text-center italic text-gray-500">
+                    Tidak ada estimasi sparepart/material.
+                  </td>
                 </tr>
-              </thead>
-              <tbody className="text-[10px]">
-                {entry?.vehicle_entry_spareparts && entry.vehicle_entry_spareparts.length > 0 ? (
-                  entry.vehicle_entry_spareparts.map((sp: any, index: number) => (
-                    <tr key={index}>
-                      <td className="border border-gray-300 p-2 text-center">{index + 1}</td>
-                      <td className="border border-gray-300 p-2 font-bold">{sp.spareparts?.name || sp.item_name}</td>
-                      <td className="border border-gray-300 p-2 text-center font-bold">{sp.qty}</td>
-                      <td className="border border-gray-300 p-2 text-center uppercase text-gray-400">{sp.spareparts?.unit || '-'}</td>
-                    </tr>
-                  ))
-                ) : (
-                  <tr><td colSpan={4} className="border border-gray-300 p-4 text-center italic text-gray-400 text-[11px]">Tidak ada estimasi sparepart/material.</td></tr>
-                )}
-              </tbody>
-            </table>
-          </section>
-        </main>
+              )}
+            </tbody>
+          </table>
+        </div>
 
-        <footer className="mt-16">
-          <div className="grid grid-cols-3 gap-8 text-center text-[10px]">
-            <div className="space-y-12">
-              <p className="font-bold uppercase text-gray-400 tracking-widest">Pemohon / Driver</p>
-              <div className="border-t border-gray-800 w-32 mx-auto pt-1">
-                <p className="">( .......................... )</p>
-              </div>
-            </div>
-            <div className="space-y-12">
-              <p className="font-bold uppercase text-gray-400 tracking-widest">Pemeriksa / SA</p>
-              <div className="border-t border-gray-800 w-32 mx-auto pt-1">
-                <p className="">( .......................... )</p>
-              </div>
-            </div>
-            <div className="space-y-12">
-              <p className="font-bold uppercase text-gray-400 tracking-widest">Mekanik Pelaksana</p>
-              <div className="border-t border-gray-800 w-32 mx-auto pt-1">
-                <p className="font-bold underline">{wo.mechanics?.name}</p>
-              </div>
-            </div>
-          </div>
-          <div className="mt-12 pt-4 border-t border-gray-100 flex justify-between items-end text-[8px] text-gray-400">
-            <div>Dicetak otomatis oleh sistem OtoSmart Monitoring</div>
-            <div className="italic uppercase">ID WO: {wo.id} | {new Date().toLocaleString('id-ID')}</div>
-          </div>
-        </footer>
+        <div className="mt-16">
+          <table className="w-full text-center text-[11px]">
+            <tbody>
+              <tr>
+                <td className="w-1/3 pb-20 font-bold uppercase">Pemohon / Driver</td>
+                <td className="w-1/3 pb-20 font-bold uppercase">Workshop Head</td>
+                <td className="w-1/3 pb-20 font-bold uppercase">Mekanik Pelaksana</td>
+              </tr>
+              <tr>
+                <td>( ............................ )</td>
+                <td>( ............................ )</td>
+                <td><span className="font-black underline">{wo.mechanics?.name}</span></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div className="mt-20 pt-2 border-t border-gray-400 flex justify-between items-center text-[9px] text-gray-500 italic">
+          <span>Dicetak otomatis oleh Workshop Monitoring System</span>
+          <span>{new Date().toLocaleString('id-ID')} | ID: {wo.id.slice(0,8)}</span>
+        </div>
       </div>
 
       <style>{`
         @media print {
-          @page { margin: 10mm; size: A4; }
-          body { margin: 0; padding: 0; background: white; -webkit-print-color-adjust: exact; }
-          .no-print { display: none !important; }
+          @page { 
+            margin: 15mm; 
+            size: A4; 
+          }
+          body { 
+            margin: 0; 
+            padding: 0; 
+            background: white !important;
+            color: black !important;
+          }
+          .no-print { 
+            display: none !important; 
+          }
+          table {
+            border-collapse: collapse !important;
+          }
+          th, td {
+            border-color: black !important;
+          }
         }
       `}</style>
     </div>
