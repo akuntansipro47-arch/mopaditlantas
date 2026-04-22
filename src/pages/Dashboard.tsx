@@ -237,10 +237,10 @@ export default function Dashboard() {
           if (isR4) progress[monthKey].totalIn.r4++;
           if (isR2) progress[monthKey].totalIn.r2++;
 
-          if (wo.status === 'COMPLETED') {
+          if (wo.status === 'COMPLETED' || wo.status === 'CLOSED') {
             if (isR4) progress[monthKey].totalCompleted.r4++;
             if (isR2) progress[monthKey].totalCompleted.r2++;
-          } else if (wo.status !== 'CLOSED') { // Consider everything else as WIP
+          } else { // Consider everything else as WIP
             if (isR4) progress[monthKey].totalWip.r4++;
             if (isR2) progress[monthKey].totalWip.r2++;
           }
