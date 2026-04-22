@@ -41,8 +41,8 @@ export default function PurchasePayment() {
   const [originalPaymentAmount, setOriginalPaymentAmount] = useState(0);
 
   const [paymentData, setPaymentData] = useState({
-    amount: 0,
-    transfer_fee: 0,
+    amount: '0',
+    transfer_fee: '0',
     fee_account_id: '',
     payment_date: new Date().toISOString().split('T')[0],
     payment_method: 'TRANSFER',
@@ -287,8 +287,8 @@ export default function PurchasePayment() {
     setEditingPayment(null);
     setOriginalPaymentAmount(0);
     setPaymentData({
-      amount: invoice.total_amount - (invoice.paid_amount || 0),
-      transfer_fee: 0,
+      amount: String(Number(invoice.total_amount || 0) - Number(invoice.paid_amount || 0)),
+      transfer_fee: '0',
       fee_account_id: '',
       payment_date: new Date().toISOString().split('T')[0],
       payment_method: 'TRANSFER',
@@ -304,8 +304,8 @@ export default function PurchasePayment() {
       setSelectedInvoice(payment.purchase_invoices);
       setOriginalPaymentAmount(payment.amount);
       setPaymentData({
-          amount: payment.amount,
-          transfer_fee: Number(payment.transfer_fee || 0),
+          amount: String(Number(payment.amount || 0)),
+          transfer_fee: String(Number(payment.transfer_fee || 0)),
           fee_account_id: payment.fee_account_id || '',
           payment_date: payment.payment_date,
           payment_method: payment.payment_method,
@@ -728,7 +728,18 @@ export default function PurchasePayment() {
               </div>
               <div className="grid grid-cols-4 items-center gap-4">
                 <Label htmlFor="amount" className="text-right">Jumlah Bayar</Label>
-                <Input id="amount" type="number" value={paymentData.amount} onChange={e => setPaymentData({...paymentData, amount: Number(e.target.value)})} className="col-span-3" />
+                <Input
+                  id="amount"
+                  type="text"
+                  inputMode="numeric"
+                  pattern="[0-9]*"
+                  value={paymentData.amount}
+                  onChange={(e) => {
+                    const digits = e.target.value.replace(/\D/g, '');
+                    setPaymentData({ ...paymentData, amount: digits });
+                  }}
+                  className="col-span-3"
+                />
               </div>
               <div className="grid grid-cols-4 items-center gap-4">
                 <Label htmlFor="payment_account_id" className="text-right">Akun Pembayar</Label>
@@ -745,9 +756,20 @@ export default function PurchasePayment() {
               </div>
               <div className="grid grid-cols-4 items-center gap-4">
                 <Label htmlFor="transfer_fee" className="text-right">Biaya Admin</Label>
-                <Input id="transfer_fee" type="number" value={paymentData.transfer_fee} onChange={e => setPaymentData({...paymentData, transfer_fee: Number(e.target.value)})} className="col-span-3" />
+                <Input
+                  id="transfer_fee"
+                  type="text"
+                  inputMode="numeric"
+                  pattern="[0-9]*"
+                  value={paymentData.transfer_fee}
+                  onChange={(e) => {
+                    const digits = e.target.value.replace(/\D/g, '');
+                    setPaymentData({ ...paymentData, transfer_fee: digits });
+                  }}
+                  className="col-span-3"
+                />
               </div>
-              {paymentData.transfer_fee > 0 && (
+              {Number(paymentData.transfer_fee || 0) > 0 && (
                 <div className="grid grid-cols-4 items-center gap-4">
                     <Label htmlFor="fee_account_id" className="text-right">Akun Biaya</Label>
                     <Select value={paymentData.fee_account_id} onValueChange={value => setPaymentData({...paymentData, fee_account_id: value})}>
