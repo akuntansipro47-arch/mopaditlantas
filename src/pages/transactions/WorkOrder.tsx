@@ -623,7 +623,7 @@ export default function WorkOrder() {
         </CardContent>
       </Card>
 
-      <div style={{ position: 'absolute', left: '-100000px', top: 0 }} aria-hidden="true">
+      <div className="printable-area" style={{ position: 'absolute', left: '-100000px', top: 0 }} aria-hidden="true">
         {printData && (
           <div ref={printComponentRef}>
             <PrintSPK data={printData} />

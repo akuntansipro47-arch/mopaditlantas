@@ -15,7 +15,7 @@ const PrintSPK: React.FC<PrintSPKProps> = ({ data }) => {
   const { wo, entry } = data;
 
   return (
-    <div className="p-8 font-sans bg-white text-gray-900">
+    <div className="printable-area p-8 font-sans bg-white text-gray-900">
       <header className="flex justify-between items-center pb-4 border-b-2 border-gray-800">
         <div>
           <h1 className="text-3xl font-bold text-gray-800">SURAT PERINTAH KERJA</h1>
