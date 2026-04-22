@@ -38,6 +38,7 @@ export default function WorkOrder() {
   const [wos, setWos] = useState<WOWithDetails[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
+  const [dateFilter, setDateFilter] = useState({ startDate: '', endDate: '' });
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [currentId, setCurrentId] = useState<string | null>(null);
@@ -391,8 +392,10 @@ export default function WorkOrder() {
   };
 
   const filteredWOs = wos.filter(w => 
-    w.wo_number.toLowerCase().includes(search.toLowerCase()) ||
-    w.vehicle_entries?.vehicles?.license_plate.toLowerCase().includes(search.toLowerCase())
+    (w.wo_number.toLowerCase().includes(search.toLowerCase()) ||
+      w.vehicle_entries?.vehicles?.license_plate.toLowerCase().includes(search.toLowerCase())) &&
+    (!dateFilter.startDate || String(w.work_date || '').slice(0, 10) >= dateFilter.startDate) &&
+    (!dateFilter.endDate || String(w.work_date || '').slice(0, 10) <= dateFilter.endDate)
   );
 
   return (
@@ -534,11 +537,29 @@ export default function WorkOrder() {
 
       <Card>
         <CardHeader className="pb-3">
-          <div className="flex justify-between">
+          <div className="flex justify-between items-center">
             <CardTitle>Daftar Work Order</CardTitle>
-            <div className="relative w-64">
-              <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
-              <Input placeholder="Cari No. WO / Nopol..." className="pl-8" value={search} onChange={e => setSearch(e.target.value)} />
+            <div className="flex gap-2 items-center">
+              <div className="flex items-center gap-2 bg-white border rounded-md px-2 py-1">
+                <span className="text-sm text-gray-500">Periode:</span>
+                <Input 
+                  type="date" 
+                  className="w-auto border-0 p-0 h-auto focus-visible:ring-0 text-xs"
+                  value={dateFilter.startDate} 
+                  onChange={(e) => setDateFilter(prev => ({ ...prev, startDate: e.target.value }))}
+                />
+                <span className="text-sm text-gray-500">-</span>
+                <Input 
+                  type="date" 
+                  className="w-auto border-0 p-0 h-auto focus-visible:ring-0 text-xs"
+                  value={dateFilter.endDate} 
+                  onChange={(e) => setDateFilter(prev => ({ ...prev, endDate: e.target.value }))}
+                />
+              </div>
+              <div className="relative w-64 ml-2">
+                <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+                <Input placeholder="Cari No. WO / Nopol..." className="pl-8" value={search} onChange={e => setSearch(e.target.value)} />
+              </div>
             </div>
           </div>
         </CardHeader>
