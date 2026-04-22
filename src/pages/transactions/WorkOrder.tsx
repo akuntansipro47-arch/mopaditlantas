@@ -312,22 +312,28 @@ export default function WorkOrder() {
 
       // Step 2: If there are spareparts, fetch their details separately
       if (entry.vehicle_entry_spareparts && entry.vehicle_entry_spareparts.length > 0) {
-        const sparepartIds = entry.vehicle_entry_spareparts.map((sp: any) => sp.sparepart_id);
+        const goodsIds = entry.vehicle_entry_spareparts
+          .map((sp: any) => sp.goods_id)
+          .filter(Boolean);
         
-        const { data: sparepartsData, error: sparepartsError } = await supabase
-          .from('sparepart')
-          .select('*')
-          .in('id', sparepartIds);
+        let goodsData: any[] = [];
+        if (goodsIds.length > 0) {
+          const { data, error: goodsError } = await supabase
+            .from('goods')
+            .select('*')
+            .in('id', goodsIds);
 
-        if (sparepartsError) {
-          throw new Error(`Gagal mengambil detail sparepart: ${sparepartsError.message}`);
+          if (goodsError) {
+            throw new Error(`Gagal mengambil detail sparepart: ${goodsError.message}`);
+          }
+          goodsData = data || [];
         }
 
         // Step 3: Combine the data
-        const sparepartsMap = new Map(sparepartsData.map((sp: any) => [sp.id, sp]));
+        const goodsMap = new Map(goodsData.map((g: any) => [g.id, g]));
         const enrichedSpareparts = entry.vehicle_entry_spareparts.map((sp: any) => ({
           ...sp,
-          spareparts: sparepartsMap.get(sp.sparepart_id) || null,
+          spareparts: sp.goods_id ? goodsMap.get(sp.goods_id) || null : null,
         }));
 
         const enrichedEntry = { ...entry, vehicle_entry_spareparts: enrichedSpareparts };

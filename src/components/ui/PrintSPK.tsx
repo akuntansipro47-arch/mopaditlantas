@@ -101,8 +101,8 @@ const PrintSPK: React.FC<PrintSPKProps> = ({ data }) => {
                   entry.vehicle_entry_spareparts.map((sp: any, index: number) => (
                     <tr key={index} className="border-t">
                       <td className="p-2">{index + 1}</td>
-                      <td className="p-2">{sp.spareparts?.name || 'Nama tidak ditemukan'}</td>
-                      <td className="p-2 text-right">{sp.quantity}</td>
+                      <td className="p-2">{sp.spareparts?.name || sp.item_name || 'Nama tidak ditemukan'}</td>
+                      <td className="p-2 text-right">{sp.qty}</td>
                       <td className="p-2">{sp.spareparts?.unit || '-'}</td>
                     </tr>
                   ))
