@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import { formatDate } from '@/lib/utils';
-import { Loader2, Printer, X } from 'lucide-react';
+import { Loader2, Printer, X, CheckCircle2 } from 'lucide-react';
 
 interface PrintSPKProps {
   id: string;
@@ -11,6 +11,7 @@ export default function PrintSPK({ id }: PrintSPKProps) {
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [agency, setAgency] = useState<any>(null);
+  const [isReady, setIsReady] = useState(false);
 
   useEffect(() => {
     fetchData();
@@ -18,45 +19,27 @@ export default function PrintSPK({ id }: PrintSPKProps) {
 
   async function fetchData() {
     try {
-      // 1. Fetch Agency Profile
       const { data: agencyData } = await supabase.from('agency_profile').select('*').single();
       setAgency(agencyData);
 
-      // 2. Fetch WO
       const { data: wo, error: woError } = await supabase
         .from('work_orders')
-        .select(`
-          *,
-          mechanics (*),
-          vehicle_entries (
-            *,
-            vehicles (*)
-          )
-        `)
+        .select(`*, mechanics (*), vehicle_entries (*, vehicles (*))`)
         .eq('id', id)
         .single();
 
       if (woError) throw woError;
 
-      // 3. Fetch entry details
       const { data: entry, error: entryError } = await supabase
         .from('vehicle_entries')
-        .select(`
-          *,
-          vehicle_entry_jobs (
-            *,
-            job_types (*)
-          ),
-          vehicle_entry_spareparts (*)
-        `)
+        .select(`*, vehicle_entry_jobs (*, job_types (*)), vehicle_entry_spareparts (*)`)
         .eq('id', wo.vehicle_entry_id)
         .single();
 
       if (entryError) throw entryError;
 
-      // 4. Enriched Spareparts
       let enrichedSpareparts = [];
-      if (entry.vehicle_entry_spareparts && entry.vehicle_entry_spareparts.length > 0) {
+      if (entry.vehicle_entry_spareparts?.length > 0) {
         const goodsIds = entry.vehicle_entry_spareparts.map((sp: any) => sp.goods_id).filter(Boolean);
         if (goodsIds.length > 0) {
           const { data: goodsData } = await supabase.from('goods').select('*').in('id', goodsIds);
@@ -74,11 +57,12 @@ export default function PrintSPK({ id }: PrintSPKProps) {
         wo,
         entry: { ...entry, vehicle_entry_spareparts: enrichedSpareparts }
       });
-
-      // 5. AUTO PRINT - Identical to SuratJalanPrint.tsx
+      
+      // Tandai data siap, lalu beri jeda sebelum cetak otomatis
+      setIsReady(true);
       setTimeout(() => {
         window.print();
-      }, 1500);
+      }, 2000);
 
     } catch (error) {
       console.error('Error:', error);
@@ -88,164 +72,216 @@ export default function PrintSPK({ id }: PrintSPKProps) {
   }
 
   if (loading) {
-    return <div className="flex justify-center items-center h-screen"><Loader2 className="animate-spin h-8 w-8 text-blue-600" /></div>;
+    return (
+      <div className="flex flex-col justify-center items-center h-screen bg-slate-50">
+        <Loader2 className="animate-spin h-10 w-10 text-blue-600 mb-4" />
+        <p className="text-slate-600 font-medium">Mempersiapkan Dokumen SPK...</p>
+      </div>
+    );
   }
 
-  if (!data) return <div className="p-8 text-center">Data SPK tidak ditemukan.</div>;
+  if (!data) return <div className="p-8 text-center text-red-500 font-bold">Data SPK tidak ditemukan.</div>;
 
   const { wo, entry } = data;
 
   return (
-    <div className="p-2 max-w-[210mm] mx-auto bg-white min-h-screen text-[11px] font-sans leading-tight text-black">
-      {/* Control Bar - Hidden on Print */}
-      <div className="no-print mb-4 flex justify-between items-center bg-gray-800 text-white p-2 rounded shadow">
-        <span className="text-[10px] font-bold px-2">MODE CETAK SPK</span>
-        <div className="flex gap-2">
-            <button onClick={() => window.close()} className="px-3 py-1 bg-gray-600 text-[10px] rounded hover:bg-gray-500 flex items-center gap-1">
-                <X className="h-3 w-3" /> Tutup
+    <div className="bg-slate-100 min-h-screen print:bg-white print:min-h-0">
+      {/* Control Bar - Layar Saja */}
+      <div className="no-print sticky top-0 z-50 bg-white border-b shadow-sm p-4 mb-6">
+        <div className="max-w-[210mm] mx-auto flex justify-between items-center">
+          <div className="flex items-center gap-2">
+            <CheckCircle2 className={`h-5 w-5 ${isReady ? 'text-green-500' : 'text-slate-300'}`} />
+            <span className="text-sm font-semibold text-slate-700">
+              {isReady ? 'Dokumen Siap Dicetak' : 'Memuat Data...'}
+            </span>
+          </div>
+          <div className="flex gap-3">
+            <button onClick={() => window.close()} className="px-4 py-2 text-sm font-medium border rounded-md hover:bg-slate-50 transition-colors flex items-center gap-2">
+              <X className="h-4 w-4" /> Tutup
             </button>
-            <button onClick={() => window.print()} className="px-4 py-1 bg-blue-600 text-[10px] rounded hover:bg-blue-500 font-bold flex items-center gap-1">
-                <Printer className="h-3 w-3" /> Cetak Manual
+            <button onClick={() => window.print()} className="px-6 py-2 text-sm font-bold bg-blue-600 text-white rounded-md hover:bg-blue-700 shadow-md transition-all flex items-center gap-2">
+              <Printer className="h-4 w-4" /> Cetak Sekarang
             </button>
+          </div>
         </div>
       </div>
 
-      {/* Header Section - Same style as Surat Jalan */}
-      <div className="border-b-2 border-black pb-2 mb-4">
-        <div className="flex justify-between items-start">
-          <div className="flex items-center gap-3">
+      {/* KONTEN UTAMA - Desain Modern (Enhanced) */}
+      <div className="max-w-[210mm] mx-auto p-[15mm] bg-white shadow-xl print:shadow-none print:p-0 print:m-0 mb-10 overflow-visible">
+        
+        {/* Header dengan Kotak Biru SPK */}
+        <header className="flex justify-between items-start pb-6 border-b-2 border-slate-800 mb-8">
+          <div className="flex gap-6 items-center">
             {agency?.logo_url && (
-              <img src={agency.logo_url} alt="Logo" className="h-12 w-auto object-contain" />
+              <img src={agency.logo_url} alt="Logo" className="h-20 w-auto object-contain" width="80" height="80" />
             )}
             <div>
-              <h1 className="text-lg font-bold uppercase tracking-wider leading-none">{agency?.name || 'INSTANSI'}</h1>
-              <p className="text-sm font-bold mt-1">SURAT PERINTAH KERJA (SPK)</p>
-              <p className="text-gray-600 w-80 text-[9px] mt-1 leading-tight">
-                {agency?.address}
-              </p>
+              <h1 className="text-2xl font-black text-slate-900 uppercase leading-tight">{agency?.name || 'SURAT PERINTAH KERJA'}</h1>
+              <p className="text-xs text-slate-500 font-medium mt-1 uppercase tracking-wide">Workshop Monitoring System</p>
+              <p className="text-[10px] text-slate-400 mt-1 max-w-xs leading-relaxed">{agency?.address}</p>
             </div>
           </div>
           <div className="text-right">
-            <div className="mb-1">
-              <span className="font-bold block text-sm">{wo.wo_number}</span>
-              <span className="text-gray-500 text-[8px] uppercase">NOMOR WO</span>
+            <div className="bg-blue-900 text-white px-6 py-2 rounded-sm mb-2 inline-block">
+                <h2 className="text-2xl font-black tracking-tighter">SPK</h2>
             </div>
-            <div>
-              <span className="block text-[10px]">{formatDate(wo.work_date)}</span>
-              <span className="text-gray-500 text-[8px] uppercase">TANGGAL</span>
-            </div>
+            <p className="text-sm font-bold text-slate-800">No: {wo.wo_number}</p>
+            <p className="text-xs text-slate-500 font-medium">{formatDate(wo.work_date)}</p>
           </div>
-        </div>
-      </div>
+        </header>
 
-      {/* Data Grid */}
-      <div className="grid grid-cols-2 gap-4 mb-4">
-        <div className="border border-black p-2 rounded-sm">
-            <h3 className="text-[9px] font-bold uppercase border-b border-black mb-1 pb-1">Data Kendaraan</h3>
-            <table className="w-full text-[10px]">
+        <main className="space-y-8">
+          {/* Grid Informasi */}
+          <div className="grid grid-cols-2 gap-10">
+            <section>
+              <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest border-b pb-1 mb-3">Detail Kendaraan</h3>
+              <table className="w-full text-xs">
                 <tbody>
-                    <tr><td className="w-20 text-gray-500">No. Polisi</td><td className="font-bold">: {wo.vehicle_entries?.vehicles?.license_plate}</td></tr>
-                    <tr><td className="text-gray-500">Merk/Tipe</td><td className="font-bold">: {wo.vehicle_entries?.vehicles?.brand_type}</td></tr>
-                    <tr><td className="text-gray-500">Nota Dinas</td><td>: {wo.vehicle_entries?.nota_dinas_number}</td></tr>
+                  <tr><td className="w-24 py-1.5 text-slate-500 font-medium">No. Polisi</td><td className="font-bold text-slate-900">: {wo.vehicle_entries?.vehicles?.license_plate}</td></tr>
+                  <tr><td className="py-1.5 text-slate-500 font-medium">Merek / Tipe</td><td className="font-bold text-slate-900">: {wo.vehicle_entries?.vehicles?.brand_type}</td></tr>
+                  <tr><td className="py-1.5 text-slate-500 font-medium">Nota Dinas</td><td className="font-medium">: {wo.vehicle_entries?.nota_dinas_number}</td></tr>
                 </tbody>
-            </table>
-        </div>
-        <div className="border border-black p-2 rounded-sm">
-            <h3 className="text-[9px] font-bold uppercase border-b border-black mb-1 pb-1">Data Mekanik</h3>
-            <table className="w-full text-[10px]">
+              </table>
+            </section>
+            <section>
+              <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest border-b pb-1 mb-3">Penanggung Jawab</h3>
+              <table className="w-full text-xs">
                 <tbody>
-                    <tr><td className="w-20 text-gray-500">Nama</td><td className="font-bold">: {wo.mechanics?.name}</td></tr>
-                    <tr><td className="text-gray-500">Spesialisasi</td><td>: {wo.mechanics?.specialization}</td></tr>
-                    <tr><td className="text-gray-500">Status</td><td className="uppercase font-bold text-blue-800">: {wo.status}</td></tr>
+                  <tr><td className="w-24 py-1.5 text-slate-500 font-medium">Mekanik</td><td className="font-bold text-slate-900">: {wo.mechanics?.name}</td></tr>
+                  <tr><td className="py-1.5 text-slate-500 font-medium">Spesialisasi</td><td className="font-medium">: {wo.mechanics?.specialization}</td></tr>
+                  <tr><td className="py-1.5 text-slate-500 font-medium">Status WO</td><td className="font-bold text-blue-700 uppercase">: {wo.status}</td></tr>
                 </tbody>
-            </table>
-        </div>
-      </div>
+              </table>
+            </section>
+          </div>
 
-      {/* Jobs Table */}
-      <div className="mb-4">
-        <h3 className="text-[9px] font-bold uppercase mb-1 px-1">I. DAFTAR PEKERJAAN</h3>
-        <table className="w-full border-collapse border border-black text-[10px]">
-            <thead>
-                <tr className="bg-gray-100">
-                    <th className="border border-black p-1 text-center w-8">NO</th>
-                    <th className="border border-black p-1 text-left w-32">GRUP</th>
-                    <th className="border border-black p-1 text-left">DESKRIPSI PEKERJAAN</th>
-                </tr>
-            </thead>
-            <tbody>
-                {entry?.vehicle_entry_jobs?.map((job: any, index: number) => (
-                    <tr key={index}>
-                        <td className="border border-black p-1 text-center font-bold">{index + 1}</td>
-                        <td className="border border-black p-1 uppercase">{job.job_types?.job_group}</td>
-                        <td className="border border-black p-1 font-bold">{job.job_types?.job_name}</td>
+          {/* Tabel Pekerjaan */}
+          <section>
+            <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-2">
+                <div className="h-1.5 w-1.5 rounded-full bg-slate-400"></div>
+                I. Daftar Pekerjaan (Service Items)
+            </h3>
+            <div className="border border-slate-300 rounded-sm overflow-hidden">
+              <table className="w-full text-[11px] border-collapse">
+                <thead className="bg-slate-50 border-b border-slate-300">
+                  <tr className="text-slate-600">
+                    <th className="p-2.5 text-center w-10 border-r border-slate-300 font-bold">NO</th>
+                    <th className="p-2.5 text-left w-48 border-r border-slate-300 font-bold">KATEGORI</th>
+                    <th className="p-2.5 text-left border-r border-slate-300 font-bold">DESKRIPSI PEKERJAAN</th>
+                    <th className="p-2.5 text-left font-bold">CATATAN</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-200">
+                  {entry?.vehicle_entry_jobs?.map((job: any, index: number) => (
+                    <tr key={index} className="hover:bg-slate-50 transition-colors">
+                      <td className="p-2.5 text-center border-r border-slate-300 font-semibold">{index + 1}</td>
+                      <td className="p-2.5 border-r border-slate-300 font-medium uppercase text-[10px] text-slate-500">{job.job_types?.job_group}</td>
+                      <td className="p-2.5 border-r border-slate-300 font-bold text-slate-800">{job.job_types?.job_name}</td>
+                      <td className="p-2.5 italic text-slate-400 text-[10px]">{job.notes || '-'}</td>
                     </tr>
-                ))}
-            </tbody>
-        </table>
-      </div>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </section>
 
-      {/* Spareparts Table */}
-      <div className="mb-6">
-        <h3 className="text-[9px] font-bold uppercase mb-1 px-1">II. ESTIMASI SPAREPART / MATERIAL</h3>
-        <table className="w-full border-collapse border border-black text-[10px]">
-            <thead>
-                <tr className="bg-gray-100">
-                    <th className="border border-black p-1 text-center w-8">NO</th>
-                    <th className="border border-black p-1 text-left">NAMA BARANG</th>
-                    <th className="border border-black p-1 text-center w-16">QTY</th>
-                    <th className="border border-black p-1 text-center w-16">SATUAN</th>
-                </tr>
-            </thead>
-            <tbody>
-                {entry?.vehicle_entry_spareparts && entry.vehicle_entry_spareparts.length > 0 ? (
+          {/* Tabel Sparepart */}
+          <section>
+            <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-2">
+                <div className="h-1.5 w-1.5 rounded-full bg-slate-400"></div>
+                II. Estimasi Sparepart & Material
+            </h3>
+            <div className="border border-slate-300 rounded-sm overflow-hidden">
+              <table className="w-full text-[11px] border-collapse">
+                <thead className="bg-slate-50 border-b border-slate-300">
+                  <tr className="text-slate-600">
+                    <th className="p-2.5 text-center w-10 border-r border-slate-300 font-bold">NO</th>
+                    <th className="p-2.5 text-left border-r border-slate-300 font-bold">NAMA BARANG / MATERIAL</th>
+                    <th className="p-2.5 text-center w-24 border-r border-slate-300 font-bold">QTY</th>
+                    <th className="p-2.5 text-center font-bold">SATUAN</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-200">
+                  {entry?.vehicle_entry_spareparts?.length > 0 ? (
                     entry.vehicle_entry_spareparts.map((sp: any, index: number) => (
-                        <tr key={index}>
-                            <td className="border border-black p-1 text-center font-bold">{index + 1}</td>
-                            <td className="border border-black p-1 font-bold">{sp.spareparts?.name || sp.item_name}</td>
-                            <td className="border border-black p-1 text-center font-bold">{sp.qty}</td>
-                            <td className="border border-black p-1 text-center uppercase text-gray-400">{sp.spareparts?.unit || '-'}</td>
-                        </tr>
+                      <tr key={index} className="hover:bg-slate-50 transition-colors">
+                        <td className="p-2.5 text-center border-r border-slate-300 font-semibold">{index + 1}</td>
+                        <td className="p-2.5 border-r border-slate-300 font-bold text-slate-800">{sp.spareparts?.name || sp.item_name}</td>
+                        <td className="p-2.5 text-center font-bold border-r border-slate-300 text-slate-900">{sp.qty}</td>
+                        <td className="p-2.5 text-center uppercase text-slate-400 font-medium">{sp.spareparts?.unit || '-'}</td>
+                      </tr>
                     ))
-                ) : (
-                    <tr><td colSpan={4} className="border border-black p-2 text-center italic text-gray-400 uppercase">Tidak ada estimasi sparepart</td></tr>
-                )}
-            </tbody>
-        </table>
-      </div>
+                  ) : (
+                    <tr><td colSpan={4} className="p-6 text-center text-slate-400 italic font-medium">Tidak ada estimasi sparepart untuk pekerjaan ini.</td></tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </section>
+        </main>
 
-      {/* Signatures */}
-      <div className="grid grid-cols-3 gap-2 mt-8 text-center page-break-inside-avoid">
-        <div>
-          <p className="mb-10 font-medium text-[9px] uppercase text-gray-500">Pemohon (Driver)</p>
-          <div className="border-t border-black w-3/4 mx-auto pt-1">
-            <p className="text-[9px]">( .......................... )</p>
+        {/* Footer Tanda Tangan */}
+        <footer className="mt-20">
+          <div className="grid grid-cols-3 gap-10 text-center">
+            <div className="space-y-16">
+              <p className="text-[10px] font-bold uppercase text-slate-400 tracking-widest">Pemohon / Driver</p>
+              <div className="border-t border-slate-800 w-40 mx-auto pt-2">
+                <p className="text-xs font-medium text-slate-600">( .......................... )</p>
+              </div>
+            </div>
+            <div className="space-y-16">
+              <p className="text-[10px] font-bold uppercase text-slate-400 tracking-widest">Workshop Head</p>
+              <div className="border-t border-slate-800 w-40 mx-auto pt-2">
+                <p className="text-xs font-medium text-slate-600">Pemeriksa</p>
+              </div>
+            </div>
+            <div className="space-y-16">
+              <p className="text-[10px] font-bold uppercase text-slate-400 tracking-widest">Mekanik Pelaksana</p>
+              <div className="border-t border-slate-800 w-40 mx-auto pt-2">
+                <p className="text-xs font-bold text-slate-900 underline uppercase">{wo.mechanics?.name}</p>
+              </div>
+            </div>
           </div>
-        </div>
-        <div>
-          <p className="mb-10 font-medium text-[9px] uppercase text-gray-500">Pemeriksa (SA)</p>
-          <div className="border-t border-black w-3/4 mx-auto pt-1">
-            <p className="text-[9px]">( .......................... )</p>
+          <div className="mt-20 pt-4 border-t border-slate-100 flex justify-between items-center text-[9px] text-slate-400 italic">
+            <span>Dokumen dicetak otomatis oleh Workshop Monitoring System</span>
+            <span>{new Date().toLocaleString('id-ID')} | ID WO: {wo.id.slice(0,8)}</span>
           </div>
-        </div>
-        <div>
-          <p className="mb-10 font-medium text-[9px] uppercase text-gray-500">Mekanik Pelaksana</p>
-          <div className="border-t border-black w-3/4 mx-auto pt-1">
-            <p className="font-bold text-[10px] underline uppercase">{wo.mechanics?.name}</p>
-          </div>
-        </div>
-      </div>
-
-      <div className="mt-8 text-center text-[8px] text-gray-400 border-t pt-2 italic">
-        Dicetak otomatis oleh sistem OtoSmart pada {new Date().toLocaleString('id-ID')}
+        </footer>
       </div>
 
       <style>{`
+        @media screen {
+          .no-print-bg { background-color: #f8fafc; }
+        }
         @media print {
-          @page { margin: 5mm !important; size: A4 !important; }
-          body { margin: 0 !important; padding: 0 !important; background: white !important; color: black !important; -webkit-print-color-adjust: exact !important; }
-          .no-print { display: none !important; }
-          * { -webkit-print-color-adjust: exact !important; color-adjust: exact !important; }
+          @page { 
+            margin: 10mm; 
+            size: A4; 
+          }
+          html, body {
+            height: auto !important;
+            overflow: visible !important;
+          }
+          body { 
+            margin: 0 !important; 
+            padding: 0 !important; 
+            background: white !important; 
+            -webkit-print-color-adjust: exact !important; 
+          }
+          .no-print { 
+            display: none !important; 
+          }
+          .shadow-xl { 
+            box-shadow: none !important; 
+          }
+          div {
+            overflow: visible !important;
+            display: block !important;
+          }
+          table {
+            width: 100% !important;
+            border-collapse: collapse !important;
+          }
         }
       `}</style>
     </div>
