@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { flushSync } from 'react-dom';
 import { supabase } from '@/lib/supabase';
 import { Database } from '@/types/supabase';
 import { 
@@ -41,7 +42,6 @@ export default function WorkOrder() {
   const [isEditing, setIsEditing] = useState(false);
   const [currentId, setCurrentId] = useState<string | null>(null);
   const [printData, setPrintData] = useState<{ wo: WOWithDetails; entry: any } | null>(null);
-  const [shouldPrintSPK, setShouldPrintSPK] = useState(false);
   const [printingSPKId, setPrintingSPKId] = useState<string | null>(null);
   const printComponentRef = useRef<HTMLDivElement>(null);
 
@@ -63,18 +63,9 @@ export default function WorkOrder() {
     contentRef: printComponentRef,
     documentTitle: printData?.wo?.wo_number ? `SPK-${printData.wo.wo_number}` : 'SPK',
     onAfterPrint: () => {
-      setShouldPrintSPK(false);
       setPrintData(null);
     },
   });
-
-  useEffect(() => {
-    if (shouldPrintSPK && printData) {
-      setTimeout(() => {
-        triggerSPKPrint();
-      }, 100);
-    }
-  }, [shouldPrintSPK, printData, triggerSPKPrint]);
 
   useEffect(() => {
     fetchWOs();
@@ -206,11 +197,16 @@ export default function WorkOrder() {
         entry = { ...entryData, vehicle_entry_spareparts: enrichedSpareparts };
       }
 
-      setPrintData({ wo, entry });
-      setShouldPrintSPK(true);
+      flushSync(() => {
+        setPrintData({ wo, entry });
+      });
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          triggerSPKPrint();
+        });
+      });
     } catch (error: any) {
       toast.error('Gagal mempersiapkan data cetak SPK: ' + (error?.message || 'Unknown error'));
-      setShouldPrintSPK(false);
       setPrintData(null);
     } finally {
       setPrintingSPKId(null);
