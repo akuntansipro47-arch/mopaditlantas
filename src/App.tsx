@@ -85,11 +85,11 @@ export default function App() {
               <Route path="/admin/agency" element={<AgencyProfile />} />
               <Route path="/debug-sync" element={<DebugSync />} />
 
-              {/* Print */}
-              <Route path="/print/surat-jalan/:id" element={<PrintSuratJalan />} />
-              <Route path="/print/spk/:id" element={<PrintSPK />} />
-
             </Route>
+
+            {/* Print Routes (Outside DashboardLayout for clean printing) */}
+            <Route path="/print/surat-jalan/:id" element={<PrintSuratJalan />} />
+            <Route path="/print/spk/:id" element={<PrintSPK />} />
           </Route>
         </Routes>
       </Router>
