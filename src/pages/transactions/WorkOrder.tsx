@@ -503,8 +503,8 @@ export default function WorkOrder() {
                         <Badge variant={
                           item.status === 'OPEN' ? 'secondary' : 
                           item.status === 'IN_PROGRESS' ? 'default' : 
-                          item.status === 'COMPLETED' ? 'outline' : 'destructive'
-                        } className={item.status === 'COMPLETED' ? 'bg-green-100 text-green-800 border-transparent' : ''}>
+                          (item.status === 'COMPLETED' || item.status === 'CLOSED') ? 'outline' : 'destructive'
+                        } className={(item.status === 'COMPLETED' || item.status === 'CLOSED') ? 'bg-green-100 text-green-800 border-transparent' : ''}>
                           {item.status.replace('_', ' ')}
                         </Badge>
                       </TableCell>
@@ -520,12 +520,12 @@ export default function WorkOrder() {
                               <CheckCircle className="h-4 w-4 mr-1" /> Selesai
                             </Button>
                           )}
-                          {item.status === 'COMPLETED' && (
+                          { (item.status === 'COMPLETED' || item.status === 'CLOSED') && (
                             <Button size="sm" variant="outline" className="h-8 bg-blue-50 hover:bg-blue-100 text-blue-700 border-blue-200" onClick={() => window.open(`/print/surat-jalan/${item.id}`, '_blank')}>
                               <Printer className="h-4 w-4 mr-1" /> Surat Jalan
                             </Button>
                           )}
-                          {item.status === 'COMPLETED' && (
+                          { (item.status === 'COMPLETED' || item.status === 'CLOSED') && (
                             <Button size="sm" variant="secondary" className="h-8" onClick={() => handleReopenWO(item)}>
                               <RefreshCw className="h-4 w-4 mr-1" /> Re-open
                             </Button>
@@ -536,7 +536,7 @@ export default function WorkOrder() {
                           <Button variant="outline" size="sm" className="h-8" onClick={() => handleEdit(item)} disabled={item.status !== 'IN_PROGRESS'}>
                             <Eye className="h-4 w-4 mr-1" /> Edit
                           </Button>
-                          {item.status !== 'COMPLETED' && (
+                          {item.status !== 'COMPLETED' && item.status !== 'CLOSED' && (
                             <Button variant="destructive" size="icon" className="h-8 w-8" onClick={() => handleDelete(item.id, item.vehicle_entry_id)}>
                               <Trash2 className="h-4 w-4" />
                             </Button>
