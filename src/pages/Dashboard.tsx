@@ -47,14 +47,16 @@ interface LeadTimeData {
 }
 
 interface MonthlyProgressData {
-  month: string;
+  monthKey: string;
+  monthLabel: string;
   totalIn: { r4: number; r2: number };
   totalWip: { r4: number; r2: number };
   totalCompleted: { r4: number; r2: number };
 }
 
 interface MonthlyPoData {
-  month: string;
+  monthKey: string;
+  monthLabel: string;
   total: number;
 }
 
@@ -166,26 +168,29 @@ export default function Dashboard() {
         if (monthlyWoError) throw monthlyWoError;
 
         // Process PO Monthly Data
-        const poByMonth: { [key: string]: number } = {};
-        const monthShortFormatter = new Intl.DateTimeFormat('en-US', { month: 'short' });
+        const poByMonthKey: { [key: string]: number } = {};
+        const monthShortFormatter = new Intl.DateTimeFormat('id-ID', { month: 'short' });
         
         poItems.forEach(item => {
           const itemDate = new Date(item.created_at);
-          const monthKey = monthShortFormatter.format(itemDate);
           const total = item.quantity * item.unit_price;
-          poByMonth[monthKey] = (poByMonth[monthKey] || 0) + total;
+          const monthKey = `${itemDate.getFullYear()}-${String(itemDate.getMonth() + 1).padStart(2, '0')}`;
+          poByMonthKey[monthKey] = (poByMonthKey[monthKey] || 0) + total;
         });
 
-        const currentMonth = new Date().getMonth();
-        const currentYear = new Date().getFullYear();
-        const monthOrder = Array.from({ length: 6 }, (_, i) => {
-            const d = new Date(currentYear, currentMonth - 5 + i, 1);
-            return monthShortFormatter.format(d);
+        const poBuckets = Array.from({ length: 6 }, (_, i) => {
+          const d = new Date();
+          d.setDate(1);
+          d.setMonth(d.getMonth() - 5 + i);
+          const monthKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+          const monthLabel = `${monthShortFormatter.format(d)} ${String(d.getFullYear()).slice(2)}`;
+          return { monthKey, monthLabel };
         });
 
-        const sortedPoData = monthOrder.map(month => ({
-          month,
-          total: poByMonth[month] || 0,
+        const sortedPoData = poBuckets.map(({ monthKey, monthLabel }) => ({
+          monthKey,
+          monthLabel,
+          total: poByMonthKey[monthKey] || 0,
         }));
 
         setMonthlyPoData(sortedPoData);
@@ -200,23 +205,30 @@ export default function Dashboard() {
 
         // Process Monthly Progress
         const progress: { [key: string]: MonthlyProgressData } = {};
-        const monthFormatter = new Intl.DateTimeFormat('id-ID', { month: 'long', year: 'numeric' });
+        const monthLongFormatter = new Intl.DateTimeFormat('id-ID', { month: 'long' });
+        const progressBuckets = Array.from({ length: 6 }, (_, i) => {
+          const d = new Date();
+          d.setDate(1);
+          d.setMonth(d.getMonth() - 5 + i);
+          const monthKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+          const monthLabel = `${monthLongFormatter.format(d)} ${d.getFullYear()}`;
+          progress[monthKey] = {
+            monthKey,
+            monthLabel,
+            totalIn: { r4: 0, r2: 0 },
+            totalWip: { r4: 0, r2: 0 },
+            totalCompleted: { r4: 0, r2: 0 },
+          };
+          return monthKey;
+        });
 
         monthlyWoData.forEach(wo => {
           const entry = wo.vehicle_entries as any;
           if (!entry || !entry.entry_date) return;
 
           const entryDate = new Date(entry.entry_date);
-          const monthKey = monthFormatter.format(entryDate);
-          
-          if (!progress[monthKey]) {
-            progress[monthKey] = {
-              month: monthKey,
-              totalIn: { r4: 0, r2: 0 },
-              totalWip: { r4: 0, r2: 0 },
-              totalCompleted: { r4: 0, r2: 0 },
-            };
-          }
+          const monthKey = `${entryDate.getFullYear()}-${String(entryDate.getMonth() + 1).padStart(2, '0')}`;
+          if (!progress[monthKey]) return;
 
           const vehicleType = entry.vehicles.vehicle_type;
           const isR4 = vehicleType === 'R4';
@@ -234,13 +246,7 @@ export default function Dashboard() {
           }
         });
         
-        const sortedProgress = Object.values(progress).sort((a, b) => {
-            const dateA = new Date(a.month.split(' ')[1], new Date(Date.parse(a.month.split(' ')[0] +" 1, 2012")).getMonth());
-            const dateB = new Date(b.month.split(' ')[1], new Date(Date.parse(b.month.split(' ')[0] +" 1, 2012")).getMonth());
-            return dateB.getTime() - dateA.getTime();
-        });
-
-        setMonthlyProgress(sortedProgress);
+        setMonthlyProgress(progressBuckets.map((k) => progress[k]));
         
         // Process Fast Moving Items
         const itemCounts: { [key: string]: number } = {};
@@ -317,10 +323,10 @@ export default function Dashboard() {
             <ResponsiveContainer width="100%" height={350}>
               <BarChart data={monthlyPoData}>
                 <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="month" stroke="#888888" fontSize={12} tickLine={false} axisLine={false} />
+                <XAxis dataKey="monthLabel" stroke="#888888" fontSize={12} tickLine={false} axisLine={false} />
                 <YAxis stroke="#888888" fontSize={12} tickLine={false} axisLine={false} tickFormatter={(value) => `${new Intl.NumberFormat('id-ID').format(value as number)}`}/>
                 <Tooltip formatter={(value) => formatCurrency(value as number)} />
-                <Bar dataKey="total" fill="#8884d8" radius={[4, 4, 0, 0]} />
+                <Bar dataKey="total" fill="#2563eb" radius={[6, 6, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
           </CardContent>
@@ -413,8 +419,8 @@ export default function Dashboard() {
                   </TableRow>
                 ) : monthlyProgress.length > 0 ? (
                   monthlyProgress.map((data) => (
-                    <TableRow key={data.month}>
-                      <TableCell className="font-medium">{data.month}</TableCell>
+                    <TableRow key={data.monthKey}>
+                      <TableCell className="font-medium">{data.monthLabel}</TableCell>
                       <TableCell>{data.totalIn.r4} / {data.totalIn.r2}</TableCell>
                       <TableCell>{data.totalWip.r4} / {data.totalWip.r2}</TableCell>
                       <TableCell>{data.totalCompleted.r4} / {data.totalCompleted.r2}</TableCell>
