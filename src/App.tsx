@@ -39,6 +39,7 @@ import UserManagement from "@/pages/admin/UserManagement";
 import AgencyProfile from "@/pages/admin/AgencyProfile";
 import DebugSync from "@/pages/DebugSync";
 import PrintSuratJalan from "@/pages/print/PrintSuratJalan";
+import PrintSPK from "@/pages/print/PrintSPK";
 
 export default function App() {
   return (
@@ -86,6 +87,7 @@ export default function App() {
 
               {/* Print */}
               <Route path="/print/surat-jalan/:id" element={<PrintSuratJalan />} />
+              <Route path="/print/spk/:id" element={<PrintSPK />} />
 
             </Route>
           </Route>

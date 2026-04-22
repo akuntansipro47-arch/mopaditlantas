@@ -274,93 +274,6 @@ export default function WorkOrder() {
     }
   };
 
-  const handlePrintTrigger = useReactToPrint({
-    content: () => printComponentRef.current,
-    onAfterPrint: () => setPrintData(null),
-  });
-
-  const handlePrint = async (wo: WOWithDetails) => {
-    if (!wo.vehicle_entry_id) {
-      toast.error("Error: Work Order ini tidak terhubung dengan Kendaraan Masuk.");
-      return;
-    }
-    try {
-      toast.info("Mempersiapkan data untuk dicetak...");
-
-      // Step 1: Fetch entry with jobs and sparepart IDs
-      const { data: entry, error: entryError } = await supabase
-        .from('vehicle_entries')
-        .select(`
-          *,
-          vehicle_entry_jobs (
-            *,
-            job_types (*)
-          ),
-          vehicle_entry_spareparts (*)
-        `)
-        .eq('id', wo.vehicle_entry_id)
-        .single();
-
-      if (entryError) {
-        throw new Error(`Gagal mengambil detail entry: ${entryError.message}`);
-      }
-
-      if (!entry) {
-        toast.error("Data entry kendaraan tidak ditemukan.");
-        return;
-      }
-
-      // Step 2: If there are spareparts, fetch their details separately
-      if (entry.vehicle_entry_spareparts && entry.vehicle_entry_spareparts.length > 0) {
-        const goodsIds = entry.vehicle_entry_spareparts
-          .map((sp: any) => sp.goods_id)
-          .filter(Boolean);
-        
-        let goodsData: any[] = [];
-        if (goodsIds.length > 0) {
-          const { data, error: goodsError } = await supabase
-            .from('goods')
-            .select('*')
-            .in('id', goodsIds);
-
-          if (goodsError) {
-            throw new Error(`Gagal mengambil detail sparepart: ${goodsError.message}`);
-          }
-          goodsData = data || [];
-        }
-
-        // Step 3: Combine the data
-        const goodsMap = new Map(goodsData.map((g: any) => [g.id, g]));
-        const enrichedSpareparts = entry.vehicle_entry_spareparts.map((sp: any) => ({
-          ...sp,
-          spareparts: sp.goods_id ? goodsMap.get(sp.goods_id) || null : null,
-        }));
-
-        const enrichedEntry = { ...entry, vehicle_entry_spareparts: enrichedSpareparts };
-        setPrintData({ wo, entry: enrichedEntry });
-
-      } else {
-        // No spareparts, just set the data
-        setPrintData({ wo, entry });
-      }
-
-    } catch (e: any) {
-      console.error(e);
-      toast.error(e.message);
-      setPrintData(null);
-    }
-  };
-
-  useEffect(() => {
-    if (printData) {
-      // Memberikan waktu bagi React untuk merender komponen sebelum memicu cetak
-      const timer = setTimeout(() => {
-        handlePrintTrigger();
-      }, 500);
-      return () => clearTimeout(timer);
-    }
-  }, [printData]);
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
@@ -617,7 +530,7 @@ export default function WorkOrder() {
                               <RefreshCw className="h-4 w-4 mr-1" /> Re-open
                             </Button>
                           )}
-                          <Button variant="outline" size="sm" className="h-8" onClick={() => handlePrint(item)} disabled={item.status !== 'IN_PROGRESS'}>
+                          <Button variant="outline" size="sm" className="h-8" onClick={() => window.open(`/print/spk/${item.id}`, '_blank')} disabled={item.status !== 'IN_PROGRESS'}>
                              <Printer className="h-4 w-4 mr-1" /> SPK
                           </Button>
                           <Button variant="outline" size="sm" className="h-8" onClick={() => handleEdit(item)} disabled={item.status !== 'IN_PROGRESS'}>
