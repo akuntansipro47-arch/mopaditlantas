@@ -1,114 +1,136 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import { formatDate } from '@/lib/utils';
-import { Loader2, Printer, X, AlertCircle } from 'lucide-react';
 
-interface PrintSPKProps {
-  id: string;
-}
+console.log('[SPKPrint] Component mounted');
 
-export default function PrintSPK({ id }: PrintSPKProps) {
+export default function PrintSPK({ id }: { id: string }) {
+  const [phase, setPhase] = useState<string>('initial');
   const [data, setData] = useState<any>(null);
-  const [loading, setLoading] = useState(true);
   const [agency, setAgency] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    console.log('[SPKPrint] useEffect triggered, id:', id);
     fetchData();
   }, [id]);
 
   async function fetchData() {
     try {
-      setError(null);
-      
-      // 1. Fetch Agency Profile
-      const { data: agencyData } = await supabase.from('agency_profile').select('*').single();
+      setPhase('fetching-agency');
+      console.log('[SPKPrint] Fetching agency...');
+      const { data: agencyData, error: agencyError } = await supabase.from('agency_profile').select('*').single();
+      if (agencyError) console.error('[SPKPrint] Agency error:', agencyError);
       setAgency(agencyData);
+      console.log('[SPKPrint] Agency fetched:', agencyData);
 
-      // 2. Fetch WO
+      setPhase('fetching-wo');
+      console.log('[SPKPrint] Fetching WO with id:', id);
       const { data: wo, error: woError } = await supabase
         .from('work_orders')
-        .select(`*, mechanics (*), vehicle_entries (*, vehicles (*))`)
+        .select('*, mechanics (*), vehicle_entries (*, vehicles (*))')
         .eq('id', id)
         .single();
-
-      if (woError) throw new Error(`Gagal mengambil data WO: ${woError.message}`);
+      
+      console.log('[SPKPrint] WO result:', { wo, woError });
+      
+      if (woError) throw new Error(`Gagal mengambil WO: ${woError.message}`);
       if (!wo) throw new Error('Work Order tidak ditemukan');
 
-      // 3. Fetch Entry Details - HANYA JIKA vehicle_entry_id ADA
       let entry = null;
       if (wo.vehicle_entry_id) {
+        setPhase('fetching-entry');
+        console.log('[SPKPrint] Fetching entry for vehicle_entry_id:', wo.vehicle_entry_id);
         const { data: entryData, error: entryError } = await supabase
           .from('vehicle_entries')
-          .select(`*, vehicle_entry_jobs (*, job_types (*)), vehicle_entry_spareparts (*)`)
+          .select('*, vehicle_entry_jobs (*, job_types (*)), vehicle_entry_spareparts (*)')
           .eq('id', wo.vehicle_entry_id)
           .single();
-
-        if (entryError) throw new Error(`Gagal mengambil data entry: ${entryError.message}`);
+        
+        console.log('[SPKPrint] Entry result:', { entryData, entryError });
+        
+        if (entryError) throw new Error(`Gagal mengambil entry: ${entryError.message}`);
         entry = entryData;
-
-        // 4. Enrich spareparts dengan data barang
-        if (entry?.vehicle_entry_spareparts?.length > 0) {
-          const goodsIds = entry.vehicle_entry_spareparts
-            .map((sp: any) => sp.goods_id)
-            .filter(Boolean);
-
-          if (goodsIds.length > 0) {
-            const { data: goodsData } = await supabase
-              .from('goods')
-              .select('*')
-              .in('id', goodsIds);
-            
-            const goodsMap = new Map(goodsData?.map((g: any) => [g.id, g]) || []);
-            entry.vehicle_entry_spareparts = entry.vehicle_entry_spareparts.map((sp: any) => ({
-              ...sp,
-              spareparts: sp.goods_id ? goodsMap.get(sp.goods_id) || null : null,
-            }));
-          }
-        }
+      } else {
+        console.log('[SPKPrint] No vehicle_entry_id, skipping entry fetch');
       }
 
+      setPhase('success');
+      console.log('[SPKPrint] Setting data, entry:', entry);
       setData({ wo, entry });
+      console.log('[SPKPrint] Data set successfully');
+      
     } catch (err: any) {
-      console.error('Error fetching SPK data:', err);
-      setError(err.message || 'Terjadi kesalahan saat memuat data');
-    } finally {
-      setLoading(false);
+      console.error('[SPKPrint] Error caught:', err);
+      setPhase('error');
+      setError(err.message || 'Unknown error');
     }
   }
 
   const handlePrint = () => {
+    console.log('[SPKPrint] Print button clicked');
     window.print();
   };
 
-  // Loading state
-  if (loading) {
+  console.log('[SPKPrint] Rendering, phase:', phase, 'error:', error, 'has data:', !!data);
+
+  // PHASE 1: Loading
+  if (phase === 'initial' || phase === 'fetching-agency' || phase === 'fetching-wo' || phase === 'fetching-entry') {
     return (
-      <div className="min-h-screen bg-white flex flex-col items-center justify-center">
-        <Loader2 className="animate-spin h-12 w-12 text-blue-600 mb-4" />
-        <p className="text-gray-600 font-medium text-lg">Memuat dokumen SPK...</p>
-        <p className="text-gray-400 text-sm mt-2">Mohon tunggu sebentar</p>
+      <div style={{ 
+        minHeight: '100vh', 
+        display: 'flex', 
+        flexDirection: 'column', 
+        alignItems: 'center', 
+        justifyContent: 'center',
+        background: 'white',
+        fontFamily: 'Arial, sans-serif'
+      }}>
+        <div style={{ 
+          width: '40px', 
+          height: '40px', 
+          border: '4px solid #e5e7eb', 
+          borderTopColor: '#2563eb',
+          borderRadius: '50%',
+          animation: 'spin 1s linear infinite'
+        }} />
+        <p style={{ marginTop: '16px', color: '#374151', fontSize: '16px' }}>
+          Memuat SPK...
+        </p>
+        <p style={{ marginTop: '8px', color: '#9ca3af', fontSize: '12px' }}>
+          Phase: {phase}
+        </p>
+        <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
       </div>
     );
   }
 
-  // Error state
-  if (error) {
+  // PHASE 2: Error
+  if (phase === 'error') {
     return (
-      <div className="min-h-screen bg-white flex flex-col items-center justify-center p-8">
-        <AlertCircle className="h-16 w-16 text-red-500 mb-4" />
-        <h2 className="text-xl font-bold text-red-600 mb-2">Gagal Memuat Data</h2>
-        <p className="text-gray-600 text-center mb-6 max-w-md">{error}</p>
-        <div className="flex gap-4">
+      <div style={{ 
+        minHeight: '100vh', 
+        display: 'flex', 
+        flexDirection: 'column', 
+        alignItems: 'center', 
+        justifyContent: 'center',
+        background: 'white',
+        padding: '32px',
+        fontFamily: 'Arial, sans-serif'
+      }}>
+        <div style={{ fontSize: '48px', marginBottom: '16px' }}>⚠️</div>
+        <h2 style={{ color: '#dc2626', marginBottom: '8px' }}>Gagal Memuat Data</h2>
+        <p style={{ color: '#6b7280', textAlign: 'center', maxWidth: '400px' }}>{error}</p>
+        <div style={{ marginTop: '24px', display: 'flex', gap: '12px' }}>
           <button 
             onClick={() => window.close()}
-            className="px-6 py-3 border-2 border-gray-300 rounded-lg font-bold hover:bg-gray-50"
+            style={{ padding: '10px 20px', border: '2px solid #d1d5db', borderRadius: '8px', cursor: 'pointer' }}
           >
             Tutup
           </button>
           <button 
-            onClick={() => { setLoading(true); setError(null); fetchData(); }}
-            className="px-6 py-3 bg-blue-600 text-white rounded-lg font-bold hover:bg-blue-700"
+            onClick={() => { setPhase('initial'); fetchData(); }}
+            style={{ padding: '10px 20px', background: '#2563eb', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer' }}
           >
             Coba Lagi
           </button>
@@ -117,16 +139,24 @@ export default function PrintSPK({ id }: PrintSPKProps) {
     );
   }
 
-  // No data state
+  // PHASE 3: Success - Render Document
   if (!data) {
     return (
-      <div className="min-h-screen bg-white flex flex-col items-center justify-center p-8">
-        <AlertCircle className="h-16 w-16 text-yellow-500 mb-4" />
-        <h2 className="text-xl font-bold text-yellow-600 mb-2">Data Tidak Ditemukan</h2>
-        <p className="text-gray-600 text-center mb-6">Work Order dengan ID ini tidak ditemukan.</p>
+      <div style={{ 
+        minHeight: '100vh', 
+        display: 'flex', 
+        flexDirection: 'column', 
+        alignItems: 'center', 
+        justifyContent: 'center',
+        background: 'white',
+        fontFamily: 'Arial, sans-serif'
+      }}>
+        <div style={{ fontSize: '48px', marginBottom: '16px' }}>❓</div>
+        <h2 style={{ color: '#d97706', marginBottom: '8px' }}>Data Tidak Ditemukan</h2>
+        <p style={{ color: '#6b7280' }}>Work Order dengan ID ini tidak ditemukan.</p>
         <button 
           onClick={() => window.close()}
-          className="px-6 py-3 border-2 border-gray-300 rounded-lg font-bold hover:bg-gray-50"
+          style={{ marginTop: '24px', padding: '10px 20px', border: '2px solid #d1d5db', borderRadius: '8px', cursor: 'pointer' }}
         >
           Tutup
         </button>
@@ -137,217 +167,195 @@ export default function PrintSPK({ id }: PrintSPKProps) {
   const { wo, entry } = data;
 
   return (
-    <div className="bg-gray-100 min-h-screen">
+    <div style={{ background: '#f3f4f6', minHeight: '100vh' }}>
       {/* Control Bar */}
-      <div className="sticky top-0 z-50 bg-white border-b-2 border-gray-200 shadow-sm">
-        <div className="max-w-[210mm] mx-auto px-6 py-4 flex justify-between items-center">
-          <div className="flex items-center gap-3">
-            <div className="h-3 w-3 rounded-full bg-green-500"></div>
-            <span className="text-base font-bold text-gray-800 uppercase tracking-wide">
-              Dokumen SPK Siap Cetak
-            </span>
+      <div style={{ 
+        position: 'sticky', 
+        top: 0, 
+        zIndex: 50, 
+        background: 'white', 
+        borderBottom: '2px solid #e5e7eb',
+        padding: '16px 24px'
+      }}>
+        <div style={{ 
+          maxWidth: '210mm', 
+          margin: '0 auto', 
+          display: 'flex', 
+          justifyContent: 'space-between', 
+          alignItems: 'center' 
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <div style={{ width: '12px', height: '12px', borderRadius: '50%', background: '#22c55e' }} />
+            <span style={{ fontWeight: 'bold', color: '#1f2937' }}>DOKUMEN SPK SIAP CETAK</span>
           </div>
-          <div className="flex gap-3">
+          <div style={{ display: 'flex', gap: '12px' }}>
             <button 
               onClick={() => window.close()} 
-              className="px-5 py-2.5 text-sm font-bold border-2 border-gray-300 rounded-lg hover:bg-gray-100 transition-all flex items-center gap-2"
+              style={{ 
+                padding: '10px 20px', 
+                fontWeight: 'bold',
+                border: '2px solid #d1d5db', 
+                borderRadius: '8px', 
+                cursor: 'pointer',
+                background: 'white'
+              }}
             >
-              <X className="h-4 w-4" /> Tutup
+              ✕ Tutup
             </button>
             <button 
               onClick={handlePrint} 
-              className="px-8 py-2.5 text-sm font-black bg-blue-700 text-white rounded-lg hover:bg-blue-800 shadow-lg transition-all flex items-center gap-2 uppercase tracking-wider"
+              style={{ 
+                padding: '10px 24px', 
+                fontWeight: 'bold',
+                background: '#2563eb', 
+                color: 'white', 
+                border: 'none', 
+                borderRadius: '8px', 
+                cursor: 'pointer'
+              }}
             >
-              <Printer className="h-5 w-5" /> Cetak / Simpan PDF
+              🖨️ Cetak / Simpan PDF
             </button>
           </div>
         </div>
       </div>
 
-      {/* Document Container */}
-      <div className="max-w-[210mm] mx-auto my-8 p-10 bg-white shadow-2xl">
+      {/* Document */}
+      <div style={{ maxWidth: '210mm', margin: '32px auto', padding: '40px', background: 'white', boxShadow: '0 25px 50px -12px rgba(0,0,0,0.25)' }}>
         
         {/* Header */}
-        <header className="flex justify-between items-start border-b-4 border-gray-900 pb-6 mb-8">
-          <div className="flex items-center gap-6">
+        <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', borderBottom: '4px solid #111827', paddingBottom: '24px', marginBottom: '32px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '24px' }}>
             {agency?.logo_url && (
-              <img src={agency.logo_url} alt="Logo" className="h-20 w-auto" />
+              <img src={agency.logo_url} alt="Logo" style={{ height: '80px', width: 'auto' }} />
             )}
             <div>
-              <h1 className="text-2xl font-black uppercase">{agency?.name || 'INSTANSI'}</h1>
-              <p className="text-xs font-bold text-blue-700 uppercase tracking-widest mt-1">Surat Perintah Kerja</p>
-              <p className="text-[10px] text-gray-500 mt-1 max-w-md">{agency?.address}</p>
+              <h1 style={{ margin: 0, fontSize: '24px', fontWeight: '900', textTransform: 'uppercase' }}>{agency?.name || 'INSTANSI'}</h1>
+              <p style={{ margin: '4px 0', fontSize: '12px', fontWeight: 'bold', color: '#1d4ed8' }}>SURAT PERINTAH KERJA</p>
+              <p style={{ margin: 0, fontSize: '10px', color: '#6b7280' }}>{agency?.address}</p>
             </div>
           </div>
-          <div className="text-right">
-            <div className="bg-gray-900 text-white px-6 py-2 rounded-md mb-2 inline-block">
-              <h2 className="text-2xl font-black tracking-tight">SPK</h2>
+          <div style={{ textAlign: 'right' }}>
+            <div style={{ background: '#111827', color: 'white', padding: '12px 24px', borderRadius: '8px', marginBottom: '8px', display: 'inline-block' }}>
+              <h2 style={{ margin: 0, fontSize: '24px', fontWeight: '900' }}>SPK</h2>
             </div>
-            <p className="text-sm font-black">NO: {wo.wo_number}</p>
-            <p className="text-xs text-gray-500">{formatDate(wo.work_date)}</p>
+            <p style={{ margin: 0, fontSize: '14px', fontWeight: 'bold' }}>NO: {wo.wo_number}</p>
+            <p style={{ margin: '4px 0 0 0', fontSize: '12px', color: '#6b7280' }}>{formatDate(wo.work_date)}</p>
           </div>
         </header>
 
         {/* Info Grid */}
-        <div className="grid grid-cols-2 gap-6 mb-8">
-          <div className="border-2 border-gray-200 rounded-lg p-4">
-            <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-widest border-b border-gray-200 pb-2 mb-3">Kendaraan</h3>
-            <table className="w-full text-xs">
-              <tbody className="space-y-2">
-                <tr className="flex">
-                  <td className="w-28 text-gray-500 font-bold uppercase">No. Polisi</td>
-                  <td className="font-black text-gray-900">: {wo.vehicle_entries?.vehicles?.license_plate || '-'}</td>
-                </tr>
-                <tr className="flex">
-                  <td className="w-28 text-gray-500 font-bold uppercase">Merek / Tipe</td>
-                  <td className="font-bold text-gray-800">: {wo.vehicle_entries?.vehicles?.brand_type || '-'}</td>
-                </tr>
-                <tr className="flex border-t border-gray-100 pt-2 mt-2">
-                  <td className="w-28 text-gray-500 font-bold uppercase">Nota Dinas</td>
-                  <td className="font-medium text-gray-700">: {wo.vehicle_entries?.nota_dinas_number || '-'}</td>
-                </tr>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px', marginBottom: '32px' }}>
+          <div style={{ border: '2px solid #e5e7eb', borderRadius: '8px', padding: '16px' }}>
+            <h3 style={{ margin: '0 0 12px 0', fontSize: '10px', fontWeight: '900', color: '#6b7280', textTransform: 'uppercase' }}>Kendaraan</h3>
+            <table style={{ width: '100%', fontSize: '12px' }}>
+              <tbody>
+                <tr><td style={{ width: '100px', color: '#6b7280' }}>No. Polisi</td><td style={{ fontWeight: 'bold' }}>: {wo.vehicle_entries?.vehicles?.license_plate || '-'}</td></tr>
+                <tr><td style={{ color: '#6b7280' }}>Merek / Tipe</td><td style={{ fontWeight: 'bold' }}>: {wo.vehicle_entries?.vehicles?.brand_type || '-'}</td></tr>
+                <tr><td style={{ color: '#6b7280' }}>Nota Dinas</td><td>: {wo.vehicle_entries?.nota_dinas_number || '-'}</td></tr>
               </tbody>
             </table>
           </div>
           
-          <div className="border-2 border-gray-200 rounded-lg p-4">
-            <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-widest border-b border-gray-200 pb-2 mb-3">Mekanik</h3>
-            <table className="w-full text-xs">
-              <tbody className="space-y-2">
-                <tr className="flex">
-                  <td className="w-28 text-gray-500 font-bold uppercase">Nama</td>
-                  <td className="font-black text-gray-900">: {wo.mechanics?.name || '-'}</td>
-                </tr>
-                <tr className="flex">
-                  <td className="w-28 text-gray-500 font-bold uppercase">Spesialisasi</td>
-                  <td className="font-bold text-gray-800">: {wo.mechanics?.specialization || '-'}</td>
-                </tr>
-                <tr className="flex border-t border-gray-100 pt-2 mt-2">
-                  <td className="w-28 text-gray-500 font-bold uppercase">Status</td>
-                  <td className="font-black text-blue-700 uppercase">: {wo.status}</td>
-                </tr>
+          <div style={{ border: '2px solid #e5e7eb', borderRadius: '8px', padding: '16px' }}>
+            <h3 style={{ margin: '0 0 12px 0', fontSize: '10px', fontWeight: '900', color: '#6b7280', textTransform: 'uppercase' }}>Mekanik</h3>
+            <table style={{ width: '100%', fontSize: '12px' }}>
+              <tbody>
+                <tr><td style={{ width: '100px', color: '#6b7280' }}>Nama</td><td style={{ fontWeight: 'bold' }}>: {wo.mechanics?.name || '-'}</td></tr>
+                <tr><td style={{ color: '#6b7280' }}>Spesialisasi</td><td>: {wo.mechanics?.specialization || '-'}</td></tr>
+                <tr><td style={{ color: '#6b7280' }}>Status</td><td style={{ fontWeight: 'bold', color: '#1d4ed8' }}>: {wo.status}</td></tr>
               </tbody>
             </table>
           </div>
         </div>
 
         {/* Jobs Table */}
-        <div className="mb-8">
-          <h3 className="text-xs font-black uppercase tracking-widest mb-3 flex items-center gap-2">
-            <span className="h-5 w-1 bg-gray-900 rounded"></span>
-            I. Rincian Pekerjaan
-          </h3>
-          <table className="w-full border-collapse border-2 border-gray-900 text-[11px]">
-            <thead className="bg-gray-900 text-white">
+        <div style={{ marginBottom: '32px' }}>
+          <h3 style={{ fontSize: '12px', fontWeight: '900', textTransform: 'uppercase', marginBottom: '12px' }}>I. Rincian Pekerjaan</h3>
+          <table style={{ width: '100%', borderCollapse: 'collapse', border: '2px solid #111827', fontSize: '11px' }}>
+            <thead style={{ background: '#111827', color: 'white' }}>
               <tr>
-                <th className="border border-gray-700 p-3 text-center w-12 font-black">NO</th>
-                <th className="border border-gray-700 p-3 text-left w-48 font-black">KATEGORI</th>
-                <th className="border border-gray-700 p-3 text-left font-black">DESKRIPSI PEKERJAAN</th>
-                <th className="border border-gray-700 p-3 text-left font-black">CATATAN</th>
+                <th style={{ padding: '12px', textAlign: 'center', width: '40px' }}>NO</th>
+                <th style={{ padding: '12px', textAlign: 'left' }}>KATEGORI</th>
+                <th style={{ padding: '12px', textAlign: 'left' }}>PEKERJAAN</th>
+                <th style={{ padding: '12px', textAlign: 'left' }}>CATATAN</th>
               </tr>
             </thead>
             <tbody>
               {entry?.vehicle_entry_jobs?.length > 0 ? (
                 entry.vehicle_entry_jobs.map((job: any, index: number) => (
-                  <tr key={index} className="border-b border-gray-200">
-                    <td className="border border-gray-200 p-3 text-center font-black">{index + 1}</td>
-                    <td className="border border-gray-200 p-3 font-bold uppercase text-[10px] text-gray-600">{job.job_types?.job_group || '-'}</td>
-                    <td className="border border-gray-200 p-3 font-black text-gray-900">{job.job_types?.job_name || '-'}</td>
-                    <td className="border border-gray-200 p-3 italic text-gray-400">{job.notes || '-'}</td>
+                  <tr key={index} style={{ borderBottom: '1px solid #e5e7eb' }}>
+                    <td style={{ padding: '12px', textAlign: 'center', fontWeight: 'bold' }}>{index + 1}</td>
+                    <td style={{ padding: '12px', fontWeight: 'bold', textTransform: 'uppercase', fontSize: '10px', color: '#6b7280' }}>{job.job_types?.job_group || '-'}</td>
+                    <td style={{ padding: '12px', fontWeight: 'bold' }}>{job.job_types?.job_name || '-'}</td>
+                    <td style={{ padding: '12px', fontStyle: 'italic', color: '#9ca3af' }}>{job.notes || '-'}</td>
                   </tr>
                 ))
               ) : (
-                <tr>
-                  <td colSpan={4} className="border border-gray-200 p-6 text-center text-gray-400 italic font-medium">
-                    Tidak ada detail pekerjaan
-                  </td>
-                </tr>
+                <tr><td colSpan={4} style={{ padding: '24px', textAlign: 'center', color: '#9ca3af' }}>Tidak ada detail pekerjaan</td></tr>
               )}
             </tbody>
           </table>
         </div>
 
         {/* Spareparts Table */}
-        <div className="mb-10">
-          <h3 className="text-xs font-black uppercase tracking-widest mb-3 flex items-center gap-2">
-            <span className="h-5 w-1 bg-gray-900 rounded"></span>
-            II. Estimasi Sparepart & Material
-          </h3>
-          <table className="w-full border-collapse border-2 border-gray-900 text-[11px]">
-            <thead className="bg-gray-900 text-white">
+        <div style={{ marginBottom: '40px' }}>
+          <h3 style={{ fontSize: '12px', fontWeight: '900', textTransform: 'uppercase', marginBottom: '12px' }}>II. Estimasi Sparepart & Material</h3>
+          <table style={{ width: '100%', borderCollapse: 'collapse', border: '2px solid #111827', fontSize: '11px' }}>
+            <thead style={{ background: '#111827', color: 'white' }}>
               <tr>
-                <th className="border border-gray-700 p-3 text-center w-12 font-black">NO</th>
-                <th className="border border-gray-700 p-3 text-left font-black">NAMA BARANG</th>
-                <th className="border border-gray-700 p-3 text-center w-28 font-black">QTY</th>
-                <th className="border border-gray-700 p-3 text-center w-24 font-black">SATUAN</th>
+                <th style={{ padding: '12px', textAlign: 'center', width: '40px' }}>NO</th>
+                <th style={{ padding: '12px', textAlign: 'left' }}>NAMA BARANG</th>
+                <th style={{ padding: '12px', textAlign: 'center', width: '80px' }}>QTY</th>
+                <th style={{ padding: '12px', textAlign: 'center', width: '80px' }}>SATUAN</th>
               </tr>
             </thead>
             <tbody>
               {entry?.vehicle_entry_spareparts?.length > 0 ? (
                 entry.vehicle_entry_spareparts.map((sp: any, index: number) => (
-                  <tr key={index} className="border-b border-gray-200">
-                    <td className="border border-gray-200 p-3 text-center font-black">{index + 1}</td>
-                    <td className="border border-gray-200 p-3 font-black text-gray-900">{sp.spareparts?.name || sp.item_name || '-'}</td>
-                    <td className="border border-gray-200 p-3 text-center font-black text-gray-900">{sp.qty || 0}</td>
-                    <td className="border border-gray-200 p-3 text-center uppercase text-gray-500 font-bold">{sp.spareparts?.unit || '-'}</td>
+                  <tr key={index} style={{ borderBottom: '1px solid #e5e7eb' }}>
+                    <td style={{ padding: '12px', textAlign: 'center', fontWeight: 'bold' }}>{index + 1}</td>
+                    <td style={{ padding: '12px', fontWeight: 'bold' }}>{sp.spareparts?.name || sp.item_name || '-'}</td>
+                    <td style={{ padding: '12px', textAlign: 'center', fontWeight: 'bold' }}>{sp.qty || 0}</td>
+                    <td style={{ padding: '12px', textAlign: 'center', textTransform: 'uppercase', color: '#6b7280' }}>{sp.spareparts?.unit || '-'}</td>
                   </tr>
                 ))
               ) : (
-                <tr>
-                  <td colSpan={4} className="border border-gray-200 p-6 text-center text-gray-400 italic font-medium uppercase">
-                    Tidak ada estimasi sparepart
-                  </td>
-                </tr>
+                <tr><td colSpan={4} style={{ padding: '24px', textAlign: 'center', color: '#9ca3af' }}>Tidak ada estimasi sparepart</td></tr>
               )}
             </tbody>
           </table>
         </div>
 
         {/* Signatures */}
-        <footer className="mt-16">
-          <div className="grid grid-cols-3 gap-8 text-center">
-            <div className="space-y-16">
-              <p className="text-[10px] font-black uppercase text-gray-400 tracking-widest">Pemohon / Driver</p>
-              <div className="border-t-2 border-gray-900 w-40 mx-auto pt-3">
-                <p className="text-xs font-black text-gray-600">( .......................... )</p>
-              </div>
+        <footer style={{ marginTop: '64px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '32px', textAlign: 'center' }}>
+            <div>
+              <p style={{ fontSize: '10px', fontWeight: '900', color: '#6b7280', marginBottom: '64px' }}>PEMOHON / DRIVER</p>
+              <div style={{ borderTop: '2px solid #111827', paddingTop: '12px' }}>( .......................... )</div>
             </div>
-            <div className="space-y-16">
-              <p className="text-[10px] font-black uppercase text-gray-400 tracking-widest">Workshop Head</p>
-              <div className="border-t-2 border-gray-900 w-40 mx-auto pt-3">
-                <p className="text-xs font-black text-gray-600">( .......................... )</p>
-              </div>
+            <div>
+              <p style={{ fontSize: '10px', fontWeight: '900', color: '#6b7280', marginBottom: '64px' }}>WORKSHOP HEAD</p>
+              <div style={{ borderTop: '2px solid #111827', paddingTop: '12px' }}>( .......................... )</div>
             </div>
-            <div className="space-y-16">
-              <p className="text-[10px] font-black uppercase text-gray-400 tracking-widest">Mekanik</p>
-              <div className="border-t-2 border-gray-900 w-40 mx-auto pt-3">
-                <p className="text-xs font-black text-gray-900 underline underline-offset-4">{wo.mechanics?.name || '(...........................)'}</p>
-              </div>
+            <div>
+              <p style={{ fontSize: '10px', fontWeight: '900', color: '#6b7280', marginBottom: '64px' }}>MEKANIK</p>
+              <div style={{ borderTop: '2px solid #111827', paddingTop: '12px', fontWeight: 'bold', textDecoration: 'underline' }}>{wo.mechanics?.name || '(...........................)'}</div>
             </div>
           </div>
-          <div className="mt-16 pt-4 border-t border-gray-200 flex justify-between items-center text-[9px] text-gray-400 italic font-bold">
-            <span className="uppercase tracking-widest">OtoSmart Workshop System</span>
-            <span className="uppercase tracking-widest">ID: {wo.id?.slice(0, 13)?.toUpperCase() || 'N/A'} | {new Date().toLocaleString('id-ID')}</span>
+          <div style={{ marginTop: '64px', paddingTop: '16px', borderTop: '1px solid #e5e7eb', display: 'flex', justifyContent: 'space-between', fontSize: '9px', color: '#9ca3af', fontStyle: 'italic' }}>
+            <span>OtoSmart Workshop System</span>
+            <span>ID: {wo.id?.slice(0, 13)?.toUpperCase() || 'N/A'} | {new Date().toLocaleString('id-ID')}</span>
           </div>
         </footer>
       </div>
 
       <style>{`
         @page { margin: 10mm; size: A4; }
-        html, body { height: auto; overflow: visible; background: white; }
-        body { margin: 0; padding: 0; font-family: Arial, sans-serif; }
         @media print {
           .sticky { position: static !important; }
-          .shadow-2xl { box-shadow: none !important; }
-          .border-b-2 { border-bottom-width: 2px !important; }
-          .bg-gray-100 { background: white !important; }
-          .bg-white { background: white !important; }
-          .bg-gray-900 { background: #111827 !important; color: white !important; }
-          .text-white { color: white !important; }
-          .border-gray-900 { border-color: #111827 !important; }
-          .border-gray-700 { border-color: #374151 !important; }
-          .border-gray-200 { border-color: #e5e7eb !important; }
           button { display: none !important; }
+          body { background: white !important; }
         }
       `}</style>
     </div>
