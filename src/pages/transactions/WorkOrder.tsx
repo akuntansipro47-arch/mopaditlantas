@@ -41,6 +41,8 @@ export default function WorkOrder() {
   const [isEditing, setIsEditing] = useState(false);
   const [currentId, setCurrentId] = useState<string | null>(null);
   const [printData, setPrintData] = useState<{ wo: WOWithDetails; entry: any } | null>(null);
+  const [shouldPrintSPK, setShouldPrintSPK] = useState(false);
+  const [printingSPKId, setPrintingSPKId] = useState<string | null>(null);
   const printComponentRef = useRef<HTMLDivElement>(null);
 
   const [entries, setEntries] = useState<(VehicleEntry & { vehicles: Vehicle | null })[]>([]);
@@ -56,6 +58,23 @@ export default function WorkOrder() {
   });
 
   const [selectedEntryDetails, setSelectedEntryDetails] = useState<any>(null);
+
+  const triggerSPKPrint = useReactToPrint({
+    contentRef: printComponentRef,
+    documentTitle: printData?.wo?.wo_number ? `SPK-${printData.wo.wo_number}` : 'SPK',
+    onAfterPrint: () => {
+      setShouldPrintSPK(false);
+      setPrintData(null);
+    },
+  });
+
+  useEffect(() => {
+    if (shouldPrintSPK && printData) {
+      setTimeout(() => {
+        triggerSPKPrint();
+      }, 100);
+    }
+  }, [shouldPrintSPK, printData, triggerSPKPrint]);
 
   useEffect(() => {
     fetchWOs();
@@ -140,6 +159,62 @@ export default function WorkOrder() {
     setIsEditing(true);
     setCurrentId(item.id);
     setIsDialogOpen(true);
+  };
+
+  const handlePrintSPK = async (wo: WOWithDetails) => {
+    if (wo.status !== 'IN_PROGRESS') {
+      toast.warning('Cetak SPK hanya tersedia untuk WO dengan status IN_PROGRESS.');
+      return;
+    }
+
+    setPrintingSPKId(wo.id);
+    try {
+      let entry: any = null;
+      if (wo.vehicle_entry_id) {
+        const { data: entryData, error: entryError } = await supabase
+          .from('vehicle_entries')
+          .select(`
+            *,
+            vehicle_entry_jobs (
+              *,
+              job_types (*)
+            ),
+            vehicle_entry_spareparts (*)
+          `)
+          .eq('id', wo.vehicle_entry_id)
+          .single();
+
+        if (entryError) throw entryError;
+
+        let enrichedSpareparts = entryData?.vehicle_entry_spareparts || [];
+        if (enrichedSpareparts.length > 0) {
+          const goodsIds = enrichedSpareparts.map((sp: any) => sp.goods_id).filter(Boolean);
+          if (goodsIds.length > 0) {
+            const { data: goodsData, error: goodsError } = await supabase
+              .from('goods')
+              .select('*')
+              .in('id', goodsIds);
+            if (goodsError) throw goodsError;
+            const goodsMap = new Map((goodsData || []).map((g: any) => [g.id, g]));
+            enrichedSpareparts = enrichedSpareparts.map((sp: any) => ({
+              ...sp,
+              spareparts: sp.goods_id ? goodsMap.get(sp.goods_id) || null : null,
+            }));
+          }
+        }
+
+        entry = { ...entryData, vehicle_entry_spareparts: enrichedSpareparts };
+      }
+
+      setPrintData({ wo, entry });
+      setShouldPrintSPK(true);
+    } catch (error: any) {
+      toast.error('Gagal mempersiapkan data cetak SPK: ' + (error?.message || 'Unknown error'));
+      setShouldPrintSPK(false);
+      setPrintData(null);
+    } finally {
+      setPrintingSPKId(null);
+    }
   };
 
   const checkSparepartsIssued = async (wo: WOWithDetails): Promise<{ valid: boolean; message: string; unissued: string[] }> => {
@@ -530,7 +605,7 @@ export default function WorkOrder() {
                               <RefreshCw className="h-4 w-4 mr-1" /> Re-open
                             </Button>
                           )}
-                          <Button variant="outline" size="sm" className="h-8" onClick={() => window.open(`/print/spk/${item.id}`, '_blank')} disabled={item.status !== 'IN_PROGRESS'}>
+                          <Button variant="outline" size="sm" className="h-8" onClick={() => handlePrintSPK(item)} disabled={item.status !== 'IN_PROGRESS' || printingSPKId === item.id}>
                              <Printer className="h-4 w-4 mr-1" /> SPK
                           </Button>
                           <Button variant="outline" size="sm" className="h-8" onClick={() => handleEdit(item)} disabled={item.status !== 'IN_PROGRESS'}>
@@ -552,9 +627,12 @@ export default function WorkOrder() {
         </CardContent>
       </Card>
 
-      {/* Komponen cetak yang disembunyikan (tetap dirender agar terbaca oleh library) */}
-      <div className="opacity-0 absolute pointer-events-none -z-50 overflow-hidden h-0 w-0">
-        {printData && <div ref={printComponentRef}><PrintSPK data={printData} /></div>}
+      <div style={{ position: 'absolute', left: '-100000px', top: 0 }} aria-hidden="true">
+        {printData && (
+          <div ref={printComponentRef}>
+            <PrintSPK data={printData} />
+          </div>
+        )}
       </div>
     </div>
   );
