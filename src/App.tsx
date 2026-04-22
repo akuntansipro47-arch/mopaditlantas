@@ -40,6 +40,7 @@ import AgencyProfile from "@/pages/admin/AgencyProfile";
 import DebugSync from "@/pages/DebugSync";
 import PrintSuratJalan from "@/pages/print/PrintSuratJalan";
 import PrintSPK from "@/pages/print/PrintSPK";
+import PrintVehicleEntry from "@/pages/print/PrintVehicleEntry";
 import PrintPO from "@/pages/print/PrintPO";
 import PrintPODotMatrix from "@/pages/print/PrintPODotMatrix";
 
@@ -92,6 +93,7 @@ export default function App() {
             {/* Print Routes (Outside DashboardLayout for clean printing) */}
             <Route path="/print/surat-jalan/:id" element={<PrintSuratJalan />} />
             <Route path="/print/spk/:id" element={<PrintSPK />} />
+            <Route path="/print/entry/:id" element={<PrintVehicleEntry />} />
             <Route path="/print/po/:id" element={<PrintPO />} />
             <Route path="/print/po-dot/:id" element={<PrintPODotMatrix />} />
           </Route>
