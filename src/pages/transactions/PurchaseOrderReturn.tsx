@@ -31,6 +31,43 @@ type ReturnLine = {
   return_qty: number;
 };
 
+type ReturnHistoryItem = {
+  id: string;
+  return_number: string;
+  return_date: string;
+  notes: string | null;
+  settlement_type: string | null;
+  settlement_account_id: string | null;
+  settlement_amount: number | null;
+  created_at: string;
+  items: Array<{
+    goods_id: string;
+    quantity_returned: number;
+    unit_price: number;
+    total_price: number;
+    goods: {
+      id: string;
+      name: string | null;
+      item_code: string | null;
+      unit: string | null;
+      item_type: string | null;
+      current_stock: number | null;
+    } | null;
+  }>;
+};
+
+type EditReturnLine = {
+  goods_id: string;
+  item_code: string;
+  name: string;
+  unit: string;
+  item_type: string;
+  unit_price: number;
+  original_qty: number;
+  max_qty: number;
+  return_qty: number;
+};
+
 export default function PurchaseOrderReturn() {
   const [pos, setPos] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -45,6 +82,17 @@ export default function PurchaseOrderReturn() {
   const [settlementType, setSettlementType] = useState<'REFUND' | 'DEPOSIT' | 'AP_DEDUCT'>('REFUND');
   const [settlementAccountId, setSettlementAccountId] = useState<string>('');
   const [coaAccounts, setCoaAccounts] = useState<any[]>([]);
+  const [returnHistory, setReturnHistory] = useState<ReturnHistoryItem[]>([]);
+  const [isHistoryLoading, setIsHistoryLoading] = useState(false);
+
+  const [isEditOpen, setIsEditOpen] = useState(false);
+  const [editingReturn, setEditingReturn] = useState<ReturnHistoryItem | null>(null);
+  const [editDate, setEditDate] = useState(new Date().toISOString().split('T')[0]);
+  const [editNotes, setEditNotes] = useState('');
+  const [editSettlementType, setEditSettlementType] = useState<'REFUND' | 'DEPOSIT' | 'AP_DEDUCT'>('REFUND');
+  const [editSettlementAccountId, setEditSettlementAccountId] = useState<string>('');
+  const [editLines, setEditLines] = useState<EditReturnLine[]>([]);
+  const [isEditProcessing, setIsEditProcessing] = useState(false);
 
   // Date Filter State (Default to current month)
   const [dateFilter, setDateFilter] = useState({
@@ -131,6 +179,440 @@ export default function PurchaseOrderReturn() {
   }
 
   const receivedKey = (goodsId: string) => String(goodsId || '');
+
+  const isServiceType = (itemType: unknown) => {
+    const t = String(itemType || '').toUpperCase();
+    return t === 'JASA' || t === 'SERVICE';
+  };
+
+  const loadReturnHistory = async (poId: string) => {
+    if (!poId) return;
+    setIsHistoryLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from('purchase_returns')
+        .select(`
+          id,
+          return_number,
+          return_date,
+          notes,
+          settlement_type,
+          settlement_account_id,
+          settlement_amount,
+          created_at,
+          items:purchase_return_items(
+            goods_id,
+            quantity_returned,
+            unit_price,
+            total_price,
+            goods:goods_id(id, name, item_code, unit, item_type, current_stock)
+          )
+        `)
+        .eq('po_id', poId)
+        .order('created_at', { ascending: false });
+      if (error) throw error;
+      setReturnHistory((data as any[]) || []);
+    } catch (e: any) {
+      setReturnHistory([]);
+      toast.error('Gagal memuat riwayat retur: ' + (e?.message || 'Unknown error'));
+    } finally {
+      setIsHistoryLoading(false);
+    }
+  };
+
+  const computeEditMaxQtyByGoods = async (poId: string, returnId: string) => {
+    const { data: receipts, error: rErr } = await supabase
+      .from('goods_receipts')
+      .select('items:goods_receipt_items(goods_id, quantity_received)')
+      .eq('po_id', poId);
+    if (rErr) throw rErr;
+    const receivedByGoods = new Map<string, number>();
+    (receipts || []).forEach((r: any) => (r.items || []).forEach((it: any) => {
+      if (it.goods_id) receivedByGoods.set(String(it.goods_id), (receivedByGoods.get(String(it.goods_id)) || 0) + Number(it.quantity_received || 0));
+    }));
+
+    const { data: returns, error: retErr } = await supabase.from('purchase_returns').select('id').eq('po_id', poId);
+    if (retErr) throw retErr;
+    const returnIds = (returns || []).map((x: any) => x.id).filter(Boolean);
+
+    const returnedTotalByGoods = new Map<string, number>();
+    const currentReturnByGoods = new Map<string, number>();
+    if (returnIds.length > 0) {
+      const { data: retItems, error: retItemErr } = await supabase
+        .from('purchase_return_items')
+        .select('return_id, goods_id, quantity_returned')
+        .in('return_id', returnIds);
+      if (retItemErr) throw retItemErr;
+      (retItems || []).forEach((it: any) => {
+        const gid = String(it.goods_id || '');
+        if (!gid) return;
+        const qty = Number(it.quantity_returned || 0);
+        returnedTotalByGoods.set(gid, (returnedTotalByGoods.get(gid) || 0) + qty);
+        if (String(it.return_id) === String(returnId)) {
+          currentReturnByGoods.set(gid, (currentReturnByGoods.get(gid) || 0) + qty);
+        }
+      });
+    }
+
+    const maxByGoods = new Map<string, number>();
+    const goodsIds = new Set<string>([...receivedByGoods.keys(), ...returnedTotalByGoods.keys(), ...currentReturnByGoods.keys()]);
+    goodsIds.forEach((gid) => {
+      const received = Number(receivedByGoods.get(gid) || 0);
+      const returnedTotal = Number(returnedTotalByGoods.get(gid) || 0);
+      const cur = Number(currentReturnByGoods.get(gid) || 0);
+      const max = Math.max(0, received - Math.max(0, returnedTotal - cur));
+      maxByGoods.set(gid, max);
+    });
+    return maxByGoods;
+  };
+
+  const openEditReturn = async (ret: ReturnHistoryItem) => {
+    const poId = String(selectedPO?.id || '');
+    if (!poId) return;
+    setEditingReturn(ret);
+    setEditDate(String(ret.return_date || new Date().toISOString().split('T')[0]));
+    setEditNotes(String(ret.notes || ''));
+    const p = getPoPaymentInfo(selectedPO);
+    if (p.status === 'UNPAID' || p.status === 'PARTIAL') {
+      setEditSettlementType('AP_DEDUCT');
+      setEditSettlementAccountId(ret.settlement_account_id || getDefaultApAccountId());
+    } else {
+      const st = String(ret.settlement_type || 'REFUND').toUpperCase();
+      setEditSettlementType(st === 'DEPOSIT' ? 'DEPOSIT' : st === 'AP_DEDUCT' ? 'AP_DEDUCT' : 'REFUND');
+      setEditSettlementAccountId(ret.settlement_account_id || '');
+    }
+    setEditLines([]);
+    setIsEditOpen(true);
+    try {
+      const maxByGoods = await computeEditMaxQtyByGoods(poId, ret.id);
+      const lines: EditReturnLine[] = (ret.items || []).map((it: any) => {
+        const g = it.goods;
+        const gid = String(it.goods_id || g?.id || '');
+        return {
+          goods_id: gid,
+          item_code: String(g?.item_code || ''),
+          name: String(g?.name || ''),
+          unit: String(g?.unit || ''),
+          item_type: String(g?.item_type || ''),
+          unit_price: Number(it.unit_price || 0),
+          original_qty: Number(it.quantity_returned || 0),
+          max_qty: Number(maxByGoods.get(gid) || 0),
+          return_qty: Number(it.quantity_returned || 0),
+        };
+      });
+      setEditLines(lines);
+    } catch (e: any) {
+      toast.error('Gagal memuat data edit retur: ' + (e?.message || 'Unknown error'));
+      setIsEditOpen(false);
+      setEditingReturn(null);
+    }
+  };
+
+  const saveEditReturn = async () => {
+    const poId = String(selectedPO?.id || '');
+    if (!poId || !editingReturn) return;
+    const p = getPoPaymentInfo(selectedPO);
+    if (p.status === 'NO_INVOICE') {
+      toast.error(`Retur tidak aktif: ${p.reason}.`);
+      return;
+    }
+    if (!editDate) {
+      toast.error('Tanggal retur wajib diisi.');
+      return;
+    }
+
+    const shouldUseApDeduct = p.status === 'UNPAID' || p.status === 'PARTIAL';
+    const effectiveSettlementAccountId = editSettlementAccountId || (shouldUseApDeduct ? getDefaultApAccountId() : '');
+    const effectiveSettlementType = shouldUseApDeduct ? 'AP_DEDUCT' : editSettlementType;
+    if (shouldUseApDeduct && !effectiveSettlementAccountId) {
+      toast.error('Akun Hutang Usaha (AP) belum disetting. Mohon set COA Hutang Usaha untuk penyelesaian retur.');
+      return;
+    }
+    if (p.status === 'PAID' && !effectiveSettlementAccountId) {
+      toast.error('Akun penyelesaian wajib dipilih.');
+      return;
+    }
+
+    const normalizedLines = (editLines || []).map(l => ({ ...l, return_qty: Number(l.return_qty || 0) }));
+    const invalid = normalizedLines.find(l => l.return_qty < 0 || l.return_qty > l.max_qty + 1e-9);
+    if (invalid) {
+      toast.error(`Qty retur tidak valid untuk ${invalid.name || invalid.item_code}. Maks: ${invalid.max_qty}.`);
+      return;
+    }
+
+    const goodsIds = Array.from(new Set(normalizedLines.map(l => String(l.goods_id || '')).filter(Boolean)));
+    const { data: freshStocks, error: stockErr } = await supabase
+      .from('goods')
+      .select('id, current_stock')
+      .in('id', goodsIds);
+    if (stockErr) throw stockErr;
+    const stockById = new Map<string, number>();
+    (freshStocks || []).forEach((g: any) => stockById.set(String(g.id), Number(g.current_stock || 0)));
+
+    const stockInvalid = normalizedLines.find(l => {
+      if (isServiceType(l.item_type)) return false;
+      const delta = Number(l.return_qty || 0) - Number(l.original_qty || 0);
+      if (delta <= 0) return false;
+      const cur = Number(stockById.get(String(l.goods_id)) || 0);
+      return delta > cur + 1e-9;
+    });
+    if (stockInvalid) {
+      const delta = Number(stockInvalid.return_qty || 0) - Number(stockInvalid.original_qty || 0);
+      const cur = Number(stockById.get(String(stockInvalid.goods_id)) || 0);
+      toast.error(`Stok tidak cukup untuk menambah retur ${stockInvalid.name}. Stok: ${cur}, Tambahan Retur: ${delta}.`);
+      return;
+    }
+
+    const itemsToSave = normalizedLines.filter(l => Number(l.return_qty || 0) > 0);
+    if (itemsToSave.length === 0) {
+      toast.error('Isi minimal 1 qty retur.');
+      return;
+    }
+
+    setIsEditProcessing(true);
+    try {
+      const totalReturnAmount = itemsToSave.reduce((sum, l) => sum + Number(l.unit_price || 0) * Number(l.return_qty || 0), 0);
+
+      const { error: hErr } = await supabase
+        .from('purchase_returns')
+        .update({
+          return_date: editDate,
+          notes: editNotes ? editNotes : null,
+          settlement_type: effectiveSettlementType,
+          settlement_account_id: effectiveSettlementAccountId ? effectiveSettlementAccountId : null,
+          settlement_amount: totalReturnAmount,
+        } as any)
+        .eq('id', editingReturn.id);
+      if (hErr) throw hErr;
+
+      const { error: delErr } = await supabase.from('purchase_return_items').delete().eq('return_id', editingReturn.id);
+      if (delErr) throw delErr;
+
+      const payload = itemsToSave.map((l) => {
+        const unit = Number(l.unit_price || 0);
+        const qty = Number(l.return_qty || 0);
+        return {
+          return_id: editingReturn.id,
+          goods_id: l.goods_id,
+          quantity_returned: qty,
+          unit_price: unit,
+          total_price: unit * qty,
+        };
+      });
+      const { error: insErr } = await supabase.from('purchase_return_items').insert(payload as any);
+      if (insErr) throw insErr;
+
+      for (const l of normalizedLines) {
+        const gid = String(l.goods_id || '');
+        if (!gid) continue;
+        if (isServiceType(l.item_type)) continue;
+        const delta = Number(l.return_qty || 0) - Number(l.original_qty || 0);
+        if (!delta) continue;
+        const cur = Number(stockById.get(gid) || 0);
+        const next = Math.max(0, cur - delta);
+        const { error: uErr } = await supabase.from('goods').update({ current_stock: next }).eq('id', gid);
+        if (uErr) throw uErr;
+      }
+
+      const fetchPersediaanAccount = async () => {
+        const { data } = await supabase
+          .from('chart_of_accounts')
+          .select('id, account_code, account_name')
+          .eq('account_type', 'DETAIL')
+          .ilike('account_name', '%persediaan%')
+          .order('account_code', { ascending: true })
+          .limit(1)
+          .maybeSingle();
+        return data || null;
+      };
+      const fetchAccountByCode = async (accountCode: string) => {
+        const { data } = await supabase
+          .from('chart_of_accounts')
+          .select('id, account_code, account_name')
+          .eq('account_code', accountCode)
+          .eq('account_type', 'DETAIL')
+          .limit(1)
+          .maybeSingle();
+        return data || null;
+      };
+      const fetchAccountByName = async (nameLike: string) => {
+        const { data } = await supabase
+          .from('chart_of_accounts')
+          .select('id, account_code, account_name')
+          .eq('account_type', 'DETAIL')
+          .ilike('account_name', `%${nameLike}%`)
+          .order('account_code', { ascending: true })
+          .limit(1)
+          .maybeSingle();
+        return data || null;
+      };
+      const accountCodeByGoodsType = (t: string) => {
+        const type = String(t || '').toUpperCase();
+        if (type === 'PERALATAN_WORKSHOP') return '1400101';
+        if (type === 'INVENTARIS_KANTOR') return '1400102';
+        if (type === 'FURNITURE') return '1400103';
+        if (type === 'PERLENGKAPAN') return '1400104';
+        return null;
+      };
+
+      const creditByAccountId: Record<string, number> = {};
+      const persAcc = await fetchPersediaanAccount();
+      for (const l of itemsToSave) {
+        const amt = Number(l.unit_price || 0) * Number(l.return_qty || 0);
+        if (!amt) continue;
+        const itemType = String(l.item_type || '').toUpperCase();
+        let acc: any = null;
+        if (itemType === 'PERSEDIAAN') {
+          acc = persAcc;
+        } else if (itemType === 'ASET_AKTIVA_TETAP') {
+          acc = await fetchAccountByName('aktiva tetap');
+        } else {
+          const code = accountCodeByGoodsType(itemType);
+          if (code) acc = await fetchAccountByCode(code);
+        }
+        if (!acc) {
+          const fallbackName =
+            itemType === 'PERALATAN_WORKSHOP'
+              ? 'peralatan workshop'
+              : itemType === 'INVENTARIS_KANTOR'
+                ? 'inventaris kantor'
+                : itemType === 'FURNITURE'
+                  ? 'furniture'
+                  : itemType === 'PERLENGKAPAN'
+                    ? 'perlengkapan'
+                    : itemType === 'PERSEDIAAN'
+                      ? 'persediaan'
+                      : '';
+          acc = fallbackName ? await fetchAccountByName(fallbackName) : null;
+        }
+        if (!acc) continue;
+        creditByAccountId[String(acc.id)] = (creditByAccountId[String(acc.id)] || 0) + amt;
+      }
+      const creditLines = Object.entries(creditByAccountId).filter(([, v]) => Number(v || 0) !== 0);
+
+      await supabase.from('journal_entries').delete().eq('reference', editingReturn.id);
+      if (totalReturnAmount > 0 && creditLines.length > 0) {
+        const { data: je, error: jeErr } = await supabase
+          .from('journal_entries')
+          .insert([{
+            entry_date: editDate,
+            voucher_no: editingReturn.return_number,
+            reference: editingReturn.id,
+            description: `Retur Pembelian ${editingReturn.return_number} (PO ${selectedPO.po_number})`,
+            entry_type: 'JOURNAL',
+            total_amount: totalReturnAmount,
+          }])
+          .select()
+          .single();
+        if (jeErr) throw jeErr;
+
+        const itemsPayload: any[] = [{
+          journal_entry_id: je.id,
+          account_id: effectiveSettlementAccountId,
+          debit: totalReturnAmount,
+          credit: 0,
+          description:
+            effectiveSettlementType === 'AP_DEDUCT'
+              ? 'Pengurangan Hutang Usaha (Retur Pembelian)'
+              : effectiveSettlementType === 'REFUND'
+                ? 'Refund Retur Pembelian'
+                : 'Deposit/Uang Muka Retur Pembelian',
+        }];
+        creditLines.forEach(([accountId, amt]) => {
+          itemsPayload.push({
+            journal_entry_id: je.id,
+            account_id: accountId,
+            debit: 0,
+            credit: amt,
+            description: 'Pengurangan nilai barang (Retur)',
+          });
+        });
+        const { error: jelErr } = await supabase.from('journal_entry_items').insert(itemsPayload);
+        if (jelErr) throw jelErr;
+      }
+
+      toast.success('Retur berhasil diperbarui.');
+      setIsEditOpen(false);
+      setEditingReturn(null);
+      await loadReturnHistory(poId);
+      const { data: refreshed } = await supabase
+        .from('purchase_orders')
+        .select(`
+          id,
+          po_number,
+          po_date,
+          status,
+          suppliers (name),
+          purchase_invoices (id, status, total_amount, paid_amount)
+        `)
+        .eq('id', poId)
+        .single();
+      if (refreshed) {
+        setPos((prev) => prev.map((x) => (x.id === refreshed.id ? refreshed : x)));
+        setSelectedPO(refreshed);
+      }
+    } catch (e: any) {
+      toast.error('Gagal mengubah retur: ' + (e?.message || 'Unknown error'));
+    } finally {
+      setIsEditProcessing(false);
+    }
+  };
+
+  const deleteReturn = async (ret: ReturnHistoryItem) => {
+    const poId = String(selectedPO?.id || '');
+    if (!poId) return;
+    if (!window.confirm(`Hapus retur ${ret.return_number}?`)) return;
+
+    try {
+      const allItems = (ret.items || []).map((it: any) => ({
+        goods_id: String(it.goods_id || ''),
+        qty: Number(it.quantity_returned || 0),
+        item_type: String(it.goods?.item_type || ''),
+      })).filter((x: any) => x.goods_id && x.qty > 0);
+
+      const goodsIds = Array.from(new Set(allItems.map((x: any) => x.goods_id)));
+      const { data: freshStocks, error: stockErr } = await supabase
+        .from('goods')
+        .select('id, current_stock')
+        .in('id', goodsIds);
+      if (stockErr) throw stockErr;
+      const stockById = new Map<string, number>();
+      (freshStocks || []).forEach((g: any) => stockById.set(String(g.id), Number(g.current_stock || 0)));
+
+      for (const it of allItems) {
+        if (isServiceType(it.item_type)) continue;
+        const cur = Number(stockById.get(it.goods_id) || 0);
+        const next = cur + Number(it.qty || 0);
+        const { error: uErr } = await supabase.from('goods').update({ current_stock: next }).eq('id', it.goods_id);
+        if (uErr) throw uErr;
+      }
+
+      await supabase.from('journal_entries').delete().eq('reference', ret.id);
+      const { error: delErr } = await supabase.from('purchase_returns').delete().eq('id', ret.id);
+      if (delErr) throw delErr;
+
+      toast.success('Retur berhasil dihapus.');
+      await loadReturnHistory(poId);
+      const { data: refreshed } = await supabase
+        .from('purchase_orders')
+        .select(`
+          id,
+          po_number,
+          po_date,
+          status,
+          suppliers (name),
+          purchase_invoices (id, status, total_amount, paid_amount)
+        `)
+        .eq('id', poId)
+        .single();
+      if (refreshed) {
+        setPos((prev) => prev.map((x) => (x.id === refreshed.id ? refreshed : x)));
+        setSelectedPO(refreshed);
+      }
+    } catch (e: any) {
+      toast.error('Gagal menghapus retur: ' + (e?.message || 'Unknown error'));
+    }
+  };
 
   const loadReturnData = async (po: any) => {
     const poId = String(po?.id || '');
@@ -234,6 +716,7 @@ export default function PurchaseOrderReturn() {
     setReturnNotes('');
     setReturnLines([]);
     setReturnMode('PARTIAL');
+    setReturnHistory([]);
     if (p.status === 'UNPAID' || p.status === 'PARTIAL') {
       setSettlementType('AP_DEDUCT');
       setSettlementAccountId(getDefaultApAccountId());
@@ -244,6 +727,7 @@ export default function PurchaseOrderReturn() {
     setIsConfirmOpen(true);
     try {
       await loadReturnData(po);
+      await loadReturnHistory(String(po.id || ''));
     } catch (e: any) {
       toast.error('Gagal memuat rincian PO: ' + (e?.message || 'Unknown error'));
     }
@@ -590,19 +1074,32 @@ export default function PurchaseOrderReturn() {
                       <TableCell>{po.po_number}</TableCell>
                       <TableCell>{po.suppliers?.name || 'N/A'}</TableCell>
                       <TableCell>
-                        <Badge variant={
-                          po.status === 'RECEIVED_FULL' ? 'success' : 
-                          po.status === 'RECEIVED_PART' ? 'secondary' : 'default'
-                        }>
+                        <Badge
+                          variant={po.status === 'RECEIVED_PART' ? 'secondary' : 'default'}
+                          className={
+                            po.status === 'RECEIVED_FULL'
+                              ? 'bg-emerald-600 text-white hover:bg-emerald-600/80'
+                              : po.status === 'RECEIVED_PART'
+                                ? 'bg-indigo-600 text-white hover:bg-indigo-600/80'
+                                : ''
+                          }
+                        >
                           {po.status}
                         </Badge>
                       </TableCell>
                       <TableCell>
-                        <Badge variant={
-                          paymentInfo.status === 'PAID' ? 'success' :
-                          paymentInfo.status === 'UNPAID' ? 'destructive' :
-                          paymentInfo.status === 'PARTIAL' ? 'warning' : 'default'
-                        }>
+                        <Badge
+                          variant={paymentInfo.status === 'UNPAID' ? 'destructive' : 'secondary'}
+                          className={
+                            paymentInfo.status === 'PAID'
+                              ? 'bg-emerald-600 text-white hover:bg-emerald-600/80'
+                              : paymentInfo.status === 'PARTIAL'
+                                ? 'bg-amber-500 text-white hover:bg-amber-500/80'
+                                : paymentInfo.status === 'NO_INVOICE'
+                                  ? 'bg-slate-200 text-slate-800 hover:bg-slate-200/80'
+                                  : ''
+                          }
+                        >
                           {
                             paymentInfo.status === 'PAID' ? 'Lunas' :
                             paymentInfo.status === 'UNPAID' ? 'Belum Bayar' :
@@ -748,6 +1245,75 @@ export default function PurchaseOrderReturn() {
           </div>
           <p className="text-xs text-yellow-600 mt-1"><AlertTriangle className="inline-block h-3 w-3 mr-1" />Qty retur tidak boleh melebihi sisa diterima, dan stok harus cukup (barang belum dipakai).</p>
 
+          <div className="mt-4 border rounded-md">
+            <div className="px-3 py-2 border-b flex items-center justify-between">
+              <div className="font-medium">Riwayat Retur</div>
+              <div className="text-xs text-muted-foreground">
+                {isHistoryLoading ? 'Memuat...' : `${returnHistory.length} retur`}
+              </div>
+            </div>
+            <div className="max-h-56 overflow-y-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>No. Retur</TableHead>
+                    <TableHead>Tanggal</TableHead>
+                    <TableHead className="text-right">Total</TableHead>
+                    <TableHead className="text-right">Item</TableHead>
+                    <TableHead>Aksi</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {returnHistory.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={5} className="text-center h-16 text-sm text-muted-foreground">
+                        Belum ada retur.
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    returnHistory.map((r, idx) => {
+                      const latestId = returnHistory[0]?.id;
+                      const canEdit = String(selectedPO?.status || '') !== 'RETURNED_FULL';
+                      const canDelete = String(selectedPO?.status || '') === 'RETURNED_FULL' && String(r.id) === String(latestId);
+                      const itemCount = Array.isArray(r.items) ? r.items.length : 0;
+                      return (
+                        <TableRow key={r.id}>
+                          <TableCell className="font-medium">{r.return_number}</TableCell>
+                          <TableCell>{formatDate(r.return_date)}</TableCell>
+                          <TableCell className="text-right">{formatCurrency(Number(r.settlement_amount || 0))}</TableCell>
+                          <TableCell className="text-right">{itemCount}</TableCell>
+                          <TableCell>
+                            <div className="flex items-center gap-2">
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                disabled={!canEdit || isProcessing}
+                                onClick={() => openEditReturn(r)}
+                              >
+                                Edit
+                              </Button>
+                              <Button
+                                variant="destructive"
+                                size="sm"
+                                disabled={!canDelete || isProcessing}
+                                onClick={() => deleteReturn(r)}
+                              >
+                                Hapus
+                              </Button>
+                            </div>
+                            {String(selectedPO?.status || '') === 'RETURNED_FULL' && idx === 0 && (
+                              <div className="text-[11px] text-muted-foreground mt-1">Hapus aktif hanya untuk retur terakhir saat status PO = RETURNED_FULL.</div>
+                            )}
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })
+                  )}
+                </TableBody>
+              </Table>
+            </div>
+          </div>
+
           <DialogFooter>
             <div className="w-full flex justify-between items-center">
               <p className="text-lg font-bold">
@@ -761,6 +1327,131 @@ export default function PurchaseOrderReturn() {
                 </Button>
                 <Button onClick={processReturn} disabled={isProcessing}>
                   {isProcessing ? 'Memproses...' : 'Proses Retur'}
+                </Button>
+              </div>
+            </div>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={isEditOpen} onOpenChange={(open) => { setIsEditOpen(open); if (!open) { setEditingReturn(null); setEditLines([]); } }}>
+        <DialogContent className="max-w-3xl">
+          <DialogHeader>
+            <DialogTitle>Edit Retur</DialogTitle>
+            <DialogDescription>
+              Edit item yang diretur untuk {selectedPO?.po_number}.
+            </DialogDescription>
+          </DialogHeader>
+
+          {getPoPaymentInfo(selectedPO).status === 'UNPAID' || getPoPaymentInfo(selectedPO).status === 'PARTIAL' ? (
+            <div className="p-3 bg-yellow-100 border-l-4 border-yellow-500 text-yellow-700 rounded-md">
+              <p><AlertTriangle className="inline-block h-5 w-5 mr-2" />Invoice belum dibayar. Retur akan otomatis mengurangi Hutang Usaha.</p>
+            </div>
+          ) : null}
+
+          <div className="grid grid-cols-3 gap-4">
+            <div>
+              <Label>Tanggal Retur</Label>
+              <Input type="date" value={editDate} onChange={(e) => setEditDate(e.target.value)} />
+            </div>
+            <div className="col-span-2">
+              <Label>Catatan (opsional)</Label>
+              <Input value={editNotes} onChange={(e) => setEditNotes(e.target.value)} placeholder="Keterangan retur..." />
+            </div>
+          </div>
+
+          {getPoPaymentInfo(selectedPO).status === 'PAID' && (
+            <div className="grid grid-cols-3 gap-4">
+              <div>
+                <Label>Penyelesaian</Label>
+                <Select value={editSettlementType} onValueChange={(v: any) => setEditSettlementType(v)}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Tipe Penyelesaian" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="REFUND">Refund (Uang Kembali)</SelectItem>
+                    <SelectItem value="DEPOSIT">Simpan sebagai Deposit</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="col-span-2">
+                <Label>Akun Kas/Bank</Label>
+                <Select value={editSettlementAccountId} onValueChange={setEditSettlementAccountId}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Pilih Akun Kas/Bank" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {coaAccounts
+                      .filter(a => String(a.account_code || '').startsWith('11'))
+                      .map(acc => (
+                        <SelectItem key={acc.id} value={acc.id}>
+                          {acc.account_code} - {acc.account_name}
+                        </SelectItem>
+                      ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          )}
+
+          <div className="border rounded-md max-h-64 overflow-y-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Barang</TableHead>
+                  <TableHead className="text-right">Qty Awal</TableHead>
+                  <TableHead className="text-right">Maks</TableHead>
+                  <TableHead className="w-[140px]">Qty Retur</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {editLines.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={4} className="text-center h-24">
+                      Memuat rincian...
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  editLines.map((line, index) => (
+                    <TableRow key={line.goods_id}>
+                      <TableCell>
+                        <p className="font-medium">{line.name}</p>
+                        <p className="text-xs text-muted-foreground">{line.item_code}</p>
+                      </TableCell>
+                      <TableCell className="text-right">{line.original_qty} {line.unit}</TableCell>
+                      <TableCell className="text-right">{line.max_qty} {line.unit}</TableCell>
+                      <TableCell>
+                        <Input
+                          type="number"
+                          value={line.return_qty}
+                          onChange={(e) => {
+                            const newQty = e.target.value;
+                            setEditLines(prev => prev.map((l, i) => i === index ? { ...l, return_qty: Number(newQty) } : l));
+                          }}
+                          max={line.max_qty}
+                          min={0}
+                        />
+                      </TableCell>
+                    </TableRow>
+                  ))
+                )}
+              </TableBody>
+            </Table>
+          </div>
+
+          <DialogFooter>
+            <div className="w-full flex justify-between items-center">
+              <p className="text-lg font-bold">
+                Total Retur: {formatCurrency(
+                  editLines.reduce((sum, l) => sum + Number(l.return_qty || 0) * Number(l.unit_price || 0), 0)
+                )}
+              </p>
+              <div>
+                <Button variant="ghost" onClick={() => setIsEditOpen(false)} disabled={isEditProcessing}>
+                  Batal
+                </Button>
+                <Button onClick={saveEditReturn} disabled={isEditProcessing}>
+                  {isEditProcessing ? 'Menyimpan...' : 'Simpan Perubahan'}
                 </Button>
               </div>
             </div>
