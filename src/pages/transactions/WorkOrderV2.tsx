@@ -41,8 +41,8 @@ interface WorkOrder {
   status: string;
   work_date: string;
   created_at: string;
-  vehicle_entry_id: string;
-  mechanic_id: string;
+  vehicle_entry_id: string | null;
+  mechanic_id: string | null;
   vehicle_entries: VehicleEntry | null;
   mechanics: Mechanic | null;
 }
@@ -231,16 +231,85 @@ const WorkOrderV2 = () => {
     }
   };
 
-  const handleFinishWO = async (woId: string) => {
-    if (window.confirm("Apakah Anda yakin ingin menyelesaikan Work Order ini?")) {
-      try {
-        const { error } = await supabase.from('work_orders').update({ status: 'COMPLETED' }).eq('id', woId);
-        if (error) throw error;
-        toast.success("Work Order telah diselesaikan.");
-        fetchWOs();
-      } catch (error: any) {
-        toast.error("Gagal menyelesaikan WO: " + error.message);
+  const checkSparepartsIssued = async (wo: WorkOrder): Promise<{ valid: boolean; message: string; unissued: string[] }> => {
+    const vehicleEntryId = wo.vehicle_entry_id;
+    if (!vehicleEntryId) {
+      return { valid: true, message: 'Tidak ada sparepart', unissued: [] };
+    }
+
+    const { data: estItems, error: estError } = await supabase
+      .from('vehicle_entry_spareparts')
+      .select('id, goods_id, item_name, qty, value_only')
+      .eq('vehicle_entry_id', vehicleEntryId);
+
+    if (estError) {
+      return { valid: false, message: 'Gagal mengambil data sparepart', unissued: [] };
+    }
+
+    const nonValueOnlyItems = (estItems || []).filter((item: any) => !item.value_only);
+    if (nonValueOnlyItems.length === 0) {
+      return { valid: true, message: 'Tidak ada sparepart yang perlu dikeluarkan', unissued: [] };
+    }
+
+    const { data: issuedItems, error: issuedError } = await supabase
+      .from('goods_issue_items')
+      .select('goods_id, quantity, value_only, goods_issues!inner(work_order_id)')
+      .eq('goods_issues.work_order_id', wo.id);
+
+    if (issuedError) {
+      return { valid: false, message: 'Gagal mengambil data barang keluar', unissued: [] };
+    }
+
+    const issuedMap = new Map<string, number>();
+    (issuedItems || []).forEach((item: any) => {
+      if (!item.value_only && item.goods_id) {
+        const current = issuedMap.get(item.goods_id) || 0;
+        issuedMap.set(item.goods_id, current + (item.quantity || 0));
       }
+    });
+
+    const unissued: string[] = [];
+    for (const item of nonValueOnlyItems) {
+      const goodsId = item.goods_id;
+      if (!goodsId) {
+        unissued.push(item.item_name || 'Item tanpa nama');
+        continue;
+      }
+      const issuedQty = issuedMap.get(goodsId) || 0;
+      if (issuedQty < (item.qty || 0)) {
+        unissued.push(item.item_name || 'Item');
+      }
+    }
+
+    if (unissued.length > 0) {
+      return {
+        valid: false,
+        message: `Sparepart berikut belum/tidak cukup keluar: ${unissued.slice(0, 5).join(', ')}${unissued.length > 5 ? '...' : ''}`,
+        unissued
+      };
+    }
+
+    return { valid: true, message: 'Semua sparepart sudah dikeluarkan', unissued: [] };
+  };
+
+  const handleFinishWO = async (wo: WorkOrder) => {
+    try {
+      const { valid, message } = await checkSparepartsIssued(wo);
+      if (!valid) {
+        toast.error(`Tidak dapat menyelesaikan WO: ${message}`);
+        return;
+      }
+
+      if (!window.confirm(`Apakah Anda yakin ingin menyelesaikan Work Order ini?\n\n${message}`)) {
+        return;
+      }
+
+      const { error } = await supabase.from('work_orders').update({ status: 'COMPLETED' }).eq('id', wo.id);
+      if (error) throw error;
+      toast.success("Work Order telah diselesaikan.");
+      fetchWOs();
+    } catch (error: any) {
+      toast.error("Gagal menyelesaikan WO: " + (error?.message || 'Unknown error'));
     }
   };
 
@@ -324,7 +393,7 @@ const WorkOrderV2 = () => {
                           <Trash2 className="h-4 w-4 text-red-500" />
                         </Button>
                         {wo.status !== 'COMPLETED' ? (
-                          <Button variant="outline" size="sm" onClick={() => handleFinishWO(wo.id)} className="ml-2">
+                          <Button variant="outline" size="sm" onClick={() => handleFinishWO(wo)} className="ml-2">
                             <CheckCircle className="mr-2 h-4 w-4" /> Selesaikan
                           </Button>
                         ) : (
