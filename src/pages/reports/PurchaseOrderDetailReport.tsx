@@ -89,8 +89,9 @@ export default function PurchaseOrderDetailReport() {
       return;
     }
 
+    const hasSearch = normalizeText(searchQuery).length > 0;
     setLoading(true);
-    setCurrentPage(page);
+    setCurrentPage(hasSearch ? 1 : page);
     if (page === 1) {
       setData([]);
       setTotalPages(0);
@@ -100,8 +101,8 @@ export default function PurchaseOrderDetailReport() {
       const startDate = dateRange.start;
       const endDate = dateRange.end;
 
-      const from = (page - 1) * ITEMS_PER_PAGE;
-      const to = from + ITEMS_PER_PAGE - 1;
+      const from = hasSearch ? 0 : (page - 1) * ITEMS_PER_PAGE;
+      const to = hasSearch ? 4999 : from + ITEMS_PER_PAGE - 1;
 
       // 1. Main query for PO Items, POs, Suppliers, and Goods
       let poQuery = supabase
@@ -121,7 +122,11 @@ export default function PurchaseOrderDetailReport() {
       if (poError) throw poError;
 
       if (page === 1) {
+        if (hasSearch) {
+          setTotalPages(1);
+        } else {
         setTotalPages(totalCount ? Math.ceil(totalCount / ITEMS_PER_PAGE) : 0);
+        }
       }
 
       if (!poItems || poItems.length === 0) {
@@ -407,7 +412,9 @@ export default function PurchaseOrderDetailReport() {
         ) : (
           <>
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-3 text-sm text-muted-foreground">
-              <div>Hasil: {data.length} baris</div>
+              <div>
+                Hasil: {data.length} baris{normalizeText(searchQuery).length > 0 ? ' (mode pencarian, ambil max 5000 baris)' : ''}
+              </div>
               <div className="sm:text-right">Tanggal PO: {dateRange.start} s/d {dateRange.end}</div>
             </div>
             <div className="rounded-md border overflow-hidden">

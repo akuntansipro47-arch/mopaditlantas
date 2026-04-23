@@ -52,9 +52,11 @@ export default function PurchaseDetailReport() {
             status,
             suppliers (name, id),
             work_orders (
+              id,
               wo_number,
               vehicle_entries (
-                vehicles (license_plate, brand_type)
+                service_group,
+                vehicles (license_plate, brand_type, vehicle_type)
               )
             )
           )
@@ -146,10 +148,19 @@ export default function PurchaseDetailReport() {
     return 'Sudah';
   };
 
+  const getVehicleGroupLabel = (item: any) => {
+    const vt = String(item.purchase_orders?.work_orders?.vehicle_entries?.vehicles?.vehicle_type || '').toUpperCase();
+    if (vt.includes('R4') || vt.includes('MOBIL') || vt.includes('CAR') || vt.includes('PICKUP') || vt.includes('TRUCK')) return 'R4';
+    if (vt.includes('R2') || vt.includes('MOTOR') || vt.includes('BIKE')) return 'R2';
+    return '-';
+  };
+
   const filteredData = data.filter(item => 
     item.goods?.name.toLowerCase().includes(search.toLowerCase()) ||
     item.purchase_orders?.po_number.toLowerCase().includes(search.toLowerCase()) ||
     item.purchase_orders?.suppliers?.name.toLowerCase().includes(search.toLowerCase()) ||
+    (item.purchase_orders?.work_orders?.wo_number || '').toLowerCase().includes(search.toLowerCase()) ||
+    getVehicleGroupLabel(item).toLowerCase().includes(search.toLowerCase()) ||
     (item.purchase_orders?.work_orders?.vehicle_entries?.vehicles?.license_plate || '').toLowerCase().includes(search.toLowerCase()) ||
     (item.purchase_orders?.work_orders?.vehicle_entries?.vehicles?.brand_type || '').toLowerCase().includes(search.toLowerCase())
   );
@@ -169,6 +180,8 @@ export default function PurchaseDetailReport() {
       'No. PO': item.purchase_orders?.po_number,
       'Tanggal': formatDate(item.purchase_orders?.po_date),
       'Supplier': item.purchase_orders?.suppliers?.name,
+      'No. WO': item.purchase_orders?.work_orders?.wo_number || '-',
+      'Group': getVehicleGroupLabel(item),
       'Nopol': item.purchase_orders?.work_orders?.vehicle_entries?.vehicles?.license_plate || '-',
       'Nama Kendaraan': item.purchase_orders?.work_orders?.vehicle_entries?.vehicles?.brand_type || '-',
       'Tipe': item.goods?.item_type || '-',
@@ -250,6 +263,8 @@ export default function PurchaseDetailReport() {
                 <TableHead>Tanggal</TableHead>
                 <TableHead>No. PO</TableHead>
                 <TableHead>Supplier</TableHead>
+                <TableHead>No. WO</TableHead>
+                <TableHead>Group</TableHead>
                 <TableHead>Kendaraan</TableHead>
                 <TableHead>Tipe</TableHead>
                 <TableHead>Nama Barang</TableHead>
@@ -262,13 +277,15 @@ export default function PurchaseDetailReport() {
             </TableHeader>
             <TableBody>
               {filteredData.length === 0 ? (
-                <TableRow><TableCell colSpan={11} className="text-center py-8">Tidak ada data.</TableCell></TableRow>
+                <TableRow><TableCell colSpan={13} className="text-center py-8">Tidak ada data.</TableCell></TableRow>
               ) : (
                 filteredData.map((item, idx) => (
                   <TableRow key={idx}>
                     <TableCell>{formatDate(item.purchase_orders?.po_date)}</TableCell>
                     <TableCell className="font-medium">{item.purchase_orders?.po_number}</TableCell>
                     <TableCell>{item.purchase_orders?.suppliers?.name}</TableCell>
+                    <TableCell>{item.purchase_orders?.work_orders?.wo_number || '-'}</TableCell>
+                    <TableCell>{getVehicleGroupLabel(item)}</TableCell>
                     <TableCell>
                       <div className="font-medium">{item.purchase_orders?.work_orders?.vehicle_entries?.vehicles?.license_plate || '-'}</div>
                       <div className="text-xs text-gray-500">{item.purchase_orders?.work_orders?.vehicle_entries?.vehicles?.brand_type || '-'}</div>
