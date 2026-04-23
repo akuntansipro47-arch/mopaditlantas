@@ -51,6 +51,7 @@ export default function PurchaseOrderV2() {
   const [isReadOnly, setIsReadOnly] = useState(false);
   const [returnedGoodsIds, setReturnedGoodsIds] = useState<string[]>([]);
   const [originalEditItems, setOriginalEditItems] = useState<any[]>([]);
+  const [editableReturnIndexes, setEditableReturnIndexes] = useState<number[]>([]);
   
   // Master Data
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
@@ -292,6 +293,7 @@ export default function PurchaseOrderV2() {
     setIsReadOnly(false);
     setReturnedGoodsIds([]);
     setOriginalEditItems([]);
+    setEditableReturnIndexes([]);
   };
 
   const handleDateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -331,8 +333,10 @@ export default function PurchaseOrderV2() {
     setIsReadOnly(readOnly);
     setReturnedGoodsIds([]);
     setOriginalEditItems([]);
+    setEditableReturnIndexes([]);
 
     try {
+      let returnedSetForEdit: Set<string> | null = null;
       if (!readOnly && hasReturn && po.status !== 'RETURNED_FULL' && po.status !== 'CANCELLED') {
         const { data: ret, error: retErr } = await supabase
           .from('purchase_returns')
@@ -353,6 +357,7 @@ export default function PurchaseOrderV2() {
             if (gid && qty > 0) gidSet.add(gid);
           });
           setReturnedGoodsIds(Array.from(gidSet));
+          returnedSetForEdit = gidSet;
         }
       }
 
@@ -385,6 +390,17 @@ export default function PurchaseOrderV2() {
         }));
         setPoItems(mapped as any);
         setOriginalEditItems(mapped as any);
+        if (!readOnly && hasReturn && po.status !== 'RETURNED_FULL' && po.status !== 'CANCELLED') {
+          const returnedSet = returnedSetForEdit || new Set(returnedGoodsIds);
+          const idxs = mapped
+            .map((x: any, idx: number) => ({
+              idx,
+              isEditable: String(x?.line_type || 'PART') !== 'JASA' && returnedSet.has(String(x?.goods_id || '')),
+            }))
+            .filter((x: any) => x.isEditable)
+            .map((x: any) => x.idx);
+          setEditableReturnIndexes(idxs);
+        }
       } else {
         const fallback = [{ line_type: 'PART', goods_id: '', job_type_id: '', service_name: '', brand: '', quantity: 1, unit_price: 0 }];
         setPoItems(fallback as any);
@@ -415,12 +431,10 @@ export default function PurchaseOrderV2() {
 
     const isReturnEditMode = Boolean(editingId) && !isReadOnly && returnedGoodsIds.length > 0;
     if (isReturnEditMode && Array.isArray(originalEditItems) && originalEditItems.length === poItems.length) {
+      const editableSet = new Set(editableReturnIndexes);
       const changedLocked: number[] = [];
       poItems.forEach((it: any, idx: number) => {
-        const lineType = String(it?.line_type || 'PART');
-        const gid = String(it?.goods_id || '');
-        const isReturnedPart = lineType !== 'JASA' && gid && returnedGoodsIds.includes(gid);
-        if (isReturnedPart) return;
+        if (editableSet.has(idx)) return;
         const orig = originalEditItems[idx] || {};
         const curSig = [
           String(it?.line_type || ''),
@@ -479,6 +493,7 @@ export default function PurchaseOrderV2() {
             work_order_id: poType === 'WO' && formData.work_order_id !== 'NONE' ? formData.work_order_id : null,
             total_amount: calculateTotal(),
             po_date: formData.po_date,
+            ...(isReturnEditMode ? { status: 'ISSUED' as any } : {}),
           })
           .eq('id', editingId);
 
@@ -951,10 +966,8 @@ export default function PurchaseOrderV2() {
                         <TableRow key={index}>
                           {(() => {
                             const isReturnEditMode = !isReadOnly && returnedGoodsIds.length > 0;
-                            const lt = String((item as any).line_type || 'PART');
-                            const gid = String((item as any).goods_id || '');
-                            const isReturnedPart = lt !== 'JASA' && gid && returnedGoodsIds.includes(gid);
-                            const lockLine = isReturnEditMode && !isReturnedPart;
+                          const editableSet = new Set(editableReturnIndexes);
+                          const lockLine = isReturnEditMode && !editableSet.has(index);
                             return (
                               <>
                           <TableCell>
@@ -981,7 +994,7 @@ export default function PurchaseOrderV2() {
                                 }
                                 setPoItems(next as any);
                               }}
-                              disabled={isReadOnly || lockLine}
+                              disabled={isReadOnly || isReturnEditMode || lockLine}
                             >
                               <SelectTrigger className="h-9">
                                 <SelectValue placeholder="Pilih..." />

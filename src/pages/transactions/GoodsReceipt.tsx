@@ -1022,7 +1022,6 @@ export default function GoodsReceipt() {
   const filteredPOs = pos.filter(p => 
     p.status !== 'RETURNED_FULL' &&
     p.status !== 'CANCELLED' &&
-    !(Array.isArray((p as any).purchase_returns) && (p as any).purchase_returns.length > 0) &&
     (
       p.po_number.toLowerCase().includes(search.toLowerCase()) ||
       p.suppliers?.name.toLowerCase().includes(search.toLowerCase())
