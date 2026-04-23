@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -17,6 +17,18 @@ type CategorizedFlow = {
     financing: { inflows: FlowDetails; outflows: FlowDetails; net: number; };
 };
 
+type CashMovement = {
+    entry_id: string;
+    entry_date: string;
+    voucher_no: string | null;
+    entry_description: string | null;
+    cash_accounts: string[];
+    counter_account: string;
+    activity: keyof CategorizedFlow;
+    direction: 'INFLOW' | 'OUTFLOW';
+    amount: number;
+};
+
 const CashFlowReport = () => {
     const [searchParams, setSearchParams] = useSearchParams();
     const [loading, setLoading] = useState(false);
@@ -24,6 +36,7 @@ const CashFlowReport = () => {
     const [endDate, setEndDate] = useState(format(endOfMonth(new Date()), 'yyyy-MM-dd'));
 
     const [initialBalance, setInitialBalance] = useState(0);
+    const [movements, setMovements] = useState<CashMovement[]>([]);
     const [categorizedFlows, setCategorizedFlows] = useState<CategorizedFlow>({
         operating: { inflows: {}, outflows: {}, net: 0 },
         investing: { inflows: {}, outflows: {}, net: 0 },
@@ -55,10 +68,13 @@ const CashFlowReport = () => {
                 .select(`
                     id,
                     entry_date,
+                    voucher_no,
+                    description,
                     journal_entry_items (
                         id,
                         debit,
                         credit,
+                        description,
                         chart_of_accounts (
                             account_name,
                             category,
@@ -93,30 +109,54 @@ const CashFlowReport = () => {
                 return 'operating';
             };
 
-            for (const entry of (journalEntries || [])) {
-                const cashItem = (entry.journal_entry_items || []).find(item =>
-                    item.chart_of_accounts?.category === 'AKTIVA' && (item.chart_of_accounts.sub_category === 'AKTIVA_LANCAR' || item.chart_of_accounts.account_name?.toLowerCase().includes('kas') || item.chart_of_accounts.account_name?.toLowerCase().includes('bank'))
+            const movementRows: CashMovement[] = [];
+            const isCashAccount = (coa: any) => {
+                const name = String(coa?.account_name || '').toLowerCase();
+                return (
+                    String(coa?.category || '') === 'AKTIVA' &&
+                    (String(coa?.sub_category || '') === 'AKTIVA_LANCAR' || name.includes('kas') || name.includes('bank'))
                 );
+            };
 
-                if (!cashItem) continue;
+            for (const entry of (journalEntries || []) as any[]) {
+                const items = (entry?.journal_entry_items || []) as any[];
+                const cashItems = items.filter((it) => isCashAccount(it?.chart_of_accounts));
+                if (cashItems.length === 0) continue;
 
-                const otherItems = (entry.journal_entry_items || []).filter(item => item.id !== cashItem.id && item.chart_of_accounts);
+                const cashNet = cashItems.reduce((sum, it) => sum + (Number(it.debit || 0) - Number(it.credit || 0)), 0);
+                if (!cashNet) continue;
 
+                const direction: 'INFLOW' | 'OUTFLOW' = cashNet > 0 ? 'INFLOW' : 'OUTFLOW';
+                const cashAccounts = cashItems
+                    .map((it) => String(it?.chart_of_accounts?.account_name || 'Kas/Bank'))
+                    .filter(Boolean);
+
+                const otherItems = items.filter((it) => !isCashAccount(it?.chart_of_accounts) && it?.chart_of_accounts);
                 if (otherItems.length === 0) continue;
 
-                const is_inflow = cashItem.debit > 0;
-
                 for (const otherItem of otherItems) {
-                    const category = getCashFlowCategory(otherItem.chart_of_accounts.category, otherItem.chart_of_accounts.sub_category);
-                    if (category) {
-                        const amount = is_inflow ? otherItem.credit : otherItem.debit;
-                        const accountName = otherItem.chart_of_accounts.account_name || 'Lain-lain';
-                        
-                        if (amount > 0) {
-                            const targetFlow = is_inflow ? flows[category].inflows : flows[category].outflows;
-                            targetFlow[accountName] = (targetFlow[accountName] || 0) + amount;
-                        }
-                    }
+                    const coa = otherItem.chart_of_accounts;
+                    const activity = getCashFlowCategory(coa?.category ?? null, coa?.sub_category ?? null);
+                    if (!activity) continue;
+
+                    const amount = direction === 'INFLOW' ? Number(otherItem.credit || 0) : Number(otherItem.debit || 0);
+                    if (!(amount > 0)) continue;
+
+                    const counter = String(coa?.account_name || 'Lain-lain');
+                    const targetFlow = direction === 'INFLOW' ? flows[activity].inflows : flows[activity].outflows;
+                    targetFlow[counter] = (targetFlow[counter] || 0) + amount;
+
+                    movementRows.push({
+                        entry_id: String(entry.id),
+                        entry_date: String(entry.entry_date || ''),
+                        voucher_no: entry.voucher_no ? String(entry.voucher_no) : null,
+                        entry_description: entry.description ? String(entry.description) : null,
+                        cash_accounts: cashAccounts,
+                        counter_account: counter,
+                        activity,
+                        direction,
+                        amount,
+                    });
                 }
             }
 
@@ -129,6 +169,7 @@ const CashFlowReport = () => {
             });
 
             setCategorizedFlows(flows);
+            setMovements(movementRows);
 
         } catch (error: any) {
             toast.error(error.message);
@@ -146,19 +187,59 @@ const CashFlowReport = () => {
         return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR' }).format(value);
     };
 
-    const renderFlowDetails = (details: FlowDetails, isOutflow = false) => {
-        return Object.entries(details).map(([name, amount]) => (
-            <div key={name} className="grid grid-cols-2 gap-1 text-sm pl-8">
-                <div className="text-muted-foreground">{name}</div>
-                <div className={`text-right ${isOutflow ? 'text-red-600' : ''}`}>
-                    {isOutflow ? `(${formatCurrency(amount)})` : formatCurrency(amount)}
-                </div>
-            </div>
-        ));
-    };
+    const orderedDetails = (details: FlowDetails) =>
+        Object.entries(details).sort((a, b) => Math.abs(b[1]) - Math.abs(a[1]));
 
     const netCashChange = categorizedFlows.operating.net + categorizedFlows.investing.net + categorizedFlows.financing.net;
     const endingBalance = initialBalance + netCashChange;
+
+    const movementByActivity = useMemo(() => {
+        const out: Record<string, CashMovement[]> = { operating: [], investing: [], financing: [] };
+        (movements || []).forEach((m) => {
+            out[m.activity] = out[m.activity] || [];
+            out[m.activity].push(m);
+        });
+        (Object.keys(out) as Array<keyof CategorizedFlow>).forEach((k) => {
+            out[k].sort((a, b) => String(a.entry_date).localeCompare(String(b.entry_date)));
+        });
+        return out as Record<keyof CategorizedFlow, CashMovement[]>;
+    }, [movements]);
+
+    const renderMovementTable = (rows: CashMovement[]) => {
+        if (!rows || rows.length === 0) {
+            return <div className="text-sm text-muted-foreground py-2">Tidak ada transaksi.</div>;
+        }
+        return (
+            <div className="border rounded-lg overflow-x-auto">
+                <table className="min-w-[900px] w-full text-sm">
+                    <thead className="bg-slate-50">
+                        <tr className="text-left">
+                            <th className="px-3 py-2 font-semibold text-slate-700">Tanggal</th>
+                            <th className="px-3 py-2 font-semibold text-slate-700">Voucher</th>
+                            <th className="px-3 py-2 font-semibold text-slate-700">Kas/Bank</th>
+                            <th className="px-3 py-2 font-semibold text-slate-700">Akun Lawan</th>
+                            <th className="px-3 py-2 font-semibold text-slate-700">Keterangan</th>
+                            <th className="px-3 py-2 font-semibold text-right text-slate-700">Masuk</th>
+                            <th className="px-3 py-2 font-semibold text-right text-slate-700">Keluar</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {rows.map((r) => (
+                            <tr key={`${r.entry_id}-${r.counter_account}-${r.direction}-${r.amount}`} className="border-t">
+                                <td className="px-3 py-2 whitespace-nowrap">{r.entry_date}</td>
+                                <td className="px-3 py-2 whitespace-nowrap">{r.voucher_no || '-'}</td>
+                                <td className="px-3 py-2">{r.cash_accounts.join(', ')}</td>
+                                <td className="px-3 py-2">{r.counter_account}</td>
+                                <td className="px-3 py-2">{r.entry_description || '-'}</td>
+                                <td className="px-3 py-2 text-right">{r.direction === 'INFLOW' ? formatCurrency(r.amount) : '-'}</td>
+                                <td className="px-3 py-2 text-right">{r.direction === 'OUTFLOW' ? formatCurrency(r.amount) : '-'}</td>
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+            </div>
+        );
+    };
 
     return (
         <div className="p-4">
@@ -201,10 +282,14 @@ const CashFlowReport = () => {
                             <TabsTrigger value="indirect">Metode Tidak Langsung</TabsTrigger>
                         </TabsList>
                         <TabsContent value="direct">
-                            <div className="border rounded-lg p-4 space-y-4">
+                            <div className="border rounded-lg p-4 space-y-6">
                                 <div className="grid grid-cols-2 gap-4 text-sm">
                                     <div className="font-semibold">Saldo Kas Awal Periode</div>
                                     <div className="text-right font-semibold">{formatCurrency(initialBalance)}</div>
+                                    <div className="font-semibold">Kenaikan/Penurunan Bersih Kas</div>
+                                    <div className="text-right font-semibold">{formatCurrency(netCashChange)}</div>
+                                    <div className="font-bold text-base">Saldo Kas Akhir Periode</div>
+                                    <div className="text-right font-bold text-base border-t-2 border-black pt-1">{formatCurrency(endingBalance)}</div>
                                 </div>
                                 
                                 {/* Operating Activities */}
@@ -212,14 +297,28 @@ const CashFlowReport = () => {
                                     <div className="font-semibold text-base mb-2">Arus Kas dari Aktivitas Operasi</div>
                                     <div className="pl-4 space-y-1">
                                         <div className="font-medium">Penerimaan Kas:</div>
-                                        {renderFlowDetails(categorizedFlows.operating.inflows)}
+                                        {orderedDetails(categorizedFlows.operating.inflows).map(([name, amount]) => (
+                                            <div key={name} className="grid grid-cols-2 gap-1 text-sm pl-4">
+                                                <div className="text-muted-foreground">{name}</div>
+                                                <div className="text-right">{formatCurrency(amount)}</div>
+                                            </div>
+                                        ))}
                                         <div className="font-medium mt-2">Pembayaran Kas:</div>
-                                        {renderFlowDetails(categorizedFlows.operating.outflows, true)}
+                                        {orderedDetails(categorizedFlows.operating.outflows).map(([name, amount]) => (
+                                            <div key={name} className="grid grid-cols-2 gap-1 text-sm pl-4">
+                                                <div className="text-muted-foreground">{name}</div>
+                                                <div className="text-right text-red-600">({formatCurrency(amount)})</div>
+                                            </div>
+                                        ))}
                                     </div>
                                     <div className="grid grid-cols-2 gap-1 text-sm font-semibold mt-2 pl-4 border-t pt-2">
                                         <div>Arus Kas Bersih dari Aktivitas Operasi</div>
                                         <div className="text-right">{formatCurrency(categorizedFlows.operating.net)}</div>
                                     </div>
+                                    <details className="mt-3 pl-4">
+                                        <summary className="cursor-pointer text-sm font-medium text-slate-700">Rincian transaksi</summary>
+                                        <div className="mt-2">{renderMovementTable(movementByActivity.operating)}</div>
+                                    </details>
                                 </div>
 
                                 {/* Investing Activities */}
@@ -227,14 +326,28 @@ const CashFlowReport = () => {
                                     <div className="font-semibold text-base mb-2">Arus Kas dari Aktivitas Investasi</div>
                                      <div className="pl-4 space-y-1">
                                         <div className="font-medium">Penerimaan Kas:</div>
-                                        {renderFlowDetails(categorizedFlows.investing.inflows)}
+                                        {orderedDetails(categorizedFlows.investing.inflows).map(([name, amount]) => (
+                                            <div key={name} className="grid grid-cols-2 gap-1 text-sm pl-4">
+                                                <div className="text-muted-foreground">{name}</div>
+                                                <div className="text-right">{formatCurrency(amount)}</div>
+                                            </div>
+                                        ))}
                                         <div className="font-medium mt-2">Pembayaran Kas:</div>
-                                        {renderFlowDetails(categorizedFlows.investing.outflows, true)}
+                                        {orderedDetails(categorizedFlows.investing.outflows).map(([name, amount]) => (
+                                            <div key={name} className="grid grid-cols-2 gap-1 text-sm pl-4">
+                                                <div className="text-muted-foreground">{name}</div>
+                                                <div className="text-right text-red-600">({formatCurrency(amount)})</div>
+                                            </div>
+                                        ))}
                                     </div>
                                     <div className="grid grid-cols-2 gap-1 text-sm font-semibold mt-2 pl-4 border-t pt-2">
                                         <div>Arus Kas Bersih dari Aktivitas Investasi</div>
                                         <div className="text-right">{formatCurrency(categorizedFlows.investing.net)}</div>
                                     </div>
+                                    <details className="mt-3 pl-4">
+                                        <summary className="cursor-pointer text-sm font-medium text-slate-700">Rincian transaksi</summary>
+                                        <div className="mt-2">{renderMovementTable(movementByActivity.investing)}</div>
+                                    </details>
                                 </div>
 
                                 {/* Financing Activities */}
@@ -242,27 +355,33 @@ const CashFlowReport = () => {
                                     <div className="font-semibold text-base mb-2">Arus Kas dari Aktivitas Pendanaan</div>
                                      <div className="pl-4 space-y-1">
                                         <div className="font-medium">Penerimaan Kas:</div>
-                                        {renderFlowDetails(categorizedFlows.financing.inflows)}
+                                        {orderedDetails(categorizedFlows.financing.inflows).map(([name, amount]) => (
+                                            <div key={name} className="grid grid-cols-2 gap-1 text-sm pl-4">
+                                                <div className="text-muted-foreground">{name}</div>
+                                                <div className="text-right">{formatCurrency(amount)}</div>
+                                            </div>
+                                        ))}
                                         <div className="font-medium mt-2">Pembayaran Kas:</div>
-                                        {renderFlowDetails(categorizedFlows.financing.outflows, true)}
+                                        {orderedDetails(categorizedFlows.financing.outflows).map(([name, amount]) => (
+                                            <div key={name} className="grid grid-cols-2 gap-1 text-sm pl-4">
+                                                <div className="text-muted-foreground">{name}</div>
+                                                <div className="text-right text-red-600">({formatCurrency(amount)})</div>
+                                            </div>
+                                        ))}
                                     </div>
                                     <div className="grid grid-cols-2 gap-1 text-sm font-semibold mt-2 pl-4 border-t pt-2">
                                         <div>Arus Kas Bersih dari Aktivitas Pendanaan</div>
                                         <div className="text-right">{formatCurrency(categorizedFlows.financing.net)}</div>
                                     </div>
-                                </div>
-
-                                {/* Summary */}
-                                <div className="grid grid-cols-2 gap-4 text-sm pt-2 border-t">
-                                    <div className="font-semibold">Kenaikan/Penurunan Bersih Kas</div>
-                                    <div className="text-right font-semibold">{formatCurrency(netCashChange)}</div>
-                                    <div className="font-bold text-base">Saldo Kas Akhir Periode</div>
-                                    <div className="text-right font-bold text-base border-t-2 border-black pt-1">{formatCurrency(endingBalance)}</div>
+                                    <details className="mt-3 pl-4">
+                                        <summary className="cursor-pointer text-sm font-medium text-slate-700">Rincian transaksi</summary>
+                                        <div className="mt-2">{renderMovementTable(movementByActivity.financing)}</div>
+                                    </details>
                                 </div>
                             </div>
                         </TabsContent>
                         <TabsContent value="indirect">
-                            <IndirectCashFlow startDate={startDate} endDate={endDate} />
+                            <IndirectCashFlow startDate={startDate} endDate={endDate} categorizedFlows={categorizedFlows} />
                         </TabsContent>
                     </Tabs>
                 </CardContent>
