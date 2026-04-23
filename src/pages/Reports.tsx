@@ -1,4 +1,3 @@
-import { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext'; // Import Auth Context
 import PurchaseOrderPrint from '@/components/print/PurchaseOrderPrint';
@@ -23,9 +22,32 @@ import VehicleEntryReport from './reports/VehicleEntryReport';
 import EstimationVsRealizationReport from './reports/EstimationVsRealizationReport';
 import UnorderedSparepartEstimationReport from './reports/UnorderedSparepartEstimationReport';
 import BudgetMonitoringReport from './reports/BudgetMonitoringReport';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Card } from '@/components/ui/card';
-import { BarChart3, PieChart, FileText, Activity } from 'lucide-react';
+import { cn } from '@/lib/utils';
+import { BarChart3, Activity, Package, Wrench, Wallet, ChevronRight } from 'lucide-react';
+
+type ReportKey =
+  | 'vehicle_entry'
+  | 'wo'
+  | 'wodetail'
+  | 'po'
+  | 'podetail'
+  | 'po_detail_new'
+  | 'receipt'
+  | 'issue'
+  | 'issuedetail'
+  | 'stock'
+  | 'item_history'
+  | 'inventory_value'
+  | 'profit'
+  | 'profit_loss'
+  | 'balance_sheet'
+  | 'supplier_payable'
+  | 'payment_history_ap'
+  | 'cash_bank_book'
+  | 'budget'
+  | 'estimation'
+  | 'estimation_unpo';
 
 export default function Reports() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -74,7 +96,7 @@ export default function Reports() {
       return '';
   };
 
-  const defaultTab = getDefaultTab();
+  const defaultTab = getDefaultTab() as ReportKey | '';
 
   // If specific report type is requested (e.g. print view), render that instead
   if (reportType === 'po' && reportId) {
@@ -91,6 +113,99 @@ export default function Reports() {
       );
   }
 
+  const activeTab = (searchParams.get('tab') as ReportKey | null) || defaultTab;
+
+  const reportGroups: Array<{
+    title: string;
+    icon: React.ComponentType<{ className?: string }>;
+    items: Array<{ key: ReportKey; label: string; visible: boolean }>;
+  }> = [
+    {
+      title: 'Operasional',
+      icon: Wrench,
+      items: [
+        { key: 'vehicle_entry', label: 'Unit Masuk', visible: canAccess('report_vehicle_entry') },
+        { key: 'wo', label: 'Work Order', visible: canAccess('report_wo') },
+        { key: 'wodetail', label: 'Detail WO', visible: canAccess('report_wo') },
+        { key: 'po', label: 'Pembelian (PO)', visible: canAccess('report_po') },
+        { key: 'podetail', label: 'Rincian Pembelian', visible: canAccess('report_podetail') },
+        { key: 'po_detail_new', label: 'Rincian Pembelian (Detail)', visible: canAccess('report_po_detail_new') },
+        { key: 'receipt', label: 'Barang Masuk', visible: canAccess('report_receipt') },
+        { key: 'issue', label: 'Rekap Keluar', visible: canAccess('report_issue') },
+        { key: 'issuedetail', label: 'Detail Barang Keluar', visible: canAccessIssueDetail() },
+        { key: 'estimation', label: 'Estimasi vs Realisasi', visible: canAccess('report_estimation') },
+        { key: 'estimation_unpo', label: 'Estimasi Part Belum PO', visible: canAccess('report_unordered_parts') },
+      ],
+    },
+    {
+      title: 'Persediaan',
+      icon: Package,
+      items: [
+        { key: 'stock', label: 'Stok Barang', visible: canAccess('report_stock') },
+        { key: 'item_history', label: 'History Item / Kartu Stok', visible: canAccess('report_stock') },
+        { key: 'inventory_value', label: 'Nilai Persediaan', visible: canAccess('report_stock') },
+      ],
+    },
+    {
+      title: 'Keuangan',
+      icon: Wallet,
+      items: [
+        { key: 'profit', label: 'Laba Kotor', visible: canAccess('report_profit') },
+        { key: 'profit_loss', label: 'Laba Rugi', visible: canAccess('report_profit_loss') },
+        { key: 'balance_sheet', label: 'Neraca', visible: canAccess('report_balance_sheet') },
+        { key: 'supplier_payable', label: 'Hutang Supplier', visible: canAccess('report_supplier_payable') },
+        { key: 'payment_history_ap', label: 'Riwayat Bayar Hutang', visible: canAccess('report_payment_history_ap') },
+        { key: 'cash_bank_book', label: 'Buku Bank/Kas', visible: canAccess('report_cash_bank_book') },
+        { key: 'budget', label: 'Monitoring Pagu', visible: canAccess('report_budget') },
+      ],
+    },
+  ];
+
+  const visibleReportKeys = reportGroups
+    .flatMap((g) => g.items)
+    .filter((x) => x.visible)
+    .map((x) => x.key);
+
+  const effectiveTab = visibleReportKeys.includes(activeTab) ? activeTab : defaultTab;
+
+  const setTab = (key: ReportKey) => {
+    const next = new URLSearchParams(searchParams);
+    next.delete('type');
+    next.delete('id');
+    next.set('tab', key);
+    setSearchParams(next);
+  };
+
+  const renderReport = (key: ReportKey) => {
+    if (key === 'vehicle_entry') return <VehicleEntryReport />;
+    if (key === 'wo') return <WorkOrderReport />;
+    if (key === 'wodetail') return <WorkOrderDetailReport />;
+    if (key === 'po') return <PurchaseOrderReport />;
+    if (key === 'podetail') return <PurchaseDetailReport />;
+    if (key === 'po_detail_new') return <PurchaseOrderDetailReport />;
+    if (key === 'receipt') return <GoodsReceiptReport />;
+    if (key === 'issue') return <GoodsIssueReport />;
+    if (key === 'issuedetail') return <GoodsIssueDetailReport />;
+    if (key === 'stock') return <StockReport />;
+    if (key === 'item_history') return <ItemHistoryReport />;
+    if (key === 'inventory_value') return <InventoryValueReport />;
+    if (key === 'profit') return <GrossProfitReport />;
+    if (key === 'profit_loss') return <ProfitLossReport />;
+    if (key === 'balance_sheet') return <BalanceSheetReport />;
+    if (key === 'supplier_payable') return <SupplierPayableReport />;
+    if (key === 'payment_history_ap') return <PurchasePaymentHistoryReport />;
+    if (key === 'cash_bank_book') return <CashBankBookReport />;
+    if (key === 'estimation') return <EstimationVsRealizationReport />;
+    if (key === 'estimation_unpo') return <UnorderedSparepartEstimationReport />;
+    if (key === 'budget') return <BudgetMonitoringReport />;
+    return null;
+  };
+
+  const activeLabel =
+    reportGroups
+      .flatMap((g) => g.items)
+      .find((x) => x.key === effectiveTab)?.label || 'Laporan';
+
   return (
     <div className="report-print-scope space-y-8 animate-in fade-in duration-500 pb-10">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-200 pb-6 print:hidden">
@@ -103,157 +218,58 @@ export default function Reports() {
           <span>Last updated: {new Date().toLocaleTimeString()}</span>
         </div>
       </div>
-      
-      <Tabs defaultValue={defaultTab} className="w-full">
-        <div className="space-y-5 mb-8 print:hidden">
-          <div className="space-y-2">
-            <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Operasional</div>
-            <TabsList className="w-full h-auto flex flex-wrap gap-2 bg-transparent p-0 justify-start">
-              {canAccess('report_vehicle_entry') && (
-                <TabsTrigger value="vehicle_entry" className="data-[state=active]:bg-indigo-600 data-[state=active]:text-white data-[state=active]:shadow-md border border-slate-200 bg-white px-4 py-2.5 rounded-lg transition-all hover:border-indigo-300">
-                  Unit Masuk
-                </TabsTrigger>
-              )}
-              {canAccess('report_wo') && (
-                <TabsTrigger value="wo" className="data-[state=active]:bg-indigo-600 data-[state=active]:text-white data-[state=active]:shadow-md border border-slate-200 bg-white px-4 py-2.5 rounded-lg transition-all hover:border-indigo-300">
-                  Work Order
-                </TabsTrigger>
-              )}
-              {canAccess('report_wo') && (
-                <TabsTrigger value="wodetail" className="data-[state=active]:bg-indigo-600 data-[state=active]:text-white data-[state=active]:shadow-md border border-slate-200 bg-white px-4 py-2.5 rounded-lg transition-all hover:border-indigo-300">
-                  Detail WO
-                </TabsTrigger>
-              )}
-              {canAccess('report_po') && (
-                <TabsTrigger value="po" className="data-[state=active]:bg-indigo-600 data-[state=active]:text-white data-[state=active]:shadow-md border border-slate-200 bg-white px-4 py-2.5 rounded-lg transition-all hover:border-indigo-300">
-                  Pembelian (PO)
-                </TabsTrigger>
-              )}
-              {canAccess('report_podetail') && (
-                <TabsTrigger value="podetail" className="data-[state=active]:bg-indigo-600 data-[state=active]:text-white data-[state=active]:shadow-md border border-slate-200 bg-white px-4 py-2.5 rounded-lg transition-all hover:border-indigo-300">
-                  Rincian Pembelian
-                </TabsTrigger>
-              )}
-              {canAccess('report_po_detail_new') && (
-                <TabsTrigger value="po_detail_new" className="data-[state=active]:bg-indigo-600 data-[state=active]:text-white data-[state=active]:shadow-md border border-slate-200 bg-white px-4 py-2.5 rounded-lg transition-all hover:border-indigo-300">
-                  Rincian Pembelian (Detail)
-                </TabsTrigger>
-              )}
-              {canAccess('report_receipt') && (
-                <TabsTrigger value="receipt" className="data-[state=active]:bg-indigo-600 data-[state=active]:text-white data-[state=active]:shadow-md border border-slate-200 bg-white px-4 py-2.5 rounded-lg transition-all hover:border-indigo-300">
-                  Barang Masuk
-                </TabsTrigger>
-              )}
-              {canAccess('report_issue') && (
-                <TabsTrigger value="issue" className="data-[state=active]:bg-indigo-600 data-[state=active]:text-white data-[state=active]:shadow-md border border-slate-200 bg-white px-4 py-2.5 rounded-lg transition-all hover:border-indigo-300">
-                  Rekap Keluar
-                </TabsTrigger>
-              )}
-              {canAccessIssueDetail() && (
-                <TabsTrigger value="issuedetail" className="data-[state=active]:bg-indigo-600 data-[state=active]:text-white data-[state=active]:shadow-md border border-slate-200 bg-white px-4 py-2.5 rounded-lg transition-all hover:border-indigo-300">
-                  Detail Barang Keluar
-                </TabsTrigger>
-              )}
-              {canAccess('report_estimation') && (
-                <TabsTrigger value="estimation" className="data-[state=active]:bg-orange-600 data-[state=active]:text-white data-[state=active]:shadow-md border border-slate-200 bg-white px-4 py-2.5 rounded-lg transition-all hover:border-orange-300 font-medium">
-                  Estimasi vs Realisasi
-                </TabsTrigger>
-              )}
-              {canAccess('report_unordered_parts') && (
-                <TabsTrigger value="estimation_unpo" className="data-[state=active]:bg-orange-600 data-[state=active]:text-white data-[state=active]:shadow-md border border-slate-200 bg-white px-4 py-2.5 rounded-lg transition-all hover:border-orange-300 font-medium">
-                  Estimasi Part Belum PO
-                </TabsTrigger>
-              )}
-            </TabsList>
-          </div>
 
-          <div className="space-y-2">
-            <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Persediaan</div>
-            <TabsList className="w-full h-auto flex flex-wrap gap-2 bg-transparent p-0 justify-start">
-              {canAccess('report_stock') && (
-                <TabsTrigger value="stock" className="data-[state=active]:bg-emerald-600 data-[state=active]:text-white data-[state=active]:shadow-md border border-slate-200 bg-white px-4 py-2.5 rounded-lg transition-all hover:border-emerald-300 font-medium">
-                  Stok Barang
-                </TabsTrigger>
-              )}
-              {canAccess('report_stock') && (
-                <TabsTrigger value="item_history" className="data-[state=active]:bg-emerald-600 data-[state=active]:text-white data-[state=active]:shadow-md border border-slate-200 bg-white px-4 py-2.5 rounded-lg transition-all hover:border-emerald-300 font-medium">
-                  History Item / Kartu Stok
-                </TabsTrigger>
-              )}
-              {canAccess('report_stock') && (
-                <TabsTrigger value="inventory_value" className="data-[state=active]:bg-emerald-600 data-[state=active]:text-white data-[state=active]:shadow-md border border-slate-200 bg-white px-4 py-2.5 rounded-lg transition-all hover:border-emerald-300 font-medium">
-                  Nilai Persediaan
-                </TabsTrigger>
-              )}
-            </TabsList>
+      <div className="grid grid-cols-1 md:grid-cols-[280px_1fr] gap-6">
+        <Card className="print:hidden">
+          <div className="p-4 border-b">
+            <div className="flex items-center gap-2 text-sm font-semibold text-slate-900">
+              <BarChart3 className="h-4 w-4 text-indigo-600" />
+              <span>Pilih Laporan</span>
+            </div>
+            <div className="mt-1 text-xs text-slate-500">{activeLabel}</div>
           </div>
+          <div className="p-2 space-y-2">
+            {reportGroups.map((group) => {
+              const visible = group.items.filter((x) => x.visible);
+              if (visible.length === 0) return null;
+              const GroupIcon = group.icon;
+              return (
+                <div key={group.title} className="px-2 py-2">
+                  <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500 px-2">
+                    <GroupIcon className="h-3.5 w-3.5" />
+                    <span>{group.title}</span>
+                  </div>
+                  <div className="mt-2 space-y-1">
+                    {visible.map((item) => {
+                      const active = item.key === effectiveTab;
+                      return (
+                        <button
+                          key={item.key}
+                          type="button"
+                          onClick={() => setTab(item.key)}
+                          className={cn(
+                            'w-full flex items-center justify-between gap-2 rounded-lg px-3 py-2 text-sm transition-colors',
+                            active
+                              ? 'bg-indigo-600 text-white'
+                              : 'text-slate-700 hover:bg-slate-100'
+                          )}
+                        >
+                          <span className="truncate">{item.label}</span>
+                          <ChevronRight className={cn('h-4 w-4 shrink-0', active ? 'text-white' : 'text-slate-400')} />
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </Card>
 
-          <div className="space-y-2">
-            <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Keuangan</div>
-            <TabsList className="w-full h-auto flex flex-wrap gap-2 bg-transparent p-0 justify-start">
-              {canAccess('report_profit') && (
-                <TabsTrigger value="profit" className="data-[state=active]:bg-indigo-600 data-[state=active]:text-white data-[state=active]:shadow-md border border-slate-200 bg-white px-4 py-2.5 rounded-lg transition-all hover:border-indigo-300">
-                  Laba Kotor
-                </TabsTrigger>
-              )}
-              {canAccess('report_profit_loss') && (
-                <TabsTrigger value="profit_loss" className="data-[state=active]:bg-indigo-600 data-[state=active]:text-white data-[state=active]:shadow-md border border-slate-200 bg-white px-4 py-2.5 rounded-lg transition-all hover:border-indigo-300">
-                  Laba Rugi
-                </TabsTrigger>
-              )}
-              {canAccess('report_balance_sheet') && (
-                <TabsTrigger value="balance_sheet" className="data-[state=active]:bg-indigo-600 data-[state=active]:text-white data-[state=active]:shadow-md border border-slate-200 bg-white px-4 py-2.5 rounded-lg transition-all hover:border-indigo-300">
-                  Neraca
-                </TabsTrigger>
-              )}
-              {canAccess('report_supplier_payable') && (
-                <TabsTrigger value="supplier_payable" className="data-[state=active]:bg-indigo-600 data-[state=active]:text-white data-[state=active]:shadow-md border border-slate-200 bg-white px-4 py-2.5 rounded-lg transition-all hover:border-indigo-300">
-                  Hutang Supplier
-                </TabsTrigger>
-              )}
-              {canAccess('report_payment_history_ap') && (
-                <TabsTrigger value="payment_history_ap" className="data-[state=active]:bg-indigo-600 data-[state=active]:text-white data-[state=active]:shadow-md border border-slate-200 bg-white px-4 py-2.5 rounded-lg transition-all hover:border-indigo-300">
-                  Riwayat Bayar Hutang
-                </TabsTrigger>
-              )}
-              {canAccess('report_cash_bank_book') && (
-                <TabsTrigger value="cash_bank_book" className="data-[state=active]:bg-indigo-600 data-[state=active]:text-white data-[state=active]:shadow-md border border-slate-200 bg-white px-4 py-2.5 rounded-lg transition-all hover:border-indigo-300">
-                  Buku Bank/Kas
-                </TabsTrigger>
-              )}
-              {canAccess('report_budget') && (
-                <TabsTrigger value="budget" className="data-[state=active]:bg-cyan-600 data-[state=active]:text-white data-[state=active]:shadow-md border border-slate-200 bg-white px-4 py-2.5 rounded-lg transition-all hover:border-cyan-300 font-medium">
-                  Monitoring Pagu
-                </TabsTrigger>
-              )}
-            </TabsList>
-          </div>
+        <div className="min-h-[500px]">
+          {renderReport(effectiveTab)}
         </div>
-        
-        <div className="mt-6 min-h-[500px]">
-          {canAccess('report_po') && <TabsContent value="po"><PurchaseOrderReport /></TabsContent>}
-          {canAccess('report_podetail') && <TabsContent value="podetail"><PurchaseDetailReport /></TabsContent>}
-          {canAccess('report_po_detail_new') && <TabsContent value="po_detail_new"><PurchaseOrderDetailReport /></TabsContent>}
-          {canAccess('report_receipt') && <TabsContent value="receipt"><GoodsReceiptReport /></TabsContent>}
-          {canAccess('report_stock') && <TabsContent value="stock"><StockReport /></TabsContent>}
-          {canAccess('report_stock') && <TabsContent value="item_history"><ItemHistoryReport /></TabsContent>}
-          {canAccess('report_stock') && <TabsContent value="inventory_value"><InventoryValueReport /></TabsContent>}
-          {canAccess('report_issue') && <TabsContent value="issue"><GoodsIssueReport /></TabsContent>}
-          {canAccessIssueDetail() && <TabsContent value="issuedetail"><GoodsIssueDetailReport /></TabsContent>}
-          {canAccess('report_wo') && <TabsContent value="wo"><WorkOrderReport /></TabsContent>}
-          {canAccess('report_wo') && <TabsContent value="wodetail"><WorkOrderDetailReport /></TabsContent>}
-          {canAccess('report_vehicle_entry') && <TabsContent value="vehicle_entry"><VehicleEntryReport /></TabsContent>}
-          {canAccess('report_profit') && <TabsContent value="profit"><GrossProfitReport /></TabsContent>}
-          {canAccess('report_profit_loss') && <TabsContent value="profit_loss"><ProfitLossReport /></TabsContent>}
-          {canAccess('report_balance_sheet') && <TabsContent value="balance_sheet"><BalanceSheetReport /></TabsContent>}
-          {canAccess('report_supplier_payable') && <TabsContent value="supplier_payable"><SupplierPayableReport /></TabsContent>}
-          {canAccess('report_payment_history_ap') && <TabsContent value="payment_history_ap"><PurchasePaymentHistoryReport /></TabsContent>}
-          {canAccess('report_cash_bank_book') && <TabsContent value="cash_bank_book"><CashBankBookReport /></TabsContent>}
-          {canAccess('report_estimation') && <TabsContent value="estimation"><EstimationVsRealizationReport /></TabsContent>}
-          {canAccess('report_unordered_parts') && <TabsContent value="estimation_unpo"><UnorderedSparepartEstimationReport /></TabsContent>}
-          {canAccess('report_budget') && <TabsContent value="budget"><BudgetMonitoringReport /></TabsContent>}
-        </div>
-      </Tabs>
+      </div>
     </div>
   );
 }
