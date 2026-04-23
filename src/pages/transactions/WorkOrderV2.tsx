@@ -253,38 +253,59 @@ const WorkOrderV2 = () => {
 
     const { data: issuedItems, error: issuedError } = await supabase
       .from('goods_issue_items')
-      .select('goods_id, quantity, value_only, goods_issues!inner(work_order_id)')
+      .select('goods_id, quantity, value_only, goods(name), goods_issues!inner(work_order_id)')
       .eq('goods_issues.work_order_id', wo.id);
 
     if (issuedError) {
       return { valid: false, message: 'Gagal mengambil data barang keluar', unissued: [] };
     }
 
-    const issuedMap = new Map<string, number>();
+    const normalizeText = (v: string) =>
+      String(v || '')
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, ' ')
+        .trim()
+        .replace(/\s+/g, ' ');
+
+    const issuedByGoodsId = new Map<string, number>();
+    const issuedByName = new Map<string, number>();
     (issuedItems || []).forEach((item: any) => {
-      if (!item.value_only && item.goods_id) {
-        const current = issuedMap.get(item.goods_id) || 0;
-        issuedMap.set(item.goods_id, current + (item.quantity || 0));
+      if (Boolean(item.value_only)) return;
+      const goodsId = item.goods_id ? String(item.goods_id) : '';
+      const qty = Number(item.quantity || 0);
+      if (goodsId && qty) {
+        issuedByGoodsId.set(goodsId, (issuedByGoodsId.get(goodsId) || 0) + qty);
+      }
+      const nameKey = normalizeText(String(item.goods?.name || ''));
+      if (nameKey && qty) {
+        issuedByName.set(nameKey, (issuedByName.get(nameKey) || 0) + qty);
       }
     });
 
     const unissued: string[] = [];
+    const unissuedWithDetail: string[] = [];
     for (const item of nonValueOnlyItems) {
-      const goodsId = item.goods_id;
-      if (!goodsId) {
-        unissued.push(item.item_name || 'Item tanpa nama');
-        continue;
-      }
-      const issuedQty = issuedMap.get(goodsId) || 0;
-      if (issuedQty < (item.qty || 0)) {
-        unissued.push(item.item_name || 'Item');
+      const req = Number(item.qty || 0);
+      if (!(req > 0)) continue;
+      const goodsId = item.goods_id ? String(item.goods_id) : '';
+      const name = String(item.item_name || '');
+      const nameKey = normalizeText(name);
+
+      const issuedById = goodsId ? Number(issuedByGoodsId.get(goodsId) || 0) : 0;
+      const issuedByNm = nameKey ? Number(issuedByName.get(nameKey) || 0) : 0;
+      const issuedQty = Math.max(issuedById, issuedByNm);
+
+      if (issuedQty < req) {
+        const label = name || 'Item';
+        unissued.push(label);
+        unissuedWithDetail.push(`${label} (butuh ${req}, keluar ${issuedQty})`);
       }
     }
 
     if (unissued.length > 0) {
       return {
         valid: false,
-        message: `Sparepart berikut belum/tidak cukup keluar: ${unissued.slice(0, 5).join(', ')}${unissued.length > 5 ? '...' : ''}`,
+        message: `Sparepart berikut belum/tidak cukup keluar: ${unissuedWithDetail.slice(0, 5).join(', ')}${unissuedWithDetail.length > 5 ? '...' : ''}`,
         unissued
       };
     }
