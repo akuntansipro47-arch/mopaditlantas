@@ -1122,13 +1122,15 @@ export default function PurchaseOrderReturn() {
       </Card>
 
       <Dialog open={isConfirmOpen} onOpenChange={setIsConfirmOpen}>
-        <DialogContent className="max-w-4xl">
+        <DialogContent className="max-w-4xl max-h-[90vh] flex flex-col">
           <DialogHeader>
             <DialogTitle>Retur Pembelian</DialogTitle>
             <DialogDescription>
               Isi qty retur untuk PO {selectedPO?.po_number}.
             </DialogDescription>
           </DialogHeader>
+
+          <div className="flex-1 overflow-y-auto pr-1">
           
           {getPoPaymentInfo(selectedPO).status === 'UNPAID' || getPoPaymentInfo(selectedPO).status === 'PARTIAL' ? (
             <div className="p-3 bg-yellow-100 border-l-4 border-yellow-500 text-yellow-700 rounded-md">
@@ -1313,6 +1315,7 @@ export default function PurchaseOrderReturn() {
               </Table>
             </div>
           </div>
+          </div>
 
           <DialogFooter>
             <div className="w-full flex justify-between items-center">
@@ -1335,13 +1338,15 @@ export default function PurchaseOrderReturn() {
       </Dialog>
 
       <Dialog open={isEditOpen} onOpenChange={(open) => { setIsEditOpen(open); if (!open) { setEditingReturn(null); setEditLines([]); } }}>
-        <DialogContent className="max-w-3xl">
+        <DialogContent className="max-w-3xl max-h-[90vh] flex flex-col">
           <DialogHeader>
             <DialogTitle>Edit Retur</DialogTitle>
             <DialogDescription>
               Edit item yang diretur untuk {selectedPO?.po_number}.
             </DialogDescription>
           </DialogHeader>
+
+          <div className="flex-1 overflow-y-auto pr-1">
 
           {getPoPaymentInfo(selectedPO).status === 'UNPAID' || getPoPaymentInfo(selectedPO).status === 'PARTIAL' ? (
             <div className="p-3 bg-yellow-100 border-l-4 border-yellow-500 text-yellow-700 rounded-md">
@@ -1437,6 +1442,7 @@ export default function PurchaseOrderReturn() {
                 )}
               </TableBody>
             </Table>
+          </div>
           </div>
 
           <DialogFooter>

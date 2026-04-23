@@ -18,6 +18,7 @@ import BalanceSheetReport from './reports/BalanceSheetReport';
 import SupplierPayableReport from './reports/SupplierPayableReport';
 import PurchasePaymentHistoryReport from './reports/PurchasePaymentHistoryReport';
 import CashBankBookReport from './reports/CashBankBookReport';
+import CashFlowReport from './reports/CashFlowReport';
 import VehicleEntryReport from './reports/VehicleEntryReport';
 import EstimationVsRealizationReport from './reports/EstimationVsRealizationReport';
 import UnorderedSparepartEstimationReport from './reports/UnorderedSparepartEstimationReport';
@@ -41,6 +42,7 @@ type ReportKey =
   | 'profit'
   | 'profit_loss'
   | 'balance_sheet'
+  | 'cash_flow'
   | 'supplier_payable'
   | 'payment_history_ap'
   | 'cash_bank_book'
@@ -49,7 +51,7 @@ type ReportKey =
   | 'estimation_unpo';
 
 export default function Reports() {
-  const [searchParams, setSearchParams] = useSearchParams();
+  const [searchParams] = useSearchParams();
   const { user } = useAuth(); // Get user
   const reportType = searchParams.get('type');
   const reportId = searchParams.get('id');
@@ -86,6 +88,7 @@ export default function Reports() {
       if (canAccess('report_profit')) return 'profit';
       if (canAccess('report_profit_loss')) return 'profit_loss';
       if (canAccess('report_balance_sheet')) return 'balance_sheet';
+      if (canAccess('report_cash_flow')) return 'cash_flow';
       if (canAccess('report_supplier_payable')) return 'supplier_payable';
       if (canAccess('report_payment_history_ap')) return 'payment_history_ap';
       if (canAccess('report_cash_bank_book')) return 'cash_bank_book';
@@ -129,6 +132,7 @@ export default function Reports() {
     canAccess('report_profit') ? 'profit' : null,
     canAccess('report_profit_loss') ? 'profit_loss' : null,
     canAccess('report_balance_sheet') ? 'balance_sheet' : null,
+    canAccess('report_cash_flow') ? 'cash_flow' : null,
     canAccess('report_supplier_payable') ? 'supplier_payable' : null,
     canAccess('report_payment_history_ap') ? 'payment_history_ap' : null,
     canAccess('report_cash_bank_book') ? 'cash_bank_book' : null,
@@ -155,6 +159,7 @@ export default function Reports() {
     if (key === 'profit') return <GrossProfitReport />;
     if (key === 'profit_loss') return <ProfitLossReport />;
     if (key === 'balance_sheet') return <BalanceSheetReport />;
+    if (key === 'cash_flow') return <CashFlowReport />;
     if (key === 'supplier_payable') return <SupplierPayableReport />;
     if (key === 'payment_history_ap') return <PurchasePaymentHistoryReport />;
     if (key === 'cash_bank_book') return <CashBankBookReport />;

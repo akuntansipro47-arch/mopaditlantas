@@ -27,7 +27,19 @@ import {
 import { cn } from '@/lib/utils';
 import LogoMark from '@/components/brand/LogoMark';
 
-const navigation = [
+type NavChild =
+  | { type: 'group'; name: string }
+  | { type?: 'link'; name: string; href: string; icon?: any; key: string };
+
+type NavItem = {
+  name: string;
+  href?: string;
+  icon: any;
+  key: string;
+  children?: NavChild[];
+};
+
+const navigation: NavItem[] = [
   { name: 'Dashboard', href: '/', icon: LayoutDashboard, key: 'dashboard' },
   { 
     name: 'Master Data', 
@@ -78,20 +90,26 @@ const navigation = [
     ]
   },
   {
-    name: 'Laporan',
+    name: 'Daftar Laporan',
     icon: BarChart3,
     key: 'reports',
     children: [
+      { type: 'group', name: 'Laporan Keuangan' },
       { name: 'Neraca', href: '/reports?tab=balance_sheet', icon: Building2, key: 'report_balance_sheet' },
       { name: 'Laba Rugi', href: '/reports?tab=profit_loss', icon: BarChart3, key: 'report_profit_loss' },
       { name: 'Laba Kotor', href: '/reports?tab=profit', icon: BarChart3, key: 'report_profit' },
-      { name: 'Hutang Supplier', href: '/reports?tab=supplier_payable', icon: Wallet, key: 'report_supplier_payable' },
-      { name: 'Riwayat Bayar Hutang', href: '/reports?tab=payment_history_ap', icon: Wallet, key: 'report_payment_history_ap' },
+      { name: 'Arus Kas (Langsung)', href: '/reports?tab=cash_flow&method=direct', icon: Wallet, key: 'report_cash_flow' },
+      { name: 'Arus Kas (Tidak Langsung)', href: '/reports?tab=cash_flow&method=indirect', icon: Wallet, key: 'report_cash_flow' },
       { name: 'Buku Bank/Kas', href: '/reports?tab=cash_bank_book', icon: Wallet, key: 'report_cash_bank_book' },
       { name: 'Monitoring Pagu', href: '/reports?tab=budget', icon: Wallet, key: 'report_budget' },
-      { name: 'Detail WO', href: '/reports?tab=wodetail', icon: ClipboardCheck, key: 'report_wo' },
+      { type: 'group', name: 'Laporan Pembelian' },
       { name: 'Pembelian (PO)', href: '/reports?tab=po', icon: ShoppingCart, key: 'report_po' },
       { name: 'Barang Masuk', href: '/reports?tab=receipt', icon: PackageCheck, key: 'report_receipt' },
+      { name: 'Hutang Supplier', href: '/reports?tab=supplier_payable', icon: Wallet, key: 'report_supplier_payable' },
+      { name: 'Riwayat Bayar Hutang', href: '/reports?tab=payment_history_ap', icon: Wallet, key: 'report_payment_history_ap' },
+      { type: 'group', name: 'Laporan Operasional' },
+      { name: 'Detail WO', href: '/reports?tab=wodetail', icon: ClipboardCheck, key: 'report_wo' },
+      { type: 'group', name: 'Laporan Persediaan' },
       { name: 'Stok Barang', href: '/reports?tab=stock', icon: Package, key: 'report_stock' },
     ]
   },
@@ -100,7 +118,7 @@ const navigation = [
 export function Sidebar() {
   const location = useLocation();
   const { user, logout } = useAuth();
-  const [openMenus, setOpenMenus] = useState<string[]>(['Data Base', 'Transaksi', 'Keuangan', 'Kepegawaian', 'Laporan']);
+  const [openMenus, setOpenMenus] = useState<string[]>(['Data Base', 'Transaksi', 'Keuangan', 'Kepegawaian', 'Daftar Laporan']);
 
   const toggleMenu = (name: string) => {
     setOpenMenus(prev => 
@@ -143,7 +161,23 @@ export function Sidebar() {
       <nav className="flex-1 overflow-y-auto px-4 py-6 space-y-2 scrollbar-thin scrollbar-thumb-slate-800 scrollbar-track-transparent">
         {navigation.map((item) => {
           const parentAccess = hasAccess(item.key);
-          const visibleChildren = item.children?.filter(child => hasAccess(child.key)) || [];
+          const children = item.children || [];
+          const visibleChildren: NavChild[] = [];
+          let currentGroup: { type: 'group'; name: string } | null = null;
+          let groupAdded = false;
+          for (const child of children) {
+            if (child.type === 'group') {
+              currentGroup = child;
+              groupAdded = false;
+              continue;
+            }
+            if (!hasAccess(child.key)) continue;
+            if (currentGroup && !groupAdded) {
+              visibleChildren.push(currentGroup);
+              groupAdded = true;
+            }
+            visibleChildren.push(child);
+          }
           
           if (!parentAccess && visibleChildren.length === 0) return null;
 
@@ -175,26 +209,42 @@ export function Sidebar() {
                 
                 {openMenus.includes(item.name) && (
                   <div className="ml-4 space-y-1 pl-2 border-l-2 border-slate-800 animate-in slide-in-from-left-2 duration-200">
-                    {visibleChildren.map((child) => (
-                      <NavLink
-                        key={child.name}
-                        to={child.href}
-                        className={({ isActive }) =>
-                          cn(
-                            "flex items-center rounded-md px-3 py-2 text-sm transition-all duration-200",
-                            isActive 
-                              ? "bg-indigo-600/10 text-indigo-300 font-medium" 
-                              : "text-slate-500 hover:text-slate-200 hover:bg-slate-800/30"
-                          )
-                        }
-                      >
-                        <span className={cn(
-                          "mr-3 h-1.5 w-1.5 rounded-full transition-all",
-                          location.pathname === child.href ? "bg-indigo-400 scale-125" : "bg-slate-600"
-                        )} />
-                        {child.name}
-                      </NavLink>
-                    ))}
+                    {visibleChildren.map((child) => {
+                      if (child.type === 'group') {
+                        return (
+                          <div
+                            key={`group-${child.name}`}
+                            className="px-3 pt-3 pb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500"
+                          >
+                            {child.name}
+                          </div>
+                        );
+                      }
+
+                      const current = location.pathname + location.search;
+                      const active = current === child.href;
+
+                      return (
+                        <NavLink
+                          key={child.name}
+                          to={child.href}
+                          className={() =>
+                            cn(
+                              "flex items-center rounded-md px-3 py-2 text-sm transition-all duration-200",
+                              active
+                                ? "bg-indigo-600/10 text-indigo-300 font-medium"
+                                : "text-slate-500 hover:text-slate-200 hover:bg-slate-800/30"
+                            )
+                          }
+                        >
+                          <span className={cn(
+                            "mr-3 h-1.5 w-1.5 rounded-full transition-all",
+                            active ? "bg-indigo-400 scale-125" : "bg-slate-600"
+                          )} />
+                          {child.name}
+                        </NavLink>
+                      );
+                    })}
                   </div>
                 )}
               </div>
