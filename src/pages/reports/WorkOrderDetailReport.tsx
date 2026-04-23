@@ -169,7 +169,7 @@ const WorkOrderDetailReport = () => {
                     .from('vehicles')
                     .select('id, license_plate, brand_type, vehicle_type, owner_name')
                     .in('id', allVehicleIds),
-                supabase.from('job_types').select('id, job_name, hpp').in('id', allJobTypeIds),
+                supabase.from('job_types').select('id, job_name, hpp, selling_price').in('id', allJobTypeIds),
                 supabase.from('goods').select('id, name'), // Fetch all goods for the name->id map
             ]);
 
@@ -245,6 +245,7 @@ const WorkOrderDetailReport = () => {
             });
             const jobTypesMap = new Map(jobTypesData?.map(jt => [jt.id, jt.job_name]));
             const jobTypesHppMap = new Map(jobTypesData?.map(jt => [jt.id, Number((jt as any).hpp || 0)]));
+            const jobTypesSellMap = new Map(jobTypesData?.map(jt => [jt.id, Number((jt as any).selling_price || 0)]));
 
             const getPartHpp = (woId: string | undefined, goodsId: string | null): number => {
                 if (!goodsId) return 0;
@@ -289,7 +290,10 @@ const WorkOrderDetailReport = () => {
                     const isPart = type === 'PART';
                     
                     let goodsId = isPart ? item.goods_id : null;
-                    const itemName = isPart ? (item.item_name || goodsMap.get(goodsId)) : (jobTypesMap.get(item.job_type_id) || 'Jasa Umum');
+                    const jobTypeId = !isPart && item.job_type_id ? String(item.job_type_id) : '';
+                    const itemName = isPart
+                        ? (item.item_name || goodsMap.get(goodsId))
+                        : (jobTypesMap.get(jobTypeId) || String(item.notes || '').trim() || 'Jasa Umum');
 
                     // Workaround: If goods_id is missing from estimation, try to find it by item_name
                     if (isPart && !goodsId && itemName) {
@@ -302,9 +306,11 @@ const WorkOrderDetailReport = () => {
                     woIds.forEach((woId) => {
                         const hpp = isPart
                             ? getPartHpp(woId, goodsId)
-                            : getJobHpp(woId, item.job_type_id ? String(item.job_type_id) : null, itemName);
+                            : getJobHpp(woId, jobTypeId ? String(jobTypeId) : null, itemName);
                         
-                        const sellingPrice = item.estimated_price || 0;
+                        const sellingPrice = isPart
+                            ? Number(item.estimated_price || 0)
+                            : Number(item.estimated_price || jobTypesSellMap.get(jobTypeId) || 0);
                         
                         const qty = item.qty || (isPart ? 0 : 1);
                         const totalSellingPrice = sellingPrice * qty;
