@@ -981,7 +981,7 @@ export default function PurchaseOrderV2() {
                                 }
                                 setPoItems(next as any);
                               }}
-                              disabled={isReadOnly || lockLine}
+                              disabled={isReadOnly || isReturnEditMode}
                             >
                               <SelectTrigger className="h-9">
                                 <SelectValue placeholder="Pilih..." />
@@ -1003,7 +1003,7 @@ export default function PurchaseOrderV2() {
                                 (item as any).line_type === 'PART' && !item.goods_id && item.estimated_name && "bg-amber-100 text-amber-800 border-amber-300 hover:bg-amber-200"
                               )}
                               onClick={() => handleOpenSearch(index)}
-                              disabled={isReadOnly || lockLine}
+                              disabled={isReadOnly || isReturnEditMode}
                             >
                               <span>
                                 {((item as any).line_type || 'PART') === 'JASA'
