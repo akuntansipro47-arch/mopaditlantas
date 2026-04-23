@@ -12,6 +12,12 @@ import { Printer, RefreshCw, Download, Search } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import ReportPrintHeader from '@/components/reports/ReportPrintHeader';
 
+const chunkArray = <T,>(arr: T[], size: number) => {
+  const out: T[][] = [];
+  for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
+  return out;
+};
+
 export default function SupplierPayableReport() {
   const [loading, setLoading] = useState(false);
   const [reportData, setReportData] = useState<any[]>([]);
@@ -56,6 +62,7 @@ export default function SupplierPayableReport() {
                 purchase_orders!inner (po_number, status)
             `)
             .lte('invoice_date', reportDate)
+            .in('status', ['UNPAID', 'PARTIAL'])
             .in('purchase_orders.status', ['RECEIVED_FULL', 'RECEIVED_PART'])
             .order('invoice_date', { ascending: true });
         
@@ -63,15 +70,19 @@ export default function SupplierPayableReport() {
 
         // 2. Get Payments made on or before reportDate
         const invoiceIds = (invoices || []).map((i: any) => i.id).filter(Boolean);
-        const { data: payments, error: payError } = invoiceIds.length === 0
-          ? { data: [], error: null }
-          : await supabase
+        let payments: any[] = [];
+        if (invoiceIds.length > 0) {
+          const chunks = chunkArray(invoiceIds, 500);
+          for (const ids of chunks) {
+            const { data: p, error: payError } = await supabase
               .from('purchase_payments')
               .select('invoice_id, amount, payment_date')
-              .in('invoice_id', invoiceIds)
+              .in('invoice_id', ids as any)
               .lte('payment_date', reportDate);
-        
-        if (payError) throw payError;
+            if (payError) throw payError;
+            payments = payments.concat(p || []);
+          }
+        }
 
         // 3. Process Data
         const supplierMap: Record<string, any> = {};
