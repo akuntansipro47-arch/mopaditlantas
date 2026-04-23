@@ -77,13 +77,30 @@ const navigation = [
       // { name: 'Penggajian', href: '/hr/payroll', icon: Wallet, key: 'hr_payroll' }, // Future
     ]
   },
-  { name: 'Laporan', href: '/reports', icon: BarChart3, key: 'reports' },
+  {
+    name: 'Laporan',
+    icon: BarChart3,
+    key: 'reports',
+    children: [
+      { name: 'Neraca', href: '/reports?tab=balance_sheet', icon: Building2, key: 'report_balance_sheet' },
+      { name: 'Laba Rugi', href: '/reports?tab=profit_loss', icon: BarChart3, key: 'report_profit_loss' },
+      { name: 'Laba Kotor', href: '/reports?tab=profit', icon: BarChart3, key: 'report_profit' },
+      { name: 'Hutang Supplier', href: '/reports?tab=supplier_payable', icon: Wallet, key: 'report_supplier_payable' },
+      { name: 'Riwayat Bayar Hutang', href: '/reports?tab=payment_history_ap', icon: Wallet, key: 'report_payment_history_ap' },
+      { name: 'Buku Bank/Kas', href: '/reports?tab=cash_bank_book', icon: Wallet, key: 'report_cash_bank_book' },
+      { name: 'Monitoring Pagu', href: '/reports?tab=budget', icon: Wallet, key: 'report_budget' },
+      { name: 'Detail WO', href: '/reports?tab=wodetail', icon: ClipboardCheck, key: 'report_wo' },
+      { name: 'Pembelian (PO)', href: '/reports?tab=po', icon: ShoppingCart, key: 'report_po' },
+      { name: 'Barang Masuk', href: '/reports?tab=receipt', icon: PackageCheck, key: 'report_receipt' },
+      { name: 'Stok Barang', href: '/reports?tab=stock', icon: Package, key: 'report_stock' },
+    ]
+  },
 ];
 
 export function Sidebar() {
   const location = useLocation();
   const { user, logout } = useAuth();
-  const [openMenus, setOpenMenus] = useState<string[]>(['Data Base', 'Transaksi', 'Keuangan', 'Kepegawaian']);
+  const [openMenus, setOpenMenus] = useState<string[]>(['Data Base', 'Transaksi', 'Keuangan', 'Kepegawaian', 'Laporan']);
 
   const toggleMenu = (name: string) => {
     setOpenMenus(prev => 

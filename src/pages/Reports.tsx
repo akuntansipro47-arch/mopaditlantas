@@ -23,8 +23,7 @@ import EstimationVsRealizationReport from './reports/EstimationVsRealizationRepo
 import UnorderedSparepartEstimationReport from './reports/UnorderedSparepartEstimationReport';
 import BudgetMonitoringReport from './reports/BudgetMonitoringReport';
 import { Card } from '@/components/ui/card';
-import { cn } from '@/lib/utils';
-import { BarChart3, Activity, Package, Wrench, Wallet, ChevronRight } from 'lucide-react';
+import { Activity } from 'lucide-react';
 
 type ReportKey =
   | 'vehicle_entry'
@@ -114,67 +113,31 @@ export default function Reports() {
   }
 
   const activeTab = (searchParams.get('tab') as ReportKey | null) || defaultTab;
+  const allowedTabs: ReportKey[] = [
+    canAccess('report_vehicle_entry') ? 'vehicle_entry' : null,
+    canAccess('report_wo') ? 'wo' : null,
+    canAccess('report_wo') ? 'wodetail' : null,
+    canAccess('report_po') ? 'po' : null,
+    canAccess('report_podetail') ? 'podetail' : null,
+    canAccess('report_po_detail_new') ? 'po_detail_new' : null,
+    canAccess('report_receipt') ? 'receipt' : null,
+    canAccess('report_issue') ? 'issue' : null,
+    canAccessIssueDetail() ? 'issuedetail' : null,
+    canAccess('report_stock') ? 'stock' : null,
+    canAccess('report_stock') ? 'item_history' : null,
+    canAccess('report_stock') ? 'inventory_value' : null,
+    canAccess('report_profit') ? 'profit' : null,
+    canAccess('report_profit_loss') ? 'profit_loss' : null,
+    canAccess('report_balance_sheet') ? 'balance_sheet' : null,
+    canAccess('report_supplier_payable') ? 'supplier_payable' : null,
+    canAccess('report_payment_history_ap') ? 'payment_history_ap' : null,
+    canAccess('report_cash_bank_book') ? 'cash_bank_book' : null,
+    canAccess('report_estimation') ? 'estimation' : null,
+    canAccess('report_unordered_parts') ? 'estimation_unpo' : null,
+    canAccess('report_budget') ? 'budget' : null,
+  ].filter(Boolean) as ReportKey[];
 
-  const reportGroups: Array<{
-    title: string;
-    icon: React.ComponentType<{ className?: string }>;
-    items: Array<{ key: ReportKey; label: string; visible: boolean }>;
-  }> = [
-    {
-      title: 'Operasional',
-      icon: Wrench,
-      items: [
-        { key: 'vehicle_entry', label: 'Unit Masuk', visible: canAccess('report_vehicle_entry') },
-        { key: 'wo', label: 'Work Order', visible: canAccess('report_wo') },
-        { key: 'wodetail', label: 'Detail WO', visible: canAccess('report_wo') },
-        { key: 'po', label: 'Pembelian (PO)', visible: canAccess('report_po') },
-        { key: 'podetail', label: 'Rincian Pembelian', visible: canAccess('report_podetail') },
-        { key: 'po_detail_new', label: 'Rincian Pembelian (Detail)', visible: canAccess('report_po_detail_new') },
-        { key: 'receipt', label: 'Barang Masuk', visible: canAccess('report_receipt') },
-        { key: 'issue', label: 'Rekap Keluar', visible: canAccess('report_issue') },
-        { key: 'issuedetail', label: 'Detail Barang Keluar', visible: canAccessIssueDetail() },
-        { key: 'estimation', label: 'Estimasi vs Realisasi', visible: canAccess('report_estimation') },
-        { key: 'estimation_unpo', label: 'Estimasi Part Belum PO', visible: canAccess('report_unordered_parts') },
-      ],
-    },
-    {
-      title: 'Persediaan',
-      icon: Package,
-      items: [
-        { key: 'stock', label: 'Stok Barang', visible: canAccess('report_stock') },
-        { key: 'item_history', label: 'History Item / Kartu Stok', visible: canAccess('report_stock') },
-        { key: 'inventory_value', label: 'Nilai Persediaan', visible: canAccess('report_stock') },
-      ],
-    },
-    {
-      title: 'Keuangan',
-      icon: Wallet,
-      items: [
-        { key: 'profit', label: 'Laba Kotor', visible: canAccess('report_profit') },
-        { key: 'profit_loss', label: 'Laba Rugi', visible: canAccess('report_profit_loss') },
-        { key: 'balance_sheet', label: 'Neraca', visible: canAccess('report_balance_sheet') },
-        { key: 'supplier_payable', label: 'Hutang Supplier', visible: canAccess('report_supplier_payable') },
-        { key: 'payment_history_ap', label: 'Riwayat Bayar Hutang', visible: canAccess('report_payment_history_ap') },
-        { key: 'cash_bank_book', label: 'Buku Bank/Kas', visible: canAccess('report_cash_bank_book') },
-        { key: 'budget', label: 'Monitoring Pagu', visible: canAccess('report_budget') },
-      ],
-    },
-  ];
-
-  const visibleReportKeys = reportGroups
-    .flatMap((g) => g.items)
-    .filter((x) => x.visible)
-    .map((x) => x.key);
-
-  const effectiveTab = visibleReportKeys.includes(activeTab) ? activeTab : defaultTab;
-
-  const setTab = (key: ReportKey) => {
-    const next = new URLSearchParams(searchParams);
-    next.delete('type');
-    next.delete('id');
-    next.set('tab', key);
-    setSearchParams(next);
-  };
+  const effectiveTab = allowedTabs.includes(activeTab) ? activeTab : defaultTab;
 
   const renderReport = (key: ReportKey) => {
     if (key === 'vehicle_entry') return <VehicleEntryReport />;
@@ -201,11 +164,6 @@ export default function Reports() {
     return null;
   };
 
-  const activeLabel =
-    reportGroups
-      .flatMap((g) => g.items)
-      .find((x) => x.key === effectiveTab)?.label || 'Laporan';
-
   return (
     <div className="report-print-scope space-y-8 animate-in fade-in duration-500 pb-10">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-200 pb-6 print:hidden">
@@ -218,58 +176,9 @@ export default function Reports() {
           <span>Last updated: {new Date().toLocaleTimeString()}</span>
         </div>
       </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-[280px_1fr] gap-6">
-        <Card className="print:hidden">
-          <div className="p-4 border-b">
-            <div className="flex items-center gap-2 text-sm font-semibold text-slate-900">
-              <BarChart3 className="h-4 w-4 text-indigo-600" />
-              <span>Pilih Laporan</span>
-            </div>
-            <div className="mt-1 text-xs text-slate-500">{activeLabel}</div>
-          </div>
-          <div className="p-2 space-y-2">
-            {reportGroups.map((group) => {
-              const visible = group.items.filter((x) => x.visible);
-              if (visible.length === 0) return null;
-              const GroupIcon = group.icon;
-              return (
-                <div key={group.title} className="px-2 py-2">
-                  <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500 px-2">
-                    <GroupIcon className="h-3.5 w-3.5" />
-                    <span>{group.title}</span>
-                  </div>
-                  <div className="mt-2 space-y-1">
-                    {visible.map((item) => {
-                      const active = item.key === effectiveTab;
-                      return (
-                        <button
-                          key={item.key}
-                          type="button"
-                          onClick={() => setTab(item.key)}
-                          className={cn(
-                            'w-full flex items-center justify-between gap-2 rounded-lg px-3 py-2 text-sm transition-colors',
-                            active
-                              ? 'bg-indigo-600 text-white'
-                              : 'text-slate-700 hover:bg-slate-100'
-                          )}
-                        >
-                          <span className="truncate">{item.label}</span>
-                          <ChevronRight className={cn('h-4 w-4 shrink-0', active ? 'text-white' : 'text-slate-400')} />
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </Card>
-
-        <div className="min-h-[500px]">
-          {renderReport(effectiveTab)}
-        </div>
-      </div>
+      <Card className="min-h-[500px]">
+        {renderReport(effectiveTab)}
+      </Card>
     </div>
   );
 }
