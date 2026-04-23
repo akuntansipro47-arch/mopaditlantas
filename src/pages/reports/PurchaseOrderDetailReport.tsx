@@ -19,7 +19,6 @@ type ReportData = {
   kendaraan: string;
   nopol: string;
   no_wo: string;
-  tipe: string;
   nama_barang: string | null;
   qty: number;
   diterima: number;
@@ -27,6 +26,32 @@ type ReportData = {
   harga_satuan: number;
   total: number;
 };
+
+function normalizeText(input: unknown) {
+  return String(input ?? '')
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function matchesSearch(row: ReportData, rawQuery: string) {
+  const q = normalizeText(rawQuery);
+  if (!q) return true;
+
+  const tokens = q.split(' ').filter(Boolean);
+  const haystack = normalizeText(
+    [
+      row.no_po,
+      row.supplier,
+      row.kendaraan,
+      row.nopol,
+      row.no_wo,
+      row.nama_barang,
+    ].filter(Boolean).join(' ')
+  );
+
+  return tokens.every(t => haystack.includes(t));
+}
 
 export default function PurchaseOrderDetailReport() {
   const [loading, setLoading] = useState(false);
@@ -73,7 +98,7 @@ export default function PurchaseOrderDetailReport() {
 
     try {
       const startDate = dateRange.start;
-      const endDate = `${dateRange.end} 23:59:59`;
+      const endDate = dateRange.end;
 
       const from = (page - 1) * ITEMS_PER_PAGE;
       const to = from + ITEMS_PER_PAGE - 1;
@@ -86,9 +111,9 @@ export default function PurchaseOrderDetailReport() {
           purchase_orders!inner(*, suppliers:supplier_id(name)),
           goods(name)
         `, { count: 'exact' })
-        .gte('purchase_orders.created_at', startDate)
-        .lte('purchase_orders.created_at', endDate)
-        .order('created_at', { foreignTable: 'purchase_orders', ascending: false })
+        .gte('purchase_orders.po_date', startDate)
+        .lte('purchase_orders.po_date', endDate)
+        .order('po_date', { foreignTable: 'purchase_orders', ascending: false })
         .range(from, to);
 
       const { data: poItems, error: poError, count: totalCount } = await poQuery;
@@ -159,13 +184,12 @@ export default function PurchaseOrderDetailReport() {
 
         return {
           id: item.id,
-          tgl: po.created_at,
+          tgl: po.po_date || po.created_at,
           no_po: po.po_number,
           supplier: po.suppliers?.name || '-',
           kendaraan: vehicle?.brand_type || '-',
           nopol: vehicle?.license_plate || '-',
           no_wo: workOrder?.wo_number || '-',
-          tipe: item.goods?.name || '-',
           nama_barang: item.goods?.name || '-',
           qty: item.quantity,
           diterima: receivedQty,
@@ -176,19 +200,7 @@ export default function PurchaseOrderDetailReport() {
       }).filter(Boolean) as ReportData[];
 
       // Search filtering is now more comprehensive and done on the client-side
-      const finalData = searchQuery
-        ? combinedData.filter(d => {
-            const query = searchQuery.toLowerCase();
-            return (
-              d.no_po.toLowerCase().includes(query) ||
-              (d.supplier && d.supplier.toLowerCase().includes(query)) ||
-              d.kendaraan.toLowerCase().includes(query) ||
-              d.nopol.toLowerCase().includes(query) ||
-              d.no_wo.toLowerCase().includes(query) ||
-              (d.nama_barang && d.nama_barang.toLowerCase().includes(query))
-            );
-          })
-        : combinedData;
+      const finalData = combinedData.filter(d => matchesSearch(d, searchQuery));
 
       setData(finalData);
     } catch (error: any) {
@@ -214,9 +226,9 @@ export default function PurchaseOrderDetailReport() {
           purchase_orders!inner(*, suppliers:supplier_id(name)),
           goods(name)
         `)
-        .gte('purchase_orders.created_at', dateRange.start)
-        .lte('purchase_orders.created_at', `${dateRange.end} 23:59:59`)
-        .order('created_at', { foreignTable: 'purchase_orders', ascending: false });
+        .gte('purchase_orders.po_date', dateRange.start)
+        .lte('purchase_orders.po_date', dateRange.end)
+        .order('po_date', { foreignTable: 'purchase_orders', ascending: false });
 
       const { data: poItems, error: poError } = await poQuery;
   
@@ -271,13 +283,12 @@ export default function PurchaseOrderDetailReport() {
 
         return {
           id: item.id,
-          tgl: po.created_at,
+          tgl: po.po_date || po.created_at,
           no_po: po.po_number,
           supplier: po.suppliers?.name || '-',
           kendaraan: vehicle?.brand_type || '-',
           nopol: vehicle?.license_plate || '-',
           no_wo: workOrder?.wo_number || '-',
-          tipe: item.goods?.name || '-',
           nama_barang: item.goods?.name || '-',
           qty: item.quantity,
           diterima: receivedQty,
@@ -287,19 +298,7 @@ export default function PurchaseOrderDetailReport() {
         };
       }).filter(Boolean) as ReportData[];
 
-      const finalData = searchQuery
-        ? combinedData.filter(d => {
-            const query = searchQuery.toLowerCase();
-            return (
-              d.no_po.toLowerCase().includes(query) ||
-              (d.supplier && d.supplier.toLowerCase().includes(query)) ||
-              d.kendaraan.toLowerCase().includes(query) ||
-              d.nopol.toLowerCase().includes(query) ||
-              d.no_wo.toLowerCase().includes(query) ||
-              (d.nama_barang && d.nama_barang.toLowerCase().includes(query))
-            );
-          })
-        : combinedData;
+      const finalData = combinedData.filter(d => matchesSearch(d, searchQuery));
   
       return finalData;
     } catch (error: any) {
@@ -332,13 +331,12 @@ export default function PurchaseOrderDetailReport() {
     }
 
     const formattedData = allData.map(item => ({
-      'Tanggal': format(parseISO(item.tgl), 'dd-MM-yyyy'),
+      'Tgl': format(parseISO(item.tgl), 'dd-MM-yyyy'),
       'No. PO': item.no_po,
       'Supplier': item.supplier,
       'Kendaraan': item.kendaraan,
       'Nopol': item.nopol,
       'No. WO': item.no_wo,
-      'Tipe': item.tipe,
       'Nama Barang': item.nama_barang,
       'Qty': item.qty,
       'Diterima': item.diterima,
@@ -408,6 +406,10 @@ export default function PurchaseOrderDetailReport() {
           </div>
         ) : (
           <>
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-3 text-sm text-muted-foreground">
+              <div>Hasil: {data.length} baris</div>
+              <div className="sm:text-right">Tanggal PO: {dateRange.start} s/d {dateRange.end}</div>
+            </div>
             <div className="rounded-md border overflow-hidden">
               <Table>
                 <TableHeader className="bg-slate-50">

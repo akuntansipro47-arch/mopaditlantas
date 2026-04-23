@@ -17,7 +17,7 @@ import { Label } from "@/components/ui/label";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
-import { formatDate } from '@/lib/utils';
+import { formatDate, generateTransactionNumber } from '@/lib/utils';
 import { Badge } from "@/components/ui/badge";
 import { useReactToPrint } from 'react-to-print';
 import PrintSPK from '@/components/ui/PrintSPK';
@@ -353,8 +353,8 @@ export default function WorkOrder() {
     try {
       const payload = {
         work_date: formData.work_date,
-        vehicle_entry_id: formData.vehicle_entry_id,
-        mechanic_id: formData.mechanic_id,
+        vehicle_entry_id: formData.vehicle_entry_id || null,
+        mechanic_id: formData.mechanic_id || null,
       };
 
       if (isEditing && currentId) {
@@ -365,10 +365,30 @@ export default function WorkOrder() {
         if (error) throw error;
         toast.success('WO diperbarui');
       } else {
-        const { error } = await supabase
-          .from('work_orders')
-          .insert([{ ...payload, status: 'OPEN' } as any]);
-        if (error) throw error;
+        let insertError: any = null;
+        for (let attempt = 0; attempt < 3; attempt++) {
+          const woNumber = generateTransactionNumber('WO');
+          const { error } = await supabase
+            .from('work_orders')
+            .insert([{ ...payload, wo_number: woNumber, status: 'OPEN' } as any]);
+          if (!error) {
+            insertError = null;
+            break;
+          }
+
+          insertError = error;
+          const code = (error as any)?.code;
+          const message = String((error as any)?.message || '');
+          const isWoNumberProblem =
+            (code === '23505' && message.toLowerCase().includes('wo_number')) ||
+            (code === '23502' && message.toLowerCase().includes('wo_number')) ||
+            message.toLowerCase().includes('wo_number');
+
+          if (!isWoNumberProblem) {
+            break;
+          }
+        }
+        if (insertError) throw insertError;
         
         if (formData.vehicle_entry_id) {
            await supabase

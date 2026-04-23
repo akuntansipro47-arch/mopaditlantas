@@ -187,7 +187,7 @@ const WorkOrderV2 = () => {
 
     const woData = {
       ...currentWo,
-      wo_number: currentWo.wo_number || await generateTransactionNumber('work_orders', 'WO'),
+      wo_number: currentWo.wo_number || generateTransactionNumber('WO'),
       status: currentWo.status || 'OPEN',
     };
 

@@ -17,7 +17,7 @@ import { Combobox } from "@/components/ui/combobox.tsx";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
-import { formatDate } from '@/lib/utils';
+import { formatDate, generateTransactionNumber } from '@/lib/utils';
 import { Badge } from "@/components/ui/badge";
 
 type WO = Database['public']['Tables']['work_orders']['Row'];
@@ -221,6 +221,7 @@ export default function WorkOrder() {
         work_date: formData.work_date,
         vehicle_entry_id: formData.vehicle_entry_id,
         mechanic_id: formData.mechanic_id,
+        wo_number: generateTransactionNumber('WO'),
         status: 'OPEN',
       };
 
