@@ -236,7 +236,13 @@ const WorkOrderDetailReport = () => {
             // Step 5: Create helper maps
             const vehicleEntryMap = new Map(vehicleEntriesData?.map(e => [e.id, e]));
             const vehicleMap = new Map(vehiclesData?.map(v => [v.id, v]));
-            const woMapByVeId = new Map(woData.map(wo => [wo.vehicle_entry_id, wo.id]));
+            const woIdsByVeId = new Map<string, string[]>();
+            woData.forEach((wo) => {
+                const veId = wo.vehicle_entry_id ? String(wo.vehicle_entry_id) : '';
+                if (!veId) return;
+                const cur = woIdsByVeId.get(veId) || [];
+                woIdsByVeId.set(veId, [...cur, String(wo.id)]);
+            });
             const jobTypesMap = new Map(jobTypesData?.map(jt => [jt.id, jt.job_name]));
             const jobTypesHppMap = new Map(jobTypesData?.map(jt => [jt.id, Number((jt as any).hpp || 0)]));
 
@@ -276,8 +282,9 @@ const WorkOrderDetailReport = () => {
             // Process Estimated items
             const processEstimatedItems = (items: any[], type: 'PART' | 'JOB') => {
                 items.forEach(item => {
-                    const woId = woMapByVeId.get(item.vehicle_entry_id);
-                    if (!woId) return;
+                    const veId = item.vehicle_entry_id ? String(item.vehicle_entry_id) : '';
+                    const woIds = veId ? (woIdsByVeId.get(veId) || []) : [];
+                    if (woIds.length === 0) return;
 
                     const isPart = type === 'PART';
                     
@@ -292,26 +299,28 @@ const WorkOrderDetailReport = () => {
                         }
                     }
 
-                    const hpp = isPart
-                        ? getPartHpp(woId, goodsId)
-                        : getJobHpp(woId, item.job_type_id ? String(item.job_type_id) : null, itemName);
-                    
-                    const sellingPrice = item.estimated_price || 0;
-                    
-                    const qty = item.qty || (isPart ? 0 : 1);
-                    const totalSellingPrice = sellingPrice * qty;
-                    const totalHpp = hpp * qty;
-
-                    const reportItem: ReportItem = {
-                        item_type: type,
-                        item_name: itemName,
-                        qty, unit_price: sellingPrice, total_price: totalSellingPrice,
-                        hpp, total_hpp: totalHpp, profit: totalSellingPrice - totalHpp,
-                        source: 'ESTIMATE_ONLY',
-                    };
-
-                    if (!reportItemsByWo.has(woId)) reportItemsByWo.set(woId, []);
-                    reportItemsByWo.get(woId)?.push(reportItem);
+                    woIds.forEach((woId) => {
+                        const hpp = isPart
+                            ? getPartHpp(woId, goodsId)
+                            : getJobHpp(woId, item.job_type_id ? String(item.job_type_id) : null, itemName);
+                        
+                        const sellingPrice = item.estimated_price || 0;
+                        
+                        const qty = item.qty || (isPart ? 0 : 1);
+                        const totalSellingPrice = sellingPrice * qty;
+                        const totalHpp = hpp * qty;
+    
+                        const reportItem: ReportItem = {
+                            item_type: type,
+                            item_name: itemName,
+                            qty, unit_price: sellingPrice, total_price: totalSellingPrice,
+                            hpp, total_hpp: totalHpp, profit: totalSellingPrice - totalHpp,
+                            source: 'ESTIMATE_ONLY',
+                        };
+    
+                        if (!reportItemsByWo.has(woId)) reportItemsByWo.set(woId, []);
+                        reportItemsByWo.get(woId)?.push(reportItem);
+                    });
                 });
             };
 
