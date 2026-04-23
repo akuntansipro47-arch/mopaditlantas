@@ -310,7 +310,14 @@ export default function PurchaseOrderV2() {
   };
 
   const handleEdit = async (po: POWithDetails, readOnly: boolean = false) => {
-    if (!readOnly && po.status !== 'ISSUED' && po.status !== 'DRAFT') {
+    const hasReturn =
+      Array.isArray((po as any).purchase_returns) && (po as any).purchase_returns.length > 0;
+    const canEdit =
+      po.status === 'ISSUED' ||
+      po.status === 'DRAFT' ||
+      (hasReturn && po.status !== 'RETURNED_FULL' && po.status !== 'CANCELLED');
+
+    if (!readOnly && !canEdit) {
       toast.error(`PO dengan status ${po.status} tidak dapat diedit.`);
       return;
     }
@@ -1078,8 +1085,11 @@ export default function PurchaseOrderV2() {
                       const nopol = v?.license_plate || '-';
                       const vGroup = v?.vehicle_type || '';
                       const vText = item.work_order_id ? (vGroup ? `${nopol} (${vGroup})` : nopol) : '-';
-                      const canEdit = item.status === 'ISSUED' || item.status === 'DRAFT';
                       const hasReturn = Array.isArray((item as any).purchase_returns) && (item as any).purchase_returns.length > 0;
+                      const canEdit =
+                        item.status === 'ISSUED' ||
+                        item.status === 'DRAFT' ||
+                        (hasReturn && item.status !== 'RETURNED_FULL' && item.status !== 'CANCELLED');
                       const statusLabel =
                         item.status === 'RETURNED_FULL'
                           ? 'RETUR PENUH'
