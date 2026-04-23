@@ -637,6 +637,7 @@ export default function GoodsReceipt() {
       notes: '',
     });
 
+    let effectiveItems = (po.items || []) as any[];
     try {
       const { data: freshItems } = await supabase
         .from('purchase_order_items')
@@ -647,6 +648,7 @@ export default function GoodsReceipt() {
         `)
         .eq('po_id', po.id);
       if (freshItems) {
+        effectiveItems = freshItems as any[];
         setSelectedPO((prev) => (prev && prev.id === po.id ? ({ ...prev, items: freshItems as any } as any) : prev));
       }
     } catch {
@@ -661,9 +663,10 @@ export default function GoodsReceipt() {
     const history: Record<string, number> = {};
     if (existingReceipts) {
       existingReceipts.forEach((r: any) => {
-        r.items.forEach((i: any) => {
+        (r.items || []).forEach((i: any) => {
           if (i.goods_id) {
-            history[i.goods_id] = (history[i.goods_id] || 0) + i.quantity_received;
+            const gid = String(i.goods_id);
+            history[gid] = (history[gid] || 0) + Number(i.quantity_received || 0);
           }
         });
       });
@@ -672,22 +675,15 @@ export default function GoodsReceipt() {
 
     // Initialize receiving items with remaining quantity
     const initialReceiving: Record<string, number> = {};
-    po.items.forEach(item => {
-      if (item.goods_id) {
-        // Calculate total ordered for this goods_id (handle duplicate items in PO if any)
-        const totalOrdered = po.items
-          .filter(i => i.goods_id === item.goods_id)
-          .reduce((sum, i) => sum + i.quantity, 0);
-        
-        const alreadyReceived = history[item.goods_id] || 0;
-        const remaining = Math.max(0, totalOrdered - alreadyReceived);
-        
-        // Distribute remaining among items (simple approach: first item gets all remaining, others 0)
-        // Better approach: Since we iterate, check if we already processed this goods_id
-        if (initialReceiving[item.goods_id] === undefined) {
-             initialReceiving[item.goods_id] = remaining;
-        }
-      }
+    const totalOrderedByGoods: Record<string, number> = {};
+    (effectiveItems || []).forEach((item: any) => {
+      if (!item.goods_id) return;
+      const gid = String(item.goods_id);
+      totalOrderedByGoods[gid] = (totalOrderedByGoods[gid] || 0) + Number(item.quantity || 0);
+    });
+    Object.entries(totalOrderedByGoods).forEach(([gid, totalOrdered]) => {
+      const alreadyReceived = Number(history[gid] || 0);
+      initialReceiving[gid] = Math.max(0, Number(totalOrdered || 0) - alreadyReceived);
     });
     setReceivingItems(initialReceiving);
     
