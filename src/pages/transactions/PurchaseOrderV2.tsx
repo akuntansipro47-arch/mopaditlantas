@@ -731,7 +731,7 @@ export default function PurchaseOrderV2() {
                                         return 0;
                                       })(),
                                       from_work_order: true,
-                                      locked_unit_price: true,
+                                      locked_unit_price: false,
                                     }))
                                     .filter((x: any) => (x.job_type_id || String(x.service_name || '').trim()) && Number(x.unit_price || 0) > 0)
                                 : [];
@@ -769,7 +769,7 @@ export default function PurchaseOrderV2() {
                                         unit_price: p.estimated_price || 0,
                                         estimated_name: p.item_name,
                                         from_work_order: true,
-                                        locked_unit_price: true,
+                                        locked_unit_price: false,
                                       };
                                     })
                                     .filter((x: any) => {
