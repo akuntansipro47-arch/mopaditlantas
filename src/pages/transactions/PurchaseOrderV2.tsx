@@ -49,6 +49,8 @@ export default function PurchaseOrderV2() {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [isReadOnly, setIsReadOnly] = useState(false);
+  const [returnedGoodsIds, setReturnedGoodsIds] = useState<string[]>([]);
+  const [originalEditItems, setOriginalEditItems] = useState<any[]>([]);
   
   // Master Data
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
@@ -288,6 +290,8 @@ export default function PurchaseOrderV2() {
     setPoType('WO');
     setEditingId(null);
     setIsReadOnly(false);
+    setReturnedGoodsIds([]);
+    setOriginalEditItems([]);
   };
 
   const handleDateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -325,8 +329,33 @@ export default function PurchaseOrderV2() {
     setLoading(true);
     setEditingId(po.id);
     setIsReadOnly(readOnly);
+    setReturnedGoodsIds([]);
+    setOriginalEditItems([]);
 
     try {
+      if (!readOnly && hasReturn && po.status !== 'RETURNED_FULL' && po.status !== 'CANCELLED') {
+        const { data: ret, error: retErr } = await supabase
+          .from('purchase_returns')
+          .select('id')
+          .eq('po_id', po.id);
+        if (retErr) throw retErr;
+        const returnIds = (ret || []).map((x: any) => x.id).filter(Boolean);
+        if (returnIds.length > 0) {
+          const { data: retItems, error: retItemErr } = await supabase
+            .from('purchase_return_items')
+            .select('goods_id, quantity_returned')
+            .in('return_id', returnIds);
+          if (retItemErr) throw retItemErr;
+          const gidSet = new Set<string>();
+          (retItems || []).forEach((it: any) => {
+            const gid = String(it.goods_id || '');
+            const qty = Number(it.quantity_returned || 0);
+            if (gid && qty > 0) gidSet.add(gid);
+          });
+          setReturnedGoodsIds(Array.from(gidSet));
+        }
+      }
+
       // Get items
       const { data: items, error } = await supabase
         .from('purchase_order_items')
@@ -345,7 +374,7 @@ export default function PurchaseOrderV2() {
       setPoType(po.work_order_id ? 'WO' : 'STOCK');
       
       if (items && items.length > 0) {
-        setPoItems(items.map((i: any) => ({
+        const mapped = items.map((i: any) => ({
           line_type: (i.line_type || (i.goods_id ? 'PART' : i.job_type_id ? 'JASA' : 'PART')) as any,
           goods_id: i.goods_id || '',
           job_type_id: i.job_type_id || '',
@@ -353,9 +382,13 @@ export default function PurchaseOrderV2() {
           brand: i.brand || '',
           quantity: i.quantity,
           unit_price: i.unit_price || 0
-        })));
+        }));
+        setPoItems(mapped as any);
+        setOriginalEditItems(mapped as any);
       } else {
-        setPoItems([{ line_type: 'PART', goods_id: '', job_type_id: '', service_name: '', brand: '', quantity: 1, unit_price: 0 }]);
+        const fallback = [{ line_type: 'PART', goods_id: '', job_type_id: '', service_name: '', brand: '', quantity: 1, unit_price: 0 }];
+        setPoItems(fallback as any);
+        setOriginalEditItems(fallback as any);
       }
       
       setIsDialogOpen(true);
@@ -379,6 +412,41 @@ export default function PurchaseOrderV2() {
 
   const handleSubmit = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
+
+    const isReturnEditMode = Boolean(editingId) && !isReadOnly && returnedGoodsIds.length > 0;
+    if (isReturnEditMode && Array.isArray(originalEditItems) && originalEditItems.length === poItems.length) {
+      const changedLocked: number[] = [];
+      poItems.forEach((it: any, idx: number) => {
+        const lineType = String(it?.line_type || 'PART');
+        const gid = String(it?.goods_id || '');
+        const isReturnedPart = lineType !== 'JASA' && gid && returnedGoodsIds.includes(gid);
+        if (isReturnedPart) return;
+        const orig = originalEditItems[idx] || {};
+        const curSig = [
+          String(it?.line_type || ''),
+          String(it?.goods_id || ''),
+          String(it?.job_type_id || ''),
+          String(it?.service_name || ''),
+          String(it?.brand || ''),
+          String(it?.quantity ?? ''),
+          String(it?.unit_price ?? ''),
+        ].join('|');
+        const origSig = [
+          String(orig?.line_type || ''),
+          String(orig?.goods_id || ''),
+          String(orig?.job_type_id || ''),
+          String(orig?.service_name || ''),
+          String(orig?.brand || ''),
+          String(orig?.quantity ?? ''),
+          String(orig?.unit_price ?? ''),
+        ].join('|');
+        if (curSig !== origSig) changedLocked.push(idx + 1);
+      });
+      if (changedLocked.length > 0) {
+        toast.error(`Edit PO Retur: hanya item yang diretur yang boleh diubah. Cek baris: ${changedLocked.join(', ')}`);
+        return;
+      }
+    }
     
     // Validation
     if (!formData.supplier_id) {
@@ -859,8 +927,13 @@ export default function PurchaseOrderV2() {
               <div className="space-y-4 border rounded-md p-4 bg-slate-50">
                   <div className="flex justify-between items-center">
                     <Label className="text-base font-semibold">Daftar Barang / Jasa</Label>
-                    {!isReadOnly && <Button type="button" variant="outline" size="sm" onClick={handleAddItem}>+ Tambah Item</Button>}
+                    {!isReadOnly && returnedGoodsIds.length === 0 && <Button type="button" variant="outline" size="sm" onClick={handleAddItem}>+ Tambah Item</Button>}
                   </div>
+                  {!isReadOnly && returnedGoodsIds.length > 0 && (
+                    <div className="p-3 bg-amber-50 border border-amber-200 text-amber-800 rounded-md text-sm">
+                      PO ini sudah ada retur. Untuk mencegah double/ubah histori, item non-retur dikunci. Ubah hanya item yang diretur (biasanya untuk qty pengganti).
+                    </div>
+                  )}
                   
                   <Table>
                     <TableHeader>
@@ -876,6 +949,14 @@ export default function PurchaseOrderV2() {
                     <TableBody>
                       {poItems.map((item, index) => (
                         <TableRow key={index}>
+                          {(() => {
+                            const isReturnEditMode = !isReadOnly && returnedGoodsIds.length > 0;
+                            const lt = String((item as any).line_type || 'PART');
+                            const gid = String((item as any).goods_id || '');
+                            const isReturnedPart = lt !== 'JASA' && gid && returnedGoodsIds.includes(gid);
+                            const lockLine = isReturnEditMode && !isReturnedPart;
+                            return (
+                              <>
                           <TableCell>
                             <Select
                               value={(item as any).line_type || 'PART'}
@@ -900,7 +981,7 @@ export default function PurchaseOrderV2() {
                                 }
                                 setPoItems(next as any);
                               }}
-                              disabled={isReadOnly}
+                              disabled={isReadOnly || lockLine}
                             >
                               <SelectTrigger className="h-9">
                                 <SelectValue placeholder="Pilih..." />
@@ -922,7 +1003,7 @@ export default function PurchaseOrderV2() {
                                 (item as any).line_type === 'PART' && !item.goods_id && item.estimated_name && "bg-amber-100 text-amber-800 border-amber-300 hover:bg-amber-200"
                               )}
                               onClick={() => handleOpenSearch(index)}
-                              disabled={isReadOnly}
+                              disabled={isReadOnly || lockLine}
                             >
                               <span>
                                 {((item as any).line_type || 'PART') === 'JASA'
@@ -950,7 +1031,7 @@ export default function PurchaseOrderV2() {
                               className="h-9" placeholder="Merk/Tipe..."
                               value={item.brand} 
                               onChange={(e) => handleItemChange(index, 'brand', e.target.value)} 
-                              disabled={isReadOnly}
+                              disabled={isReadOnly || lockLine}
                             />
                           </TableCell>
                           <TableCell>
@@ -963,7 +1044,7 @@ export default function PurchaseOrderV2() {
                                 const val = e.target.value.replace(/[^0-9]/g, '');
                                 handleItemChange(index, 'quantity', val ? parseInt(val) : 0);
                               }}
-                              disabled={isReadOnly}
+                              disabled={isReadOnly || lockLine}
                             />
                           </TableCell>
                           <TableCell>
@@ -976,16 +1057,19 @@ export default function PurchaseOrderV2() {
                                 const val = e.target.value.replace(/[^0-9]/g, '');
                                 handleItemChange(index, 'unit_price', val ? parseInt(val) : 0);
                               }} 
-                              disabled={isReadOnly || Boolean((item as any).locked_unit_price)}
+                              disabled={isReadOnly || lockLine || Boolean((item as any).locked_unit_price)}
                             />
                           </TableCell>
                           <TableCell>
-                            {!isReadOnly && poItems.length > 1 && (
+                            {!isReadOnly && returnedGoodsIds.length === 0 && poItems.length > 1 && (
                               <Button type="button" variant="ghost" size="icon" className="h-8 w-8 text-red-500" onClick={() => handleRemoveItem(index)}>
                                 <Trash2 className="h-4 w-4" />
                               </Button>
                             )}
                           </TableCell>
+                              </>
+                            );
+                          })()}
                         </TableRow>
                       ))}
                     </TableBody>

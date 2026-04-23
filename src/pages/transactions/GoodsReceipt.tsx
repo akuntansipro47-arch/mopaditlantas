@@ -699,6 +699,50 @@ export default function GoodsReceipt() {
     setLoading(true);
 
     try {
+      const poId = selectedPO.id;
+      const [{ data: freshItems, error: freshErr }, { data: existingReceipts, error: histErr }] = await Promise.all([
+        supabase
+          .from('purchase_order_items')
+          .select('*')
+          .eq('po_id', poId),
+        supabase
+          .from('goods_receipts')
+          .select('id, items:goods_receipt_items(goods_id, quantity_received)')
+          .eq('po_id', poId),
+      ]);
+      if (freshErr) throw freshErr;
+      if (histErr) throw histErr;
+
+      const poItems = ((freshItems as any[]) || (selectedPO.items as any[])) as any[];
+      const history: Record<string, number> = {};
+      (existingReceipts || []).forEach((r: any) => {
+        (r.items || []).forEach((i: any) => {
+          if (i.goods_id) {
+            const gid = String(i.goods_id);
+            history[gid] = (history[gid] || 0) + Number(i.quantity_received || 0);
+          }
+        });
+      });
+
+      const totalOrderedByGoods: Record<string, number> = {};
+      poItems.forEach((it: any) => {
+        if (!it.goods_id) return;
+        const gid = String(it.goods_id);
+        totalOrderedByGoods[gid] = (totalOrderedByGoods[gid] || 0) + Number(it.quantity || 0);
+      });
+
+      for (const [goodsId, qty] of Object.entries(receivingItems)) {
+        if (!(qty > 0)) continue;
+        const ordered = Number(totalOrderedByGoods[goodsId] || 0);
+        const received = Number(history[goodsId] || 0);
+        const remaining = Math.max(0, ordered - received);
+        if (qty > remaining) {
+          const g = poItems.find((x: any) => String(x.goods_id || '') === String(goodsId));
+          const name = g?.goods?.name ? String(g.goods.name) : goodsId;
+          throw new Error(`Qty terima untuk "${name}" melebihi sisa PO. Sisa: ${remaining}`);
+        }
+      }
+
       // 1. Validate & Prepare Items
       const itemsToReceive: { goods_id: string; quantity: number }[] = [];
       let totalReceiptAmount = 0;
@@ -706,7 +750,7 @@ export default function GoodsReceipt() {
 
       // Group PO items by goods_id to handle pricing (FIFO strategy)
       const poItemsByGoods: Record<string, typeof selectedPO.items> = {};
-      selectedPO.items.forEach(item => {
+      poItems.forEach(item => {
         if (item.goods_id) {
             if (!poItemsByGoods[item.goods_id]) poItemsByGoods[item.goods_id] = [];
             poItemsByGoods[item.goods_id].push(item);
@@ -748,7 +792,7 @@ export default function GoodsReceipt() {
       }
 
       if (itemsToReceive.length === 0) {
-        const hasGoodsLines = (selectedPO.items || []).some((it: any) => Boolean(it.goods_id));
+        const hasGoodsLines = (poItems || []).some((it: any) => Boolean(it.goods_id));
         if (hasGoodsLines) {
           toast.error('Tidak ada barang yang diterima (Qty 0).');
           setLoading(false);
@@ -901,10 +945,10 @@ export default function GoodsReceipt() {
       // 4. Update PO Status
       // Check if ALL items are fully received
       let isFull = true;
-      const allGoodsIds = new Set(selectedPO.items.map(i => i.goods_id).filter(id => id !== null) as string[]);
+      const allGoodsIds = new Set(poItems.map(i => i.goods_id).filter(id => id !== null) as string[]);
       
       for (const goodsId of allGoodsIds) {
-          const totalOrdered = selectedPO.items
+          const totalOrdered = poItems
             .filter(i => i.goods_id === goodsId)
             .reduce((sum, i) => sum + i.quantity, 0);
           
