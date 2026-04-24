@@ -153,20 +153,6 @@ export default function PurchaseOrderNew() {
 
   const handleDateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const selectedDateStr = e.target.value;
-    const selectedDate = new Date(selectedDateStr);
-    const today = new Date();
-    const minDate = new Date();
-    minDate.setMonth(today.getMonth() - 1);
-    
-    // Normalize time to midnight for comparison
-    today.setHours(23, 59, 59, 999); // End of today
-    minDate.setHours(0, 0, 0, 0);
-
-    if (selectedDate < minDate) {
-      toast.error('Tanggal PO maksimal mundur 1 bulan dari hari ini');
-      return;
-    }
-
     setFormData({ ...formData, po_date: selectedDateStr });
   };
 
@@ -363,10 +349,8 @@ export default function PurchaseOrderNew() {
                       type="date" 
                       value={formData.po_date} 
                       onChange={handleDateChange}
-                      max={new Date().toISOString().split('T')[0]} 
                       disabled={isReadOnly}
                     />
-                    {!isReadOnly && <p className="text-[10px] text-gray-500">* Maksimal mundur 1 bulan</p>}
                   </div>
 
                   <div className="space-y-2">

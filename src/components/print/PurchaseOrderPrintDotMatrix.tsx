@@ -233,16 +233,16 @@ export default function PurchaseOrderPrintDotMatrix({ id }: POPrintProps) {
       <style>{`
         .po-dotmatrix {
           font-family: "Courier New", Courier, monospace;
-          font-size: 12pt;
+          font-size: 13pt;
           line-height: 1.15;
           font-weight: 700;
           letter-spacing: 0.1px;
           white-space: pre;
           margin: 0;
-          padding: 6mm 0 0 3mm;
+          padding: 9mm 0 0 3mm;
         }
         @media print {
-          @page { size: 241mm 140mm; margin: 12mm 1mm 4mm 2mm; }
+          @page { size: 241mm 140mm; margin: 16mm 1mm 4mm 2mm; }
           html, body { margin: 0; padding: 0; -webkit-print-color-adjust: exact; }
         }
       `}</style>

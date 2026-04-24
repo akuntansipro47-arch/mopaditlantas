@@ -116,9 +116,10 @@ export default function Dashboard() {
           .select('*', { count: 'exact', head: true })
           .lt('current_stock', 3);
 
-        // Fast Moving Items (last 90 days)
-        const ninetyDaysAgo = new Date();
-        ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
+        // Fast Moving Items (periode berjalan: dari awal bulan ini s.d. sekarang)
+        const startOfRunningPeriod = new Date();
+        startOfRunningPeriod.setDate(1);
+        startOfRunningPeriod.setHours(0, 0, 0, 0);
         
         const { data: issuedItems, error: issuedItemsError } = await supabase
           .from('goods_issue_items')
@@ -126,7 +127,7 @@ export default function Dashboard() {
             quantity,
             goods ( name )
           `)
-          .gte('created_at', ninetyDaysAgo.toISOString());
+          .gte('created_at', startOfRunningPeriod.toISOString());
 
         // Lead Time Data for Active WO
         const { data: activeWoData, error: activeWoError } = await supabase
@@ -141,10 +142,23 @@ export default function Dashboard() {
           .not('status', 'in', '("COMPLETED", "CLOSED")');
 
 
-        // Monthly Progress Data (last 6 months)
-        const sixMonthsAgo = new Date();
-        sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
-        sixMonthsAgo.setDate(1); // Start from the beginning of the month
+        // Monthly Progress Data (6 bulan, dihitung dari tanggal unit masuk kendaraan terbaru)
+        const { data: latestEntryRows, error: latestEntryError } = await supabase
+          .from('work_orders')
+          .select(`
+            vehicle_entries!inner (
+              entry_date
+            )
+          `)
+          .order('entry_date', { foreignTable: 'vehicle_entries', ascending: false })
+          .limit(1);
+
+        const latestEntryDateStr = (latestEntryRows?.[0] as any)?.vehicle_entries?.entry_date as string | undefined;
+        const latestEntryDate = latestEntryDateStr ? new Date(latestEntryDateStr) : new Date();
+        const startOfProgressPeriod = new Date(latestEntryDate);
+        startOfProgressPeriod.setDate(1);
+        startOfProgressPeriod.setHours(0, 0, 0, 0);
+        startOfProgressPeriod.setMonth(startOfProgressPeriod.getMonth() - 5);
 
         const { data: monthlyWoData, error: monthlyWoError } = await supabase
           .from('work_orders')
@@ -155,7 +169,7 @@ export default function Dashboard() {
               vehicles!inner ( vehicle_type )
             )
           `)
-          .gte('vehicle_entries.entry_date', sixMonthsAgo.toISOString().split('T')[0]);
+          .gte('vehicle_entries.entry_date', startOfProgressPeriod.toISOString().split('T')[0]);
 
 
         if (woR4Error) throw woR4Error;
@@ -165,6 +179,7 @@ export default function Dashboard() {
         if (lowStockError) throw lowStockError;
         if (issuedItemsError) throw issuedItemsError;
         if (activeWoError) throw activeWoError;
+        if (latestEntryError) throw latestEntryError;
         if (monthlyWoError) throw monthlyWoError;
 
         // Process PO Monthly Data
@@ -207,9 +222,8 @@ export default function Dashboard() {
         const progress: { [key: string]: MonthlyProgressData } = {};
         const monthLongFormatter = new Intl.DateTimeFormat('id-ID', { month: 'long' });
         const progressBuckets = Array.from({ length: 6 }, (_, i) => {
-          const d = new Date();
-          d.setDate(1);
-          d.setMonth(d.getMonth() - 5 + i);
+          const d = new Date(startOfProgressPeriod);
+          d.setMonth(d.getMonth() + i);
           const monthKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
           const monthLabel = `${monthLongFormatter.format(d)} ${d.getFullYear()}`;
           progress[monthKey] = {
@@ -379,7 +393,7 @@ export default function Dashboard() {
       <div className="grid gap-4 md:grid-cols-1 lg:grid-cols-2">
         <Card>
           <CardHeader>
-            <CardTitle>Top 10 Fast Moving Items (90 Hari Terakhir)</CardTitle>
+            <CardTitle>Top 10 Fast Moving Items (Periode Berjalan)</CardTitle>
           </CardHeader>
           <CardContent>
             {loading ? (
@@ -394,7 +408,7 @@ export default function Dashboard() {
                 ))}
               </ol>
             ) : (
-              <p className="text-muted-foreground">Tidak ada data pemakaian barang dalam 90 hari terakhir.</p>
+              <p className="text-muted-foreground">Tidak ada data pemakaian barang pada periode berjalan.</p>
             )}
           </CardContent>
         </Card>
@@ -428,7 +442,7 @@ export default function Dashboard() {
                   ))
                 ) : (
                   <TableRow>
-                    <TableCell colSpan={4} className="text-center">Tidak ada data work order dalam 6 bulan terakhir.</TableCell>
+                    <TableCell colSpan={4} className="text-center">Tidak ada data work order pada periode 6 bulan (berdasarkan unit masuk kendaraan).</TableCell>
                   </TableRow>
                 )}
               </TableBody>
