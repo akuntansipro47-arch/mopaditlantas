@@ -4,7 +4,6 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Input } from '@/components/ui/input';
-import { ScrollArea } from '@/components/ui/scroll-area';
 import { supabase } from '@/lib/supabase';
 import { toast } from 'sonner';
 import * as XLSX from 'xlsx';
@@ -40,59 +39,6 @@ type ReportItem = {
     source: 'REALIZED' | 'ESTIMATE_ONLY';
 };
 
-// Custom hook for draggable scroll
-const useDraggableScroll = () => {
-    const ref = useRef<HTMLDivElement>(null);
-
-    useEffect(() => {
-        const el = ref.current;
-        if (!el) return;
-
-        let isDown = false;
-        let startX: number;
-        let scrollLeft: number;
-
-        const onMouseDown = (e: MouseEvent) => {
-            isDown = true;
-            el.classList.add('active');
-            startX = e.pageX - el.offsetLeft;
-            scrollLeft = el.scrollLeft;
-        };
-
-        const onMouseLeave = () => {
-            isDown = false;
-            el.classList.remove('active');
-        };
-
-        const onMouseUp = () => {
-            isDown = false;
-            el.classList.remove('active');
-        };
-
-        const onMouseMove = (e: MouseEvent) => {
-            if (!isDown) return;
-            e.preventDefault();
-            const x = e.pageX - el.offsetLeft;
-            const walk = (x - startX) * 2; // scroll-fast
-            el.scrollLeft = scrollLeft - walk;
-        };
-
-        el.addEventListener('mousedown', onMouseDown);
-        el.addEventListener('mouseleave', onMouseLeave);
-        el.addEventListener('mouseup', onMouseUp);
-        el.addEventListener('mousemove', onMouseMove);
-
-        return () => {
-            el.removeEventListener('mousedown', onMouseDown);
-            el.removeEventListener('mouseleave', onMouseLeave);
-            el.removeEventListener('mouseup', onMouseUp);
-            el.removeEventListener('mousemove', onMouseMove);
-        };
-    }, []);
-
-    return ref;
-};
-
 const WorkOrderDetailReport = () => {
     const [reportData, setReportData] = useState<ReportData[]>([]);
     const [loading, setLoading] = useState(false);
@@ -101,13 +47,57 @@ const WorkOrderDetailReport = () => {
     const [statusFilter, setStatusFilter] = useState('semua');
     const [vehicleGroupFilter, setVehicleGroupFilter] = useState('semua');
     const [searchTerm, setSearchTerm] = useState('');
-    const scrollContainerRef = useDraggableScroll();
+    const scrollContainerRef = useRef<HTMLDivElement>(null);
+    const topScrollRef = useRef<HTMLDivElement>(null);
+    const syncingRef = useRef<'top' | 'bottom' | null>(null);
+    const [tableScrollWidth, setTableScrollWidth] = useState(1);
 
     const scrollX = (delta: number) => {
         const el = scrollContainerRef.current;
         if (!el) return;
         el.scrollBy({ left: delta, behavior: 'smooth' });
     };
+
+    useEffect(() => {
+        const bottom = scrollContainerRef.current;
+        const top = topScrollRef.current;
+        if (!bottom || !top) return;
+
+        const onBottomScroll = () => {
+            if (syncingRef.current === 'top') return;
+            syncingRef.current = 'bottom';
+            top.scrollLeft = bottom.scrollLeft;
+            syncingRef.current = null;
+        };
+
+        const onTopScroll = () => {
+            if (syncingRef.current === 'bottom') return;
+            syncingRef.current = 'top';
+            bottom.scrollLeft = top.scrollLeft;
+            syncingRef.current = null;
+        };
+
+        bottom.addEventListener('scroll', onBottomScroll, { passive: true });
+        top.addEventListener('scroll', onTopScroll, { passive: true });
+
+        return () => {
+            bottom.removeEventListener('scroll', onBottomScroll);
+            top.removeEventListener('scroll', onTopScroll);
+        };
+    }, []);
+
+    useEffect(() => {
+        const bottom = scrollContainerRef.current;
+        if (!bottom) return;
+
+        const update = () => setTableScrollWidth(Math.max(1, bottom.scrollWidth));
+        update();
+
+        if (typeof ResizeObserver === 'undefined') return;
+        const ro = new ResizeObserver(update);
+        ro.observe(bottom);
+        return () => ro.disconnect();
+    }, [reportData]);
 
     const fetchReportData = async () => {
         setLoading(true);
@@ -555,6 +545,10 @@ const WorkOrderDetailReport = () => {
                         />
                     </div>
 
+                    <div ref={topScrollRef} className="w-full overflow-x-auto overflow-y-hidden border rounded-md mb-2">
+                        <div style={{ width: tableScrollWidth }} className="h-4" />
+                    </div>
+
                     <div className="flex items-center justify-end gap-2 mb-2">
                         <Button type="button" variant="outline" size="icon" onClick={() => scrollX(-600)}>
                             <ChevronLeft className="h-4 w-4" />
@@ -564,7 +558,7 @@ const WorkOrderDetailReport = () => {
                         </Button>
                     </div>
 
-                    <div ref={scrollContainerRef} className="w-full overflow-x-auto whitespace-nowrap rounded-md border cursor-grab">
+                    <div ref={scrollContainerRef} className="w-full overflow-x-auto whitespace-nowrap rounded-md border">
                         <div className="relative">
                             <Table>
                                 <TableHeader>
