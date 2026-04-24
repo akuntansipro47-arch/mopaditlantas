@@ -51,6 +51,8 @@ const WorkOrderDetailReport = () => {
     const topScrollRef = useRef<HTMLDivElement>(null);
     const syncingRef = useRef<'top' | 'bottom' | null>(null);
     const [tableScrollWidth, setTableScrollWidth] = useState(1);
+    const fetchSeqRef = useRef(0);
+    const paymentWarnedRef = useRef(false);
 
     const scrollX = (delta: number) => {
         const el = scrollContainerRef.current;
@@ -90,16 +92,30 @@ const WorkOrderDetailReport = () => {
         const bottom = scrollContainerRef.current;
         if (!bottom) return;
 
-        const update = () => setTableScrollWidth(Math.max(1, bottom.scrollWidth));
+        const update = () => {
+            requestAnimationFrame(() => {
+                setTableScrollWidth(Math.max(1, bottom.scrollWidth));
+            });
+        };
         update();
+        setTimeout(update, 0);
 
         if (typeof ResizeObserver === 'undefined') return;
         const ro = new ResizeObserver(update);
         ro.observe(bottom);
-        return () => ro.disconnect();
+        window.addEventListener('resize', update);
+        return () => {
+            window.removeEventListener('resize', update);
+            ro.disconnect();
+        };
     }, [reportData]);
 
+    useEffect(() => {
+        fetchReportData();
+    }, [startDate, endDate]);
+
     const fetchReportData = async () => {
+        const seq = ++fetchSeqRef.current;
         setLoading(true);
         try {
             // Step 1: Fetch base Work Orders
@@ -196,39 +212,47 @@ const WorkOrderDetailReport = () => {
             const poIds = Array.from(new Set(Array.from(poIdByNumber.values())));
             const poPaymentStatusById = new Map<string, string>();
             if (poIds.length > 0) {
-                const { data: invoiceRows, error: invoiceErr } = await supabase
-                    .from('purchase_invoices')
-                    .select('po_id, total_amount, paid_amount')
-                    .in('po_id', poIds);
-                if (invoiceErr) throw new Error(`Gagal mengambil status pembayaran PO: ${invoiceErr.message}`);
+                try {
+                    const { data: invoiceRows, error: invoiceErr } = await supabase
+                        .from('purchase_invoices')
+                        .select('po_id, total_amount, paid_amount')
+                        .in('po_id', poIds);
+                    if (invoiceErr) throw invoiceErr;
 
-                const aggByPoId = new Map<string, { sumTotal: number; sumPaid: number; count: number }>();
-                (invoiceRows || []).forEach((inv: any) => {
-                    const poId = String(inv.po_id || '').trim();
-                    if (!poId) return;
-                    const cur = aggByPoId.get(poId) || { sumTotal: 0, sumPaid: 0, count: 0 };
-                    cur.sumTotal += Number(inv.total_amount || 0);
-                    cur.sumPaid += Number(inv.paid_amount || 0);
-                    cur.count += 1;
-                    aggByPoId.set(poId, cur);
-                });
+                    const aggByPoId = new Map<string, { sumTotal: number; sumPaid: number; count: number }>();
+                    (invoiceRows || []).forEach((inv: any) => {
+                        const poId = String(inv.po_id || '').trim();
+                        if (!poId) return;
+                        const cur = aggByPoId.get(poId) || { sumTotal: 0, sumPaid: 0, count: 0 };
+                        cur.sumTotal += Number(inv.total_amount || 0);
+                        cur.sumPaid += Number(inv.paid_amount || 0);
+                        cur.count += 1;
+                        aggByPoId.set(poId, cur);
+                    });
 
-                poIds.forEach((poId) => {
-                    const agg = aggByPoId.get(poId);
-                    if (!agg || agg.count === 0) {
-                        poPaymentStatusById.set(poId, 'Belum Ditagih');
-                        return;
+                    poIds.forEach((poId) => {
+                        const agg = aggByPoId.get(poId);
+                        if (!agg || agg.count === 0) {
+                            poPaymentStatusById.set(poId, 'Belum Ditagih');
+                            return;
+                        }
+                        if (agg.sumTotal > 0 && agg.sumPaid >= agg.sumTotal) {
+                            poPaymentStatusById.set(poId, 'Lunas');
+                            return;
+                        }
+                        if (agg.sumPaid > 0) {
+                            poPaymentStatusById.set(poId, 'Bayar Sebagian');
+                            return;
+                        }
+                        poPaymentStatusById.set(poId, 'Belum Lunas');
+                    });
+                } catch (e: any) {
+                    console.error('Gagal mengambil status pembayaran PO:', e);
+                    if (!paymentWarnedRef.current) {
+                        paymentWarnedRef.current = true;
+                        toast.warning('Status pembayaran PO gagal dimuat. Data tetap tampil tanpa status bayar.');
                     }
-                    if (agg.sumTotal > 0 && agg.sumPaid >= agg.sumTotal) {
-                        poPaymentStatusById.set(poId, 'Lunas');
-                        return;
-                    }
-                    if (agg.sumPaid > 0) {
-                        poPaymentStatusById.set(poId, 'Bayar Sebagian');
-                        return;
-                    }
-                    poPaymentStatusById.set(poId, 'Belum Lunas');
-                });
+                }
             }
 
             const getPoNumberLabel = (poNumber: string) => {
@@ -459,13 +483,13 @@ const WorkOrderDetailReport = () => {
                 };
             }).filter(d => d.items.length > 0); // Only show WOs with items
 
-            setReportData(finalReportData);
+            if (seq === fetchSeqRef.current) setReportData(finalReportData);
 
         } catch (error: any) {
             toast.error(`Gagal mengambil data laporan: ${error.message}`);
             console.error(error);
         } finally {
-            setLoading(false);
+            if (seq === fetchSeqRef.current) setLoading(false);
         }
     };
 
@@ -592,7 +616,7 @@ const WorkOrderDetailReport = () => {
                             </Select>
                         </div>
                         <Button onClick={fetchReportData} disabled={loading}>
-                            {loading ? 'Memuat...' : 'Tampilkan Laporan'}
+                            {loading ? 'Memuat...' : 'Refresh'}
                         </Button>
                         <Button onClick={handleExport} variant="outline" disabled={filteredReportData.length === 0}>
                             Ekspor ke Excel
