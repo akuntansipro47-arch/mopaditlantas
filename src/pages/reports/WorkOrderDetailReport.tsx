@@ -9,6 +9,7 @@ import { supabase } from '@/lib/supabase';
 import { toast } from 'sonner';
 import * as XLSX from 'xlsx';
 import { format } from 'date-fns';
+import { ChevronLeft, ChevronRight } from 'lucide-react';
 
 type ReportData = {
     wo_id: string;
@@ -35,6 +36,7 @@ type ReportItem = {
     hpp: number;
     total_hpp: number;
     profit: number;
+    po_info: string;
     source: 'REALIZED' | 'ESTIMATE_ONLY';
 };
 
@@ -101,6 +103,12 @@ const WorkOrderDetailReport = () => {
     const [searchTerm, setSearchTerm] = useState('');
     const scrollContainerRef = useDraggableScroll();
 
+    const scrollX = (delta: number) => {
+        const el = scrollContainerRef.current;
+        if (!el) return;
+        el.scrollBy({ left: delta, behavior: 'smooth' });
+    };
+
     const fetchReportData = async () => {
         setLoading(true);
         try {
@@ -162,7 +170,7 @@ const WorkOrderDetailReport = () => {
             ] = await Promise.all([
                 supabase
                     .from('purchase_order_items')
-                    .select('goods_id, job_type_id, service_name, line_type, quantity, unit_price, purchase_orders!inner(id, created_at, status, work_order_id)')
+                    .select('goods_id, job_type_id, service_name, line_type, quantity, unit_price, purchase_orders!inner(id, po_number, created_at, status, work_order_id)')
                     .in('purchase_orders.status', ['RECEIVED_PART', 'RECEIVED_FULL'])
                     .not('unit_price', 'is', null),
                 supabase
@@ -188,33 +196,43 @@ const WorkOrderDetailReport = () => {
             const receivedJobItems = receivedItems.filter((it) => it.line_type === 'JASA');
 
             const partHppByWoGoods = new Map<string, { sumQty: number; sumValue: number }>();
-            const partFallbackByGoods = new Map<string, { maxQty: number; unitPrice: number }>();
+            const partPoByWoGoods = new Map<string, Set<string>>();
+            const partFallbackByGoods = new Map<string, { maxQty: number; unitPrice: number; poNumber: string }>();
             receivedPartItems.forEach((it) => {
                 const woId = it.purchase_orders?.work_order_id;
                 const goodsId = it.goods_id;
                 const qty = Number(it.quantity || 0);
                 const price = Number(it.unit_price || 0);
+                const poNumber = String(it.purchase_orders?.po_number || '').trim();
                 if (woId && goodsId && qty > 0 && price > 0) {
                     const key = `${woId}:${goodsId}`;
                     const cur = partHppByWoGoods.get(key) || { sumQty: 0, sumValue: 0 };
                     cur.sumQty += qty;
                     cur.sumValue += qty * price;
                     partHppByWoGoods.set(key, cur);
+                    if (poNumber) {
+                        const set = partPoByWoGoods.get(key) || new Set<string>();
+                        set.add(poNumber);
+                        partPoByWoGoods.set(key, set);
+                    }
                 }
                 if (goodsId && qty > 0 && price > 0) {
                     const cur = partFallbackByGoods.get(goodsId);
                     if (!cur || qty > cur.maxQty) {
-                        partFallbackByGoods.set(goodsId, { maxQty: qty, unitPrice: price });
+                        partFallbackByGoods.set(goodsId, { maxQty: qty, unitPrice: price, poNumber });
                     }
                 }
             });
 
             const jobHppByWoJobType = new Map<string, { sumQty: number; sumValue: number }>();
             const jobHppByWoName = new Map<string, { sumQty: number; sumValue: number }>();
+            const jobPoByWoJobType = new Map<string, Set<string>>();
+            const jobPoByWoName = new Map<string, Set<string>>();
             receivedJobItems.forEach((it) => {
                 const woId = it.purchase_orders?.work_order_id;
                 const qty = Number(it.quantity || 0);
                 const price = Number(it.unit_price || 0);
+                const poNumber = String(it.purchase_orders?.po_number || '').trim();
                 if (!woId || qty <= 0 || price <= 0) return;
                 const jobTypeId = it.job_type_id ? String(it.job_type_id) : '';
                 const serviceName = normalizeText(String(it.service_name || ''));
@@ -224,12 +242,22 @@ const WorkOrderDetailReport = () => {
                     cur.sumQty += qty;
                     cur.sumValue += qty * price;
                     jobHppByWoJobType.set(key, cur);
+                    if (poNumber) {
+                        const set = jobPoByWoJobType.get(key) || new Set<string>();
+                        set.add(poNumber);
+                        jobPoByWoJobType.set(key, set);
+                    }
                 } else if (serviceName) {
                     const key = `${woId}:${serviceName}`;
                     const cur = jobHppByWoName.get(key) || { sumQty: 0, sumValue: 0 };
                     cur.sumQty += qty;
                     cur.sumValue += qty * price;
                     jobHppByWoName.set(key, cur);
+                    if (poNumber) {
+                        const set = jobPoByWoName.get(key) || new Set<string>();
+                        set.add(poNumber);
+                        jobPoByWoName.set(key, set);
+                    }
                 }
             });
 
@@ -247,28 +275,46 @@ const WorkOrderDetailReport = () => {
             const jobTypesHppMap = new Map(jobTypesData?.map(jt => [jt.id, Number((jt as any).hpp || 0)]));
             const jobTypesSellMap = new Map(jobTypesData?.map(jt => [jt.id, Number((jt as any).selling_price || 0)]));
 
-            const getPartHpp = (woId: string | undefined, goodsId: string | null): number => {
-                if (!goodsId) return 0;
-                if (woId) {
-                    const agg = partHppByWoGoods.get(`${woId}:${goodsId}`);
-                    if (agg && agg.sumQty > 0) return agg.sumValue / agg.sumQty;
-                }
-                const fb = partFallbackByGoods.get(goodsId);
-                return fb ? fb.unitPrice : 0;
+            const getPoLabel = (poSet: Set<string> | undefined): string => {
+                if (!poSet || poSet.size === 0) return '';
+                if (poSet.size === 1) return Array.from(poSet)[0];
+                return `Multi PO (${poSet.size})`;
             };
 
-            const getJobHpp = (woId: string | undefined, jobTypeId: string | null, jobName: string): number => {
+            const getPartHppInfo = (woId: string | undefined, goodsId: string | null): { hpp: number; po_info: string } => {
+                if (!goodsId) return { hpp: 0, po_info: '' };
+                if (woId) {
+                    const agg = partHppByWoGoods.get(`${woId}:${goodsId}`);
+                    if (agg && agg.sumQty > 0) {
+                        const poLabel = getPoLabel(partPoByWoGoods.get(`${woId}:${goodsId}`));
+                        return { hpp: agg.sumValue / agg.sumQty, po_info: poLabel ? `PO WO: ${poLabel}` : 'PO WO' };
+                    }
+                }
+                const fb = partFallbackByGoods.get(goodsId);
+                if (fb && fb.unitPrice) {
+                    return { hpp: fb.unitPrice, po_info: fb.poNumber ? `PO Stok: ${fb.poNumber}` : 'PO Stok' };
+                }
+                return { hpp: 0, po_info: '' };
+            };
+
+            const getJobHppInfo = (woId: string | undefined, jobTypeId: string | null, jobName: string): { hpp: number; po_info: string } => {
                 if (woId && jobTypeId) {
                     const agg = jobHppByWoJobType.get(`${woId}:${jobTypeId}`);
-                    if (agg && agg.sumQty > 0) return agg.sumValue / agg.sumQty;
+                    if (agg && agg.sumQty > 0) {
+                        const poLabel = getPoLabel(jobPoByWoJobType.get(`${woId}:${jobTypeId}`));
+                        return { hpp: agg.sumValue / agg.sumQty, po_info: poLabel ? `PO WO: ${poLabel}` : 'PO WO' };
+                    }
                 }
                 if (woId) {
                     const key = `${woId}:${normalizeText(jobName)}`;
                     const agg = jobHppByWoName.get(key);
-                    if (agg && agg.sumQty > 0) return agg.sumValue / agg.sumQty;
+                    if (agg && agg.sumQty > 0) {
+                        const poLabel = getPoLabel(jobPoByWoName.get(key));
+                        return { hpp: agg.sumValue / agg.sumQty, po_info: poLabel ? `PO WO: ${poLabel}` : 'PO WO' };
+                    }
                 }
-                if (jobTypeId) return Number(jobTypesHppMap.get(jobTypeId) || 0);
-                return 0;
+                if (jobTypeId) return { hpp: Number(jobTypesHppMap.get(jobTypeId) || 0), po_info: 'Master Jasa' };
+                return { hpp: 0, po_info: '' };
             };
 
             const getHpp = (goodsId: string | null): number => {
@@ -304,9 +350,9 @@ const WorkOrderDetailReport = () => {
                     }
 
                     woIds.forEach((woId) => {
-                        const hpp = isPart
-                            ? getPartHpp(woId, goodsId)
-                            : getJobHpp(woId, jobTypeId ? String(jobTypeId) : null, itemName);
+                        const hppInfo = isPart
+                            ? getPartHppInfo(woId, goodsId)
+                            : getJobHppInfo(woId, jobTypeId ? String(jobTypeId) : null, itemName);
                         
                         const sellingPrice = isPart
                             ? Number(item.estimated_price || 0)
@@ -314,13 +360,14 @@ const WorkOrderDetailReport = () => {
                         
                         const qty = item.qty || (isPart ? 0 : 1);
                         const totalSellingPrice = sellingPrice * qty;
-                        const totalHpp = hpp * qty;
+                        const totalHpp = hppInfo.hpp * qty;
     
                         const reportItem: ReportItem = {
                             item_type: type,
                             item_name: itemName,
                             qty, unit_price: sellingPrice, total_price: totalSellingPrice,
-                            hpp, total_hpp: totalHpp, profit: totalSellingPrice - totalHpp,
+                            hpp: hppInfo.hpp, total_hpp: totalHpp, profit: totalSellingPrice - totalHpp,
+                            po_info: hppInfo.po_info,
                             source: 'ESTIMATE_ONLY',
                         };
     
@@ -415,9 +462,11 @@ const WorkOrderDetailReport = () => {
                 'Nama Item': item.item_name,
                 'Qty': item.qty,
                 'Harga Satuan': item.unit_price,
-                'Total Harga': item.total_price,
-                'HPP': item.hpp,
-                'Profit': item.profit,
+                'Total Pagu': item.total_price,
+                        'PO (Sumber HPP)': item.po_info,
+                'HPP Satuan': item.hpp,
+                'Total HPP': item.total_hpp,
+                'Margin': item.profit,
                 'Sumber': item.source === 'REALIZED' ? 'Realisasi' : 'Estimasi',
             }))
         );
@@ -506,6 +555,15 @@ const WorkOrderDetailReport = () => {
                         />
                     </div>
 
+                    <div className="flex items-center justify-end gap-2 mb-2">
+                        <Button type="button" variant="outline" size="icon" onClick={() => scrollX(-600)}>
+                            <ChevronLeft className="h-4 w-4" />
+                        </Button>
+                        <Button type="button" variant="outline" size="icon" onClick={() => scrollX(600)}>
+                            <ChevronRight className="h-4 w-4" />
+                        </Button>
+                    </div>
+
                     <div ref={scrollContainerRef} className="w-full overflow-x-auto whitespace-nowrap rounded-md border cursor-grab">
                         <div className="relative">
                             <Table>
@@ -520,10 +578,11 @@ const WorkOrderDetailReport = () => {
                                         <TableHead>Nama Item</TableHead>
                                         <TableHead className="text-right">Qty</TableHead>
                                         <TableHead className="text-right">Harga Satuan</TableHead>
-                                        <TableHead className="text-right">Total Harga</TableHead>
-                                        <TableHead className="text-right">HPP (Unit)</TableHead>
+                                        <TableHead className="text-right">Total Pagu</TableHead>
+                                        <TableHead>PO</TableHead>
+                                        <TableHead className="text-right">HPP Satuan</TableHead>
                                         <TableHead className="text-right">Total HPP</TableHead>
-                                        <TableHead className="text-right">Total Profit</TableHead>
+                                        <TableHead className="text-right">Margin</TableHead>
                                     </TableRow>
                                 </TableHeader>
                                 <TableBody>
@@ -546,6 +605,7 @@ const WorkOrderDetailReport = () => {
                                                     <TableCell className="text-right">{item.qty}</TableCell>
                                                     <TableCell className="text-right">{item.unit_price.toLocaleString('id-ID')}</TableCell>
                                                     <TableCell className="text-right">{item.total_price.toLocaleString('id-ID')}</TableCell>
+                                                    <TableCell>{item.po_info || '-'}</TableCell>
                                                     <TableCell className="text-right">{item.hpp.toLocaleString('id-ID')}</TableCell>
                                                     <TableCell className="text-right">{item.total_hpp.toLocaleString('id-ID')}</TableCell>
                                                     <TableCell className="text-right">{item.profit.toLocaleString('id-ID')}</TableCell>
@@ -554,7 +614,7 @@ const WorkOrderDetailReport = () => {
                                         ))
                                     ) : (
                                         <TableRow>
-                                            <TableCell colSpan={13} className="h-24 text-center">
+                                            <TableCell colSpan={14} className="h-24 text-center">
                                                 Tidak ada data untuk ditampilkan.
                                             </TableCell>
                                         </TableRow>
@@ -562,6 +622,15 @@ const WorkOrderDetailReport = () => {
                                 </TableBody>
                             </Table>
                         </div>
+                    </div>
+
+                    <div className="flex items-center justify-end gap-2 mt-2">
+                        <Button type="button" variant="outline" size="icon" onClick={() => scrollX(-600)}>
+                            <ChevronLeft className="h-4 w-4" />
+                        </Button>
+                        <Button type="button" variant="outline" size="icon" onClick={() => scrollX(600)}>
+                            <ChevronRight className="h-4 w-4" />
+                        </Button>
                     </div>
                 </CardContent>
             </Card>

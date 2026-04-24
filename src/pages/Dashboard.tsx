@@ -142,34 +142,30 @@ export default function Dashboard() {
           .not('status', 'in', '("COMPLETED", "CLOSED")');
 
 
-        // Monthly Progress Data (6 bulan, dihitung dari tanggal unit masuk kendaraan terbaru)
-        const { data: latestEntryRows, error: latestEntryError } = await supabase
-          .from('work_orders')
-          .select(`
-            vehicle_entries!inner (
-              entry_date
-            )
-          `)
-          .order('entry_date', { foreignTable: 'vehicle_entries', ascending: false })
-          .limit(1);
+        // Monthly Progress Data (semua periode yang ada entry kendaraan)
+        const monthlyWoData: any[] = [];
+        const PAGE_SIZE = 1000;
+        let pageFrom = 0;
+        while (true) {
+          const pageTo = pageFrom + PAGE_SIZE - 1;
+          const { data: pageRows, error: monthlyWoError } = await supabase
+            .from('work_orders')
+            .select(`
+              status,
+              vehicle_entries!inner (
+                entry_date,
+                vehicles!inner ( vehicle_type )
+              )
+            `)
+            .range(pageFrom, pageTo);
 
-        const latestEntryDateStr = (latestEntryRows?.[0] as any)?.vehicle_entries?.entry_date as string | undefined;
-        const latestEntryDate = latestEntryDateStr ? new Date(latestEntryDateStr) : new Date();
-        const startOfProgressPeriod = new Date(latestEntryDate);
-        startOfProgressPeriod.setDate(1);
-        startOfProgressPeriod.setHours(0, 0, 0, 0);
-        startOfProgressPeriod.setMonth(startOfProgressPeriod.getMonth() - 5);
+          if (monthlyWoError) throw monthlyWoError;
+          if (!pageRows || pageRows.length === 0) break;
 
-        const { data: monthlyWoData, error: monthlyWoError } = await supabase
-          .from('work_orders')
-          .select(`
-            status,
-            vehicle_entries!inner (
-              entry_date,
-              vehicles!inner ( vehicle_type )
-            )
-          `)
-          .gte('vehicle_entries.entry_date', startOfProgressPeriod.toISOString().split('T')[0]);
+          monthlyWoData.push(...pageRows);
+          if (pageRows.length < PAGE_SIZE) break;
+          pageFrom += PAGE_SIZE;
+        }
 
 
         if (woR4Error) throw woR4Error;
@@ -179,8 +175,6 @@ export default function Dashboard() {
         if (lowStockError) throw lowStockError;
         if (issuedItemsError) throw issuedItemsError;
         if (activeWoError) throw activeWoError;
-        if (latestEntryError) throw latestEntryError;
-        if (monthlyWoError) throw monthlyWoError;
 
         // Process PO Monthly Data
         const poByMonthKey: { [key: string]: number } = {};
@@ -218,31 +212,25 @@ export default function Dashboard() {
         }));
         setLeadTimeData(formattedLeadTime);
 
-        // Process Monthly Progress
+        // Process Monthly Progress (hanya bulan yang ada datanya)
         const progress: { [key: string]: MonthlyProgressData } = {};
         const monthLongFormatter = new Intl.DateTimeFormat('id-ID', { month: 'long' });
-        const progressBuckets = Array.from({ length: 6 }, (_, i) => {
-          const d = new Date(startOfProgressPeriod);
-          d.setMonth(d.getMonth() + i);
-          const monthKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-          const monthLabel = `${monthLongFormatter.format(d)} ${d.getFullYear()}`;
-          progress[monthKey] = {
-            monthKey,
-            monthLabel,
-            totalIn: { r4: 0, r2: 0 },
-            totalWip: { r4: 0, r2: 0 },
-            totalCompleted: { r4: 0, r2: 0 },
-          };
-          return monthKey;
-        });
 
-        monthlyWoData.forEach(wo => {
+        monthlyWoData.forEach((wo: any) => {
           const entry = wo.vehicle_entries as any;
           if (!entry || !entry.entry_date) return;
 
           const entryDate = new Date(entry.entry_date);
           const monthKey = `${entryDate.getFullYear()}-${String(entryDate.getMonth() + 1).padStart(2, '0')}`;
-          if (!progress[monthKey]) return;
+          if (!progress[monthKey]) {
+            progress[monthKey] = {
+              monthKey,
+              monthLabel: `${monthLongFormatter.format(entryDate)} ${entryDate.getFullYear()}`,
+              totalIn: { r4: 0, r2: 0 },
+              totalWip: { r4: 0, r2: 0 },
+              totalCompleted: { r4: 0, r2: 0 },
+            };
+          }
 
           const vehicleType = entry.vehicles.vehicle_type;
           const isR4 = vehicleType === 'R4';
@@ -260,7 +248,9 @@ export default function Dashboard() {
           }
         });
         
-        setMonthlyProgress(progressBuckets.map((k) => progress[k]));
+        setMonthlyProgress(
+          Object.values(progress).sort((a, b) => a.monthKey.localeCompare(b.monthKey))
+        );
         
         // Process Fast Moving Items
         const itemCounts: { [key: string]: number } = {};
@@ -442,7 +432,7 @@ export default function Dashboard() {
                   ))
                 ) : (
                   <TableRow>
-                    <TableCell colSpan={4} className="text-center">Tidak ada data work order pada periode 6 bulan (berdasarkan unit masuk kendaraan).</TableCell>
+                    <TableCell colSpan={4} className="text-center">Tidak ada data work order.</TableCell>
                   </TableRow>
                 )}
               </TableBody>
