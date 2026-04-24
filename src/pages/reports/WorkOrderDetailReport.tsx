@@ -182,6 +182,60 @@ const WorkOrderDetailReport = () => {
             
             const normalizeText = (s: string) => s.toLowerCase().replace(/\s+/g, ' ').trim();
             const receivedItems = (receivedPoItems || []) as any[];
+            const poIdByNumber = new Map<string, string>();
+            const poNumbers = new Set<string>();
+            receivedItems.forEach((it) => {
+                const poId = String(it.purchase_orders?.id || '').trim();
+                const poNumber = String(it.purchase_orders?.po_number || '').trim();
+                if (poId && poNumber) {
+                    poIdByNumber.set(poNumber, poId);
+                    poNumbers.add(poNumber);
+                }
+            });
+
+            const poIds = Array.from(new Set(Array.from(poIdByNumber.values())));
+            const poPaymentStatusById = new Map<string, string>();
+            if (poIds.length > 0) {
+                const { data: invoiceRows, error: invoiceErr } = await supabase
+                    .from('purchase_invoices')
+                    .select('po_id, total_amount, paid_amount')
+                    .in('po_id', poIds);
+                if (invoiceErr) throw new Error(`Gagal mengambil status pembayaran PO: ${invoiceErr.message}`);
+
+                const aggByPoId = new Map<string, { sumTotal: number; sumPaid: number; count: number }>();
+                (invoiceRows || []).forEach((inv: any) => {
+                    const poId = String(inv.po_id || '').trim();
+                    if (!poId) return;
+                    const cur = aggByPoId.get(poId) || { sumTotal: 0, sumPaid: 0, count: 0 };
+                    cur.sumTotal += Number(inv.total_amount || 0);
+                    cur.sumPaid += Number(inv.paid_amount || 0);
+                    cur.count += 1;
+                    aggByPoId.set(poId, cur);
+                });
+
+                poIds.forEach((poId) => {
+                    const agg = aggByPoId.get(poId);
+                    if (!agg || agg.count === 0) {
+                        poPaymentStatusById.set(poId, 'Belum Ditagih');
+                        return;
+                    }
+                    if (agg.sumTotal > 0 && agg.sumPaid >= agg.sumTotal) {
+                        poPaymentStatusById.set(poId, 'Lunas');
+                        return;
+                    }
+                    if (agg.sumPaid > 0) {
+                        poPaymentStatusById.set(poId, 'Bayar Sebagian');
+                        return;
+                    }
+                    poPaymentStatusById.set(poId, 'Belum Lunas');
+                });
+            }
+
+            const getPoNumberLabel = (poNumber: string) => {
+                const poId = poIdByNumber.get(poNumber);
+                const status = poId ? poPaymentStatusById.get(poId) : undefined;
+                return status ? `${poNumber} (${status})` : poNumber;
+            };
             const receivedPartItems = receivedItems.filter((it) => (it.line_type || 'PART') === 'PART' && it.goods_id);
             const receivedJobItems = receivedItems.filter((it) => it.line_type === 'JASA');
 
@@ -267,8 +321,17 @@ const WorkOrderDetailReport = () => {
 
             const getPoLabel = (poSet: Set<string> | undefined): string => {
                 if (!poSet || poSet.size === 0) return '';
-                if (poSet.size === 1) return Array.from(poSet)[0];
-                return `Multi PO (${poSet.size})`;
+                if (poSet.size === 1) return getPoNumberLabel(Array.from(poSet)[0]);
+                const statusCounts: Record<string, number> = {};
+                Array.from(poSet).forEach((poNumber) => {
+                    const poId = poIdByNumber.get(poNumber);
+                    const status = (poId && poPaymentStatusById.get(poId)) || 'Unknown';
+                    statusCounts[status] = (statusCounts[status] || 0) + 1;
+                });
+                const summary = Object.entries(statusCounts)
+                    .map(([k, v]) => `${k}:${v}`)
+                    .join(', ');
+                return summary ? `Multi PO (${poSet.size}) [${summary}]` : `Multi PO (${poSet.size})`;
             };
 
             const getPartHppInfo = (woId: string | undefined, goodsId: string | null): { hpp: number; po_info: string } => {
@@ -583,7 +646,7 @@ const WorkOrderDetailReport = () => {
                                     {filteredReportData.length > 0 ? (
                                         filteredReportData.map((entry, entryIndex) => (
                                             entry.items.map((item, itemIndex) => (
-                                                <TableRow key={`${entry.wo_id}-${itemIndex}`} className={item.source === 'ESTIMATE_ONLY' ? 'bg-yellow-100' : ''}>
+                                                <TableRow key={`${entry.wo_id}-${itemIndex}`}>
                                                     {itemIndex === 0 && (
                                                         <TableCell rowSpan={entry.items.length} className="sticky left-0 bg-white z-10 font-medium align-top w-[200px]">
                                                             {entry.wo_number}
