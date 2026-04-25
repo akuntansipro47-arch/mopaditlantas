@@ -105,6 +105,8 @@ const navigation: NavItem[] = [
       { type: 'group', name: 'Laporan Pembelian' },
       { name: 'Pembelian (PO)', href: '/reports?tab=po', icon: ShoppingCart, key: 'report_po' },
       { name: 'Barang Masuk', href: '/reports?tab=receipt', icon: PackageCheck, key: 'report_receipt' },
+      { name: 'Rincian Pembelian', href: '/reports?tab=podetail', icon: ShoppingCart, key: 'report_podetail' },
+      { name: 'Rincian Pembelian (Detail)', href: '/reports?tab=po_detail_new', icon: ShoppingCart, key: 'report_po_detail_new' },
       { name: 'Hutang Supplier', href: '/reports?tab=supplier_payable', icon: Wallet, key: 'report_supplier_payable' },
       { name: 'Riwayat Bayar Hutang', href: '/reports?tab=payment_history_ap', icon: Wallet, key: 'report_payment_history_ap' },
       { type: 'group', name: 'Laporan Operasional' },
