@@ -8,7 +8,7 @@ import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { toast } from 'sonner';
 import { formatCurrency, formatDate } from '@/lib/utils';
-import { Search, Plus, Trash2, Save, RefreshCw, Calendar as CalendarIcon } from 'lucide-react';
+import { Search, Plus, Trash2, Save, RefreshCw, Calendar as CalendarIcon, Pencil } from 'lucide-react';
 import { Label } from "@/components/ui/label";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
@@ -68,6 +68,8 @@ export default function CashBank() {
     start: new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0],
     end: new Date().toISOString().split('T')[0],
   });
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editingType, setEditingType] = useState<'DEPOSIT' | 'PAYMENT' | null>(null);
 
   useEffect(() => {
     fetchAccounts();
@@ -114,6 +116,7 @@ export default function CashBank() {
         .select(`
           *,
           items:journal_entry_items (
+             account_id,
              debit, credit,
              description,
              account:chart_of_accounts (account_name, account_code)
@@ -162,6 +165,144 @@ export default function CashBank() {
     );
   });
 
+  const resetDepositForm = () => {
+    setDepositHeader({
+      deposit_to: '',
+      voucher_no: '',
+      date: new Date().toISOString().split('T')[0],
+      memo: ''
+    });
+    setDepositItems([{ id: '1', account_id: '', amount: 0, memo: '' }]);
+  };
+
+  const resetPaymentForm = () => {
+    setPaymentHeader({
+      payment_from: '',
+      voucher_no: '',
+      date: new Date().toISOString().split('T')[0],
+      memo: ''
+    });
+    setPaymentItems([{ id: '1', account_id: '', amount: 0, memo: '' }]);
+  };
+
+  const cancelEdit = () => {
+    setEditingId(null);
+    setEditingType(null);
+    resetDepositForm();
+    resetPaymentForm();
+    setActiveTab('history');
+  };
+
+  const handleEditHistory = async (id: string) => {
+    setLoading(true);
+    try {
+      const { data: entry, error } = await supabase
+        .from('journal_entries')
+        .select(`
+          id,
+          entry_date,
+          voucher_no,
+          description,
+          entry_type,
+          total_amount,
+          items:journal_entry_items (
+            account_id,
+            debit,
+            credit,
+            description
+          )
+        `)
+        .eq('id', id)
+        .single();
+
+      if (error) throw error;
+      const items = Array.isArray((entry as any).items) ? (entry as any).items : [];
+      const entryType = String((entry as any).entry_type || '').toUpperCase();
+      const entryDate = String((entry as any).entry_date || new Date().toISOString().split('T')[0]);
+      const voucherNo = String((entry as any).voucher_no || '');
+      const memo = String((entry as any).description || '');
+
+      setEditingId(String((entry as any).id));
+
+      if (entryType === 'DEPOSIT') {
+        setEditingType('DEPOSIT');
+        const main = items
+          .filter((i: any) => Number(i.debit || 0) > 0 && Number(i.credit || 0) <= 0)
+          .sort((a: any, b: any) => Number(b.debit || 0) - Number(a.debit || 0))[0];
+        const details = items.filter((i: any) => Number(i.credit || 0) > 0);
+        setDepositHeader({
+          deposit_to: String(main?.account_id || ''),
+          voucher_no: voucherNo,
+          date: entryDate,
+          memo: memo,
+        });
+        setDepositItems(
+          details.length > 0
+            ? details.map((i: any, idx: number) => ({
+                id: `${idx + 1}`,
+                account_id: String(i.account_id || ''),
+                amount: Number(i.credit || 0),
+                memo: String(i.description || memo || ''),
+              }))
+            : [{ id: '1', account_id: '', amount: 0, memo: '' }]
+        );
+        setActiveTab('deposit');
+        return;
+      }
+
+      if (entryType === 'PAYMENT') {
+        setEditingType('PAYMENT');
+        const main = items
+          .filter((i: any) => Number(i.credit || 0) > 0 && Number(i.debit || 0) <= 0)
+          .sort((a: any, b: any) => Number(b.credit || 0) - Number(a.credit || 0))[0];
+        const details = items.filter((i: any) => Number(i.debit || 0) > 0);
+        setPaymentHeader({
+          payment_from: String(main?.account_id || ''),
+          voucher_no: voucherNo,
+          date: entryDate,
+          memo: memo,
+        });
+        setPaymentItems(
+          details.length > 0
+            ? details.map((i: any, idx: number) => ({
+                id: `${idx + 1}`,
+                account_id: String(i.account_id || ''),
+                amount: Number(i.debit || 0),
+                memo: String(i.description || memo || ''),
+              }))
+            : [{ id: '1', account_id: '', amount: 0, memo: '' }]
+        );
+        setActiveTab('payment');
+        return;
+      }
+
+      toast.error(`Tipe jurnal ${entryType} belum didukung untuk edit dari Kas/Bank.`);
+      setEditingId(null);
+      setEditingType(null);
+    } catch (e: any) {
+      toast.error('Gagal memuat data untuk edit: ' + String(e?.message || e));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleDeleteHistory = async (id: string) => {
+    if (!confirm('Hapus transaksi ini?')) return;
+    setLoading(true);
+    try {
+      await supabase.from('journal_entry_items').delete().eq('journal_entry_id', id);
+      const { error } = await supabase.from('journal_entries').delete().eq('id', id);
+      if (error) throw error;
+      if (editingId === id) cancelEdit();
+      toast.success('Transaksi dihapus');
+      fetchHistory();
+    } catch (e: any) {
+      toast.error('Gagal menghapus: ' + String(e?.message || e));
+    } finally {
+      setLoading(false);
+    }
+  };
+
   // Filter Accounts
   // Cash/Bank only for Header
   const cashBankAccounts = accounts.filter(a => 
@@ -196,27 +337,46 @@ export default function CashBank() {
 
     setLoading(true);
     try {
-      // 1. Create Header
-      const { data: entry, error: entryError } = await supabase
-        .from('journal_entries')
-        .insert([{
-          entry_date: depositHeader.date,
-          voucher_no: depositHeader.voucher_no || `DEP-${Date.now().toString().slice(-6)}`,
-          description: depositHeader.memo,
-          entry_type: 'DEPOSIT',
-          total_amount: depositTotal
-        }])
-        .select()
-        .single();
+      const isEditingDeposit = Boolean(editingId) && editingType === 'DEPOSIT';
+      const voucherNo = depositHeader.voucher_no || `DEP-${Date.now().toString().slice(-6)}`;
 
-      if (entryError) throw entryError;
+      let entryId = '';
+      if (isEditingDeposit) {
+        entryId = String(editingId);
+        const { error: updErr } = await supabase
+          .from('journal_entries')
+          .update({
+            entry_date: depositHeader.date,
+            voucher_no: voucherNo,
+            description: depositHeader.memo,
+            entry_type: 'DEPOSIT',
+            total_amount: depositTotal
+          })
+          .eq('id', entryId);
+        if (updErr) throw updErr;
+        await supabase.from('journal_entry_items').delete().eq('journal_entry_id', entryId);
+      } else {
+        const { data: entry, error: entryError } = await supabase
+          .from('journal_entries')
+          .insert([{
+            entry_date: depositHeader.date,
+            voucher_no: voucherNo,
+            description: depositHeader.memo,
+            entry_type: 'DEPOSIT',
+            total_amount: depositTotal
+          }])
+          .select()
+          .single();
+        if (entryError) throw entryError;
+        entryId = String((entry as any).id);
+      }
 
       // 2. Create Items
       const itemsPayload = [];
       
       // A. DEBIT (Deposit To Account) - Total Amount
       itemsPayload.push({
-        journal_entry_id: entry.id,
+        journal_entry_id: entryId,
         account_id: depositHeader.deposit_to,
         debit: depositTotal,
         credit: 0,
@@ -226,7 +386,7 @@ export default function CashBank() {
       // B. CREDIT (Detail Accounts)
       depositItems.forEach(item => {
         itemsPayload.push({
-          journal_entry_id: entry.id,
+          journal_entry_id: entryId,
           account_id: item.account_id,
           debit: 0,
           credit: item.amount,
@@ -240,10 +400,10 @@ export default function CashBank() {
 
       if (itemsError) throw itemsError;
 
-      toast.success('Penerimaan berhasil disimpan');
-      // Reset
-      setDepositHeader({ ...depositHeader, voucher_no: '', memo: '' });
-      setDepositItems([{ id: '1', account_id: '', amount: 0, memo: '' }]);
+      toast.success(isEditingDeposit ? 'Penerimaan berhasil diperbarui' : 'Penerimaan berhasil disimpan');
+      setEditingId(null);
+      setEditingType(null);
+      resetDepositForm();
       fetchHistory();
       setActiveTab('history');
 
@@ -278,27 +438,46 @@ export default function CashBank() {
 
     setLoading(true);
     try {
-      // 1. Create Header
-      const { data: entry, error: entryError } = await supabase
-        .from('journal_entries')
-        .insert([{
-          entry_date: paymentHeader.date,
-          voucher_no: paymentHeader.voucher_no || `PAY-${Date.now().toString().slice(-6)}`,
-          description: paymentHeader.memo,
-          entry_type: 'PAYMENT',
-          total_amount: paymentTotal
-        }])
-        .select()
-        .single();
+      const isEditingPayment = Boolean(editingId) && editingType === 'PAYMENT';
+      const voucherNo = paymentHeader.voucher_no || `PAY-${Date.now().toString().slice(-6)}`;
 
-      if (entryError) throw entryError;
+      let entryId = '';
+      if (isEditingPayment) {
+        entryId = String(editingId);
+        const { error: updErr } = await supabase
+          .from('journal_entries')
+          .update({
+            entry_date: paymentHeader.date,
+            voucher_no: voucherNo,
+            description: paymentHeader.memo,
+            entry_type: 'PAYMENT',
+            total_amount: paymentTotal
+          })
+          .eq('id', entryId);
+        if (updErr) throw updErr;
+        await supabase.from('journal_entry_items').delete().eq('journal_entry_id', entryId);
+      } else {
+        const { data: entry, error: entryError } = await supabase
+          .from('journal_entries')
+          .insert([{
+            entry_date: paymentHeader.date,
+            voucher_no: voucherNo,
+            description: paymentHeader.memo,
+            entry_type: 'PAYMENT',
+            total_amount: paymentTotal
+          }])
+          .select()
+          .single();
+        if (entryError) throw entryError;
+        entryId = String((entry as any).id);
+      }
 
       // 2. Create Items
       const itemsPayload = [];
       
       // A. CREDIT (Payment From Account) - Total Amount
       itemsPayload.push({
-        journal_entry_id: entry.id,
+        journal_entry_id: entryId,
         account_id: paymentHeader.payment_from,
         debit: 0,
         credit: paymentTotal,
@@ -308,7 +487,7 @@ export default function CashBank() {
       // B. DEBIT (Detail Accounts - Expenses etc)
       paymentItems.forEach(item => {
         itemsPayload.push({
-          journal_entry_id: entry.id,
+          journal_entry_id: entryId,
           account_id: item.account_id,
           debit: item.amount,
           credit: 0,
@@ -322,10 +501,10 @@ export default function CashBank() {
 
       if (itemsError) throw itemsError;
 
-      toast.success('Pengeluaran berhasil disimpan');
-      // Reset
-      setPaymentHeader({ ...paymentHeader, voucher_no: '', memo: '' });
-      setPaymentItems([{ id: '1', account_id: '', amount: 0, memo: '' }]);
+      toast.success(isEditingPayment ? 'Pengeluaran berhasil diperbarui' : 'Pengeluaran berhasil disimpan');
+      setEditingId(null);
+      setEditingType(null);
+      resetPaymentForm();
       fetchHistory();
       setActiveTab('history');
 
@@ -351,7 +530,7 @@ export default function CashBank() {
              Pengeluaran (Payment)
           </TabsTrigger>
           <TabsTrigger value="history">
-             Riwayat Transaksi
+             History Kas/Bank
           </TabsTrigger>
         </TabsList>
 
@@ -478,9 +657,17 @@ export default function CashBank() {
               </div>
 
               <div className="flex justify-end gap-3">
-                  <Button variant="outline">Batal</Button>
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      if (editingId && editingType === 'DEPOSIT') return cancelEdit();
+                      resetDepositForm();
+                    }}
+                  >
+                    Batal
+                  </Button>
                   <Button onClick={handleSaveDeposit} disabled={loading} className="bg-green-600 hover:bg-green-700 min-w-[150px]">
-                      {loading ? 'Menyimpan...' : 'Simpan Penerimaan'}
+                      {loading ? 'Menyimpan...' : (editingId && editingType === 'DEPOSIT' ? 'Update Penerimaan' : 'Simpan Penerimaan')}
                   </Button>
               </div>
             </CardContent>
@@ -610,9 +797,17 @@ export default function CashBank() {
               </div>
 
               <div className="flex justify-end gap-3">
-                  <Button variant="outline">Batal</Button>
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      if (editingId && editingType === 'PAYMENT') return cancelEdit();
+                      resetPaymentForm();
+                    }}
+                  >
+                    Batal
+                  </Button>
                   <Button onClick={handleSavePayment} disabled={loading} className="bg-red-600 hover:bg-red-700 min-w-[150px]">
-                      {loading ? 'Menyimpan...' : 'Simpan Pengeluaran'}
+                      {loading ? 'Menyimpan...' : (editingId && editingType === 'PAYMENT' ? 'Update Pengeluaran' : 'Simpan Pengeluaran')}
                   </Button>
               </div>
             </CardContent>
@@ -624,7 +819,7 @@ export default function CashBank() {
              <Card>
                 <CardHeader className="pb-3">
                     <div className="flex justify-between items-center">
-                        <CardTitle>Riwayat Jurnal Kas/Bank</CardTitle>
+                        <CardTitle>History Kas/Bank</CardTitle>
                         <Button variant="outline" size="sm" onClick={fetchHistory}><RefreshCw className="h-4 w-4 mr-2" /> Refresh</Button>
                     </div>
                 </CardHeader>
@@ -673,11 +868,12 @@ export default function CashBank() {
                                 <TableHead>Keterangan</TableHead>
                                 <TableHead className="text-right">Total</TableHead>
                                 <TableHead>Detail Akun</TableHead>
+                                <TableHead className="text-right">Aksi</TableHead>
                             </TableRow>
                         </TableHeader>
                         <TableBody>
                             {filteredHistory.length === 0 ? (
-                                <TableRow><TableCell colSpan={6} className="text-center py-8">Belum ada transaksi.</TableCell></TableRow>
+                                <TableRow><TableCell colSpan={7} className="text-center py-8">Belum ada transaksi.</TableCell></TableRow>
                             ) : (
                                 filteredHistory.map(t => (
                                     <TableRow key={t.id}>
@@ -695,6 +891,29 @@ export default function CashBank() {
                                                 <div key={idx}>{i.account?.account_code} - {i.account?.account_name} ({formatCurrency(i.debit || i.credit)})</div>
                                             ))}
                                             {t.items?.length > 2 && <div>...</div>}
+                                        </TableCell>
+                                        <TableCell className="text-right">
+                                            <div className="flex justify-end gap-2">
+                                              <Button
+                                                type="button"
+                                                variant="outline"
+                                                size="sm"
+                                                onClick={() => handleEditHistory(String(t.id))}
+                                                disabled={loading}
+                                              >
+                                                <Pencil className="h-4 w-4 mr-2" /> Edit
+                                              </Button>
+                                              <Button
+                                                type="button"
+                                                variant="outline"
+                                                size="sm"
+                                                className="text-red-600 border-red-200 hover:bg-red-50"
+                                                onClick={() => handleDeleteHistory(String(t.id))}
+                                                disabled={loading}
+                                              >
+                                                <Trash2 className="h-4 w-4 mr-2" /> Hapus
+                                              </Button>
+                                            </div>
                                         </TableCell>
                                     </TableRow>
                                 ))
