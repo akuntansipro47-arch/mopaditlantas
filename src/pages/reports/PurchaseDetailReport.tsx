@@ -11,6 +11,7 @@ import * as XLSX from 'xlsx';
 
 export default function PurchaseDetailReport() {
   const [data, setData] = useState<any[]>([]);
+  const [jobTypesMap, setJobTypesMap] = useState<Record<string, { job_name: string; job_group: string | null; job_code?: string | null }>>({});
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [supplierFilter, setSupplierFilter] = useState('ALL');
@@ -41,6 +42,9 @@ export default function PurchaseDetailReport() {
       let query = supabase
         .from('purchase_order_items')
         .select(`
+          line_type,
+          job_type_id,
+          service_name,
           quantity,
           unit_price,
           total_price,
@@ -90,6 +94,32 @@ export default function PurchaseDetailReport() {
         return poDate >= dateRange.start && poDate <= dateRange.end;
       });
 
+      const jobTypeIds = Array.from(
+        new Set(
+          (items || [])
+            .map((it: any) => String(it.job_type_id || '').trim())
+            .filter(Boolean)
+        )
+      );
+      if (jobTypeIds.length > 0) {
+        const { data: jobTypes, error: jobTypesErr } = await supabase
+          .from('job_types')
+          .select('id, job_name, job_group, job_code')
+          .in('id', jobTypeIds);
+        if (jobTypesErr) throw jobTypesErr;
+        const next: Record<string, { job_name: string; job_group: string | null; job_code?: string | null }> = {};
+        (jobTypes || []).forEach((jt: any) => {
+          next[String(jt.id)] = {
+            job_name: String(jt.job_name || '').trim(),
+            job_group: jt.job_group ?? null,
+            job_code: jt.job_code ?? null,
+          };
+        });
+        setJobTypesMap(next);
+      } else {
+        setJobTypesMap({});
+      }
+
       const poIds = Array.from(new Set(items.map((it: any) => String(it.purchase_orders?.id || '')).filter(Boolean)));
       const nextReceivedMap: Record<string, number> = {};
       if (poIds.length > 0) {
@@ -128,18 +158,56 @@ export default function PurchaseDetailReport() {
     }
   }
 
+  const isJasa = (item: any) => {
+    const lt = String(item?.line_type || '').toUpperCase();
+    if (lt === 'JASA') return true;
+    const hasJobType = Boolean(String(item?.job_type_id || '').trim());
+    if (hasJobType) return true;
+    const hasServiceName = Boolean(String(item?.service_name || '').trim());
+    return hasServiceName;
+  };
+
+  const getItemTypeLabel = (item: any) => {
+    if (isJasa(item)) return 'JASA';
+    return item.goods?.item_type || '-';
+  };
+
+  const getItemName = (item: any) => {
+    if (isJasa(item)) {
+      const jt = jobTypesMap[String(item.job_type_id || '')];
+      return jt?.job_name || String(item.service_name || '').trim() || 'Jasa';
+    }
+    return item.goods?.name || '';
+  };
+
+  const getItemCode = (item: any) => {
+    if (isJasa(item)) {
+      const jt = jobTypesMap[String(item.job_type_id || '')];
+      return jt?.job_code || '-';
+    }
+    return item.goods?.item_code || '';
+  };
+
+  const getUnitLabel = (item: any) => {
+    if (isJasa(item)) return '';
+    return item.goods?.unit || '';
+  };
+
   const receivedKey = (item: any) => {
+    if (isJasa(item)) return '';
     const poId = String(item.purchase_orders?.id || '');
     const gid = String(item.goods?.id || '');
     return poId && gid ? `${poId}:${gid}` : '';
   };
 
   const getReceivedQty = (item: any) => {
+    if (isJasa(item)) return Number(item.quantity || 0);
     const key = receivedKey(item);
     return key ? Number(receivedQtyMap[key] || 0) : 0;
   };
 
   const getReceiveStatus = (item: any) => {
+    if (isJasa(item)) return 'Sudah';
     const ordered = Number(item.quantity || 0);
     const received = getReceivedQty(item);
     if (ordered <= 0) return 'N/A';
@@ -156,16 +224,22 @@ export default function PurchaseDetailReport() {
   };
 
   const filteredData = data.filter(item => 
-    item.goods?.name.toLowerCase().includes(search.toLowerCase()) ||
-    item.purchase_orders?.po_number.toLowerCase().includes(search.toLowerCase()) ||
-    item.purchase_orders?.suppliers?.name.toLowerCase().includes(search.toLowerCase()) ||
+    getItemName(item).toLowerCase().includes(search.toLowerCase()) ||
+    String(item.purchase_orders?.po_number || '').toLowerCase().includes(search.toLowerCase()) ||
+    String(item.purchase_orders?.suppliers?.name || '').toLowerCase().includes(search.toLowerCase()) ||
     (item.purchase_orders?.work_orders?.wo_number || '').toLowerCase().includes(search.toLowerCase()) ||
     getVehicleGroupLabel(item).toLowerCase().includes(search.toLowerCase()) ||
     (item.purchase_orders?.work_orders?.vehicle_entries?.vehicles?.license_plate || '').toLowerCase().includes(search.toLowerCase()) ||
     (item.purchase_orders?.work_orders?.vehicle_entries?.vehicles?.brand_type || '').toLowerCase().includes(search.toLowerCase())
   );
 
-  const totalAmount = filteredData.reduce((sum, item) => sum + (item.total_price || 0), 0);
+  const getTotalPrice = (item: any) => {
+    const tp = Number(item.total_price || 0);
+    if (tp) return tp;
+    return Number(item.quantity || 0) * Number(item.unit_price || 0);
+  };
+
+  const totalAmount = filteredData.reduce((sum, item) => sum + getTotalPrice(item), 0);
   const totalReceivedValue = filteredData.reduce((sum, item) => {
     const ordered = Number(item.quantity || 0);
     const received = getReceivedQty(item);
@@ -184,15 +258,15 @@ export default function PurchaseDetailReport() {
       'Group': getVehicleGroupLabel(item),
       'Nopol': item.purchase_orders?.work_orders?.vehicle_entries?.vehicles?.license_plate || '-',
       'Nama Kendaraan': item.purchase_orders?.work_orders?.vehicle_entries?.vehicles?.brand_type || '-',
-      'Tipe': item.goods?.item_type || '-',
-      'Kode Barang': item.goods?.item_code,
-      'Nama Barang': item.goods?.name,
+      'Tipe': getItemTypeLabel(item),
+      'Kode Barang': getItemCode(item),
+      'Nama Barang': getItemName(item),
       'Qty': item.quantity,
       'Qty Diterima': getReceivedQty(item),
       'Status Terima': getReceiveStatus(item),
-      'Satuan': item.goods?.unit,
+      'Satuan': getUnitLabel(item),
       'Harga Satuan': item.unit_price,
-      'Total Harga': item.total_price
+      'Total Harga': getTotalPrice(item)
     }));
 
     const ws = XLSX.utils.json_to_sheet(flattenData);
@@ -204,7 +278,7 @@ export default function PurchaseDetailReport() {
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row justify-between gap-4">
-        <h2 className="text-2xl font-bold">Laporan Rincian Pembelian</h2>
+        <h2 className="text-2xl font-bold">Laporan Rincian Pembelian (Detail)</h2>
         <div className="flex flex-wrap gap-2">
            <div className="flex items-center gap-2 bg-white border border-gray-300 p-1.5 rounded-md shadow-sm">
               <Calendar className="h-4 w-4 text-gray-500 ml-2" />
@@ -290,16 +364,16 @@ export default function PurchaseDetailReport() {
                       <div className="font-medium">{item.purchase_orders?.work_orders?.vehicle_entries?.vehicles?.license_plate || '-'}</div>
                       <div className="text-xs text-gray-500">{item.purchase_orders?.work_orders?.vehicle_entries?.vehicles?.brand_type || '-'}</div>
                     </TableCell>
-                    <TableCell>{item.goods?.item_type || '-'}</TableCell>
+                    <TableCell>{getItemTypeLabel(item)}</TableCell>
                     <TableCell>
-                      <div className="font-medium">{item.goods?.name}</div>
-                      <div className="text-xs text-gray-500">{item.goods?.item_code}</div>
+                      <div className="font-medium">{getItemName(item)}</div>
+                      <div className="text-xs text-gray-500">{getItemCode(item)}</div>
                     </TableCell>
                     <TableCell className="text-center">
-                      {item.quantity} <span className="text-xs text-gray-500">{item.goods?.unit}</span>
+                      {item.quantity} <span className="text-xs text-gray-500">{getUnitLabel(item)}</span>
                     </TableCell>
                     <TableCell className="text-center">
-                      {getReceivedQty(item)} <span className="text-xs text-gray-500">{item.goods?.unit}</span>
+                      {getReceivedQty(item)} <span className="text-xs text-gray-500">{getUnitLabel(item)}</span>
                     </TableCell>
                     <TableCell>
                       {(() => {
@@ -316,7 +390,7 @@ export default function PurchaseDetailReport() {
                       })()}
                     </TableCell>
                     <TableCell className="text-right">{formatCurrency(item.unit_price)}</TableCell>
-                    <TableCell className="text-right font-bold">{formatCurrency(item.total_price)}</TableCell>
+                    <TableCell className="text-right font-bold">{formatCurrency(getTotalPrice(item))}</TableCell>
                   </TableRow>
                 ))
               )}
