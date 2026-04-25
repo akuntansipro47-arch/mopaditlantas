@@ -30,6 +30,7 @@ type ReportData = {
 type ReportItem = {
     item_type: 'JOB' | 'PART';
     item_name: string;
+    value_only: boolean;
     qty: number;
     unit_price: number;
     total_price: number;
@@ -146,7 +147,7 @@ const WorkOrderDetailReport = () => {
                 supabase.from('vehicle_entries').select('id, entry_date, vehicle_id').in('id', vehicleEntryIds),
                 supabase
                     .from('vehicle_entry_spareparts')
-                    .select('vehicle_entry_id, goods_id, item_name, qty, estimated_price')
+                    .select('vehicle_entry_id, goods_id, item_name, qty, estimated_price, value_only')
                     .in('vehicle_entry_id', vehicleEntryIds),
                 supabase
                     .from('vehicle_entry_jobs')
@@ -519,6 +520,7 @@ const WorkOrderDetailReport = () => {
                         const reportItem: ReportItem = {
                             item_type: type,
                             item_name: itemName,
+                            value_only: Boolean((item as any)?.value_only),
                             qty, unit_price: sellingPrice, total_price: totalSellingPrice,
                             hpp: hppInfo.hpp, total_hpp: totalHpp, profit: totalSellingPrice - totalHpp,
                             po_info: hppInfo.po_info,
@@ -615,6 +617,7 @@ const WorkOrderDetailReport = () => {
                 'Grup Kendaraan': getVehicleGroupLabel(entry.vehicle_type, entry.service_group),
                 'Tipe Item': item.item_type === 'JOB' ? 'Jasa' : 'Sparepart',
                 'Nama Item': item.item_name,
+                        'Nilai Saja': item.value_only ? 'Ya' : 'Tidak',
                 'Qty': item.qty,
                 'Harga Satuan': item.unit_price,
                 'Total Pagu': item.total_price,
@@ -735,6 +738,7 @@ const WorkOrderDetailReport = () => {
                                         <TableHead>Grup</TableHead>
                                         <TableHead>Tipe Item</TableHead>
                                         <TableHead>Nama Item</TableHead>
+                                        <TableHead>Nilai Saja</TableHead>
                                         <TableHead className="text-right">Qty</TableHead>
                                         <TableHead className="text-right">Harga Satuan</TableHead>
                                         <TableHead className="text-right">Total Pagu</TableHead>
@@ -766,6 +770,7 @@ const WorkOrderDetailReport = () => {
                                                     
                                                     <TableCell>{item.item_type === 'JOB' ? 'Jasa' : 'Sparepart'}</TableCell>
                                                     <TableCell>{item.item_name}</TableCell>
+                                                    <TableCell>{item.value_only ? 'Ya' : 'Tidak'}</TableCell>
                                                     <TableCell className="text-right">{item.qty}</TableCell>
                                                     <TableCell className="text-right">{item.unit_price.toLocaleString('id-ID')}</TableCell>
                                                     <TableCell className="text-right">{item.total_price.toLocaleString('id-ID')}</TableCell>
@@ -778,7 +783,7 @@ const WorkOrderDetailReport = () => {
                                         ))
                                     ) : (
                                         <TableRow>
-                                            <TableCell colSpan={14} className="h-24 text-center">
+                                            <TableCell colSpan={15} className="h-24 text-center">
                                                 Tidak ada data untuk ditampilkan.
                                             </TableCell>
                                         </TableRow>
