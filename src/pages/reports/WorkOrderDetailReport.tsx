@@ -15,6 +15,7 @@ type ReportData = {
     vehicle_entry_id: string;
     entry_date: string;
     wo_number: string;
+    po_payment_summary: string;
     plate_number: string;
     brand_type: string | null;
     vehicle_type: string | null;
@@ -143,8 +144,14 @@ const WorkOrderDetailReport = () => {
                 estJobsResult,
             ] = await Promise.allSettled([
                 supabase.from('vehicle_entries').select('id, entry_date, vehicle_id').in('id', vehicleEntryIds),
-                supabase.from('vehicle_entry_spareparts').select('*').in('vehicle_entry_id', vehicleEntryIds),
-                supabase.from('vehicle_entry_jobs').select('*').in('vehicle_entry_id', vehicleEntryIds),
+                supabase
+                    .from('vehicle_entry_spareparts')
+                    .select('vehicle_entry_id, goods_id, item_name, qty, estimated_price')
+                    .in('vehicle_entry_id', vehicleEntryIds),
+                supabase
+                    .from('vehicle_entry_jobs')
+                    .select('vehicle_entry_id, job_type_id, notes, qty, estimated_price')
+                    .in('vehicle_entry_id', vehicleEntryIds),
             ]);
 
             // Helper to check for errors and throw them
@@ -164,48 +171,104 @@ const WorkOrderDetailReport = () => {
             const estimationJobs = checkError(estJobsResult, 'estimasi jasa');
 
             // Step 3: Fetch all necessary data in parallel
-            const allGoodsIds = estimationParts?.map(p => p.goods_id).filter(Boolean) || [];
-            const allJobTypeIds = estimationJobs?.map(j => j.job_type_id).filter(Boolean) || [];
+            const allGoodsIds = Array.from(new Set((estimationParts || []).map((p: any) => p.goods_id).filter(Boolean)));
+            const allJobTypeIds = Array.from(new Set((estimationJobs || []).map((j: any) => j.job_type_id).filter(Boolean)));
             const allVehicleIds = vehicleEntriesData?.map(ve => ve.vehicle_id).filter(Boolean) || [];
 
             const [
-                { data: receivedPoItems, error: receivedPoError },
+                { data: receivedPoItemsWo, error: receivedPoWoError },
+                { data: receivedPoItemsFallback, error: receivedPoFallbackError },
+                { data: purchaseOrdersWo, error: purchaseOrdersWoError },
                 { data: vehiclesData, error: vehiclesError },
                 { data: jobTypesData, error: jobTypesError },
-                { data: goodsData, error: goodsError },
             ] = await Promise.all([
                 supabase
                     .from('purchase_order_items')
-                    .select('goods_id, job_type_id, service_name, line_type, quantity, unit_price, purchase_orders!inner(id, po_number, created_at, status, work_order_id)')
+                    .select('goods_id, job_type_id, service_name, line_type, quantity, unit_price, purchase_orders!inner(id, po_number, status, work_order_id)')
                     .in('purchase_orders.status', ['RECEIVED_PART', 'RECEIVED_FULL'])
-                    .not('unit_price', 'is', null),
+                    .in('purchase_orders.work_order_id', workOrderIds)
+                    .not('unit_price', 'is', null)
+                    .limit(20000),
+                allGoodsIds.length > 0
+                    ? supabase
+                        .from('purchase_order_items')
+                        .select('goods_id, quantity, unit_price, purchase_orders!inner(id, po_number, status)')
+                        .in('purchase_orders.status', ['RECEIVED_PART', 'RECEIVED_FULL'])
+                        .in('goods_id', allGoodsIds)
+                        .not('unit_price', 'is', null)
+                        .order('created_at', { ascending: false })
+                        .limit(5000)
+                    : Promise.resolve({ data: [], error: null } as any),
+                supabase
+                    .from('purchase_orders')
+                    .select('id, po_number, work_order_id')
+                    .in('work_order_id', workOrderIds),
                 supabase
                     .from('vehicles')
                     .select('id, license_plate, brand_type, vehicle_type, owner_name')
                     .in('id', allVehicleIds),
                 supabase.from('job_types').select('id, job_name, hpp, selling_price').in('id', allJobTypeIds),
-                supabase.from('goods').select('id, name'), // Fetch all goods for the name->id map
             ]);
 
-            if (receivedPoError) throw new Error(`Gagal mengambil data HPP: ${receivedPoError.message}`);
+            if (receivedPoWoError) throw new Error(`Gagal mengambil data HPP (PO WO): ${receivedPoWoError.message}`);
+            if (receivedPoFallbackError) throw new Error(`Gagal mengambil data HPP (Fallback): ${receivedPoFallbackError.message}`);
+            if (purchaseOrdersWoError) throw new Error(`Gagal mengambil data PO WO: ${purchaseOrdersWoError.message}`);
             if (vehiclesError) throw new Error(`Gagal mengambil data kendaraan: ${vehiclesError.message}`);
             if (jobTypesError) throw new Error(`Gagal mengambil data jenis pekerjaan: ${jobTypesError.message}`);
-            if (goodsError) throw new Error(`Gagal mengambil data barang: ${goodsError.message}`);
+
+            const missingGoodsNames = Array.from(
+                new Set(
+                    (estimationParts || [])
+                        .filter((p: any) => !p.goods_id && String(p.item_name || '').trim())
+                        .map((p: any) => String(p.item_name || '').trim())
+                )
+            );
+
+            const goodsRows: any[] = [];
+            if (allGoodsIds.length > 0) {
+                const { data, error } = await supabase.from('goods').select('id, name').in('id', allGoodsIds);
+                if (error) throw new Error(`Gagal mengambil data barang: ${error.message}`);
+                goodsRows.push(...(data || []));
+            }
+            if (missingGoodsNames.length > 0) {
+                const { data, error } = await supabase.from('goods').select('id, name').in('name', missingGoodsNames);
+                if (error) throw new Error(`Gagal mengambil data barang: ${error.message}`);
+                goodsRows.push(...(data || []));
+            }
+
+            const goodsData = Array.from(new Map(goodsRows.map((g: any) => [String(g.id), g])).values());
 
             // Step 4: Pre-process data into fast-lookup maps
             const goodsMap = new Map(goodsData.map(g => [g.id, g.name]));
             const goodsIdByNameMap = new Map(goodsData.map(g => [g.name, g.id]));
             
             const normalizeText = (s: string) => s.toLowerCase().replace(/\s+/g, ' ').trim();
-            const receivedItems = (receivedPoItems || []) as any[];
+            const receivedItems = ([] as any[]).concat(receivedPoItemsWo || [], receivedPoItemsFallback || []);
             const poIdByNumber = new Map<string, string>();
-            const poNumbers = new Set<string>();
+            const woPoIds = new Map<string, Set<string>>();
             receivedItems.forEach((it) => {
                 const poId = String(it.purchase_orders?.id || '').trim();
                 const poNumber = String(it.purchase_orders?.po_number || '').trim();
                 if (poId && poNumber) {
                     poIdByNumber.set(poNumber, poId);
-                    poNumbers.add(poNumber);
+                    const woId = String(it.purchase_orders?.work_order_id || '').trim();
+                    if (woId) {
+                        const set = woPoIds.get(woId) || new Set<string>();
+                        set.add(poId);
+                        woPoIds.set(woId, set);
+                    }
+                }
+            });
+
+            (purchaseOrdersWo || []).forEach((po: any) => {
+                const poId = String(po.id || '').trim();
+                const poNumber = String(po.po_number || '').trim();
+                const woId = String(po.work_order_id || '').trim();
+                if (poId && poNumber) poIdByNumber.set(poNumber, poId);
+                if (poId && woId) {
+                    const set = woPoIds.get(woId) || new Set<string>();
+                    set.add(poId);
+                    woPoIds.set(woId, set);
                 }
             });
 
@@ -254,6 +317,20 @@ const WorkOrderDetailReport = () => {
                     }
                 }
             }
+
+            const woPoPaymentSummary = new Map<string, string>();
+            workOrderIds.forEach((woId) => {
+                const poSet = woPoIds.get(String(woId)) || new Set<string>();
+                const counts: Record<string, number> = {};
+                Array.from(poSet).forEach((poId) => {
+                    const st = poPaymentStatusById.get(String(poId)) || 'Belum Ditagih';
+                    counts[st] = (counts[st] || 0) + 1;
+                });
+                const parts = ['Lunas', 'Belum Lunas', 'Bayar Sebagian', 'Belum Ditagih']
+                    .filter((k) => (counts[k] || 0) > 0)
+                    .map((k) => `${k}: ${counts[k]}`);
+                woPoPaymentSummary.set(String(woId), parts.length > 0 ? `PO ${parts.join(' | ')}` : '');
+            });
 
             const getPoNumberLabel = (poNumber: string) => {
                 const poId = poIdByNumber.get(poNumber);
@@ -471,6 +548,7 @@ const WorkOrderDetailReport = () => {
                     vehicle_entry_id: wo.vehicle_entry_id,
                     entry_date: vehicleEntry ? format(new Date(vehicleEntry.entry_date), 'dd-MM-yyyy') : '',
                     wo_number: wo.wo_number,
+                    po_payment_summary: woPoPaymentSummary.get(String(wo.id)) || '',
                     plate_number: vehicle?.license_plate || 'N/A',
                     brand_type: vehicle?.brand_type || null,
                     vehicle_type: vehicle?.vehicle_type || null,
@@ -673,7 +751,12 @@ const WorkOrderDetailReport = () => {
                                                 <TableRow key={`${entry.wo_id}-${itemIndex}`}>
                                                     {itemIndex === 0 && (
                                                         <TableCell rowSpan={entry.items.length} className="sticky left-0 bg-white z-10 font-medium align-top w-[200px]">
-                                                            {entry.wo_number}
+                                                            <div className="flex flex-col gap-1">
+                                                                <div>{entry.wo_number}</div>
+                                                                {entry.po_payment_summary ? (
+                                                                    <div className="text-xs text-muted-foreground whitespace-normal">{entry.po_payment_summary}</div>
+                                                                ) : null}
+                                                            </div>
                                                         </TableCell>
                                                     )}
                                                     {itemIndex === 0 && <TableCell rowSpan={entry.items.length} className="align-top">{entry.entry_date}</TableCell>}
