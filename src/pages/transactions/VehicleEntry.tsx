@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
 import { Database } from '@/types/supabase';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -46,6 +46,26 @@ type SparepartDraft = {
   value_only: boolean;
 };
 
+type EntryAttachment = {
+  id: string;
+  vehicle_entry_id: string;
+  file_name: string;
+  mime_type: string;
+  data_url: string;
+  size_original?: number | null;
+  size_stored?: number | null;
+  created_at?: string | null;
+};
+
+type PendingAttachment = {
+  temp_id: string;
+  file_name: string;
+  mime_type: string;
+  data_url: string;
+  size_original?: number;
+  size_stored?: number;
+};
+
 export default function VehicleEntryPage() {
   const { user } = useAuth();
   const canAdjustEstimationPrice = String(user?.role || '').toUpperCase().includes('ADMIN');
@@ -88,6 +108,10 @@ export default function VehicleEntryPage() {
   });
 
   const [entryJobs, setEntryJobs] = useState<{ group: string, job_id: string; job_name?: string; notes: string; value_only: boolean; estimated_price: number; spareparts?: SparepartDraft[]; sparepart_enabled?: boolean }[]>([]);
+
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const [attachments, setAttachments] = useState<EntryAttachment[]>([]);
+  const [pendingAttachments, setPendingAttachments] = useState<PendingAttachment[]>([]);
   
   // Sparepart Dialog State
   const [isSparepartDialogOpen, setIsSparepartDialogOpen] = useState(false);
@@ -349,6 +373,124 @@ export default function VehicleEntryPage() {
     setPartSearchQuery('');
     setIsEditing(false);
     setCurrentId(null);
+    setAttachments([]);
+    setPendingAttachments([]);
+  };
+
+  const toDataUrl = (file: File) =>
+    new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result || ''));
+      reader.onerror = () => reject(reader.error || new Error('Gagal membaca file'));
+      reader.readAsDataURL(file);
+    });
+
+  const compressImageDataUrl = (dataUrl: string) =>
+    new Promise<string>((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => {
+        const maxSide = 1600;
+        const w = img.width || 0;
+        const h = img.height || 0;
+        if (!w || !h) {
+          resolve(dataUrl);
+          return;
+        }
+        const scale = Math.min(1, maxSide / Math.max(w, h));
+        const tw = Math.max(1, Math.round(w * scale));
+        const th = Math.max(1, Math.round(h * scale));
+        const canvas = document.createElement('canvas');
+        canvas.width = tw;
+        canvas.height = th;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+          resolve(dataUrl);
+          return;
+        }
+        ctx.drawImage(img, 0, 0, tw, th);
+        resolve(canvas.toDataURL('image/jpeg', 0.7));
+      };
+      img.onerror = () => reject(new Error('Gagal memproses gambar'));
+      img.src = dataUrl;
+    });
+
+  const buildPendingAttachment = async (file: File): Promise<PendingAttachment> => {
+    const mime = String(file.type || '').toLowerCase();
+    const originalSize = file.size;
+    const rawDataUrl = await toDataUrl(file);
+    const storedDataUrl = mime.startsWith('image/') ? await compressImageDataUrl(rawDataUrl) : rawDataUrl;
+    const storedSize = storedDataUrl.length;
+    return {
+      temp_id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+      file_name: file.name || 'attachment',
+      mime_type: mime || 'application/octet-stream',
+      data_url: storedDataUrl,
+      size_original: originalSize,
+      size_stored: storedSize,
+    };
+  };
+
+  const fetchAttachments = async (entryId: string) => {
+    try {
+      const { data, error } = await supabase
+        .from('vehicle_entry_attachments' as any)
+        .select('id, vehicle_entry_id, file_name, mime_type, data_url, size_original, size_stored, created_at')
+        .eq('vehicle_entry_id', entryId)
+        .order('created_at', { ascending: false });
+      if (error) throw error;
+      setAttachments((data as any) || []);
+    } catch (e: any) {
+      const msg = String(e?.message || '');
+      if (msg.toLowerCase().includes('relation') || msg.toLowerCase().includes('does not exist')) {
+        toast.error("DB belum siap: tabel 'vehicle_entry_attachments' belum ada. Jalankan migration 20260425_create_vehicle_entry_attachments.sql di Supabase.");
+      } else {
+        toast.error('Gagal memuat lampiran: ' + msg);
+      }
+      setAttachments([]);
+    }
+  };
+
+  const handlePickFiles = () => fileInputRef.current?.click();
+
+  const handleFilesSelected = async (files: FileList | null) => {
+    if (!files || files.length === 0) return;
+    const arr = Array.from(files);
+    const accepted = arr.filter((f) => {
+      const mime = String(f.type || '').toLowerCase();
+      if (mime.startsWith('image/')) return true;
+      if (mime === 'application/pdf') return true;
+      return false;
+    });
+    if (accepted.length === 0) {
+      toast.error('Format file tidak didukung. Gunakan JPEG/PNG atau PDF.');
+      return;
+    }
+    try {
+      setLoading(true);
+      const built = await Promise.all(accepted.map(buildPendingAttachment));
+      setPendingAttachments((prev) => [...built, ...prev]);
+    } catch (e: any) {
+      toast.error('Gagal memproses lampiran: ' + String(e?.message || e));
+    } finally {
+      setLoading(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
+
+  const handleRemovePendingAttachment = (tempId: string) => {
+    setPendingAttachments((prev) => prev.filter((x) => x.temp_id !== tempId));
+  };
+
+  const handleRemoveAttachment = async (id: string) => {
+    if (!confirm('Hapus lampiran ini?')) return;
+    try {
+      const { error } = await supabase.from('vehicle_entry_attachments' as any).delete().eq('id', id);
+      if (error) throw error;
+      setAttachments((prev) => prev.filter((x) => x.id !== id));
+      toast.success('Lampiran dihapus');
+    } catch (e: any) {
+      toast.error('Gagal menghapus lampiran: ' + String(e?.message || e));
+    }
   };
 
   const handlePrintEntry = (id: string) => {
@@ -470,6 +612,7 @@ export default function VehicleEntryPage() {
     setIsEditing(true);
     setCurrentId(item.id);
     setIsDialogOpen(true);
+    await fetchAttachments(item.id);
   };
 
   const handleAddJob = () => {
@@ -685,6 +828,33 @@ export default function VehicleEntryPage() {
       }
 
       toast.success(isEditing ? 'Entry diperbarui' : 'Entry kendaraan berhasil');
+
+      if (targetId && pendingAttachments.length > 0) {
+        try {
+          const { error: tableErr } = await supabase
+            .from('vehicle_entry_attachments' as any)
+            .select('id')
+            .limit(1);
+          if (tableErr) throw tableErr;
+          const payload = pendingAttachments.map((a) => ({
+            vehicle_entry_id: targetId,
+            file_name: a.file_name,
+            mime_type: a.mime_type,
+            data_url: a.data_url,
+            size_original: a.size_original,
+            size_stored: a.size_stored,
+          }));
+          const { error: insErr } = await supabase.from('vehicle_entry_attachments' as any).insert(payload);
+          if (insErr) throw insErr;
+        } catch (e: any) {
+          const msg = String(e?.message || '');
+          if (msg.toLowerCase().includes('relation') || msg.toLowerCase().includes('does not exist')) {
+            toast.error("Lampiran gagal disimpan: tabel 'vehicle_entry_attachments' belum ada. Jalankan migration 20260425_create_vehicle_entry_attachments.sql di Supabase.");
+          } else {
+            toast.error('Lampiran gagal disimpan: ' + msg);
+          }
+        }
+      }
       
       setIsDialogOpen(false);
       resetForm();
@@ -1067,6 +1237,65 @@ export default function VehicleEntryPage() {
                   <div className="space-y-2">
                     <Label>Catatan / Keluhan</Label>
                     <Input name="notes" value={formData.notes} onChange={handleInputChange} placeholder="Deskripsi kerusakan..." />
+                  </div>
+
+                  <div className="space-y-2 border p-3 rounded-md bg-slate-50">
+                    <div className="flex items-center justify-between">
+                      <Label>Lampiran Dokumen</Label>
+                      <div className="flex items-center gap-2">
+                        <input
+                          ref={fileInputRef}
+                          type="file"
+                          accept="image/*,application/pdf"
+                          multiple
+                          className="hidden"
+                          onChange={(e) => handleFilesSelected(e.target.files)}
+                        />
+                        <Button type="button" variant="outline" size="sm" onClick={handlePickFiles}>
+                          Tambah Lampiran
+                        </Button>
+                      </div>
+                    </div>
+
+                    {(pendingAttachments.length === 0 && attachments.length === 0) ? (
+                      <div className="text-xs text-muted-foreground italic">Belum ada lampiran.</div>
+                    ) : (
+                      <div className="space-y-2">
+                        {pendingAttachments.map((a) => (
+                          <div key={a.temp_id} className="flex items-center justify-between gap-2 bg-white border rounded-md px-2 py-1">
+                            <div className="min-w-0">
+                              <div className="text-sm font-medium truncate">{a.file_name}</div>
+                              <div className="text-[11px] text-muted-foreground">{a.mime_type}</div>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <Button type="button" variant="outline" size="sm" onClick={() => window.open(a.data_url, '_blank')}>
+                                Buka
+                              </Button>
+                              <Button type="button" variant="ghost" size="sm" className="text-red-600" onClick={() => handleRemovePendingAttachment(a.temp_id)}>
+                                Hapus
+                              </Button>
+                            </div>
+                          </div>
+                        ))}
+
+                        {attachments.map((a) => (
+                          <div key={a.id} className="flex items-center justify-between gap-2 bg-white border rounded-md px-2 py-1">
+                            <div className="min-w-0">
+                              <div className="text-sm font-medium truncate">{a.file_name}</div>
+                              <div className="text-[11px] text-muted-foreground">{a.mime_type}</div>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <Button type="button" variant="outline" size="sm" onClick={() => window.open(a.data_url, '_blank')}>
+                                Buka
+                              </Button>
+                              <Button type="button" variant="ghost" size="sm" className="text-red-600" onClick={() => handleRemoveAttachment(a.id)}>
+                                Hapus
+                              </Button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
                   
                   <div className="flex items-center space-x-2 border p-3 rounded-md bg-slate-50">
