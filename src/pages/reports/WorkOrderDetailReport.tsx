@@ -150,7 +150,7 @@ const WorkOrderDetailReport = () => {
                     .in('vehicle_entry_id', vehicleEntryIds),
                 supabase
                     .from('vehicle_entry_jobs')
-                    .select('vehicle_entry_id, job_type_id, notes, qty, estimated_price')
+                    .select('vehicle_entry_id, job_type_id, estimated_price, value_only')
                     .in('vehicle_entry_id', vehicleEntryIds),
             ]);
 
@@ -493,7 +493,7 @@ const WorkOrderDetailReport = () => {
                     const jobTypeId = !isPart && item.job_type_id ? String(item.job_type_id) : '';
                     const itemName = isPart
                         ? (item.item_name || goodsMap.get(goodsId))
-                        : (jobTypesMap.get(jobTypeId) || String(item.notes || '').trim() || 'Jasa Umum');
+                        : (jobTypesMap.get(jobTypeId) || 'Jasa Umum');
 
                     // Workaround: If goods_id is missing from estimation, try to find it by item_name
                     if (isPart && !goodsId && itemName) {
