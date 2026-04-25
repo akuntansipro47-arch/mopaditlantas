@@ -109,9 +109,16 @@ const navigation: NavItem[] = [
       { name: 'Hutang Supplier', href: '/reports?tab=supplier_payable', icon: Wallet, key: 'report_supplier_payable' },
       { name: 'Riwayat Bayar Hutang', href: '/reports?tab=payment_history_ap', icon: Wallet, key: 'report_payment_history_ap' },
       { type: 'group', name: 'Laporan Operasional' },
+      { name: 'Rekap Barang Keluar', href: '/reports?tab=issue', icon: PackageMinus, key: 'report_issue' },
+      { name: 'Laporan Detail Barang Keluar', href: '/reports?tab=issuedetail', icon: PackageMinus, key: 'report_issue' },
+      { name: 'Laporan Unit Masuk', href: '/reports?tab=vehicle_entry', icon: FileInput, key: 'report_vehicle_entry' },
+      { name: 'Laporan Estimasi vs Realisasi', href: '/reports?tab=estimation', icon: BarChart3, key: 'report_estimation' },
+      { name: 'Laporan Estimasi Part Belum PO', href: '/reports?tab=estimation_unpo', icon: ShoppingCart, key: 'report_unordered_parts' },
       { name: 'Detail WO', href: '/reports?tab=wodetail', icon: ClipboardCheck, key: 'report_wo' },
       { type: 'group', name: 'Laporan Persediaan' },
       { name: 'Stok Barang', href: '/reports?tab=stock', icon: Package, key: 'report_stock' },
+      { name: 'Nilai Persediaan', href: '/reports?tab=inventory_value', icon: Package, key: 'report_stock' },
+      { name: 'History Barang', href: '/reports?tab=item_history', icon: Package, key: 'report_stock' },
     ]
   },
 ];
