@@ -64,11 +64,21 @@ export default function CashBank() {
   // --- History State ---
   const [history, setHistory] = useState<any[]>([]);
   const [historySearch, setHistorySearch] = useState('');
+  const [historyDateRange, setHistoryDateRange] = useState({
+    start: new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0],
+    end: new Date().toISOString().split('T')[0],
+  });
 
   useEffect(() => {
     fetchAccounts();
     fetchHistory();
   }, []);
+
+  useEffect(() => {
+    if (activeTab !== 'history') return;
+    fetchHistory();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab, historyDateRange.start, historyDateRange.end]);
 
   useEffect(() => {
     const onFocus = () => fetchAccounts();
@@ -99,16 +109,22 @@ export default function CashBank() {
   async function fetchHistory() {
     setLoading(true);
     try {
-      const { data, error } = await supabase
+      let query = supabase
         .from('journal_entries')
         .select(`
           *,
           items:journal_entry_items (
-             debit, credit, 
+             debit, credit,
+             description,
              account:chart_of_accounts (account_name, account_code)
           )
         `)
         .order('entry_date', { ascending: false });
+
+      if (historyDateRange.start) query = query.gte('entry_date', historyDateRange.start);
+      if (historyDateRange.end) query = query.lte('entry_date', historyDateRange.end);
+
+      const { data, error } = await query;
 
       if (error) throw error;
       setHistory(data || []);
@@ -119,6 +135,32 @@ export default function CashBank() {
       setLoading(false);
     }
   }
+
+  const filteredHistory = history.filter((t: any) => {
+    const q = historySearch.trim().toLowerCase();
+    if (!q) return true;
+    const voucher = String(t.voucher_no || '').toLowerCase();
+    const desc = String(t.description || '').toLowerCase();
+    const type = String(t.entry_type || '').toLowerCase();
+    const amt = String(t.total_amount ?? '').toLowerCase();
+    const items = Array.isArray(t.items) ? t.items : [];
+    const itemText = items
+      .map((i: any) => {
+        const a = i.account || {};
+        const code = String(a.account_code || '').toLowerCase();
+        const name = String(a.account_name || '').toLowerCase();
+        const memo = String(i.description || '').toLowerCase();
+        return `${code} ${name} ${memo}`.trim();
+      })
+      .join(' ');
+    return (
+      voucher.includes(q) ||
+      desc.includes(q) ||
+      type.includes(q) ||
+      amt.includes(q) ||
+      itemText.includes(q)
+    );
+  });
 
   // Filter Accounts
   // Cash/Bank only for Header
@@ -587,6 +629,41 @@ export default function CashBank() {
                     </div>
                 </CardHeader>
                 <CardContent>
+                    <div className="flex flex-wrap items-end gap-3 mb-4">
+                      <div className="flex items-center gap-2 bg-white border border-gray-300 p-1.5 rounded-md shadow-sm">
+                        <CalendarIcon className="h-4 w-4 text-gray-500 ml-2" />
+                        <Input
+                          type="date"
+                          className="border-0 h-9 w-36 focus-visible:ring-0 cursor-pointer"
+                          value={historyDateRange.start}
+                          onChange={(e) => setHistoryDateRange({ ...historyDateRange, start: e.target.value })}
+                        />
+                        <span className="text-gray-400 font-medium">-</span>
+                        <Input
+                          type="date"
+                          className="border-0 h-9 w-36 focus-visible:ring-0 cursor-pointer"
+                          value={historyDateRange.end}
+                          onChange={(e) => setHistoryDateRange({ ...historyDateRange, end: e.target.value })}
+                        />
+                      </div>
+                      <div className="relative w-72">
+                        <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+                        <Input
+                          placeholder="Cari voucher/keterangan/akun..."
+                          className="pl-8"
+                          value={historySearch}
+                          onChange={(e) => setHistorySearch(e.target.value)}
+                        />
+                      </div>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={fetchHistory}
+                        disabled={loading}
+                      >
+                        <RefreshCw className="h-4 w-4 mr-2" /> Terapkan
+                      </Button>
+                    </div>
                     <Table>
                         <TableHeader>
                             <TableRow>
@@ -599,10 +676,10 @@ export default function CashBank() {
                             </TableRow>
                         </TableHeader>
                         <TableBody>
-                            {history.length === 0 ? (
+                            {filteredHistory.length === 0 ? (
                                 <TableRow><TableCell colSpan={6} className="text-center py-8">Belum ada transaksi.</TableCell></TableRow>
                             ) : (
-                                history.map(t => (
+                                filteredHistory.map(t => (
                                     <TableRow key={t.id}>
                                         <TableCell>{formatDate(t.entry_date)}</TableCell>
                                         <TableCell className="font-mono text-xs">{t.voucher_no}</TableCell>
