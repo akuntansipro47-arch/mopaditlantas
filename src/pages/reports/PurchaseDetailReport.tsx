@@ -119,11 +119,22 @@ export default function PurchaseDetailReport() {
         )
       );
       if (jobTypeIds.length > 0) {
-        const { data: jobTypes, error: jobTypesErr } = await supabase
+        let jobTypes: any[] = [];
+        const attempt1 = await supabase
           .from('job_types')
           .select('id, job_name, job_group, job_code')
           .in('id', jobTypeIds);
-        if (jobTypesErr) throw jobTypesErr;
+        if (!attempt1.error) {
+          jobTypes = (attempt1.data as any[]) || [];
+        } else {
+          const attempt2 = await supabase
+            .from('job_types')
+            .select('id, job_name, job_group')
+            .in('id', jobTypeIds);
+          if (attempt2.error) throw attempt2.error;
+          jobTypes = (attempt2.data as any[]) || [];
+        }
+
         const next: Record<string, { job_name: string; job_group: string | null; job_code?: string | null }> = {};
         (jobTypes || []).forEach((jt: any) => {
           next[String(jt.id)] = {
