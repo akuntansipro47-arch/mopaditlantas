@@ -8,6 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Download, Calendar, Search } from 'lucide-react';
 import { formatCurrency, formatDate } from '@/lib/utils';
 import * as XLSX from 'xlsx';
+import { toast } from 'sonner';
 
 export default function PurchaseDetailReport() {
   const [data, setData] = useState<any[]>([]);
@@ -38,61 +39,77 @@ export default function PurchaseDetailReport() {
   async function fetchData() {
     setLoading(true);
     try {
-      // Fetch POs that are RECEIVED (Full or Part) to get the purchased items
-      let query = supabase
-        .from('purchase_order_items')
+      let poQuery = supabase
+        .from('purchase_orders')
         .select(`
-          line_type,
-          job_type_id,
-          service_name,
-          quantity,
-          unit_price,
-          total_price,
-          goods (id, name, item_code, unit, item_type),
-          purchase_orders (
+          id,
+          po_number,
+          po_date,
+          status,
+          created_at,
+          suppliers (name, id),
+          work_orders (
             id,
-            po_number,
-            po_date,
-            status,
-            suppliers (name, id),
-            work_orders (
-              id,
-              wo_number,
-              vehicle_entries (
-                service_group,
-                vehicles (license_plate, brand_type, vehicle_type)
-              )
+            wo_number,
+            vehicle_entries (
+              service_group,
+              vehicles (license_plate, brand_type, vehicle_type)
             )
           )
         `)
-        // Filter by PO Date via the relationship
-        // Note: filtering nested relations in Supabase can be tricky. 
-        // We often have to filter on the parent. 
-        // But here we start from items.
-        // Let's try filtering on the join.
-        .gte('purchase_orders.po_date', dateRange.start)
-        .lte('purchase_orders.po_date', dateRange.end)
-        .in('purchase_orders.status', ['RECEIVED_FULL', 'RECEIVED_PART']);
+        .order('created_at', { ascending: false });
 
-      const { data: result, error } = await query;
-      
-      if (error) throw error;
+      if (dateRange.start) poQuery = poQuery.gte('po_date', dateRange.start);
+      if (dateRange.end) poQuery = poQuery.lte('po_date', dateRange.end);
+      if (supplierFilter !== 'ALL') poQuery = poQuery.eq('supplier_id', supplierFilter);
 
-      // Client-side filtering for supplier since deep filtering is complex
-      let items = result || [];
-      
-      // Filter out null purchase_orders (if inner join failed)
-      items = items.filter((item: any) => item.purchase_orders);
+      const { data: pos, error: poErr } = await poQuery;
+      if (poErr) throw poErr;
 
-      if (supplierFilter !== 'ALL') {
-        items = items.filter((item: any) => item.purchase_orders.suppliers?.id === supplierFilter);
-      }
-      
-      // Filter by date range (double check as Supabase nested filter might not apply strict INNER JOIN logic depending on setup)
-      items = items.filter((item: any) => {
-        const poDate = item.purchase_orders.po_date;
-        return poDate >= dateRange.start && poDate <= dateRange.end;
+      const filteredPOs = (pos || []).filter((po: any) => {
+        const s = String(po.status || '').toUpperCase();
+        return s !== 'CANCELLED' && s !== 'RETURNED_FULL' && s !== 'DRAFT';
       });
+
+      const poMap: Record<string, any> = {};
+      filteredPOs.forEach((po: any) => {
+        poMap[String(po.id)] = po;
+      });
+      const poIds = Object.keys(poMap);
+      if (poIds.length === 0) {
+        setData([]);
+        setReceivedQtyMap({});
+        setJobTypesMap({});
+        return;
+      }
+
+      const chunkSize = 500;
+      let items: any[] = [];
+      for (let i = 0; i < poIds.length; i += chunkSize) {
+        const chunk = poIds.slice(i, i + chunkSize);
+        const { data: its, error: itErr } = await supabase
+          .from('purchase_order_items')
+          .select(`
+            po_id,
+            line_type,
+            job_type_id,
+            service_name,
+            quantity,
+            unit_price,
+            total_price,
+            goods (id, name, item_code, unit, item_type)
+          `)
+          .in('po_id', chunk);
+        if (itErr) throw itErr;
+        items = items.concat((its as any[]) || []);
+      }
+
+      items = items
+        .map((it: any) => ({
+          ...it,
+          purchase_orders: poMap[String(it.po_id)] || null,
+        }))
+        .filter((it: any) => it.purchase_orders);
 
       const jobTypeIds = Array.from(
         new Set(
@@ -120,7 +137,6 @@ export default function PurchaseDetailReport() {
         setJobTypesMap({});
       }
 
-      const poIds = Array.from(new Set(items.map((it: any) => String(it.purchase_orders?.id || '')).filter(Boolean)));
       const nextReceivedMap: Record<string, number> = {};
       if (poIds.length > 0) {
         const { data: receipts, error: receiptErr } = await supabase
@@ -153,6 +169,9 @@ export default function PurchaseDetailReport() {
       setData(items);
     } catch (error) {
       console.error('Error fetching Purchase Details:', error);
+      toast.error('Gagal memuat rincian pembelian: ' + String((error as any)?.message || error));
+      setData([]);
+      setReceivedQtyMap({});
     } finally {
       setLoading(false);
     }
@@ -195,7 +214,7 @@ export default function PurchaseDetailReport() {
 
   const receivedKey = (item: any) => {
     if (isJasa(item)) return '';
-    const poId = String(item.purchase_orders?.id || '');
+    const poId = String(item.purchase_orders?.id || item.po_id || '');
     const gid = String(item.goods?.id || '');
     return poId && gid ? `${poId}:${gid}` : '';
   };
