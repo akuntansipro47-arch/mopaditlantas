@@ -18,6 +18,9 @@ export default function PurchaseDetailReport() {
   const [supplierFilter, setSupplierFilter] = useState('ALL');
   const [suppliers, setSuppliers] = useState<any[]>([]);
   const [receivedQtyMap, setReceivedQtyMap] = useState<Record<string, number>>({});
+  const pageSize = 200;
+  const [page, setPage] = useState(1);
+  const [totalRows, setTotalRows] = useState(0);
   const [dateRange, setDateRange] = useState({
     start: new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0],
     end: new Date().toISOString().split('T')[0]
@@ -28,8 +31,12 @@ export default function PurchaseDetailReport() {
   }, []);
 
   useEffect(() => {
-    fetchData();
+    setPage(1);
   }, [dateRange, supplierFilter]);
+
+  useEffect(() => {
+    fetchData();
+  }, [dateRange, supplierFilter, page]);
 
   async function fetchSuppliers() {
     const { data } = await supabase.from('suppliers').select('*').order('name');
@@ -39,57 +46,10 @@ export default function PurchaseDetailReport() {
   async function fetchData() {
     setLoading(true);
     try {
-      let poQuery = supabase
-        .from('purchase_orders')
-        .select(`
-          id,
-          po_number,
-          po_date,
-          status,
-          created_at,
-          suppliers (name, id),
-          work_orders (
-            id,
-            wo_number,
-            vehicle_entries (
-              service_group,
-              vehicles (license_plate, brand_type, vehicle_type)
-            )
-          )
-        `)
-        .order('created_at', { ascending: false });
-
-      if (dateRange.start) poQuery = poQuery.gte('po_date', dateRange.start);
-      if (dateRange.end) poQuery = poQuery.lte('po_date', dateRange.end);
-      if (supplierFilter !== 'ALL') poQuery = poQuery.eq('supplier_id', supplierFilter);
-
-      const { data: pos, error: poErr } = await poQuery;
-      if (poErr) throw poErr;
-
-      const filteredPOs = (pos || []).filter((po: any) => {
-        const s = String(po.status || '').toUpperCase();
-        return s !== 'CANCELLED' && s !== 'RETURNED_FULL' && s !== 'DRAFT';
-      });
-
-      const poMap: Record<string, any> = {};
-      filteredPOs.forEach((po: any) => {
-        poMap[String(po.id)] = po;
-      });
-      const poIds = Object.keys(poMap);
-      if (poIds.length === 0) {
-        setData([]);
-        setReceivedQtyMap({});
-        setJobTypesMap({});
-        return;
-      }
-
-      const chunkSize = 500;
-      let items: any[] = [];
-      for (let i = 0; i < poIds.length; i += chunkSize) {
-        const chunk = poIds.slice(i, i + chunkSize);
-        const { data: its, error: itErr } = await supabase
-          .from('purchase_order_items')
-          .select(`
+      let query = supabase
+        .from('purchase_order_items')
+        .select(
+          `
             po_id,
             line_type,
             job_type_id,
@@ -97,19 +57,41 @@ export default function PurchaseDetailReport() {
             quantity,
             unit_price,
             total_price,
-            goods (id, name, item_code, unit, item_type)
-          `)
-          .in('po_id', chunk);
-        if (itErr) throw itErr;
-        items = items.concat((its as any[]) || []);
-      }
+            goods (id, name, item_code, unit, item_type),
+            purchase_orders!inner (
+              id,
+              po_number,
+              po_date,
+              status,
+              supplier_id,
+              suppliers (name, id),
+              work_orders (
+                id,
+                wo_number,
+                vehicle_entries (
+                  service_group,
+                  vehicles (license_plate, brand_type, vehicle_type)
+                )
+              )
+            )
+          `,
+          { count: 'exact' }
+        )
+        .order('po_date', { ascending: false, foreignTable: 'purchase_orders' })
+        .range((page - 1) * pageSize, page * pageSize - 1);
 
-      items = items
-        .map((it: any) => ({
-          ...it,
-          purchase_orders: poMap[String(it.po_id)] || null,
-        }))
-        .filter((it: any) => it.purchase_orders);
+      if (dateRange.start) query = query.gte('purchase_orders.po_date', dateRange.start);
+      if (dateRange.end) query = query.lte('purchase_orders.po_date', dateRange.end);
+      if (supplierFilter !== 'ALL') query = query.eq('purchase_orders.supplier_id', supplierFilter);
+      query = query.not('purchase_orders.status', 'in', '(DRAFT,CANCELLED,RETURNED_FULL)');
+
+      const { data: result, error, count } = await query;
+      if (error) throw error;
+
+      setTotalRows(Number(count || 0));
+
+      let items = (result as any[]) || [];
+      items = items.filter((it: any) => it.purchase_orders);
 
       const jobTypeIds = Array.from(
         new Set(
@@ -148,32 +130,37 @@ export default function PurchaseDetailReport() {
         setJobTypesMap({});
       }
 
+      const poIds = Array.from(new Set(items.map((it: any) => String(it.purchase_orders?.id || '')).filter(Boolean)));
       const nextReceivedMap: Record<string, number> = {};
       if (poIds.length > 0) {
-        const { data: receipts, error: receiptErr } = await supabase
-          .from('goods_receipts')
-          .select(`
-            id,
-            po_id,
-            items:goods_receipt_items (
-              goods_id,
-              quantity_received
-            )
-          `)
-          .in('po_id', poIds);
-        if (receiptErr) throw receiptErr;
+        const chunkSize = 500;
+        for (let i = 0; i < poIds.length; i += chunkSize) {
+          const chunk = poIds.slice(i, i + chunkSize);
+          const { data: receipts, error: receiptErr } = await supabase
+            .from('goods_receipts')
+            .select(`
+              id,
+              po_id,
+              items:goods_receipt_items (
+                goods_id,
+                quantity_received
+              )
+            `)
+            .in('po_id', chunk);
+          if (receiptErr) throw receiptErr;
 
-        (receipts || []).forEach((r: any) => {
-          const poId = String(r.po_id || '');
-          const its = Array.isArray(r.items) ? r.items : [];
-          its.forEach((it: any) => {
-            const gid = String(it.goods_id || '');
-            const qty = Number(it.quantity_received || 0);
-            if (!poId || !gid || qty <= 0) return;
-            const key = `${poId}:${gid}`;
-            nextReceivedMap[key] = (nextReceivedMap[key] || 0) + qty;
+          (receipts || []).forEach((r: any) => {
+            const poId = String(r.po_id || '');
+            const its = Array.isArray(r.items) ? r.items : [];
+            its.forEach((it: any) => {
+              const gid = String(it.goods_id || '');
+              const qty = Number(it.quantity_received || 0);
+              if (!poId || !gid || qty <= 0) return;
+              const key = `${poId}:${gid}`;
+              nextReceivedMap[key] = (nextReceivedMap[key] || 0) + qty;
+            });
           });
-        });
+        }
       }
 
       setReceivedQtyMap(nextReceivedMap);
@@ -183,6 +170,7 @@ export default function PurchaseDetailReport() {
       toast.error('Gagal memuat rincian pembelian: ' + String((error as any)?.message || error));
       setData([]);
       setReceivedQtyMap({});
+      setTotalRows(0);
     } finally {
       setLoading(false);
     }
@@ -278,6 +266,7 @@ export default function PurchaseDetailReport() {
     return sum + qty * unit;
   }, 0);
   const totalDiff = totalAmount - totalReceivedValue;
+  const totalPages = Math.max(1, Math.ceil(totalRows / pageSize));
 
   const exportToExcel = () => {
     const flattenData = filteredData.map(item => ({
@@ -426,6 +415,31 @@ export default function PurchaseDetailReport() {
               )}
             </TableBody>
           </Table>
+
+          <div className="flex flex-wrap items-center justify-between gap-3 mt-4">
+            <div className="text-sm text-muted-foreground">
+              Menampilkan {(page - 1) * pageSize + 1}-{Math.min(page * pageSize, totalRows)} dari {totalRows} baris
+            </div>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                disabled={loading || page <= 1}
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+              >
+                Sebelumnya
+              </Button>
+              <div className="text-sm">
+                Halaman {page} / {totalPages}
+              </div>
+              <Button
+                variant="outline"
+                disabled={loading || page >= totalPages}
+                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+              >
+                Berikutnya
+              </Button>
+            </div>
+          </div>
         </CardContent>
       </Card>
     </div>
