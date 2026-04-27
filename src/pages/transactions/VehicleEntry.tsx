@@ -4,7 +4,7 @@ import { Database } from '@/types/supabase';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Plus, Search, Pencil, Trash2, Printer, Check, Eye } from 'lucide-react';
+import { Plus, Search, Pencil, Trash2, Printer, Check, Eye, Paperclip } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { toast } from 'sonner';
 import {
@@ -112,6 +112,11 @@ export default function VehicleEntryPage() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [attachments, setAttachments] = useState<EntryAttachment[]>([]);
   const [pendingAttachments, setPendingAttachments] = useState<PendingAttachment[]>([]);
+
+  const attachmentDialogFileInputRef = useRef<HTMLInputElement | null>(null);
+  const [isAttachmentDialogOpen, setIsAttachmentDialogOpen] = useState(false);
+  const [attachmentDialogEntry, setAttachmentDialogEntry] = useState<{ id: string; entry_number?: string | null } | null>(null);
+  const [attachmentDialogAttachments, setAttachmentDialogAttachments] = useState<EntryAttachment[]>([]);
   
   // Sparepart Dialog State
   const [isSparepartDialogOpen, setIsSparepartDialogOpen] = useState(false);
@@ -447,6 +452,91 @@ export default function VehicleEntryPage() {
         toast.error('Gagal memuat lampiran: ' + msg);
       }
       setAttachments([]);
+    }
+  };
+
+  const fetchAttachmentsForDialog = async (entryId: string) => {
+    try {
+      const { data, error } = await supabase
+        .from('vehicle_entry_attachments' as any)
+        .select('id, vehicle_entry_id, file_name, mime_type, data_url, size_original, size_stored, created_at')
+        .eq('vehicle_entry_id', entryId)
+        .order('created_at', { ascending: false });
+      if (error) throw error;
+      setAttachmentDialogAttachments((data as any) || []);
+    } catch (e: any) {
+      const msg = String(e?.message || '');
+      if (msg.toLowerCase().includes('relation') || msg.toLowerCase().includes('does not exist')) {
+        toast.error("DB belum siap: tabel 'vehicle_entry_attachments' belum ada. Jalankan migration 20260425_create_vehicle_entry_attachments.sql di Supabase.");
+      } else {
+        toast.error('Gagal memuat lampiran: ' + msg);
+      }
+      setAttachmentDialogAttachments([]);
+    }
+  };
+
+  const openAttachmentDialog = async (item: EntryWithDetails) => {
+    setAttachmentDialogEntry({ id: item.id, entry_number: (item as any)?.entry_number ?? null });
+    setIsAttachmentDialogOpen(true);
+    await fetchAttachmentsForDialog(item.id);
+  };
+
+  const handlePickFilesDialog = () => attachmentDialogFileInputRef.current?.click();
+
+  const handleFilesSelectedDialog = async (files: FileList | null) => {
+    const entryId = attachmentDialogEntry?.id;
+    if (!entryId) return;
+    if (!files || files.length === 0) return;
+    const arr = Array.from(files);
+    const accepted = arr.filter((f) => {
+      const mime = String(f.type || '').toLowerCase();
+      if (mime.startsWith('image/')) return true;
+      if (mime === 'application/pdf') return true;
+      return false;
+    });
+    if (accepted.length === 0) {
+      toast.error('Format file tidak didukung. Gunakan JPEG/PNG atau PDF.');
+      return;
+    }
+    try {
+      setLoading(true);
+      const built = await Promise.all(accepted.map(buildPendingAttachment));
+      const payload = built.map((a) => ({
+        vehicle_entry_id: entryId,
+        file_name: a.file_name,
+        mime_type: a.mime_type,
+        data_url: a.data_url,
+        size_original: a.size_original,
+        size_stored: a.size_stored,
+      }));
+      const { error: insErr } = await supabase.from('vehicle_entry_attachments' as any).insert(payload);
+      if (insErr) throw insErr;
+      toast.success('Lampiran tersimpan');
+      await fetchAttachmentsForDialog(entryId);
+    } catch (e: any) {
+      const msg = String(e?.message || '');
+      if (msg.toLowerCase().includes('relation') || msg.toLowerCase().includes('does not exist')) {
+        toast.error("Lampiran gagal disimpan: tabel 'vehicle_entry_attachments' belum ada. Jalankan migration 20260425_create_vehicle_entry_attachments.sql di Supabase.");
+      } else {
+        toast.error('Lampiran gagal disimpan: ' + msg);
+      }
+    } finally {
+      setLoading(false);
+      if (attachmentDialogFileInputRef.current) attachmentDialogFileInputRef.current.value = '';
+    }
+  };
+
+  const handleRemoveAttachmentDialog = async (id: string) => {
+    const entryId = attachmentDialogEntry?.id;
+    if (!entryId) return;
+    if (!confirm('Hapus lampiran ini?')) return;
+    try {
+      const { error } = await supabase.from('vehicle_entry_attachments' as any).delete().eq('id', id);
+      if (error) throw error;
+      toast.success('Lampiran dihapus');
+      await fetchAttachmentsForDialog(entryId);
+    } catch (e: any) {
+      toast.error('Gagal menghapus lampiran: ' + String(e?.message || e));
     }
   };
 
@@ -1443,6 +1533,65 @@ export default function VehicleEntryPage() {
                 </Dialog>
             </DialogContent>
         </Dialog>
+
+        <Dialog open={isAttachmentDialogOpen} onOpenChange={(v) => { setIsAttachmentDialogOpen(v); if (!v) setAttachmentDialogEntry(null); }}>
+          <DialogContent className="sm:max-w-[700px]">
+            <DialogHeader>
+              <DialogTitle>Lampiran Dokumen</DialogTitle>
+              <DialogDescription>
+                {attachmentDialogEntry?.entry_number ? `Entry: ${attachmentDialogEntry.entry_number}` : 'Lampiran untuk entry kendaraan.'}
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="space-y-3">
+              <div className="flex items-center justify-between gap-2">
+                <input
+                  ref={attachmentDialogFileInputRef}
+                  type="file"
+                  accept="image/*,application/pdf"
+                  multiple
+                  className="hidden"
+                  onChange={(e) => handleFilesSelectedDialog(e.target.files)}
+                />
+                <Button type="button" variant="outline" size="sm" onClick={handlePickFilesDialog} disabled={loading}>
+                  Tambah Lampiran
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => attachmentDialogEntry?.id && fetchAttachmentsForDialog(attachmentDialogEntry.id)}
+                  disabled={loading || !attachmentDialogEntry?.id}
+                >
+                  Refresh
+                </Button>
+              </div>
+
+              {attachmentDialogAttachments.length === 0 ? (
+                <div className="text-sm text-muted-foreground italic">Belum ada lampiran.</div>
+              ) : (
+                <div className="space-y-2 max-h-[55vh] overflow-y-auto pr-1">
+                  {attachmentDialogAttachments.map((a) => (
+                    <div key={a.id} className="flex items-center justify-between gap-2 bg-white border rounded-md px-2 py-2">
+                      <div className="min-w-0">
+                        <div className="text-sm font-medium truncate">{a.file_name}</div>
+                        <div className="text-[11px] text-muted-foreground">{a.mime_type}</div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Button type="button" variant="outline" size="sm" onClick={() => window.open(a.data_url, '_blank')}>
+                          Buka
+                        </Button>
+                        <Button type="button" variant="ghost" size="sm" className="text-red-600" onClick={() => handleRemoveAttachmentDialog(a.id)}>
+                          Hapus
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </DialogContent>
+        </Dialog>
       </div>
 
       <Card>
@@ -1615,6 +1764,9 @@ export default function VehicleEntryPage() {
                             <div className="flex justify-end gap-3">
                               <Button variant="ghost" size="icon" onClick={() => handlePrintEntry(item.id)} title={isLocked ? "View" : "Cetak SPK Awal"}>
                                 {isLocked ? <Eye className="h-4 w-4" /> : <Printer className="h-4 w-4" />}
+                              </Button>
+                              <Button variant="ghost" size="icon" onClick={() => openAttachmentDialog(item)} title="Lampiran">
+                                <Paperclip className="h-4 w-4" />
                               </Button>
                               {canEditThis && (
                                 <>
