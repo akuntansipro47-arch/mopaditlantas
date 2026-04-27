@@ -177,7 +177,7 @@ export default function PurchasePaymentHistoryReport() {
           <Table>
             <TableHeader>
               <TableRow className="bg-slate-50 hover:bg-slate-50">
-                <TableHead className="font-semibold text-slate-700">Tanggal</TableHead>
+                <TableHead className="font-semibold text-slate-700">Tgl Pembayaran</TableHead>
                 <TableHead className="font-semibold text-slate-700">No. Invoice</TableHead>
                 <TableHead className="font-semibold text-slate-700">No. PO</TableHead>
                 <TableHead className="font-semibold text-slate-700">Supplier</TableHead>

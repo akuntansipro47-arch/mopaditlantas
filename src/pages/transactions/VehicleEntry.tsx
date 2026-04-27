@@ -544,6 +544,45 @@ export default function VehicleEntryPage() {
     );
   };
 
+  const isProbablyUuid = (value: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(value || ''));
+
+  const isStorageNotReady = (msg: string) => {
+    const m = String(msg || '').toLowerCase();
+    return (
+      m.includes('bucket') && m.includes('not found')
+    ) || m.includes('not found') || m.includes('unauthorized') || m.includes('permission') || m.includes('access denied');
+  };
+
+  const fetchAttachmentsFromStorage = async (entryId: string) => {
+    const prefix = `vehicle-entries/${entryId}`;
+    const { data, error } = await supabase.storage.from(VEHICLE_ENTRY_ATTACHMENT_BUCKET).list(prefix, {
+      limit: 100,
+      offset: 0,
+      sortBy: { column: 'created_at', order: 'desc' },
+    });
+    if (error) throw error;
+    const mapped: EntryAttachment[] = (data || [])
+      .filter((x: any) => x && x.name && !String(x.name).endsWith('/'))
+      .map((x: any) => {
+        const fullPath = `${prefix}/${x.name}`;
+        const meta = (x as any)?.metadata || {};
+        const mime = String(meta?.mimetype || meta?.contentType || '');
+        return {
+          id: `${VEHICLE_ENTRY_ATTACHMENT_BUCKET}:${fullPath}`,
+          vehicle_entry_id: entryId,
+          file_name: String(x.name),
+          mime_type: mime || 'application/octet-stream',
+          data_url: null,
+          storage_bucket: VEHICLE_ENTRY_ATTACHMENT_BUCKET,
+          storage_path: fullPath,
+          size_original: null,
+          size_stored: Number.isFinite(Number(meta?.size)) ? Number(meta?.size) : null,
+          created_at: (x as any)?.created_at || (x as any)?.updated_at || null,
+        };
+      });
+    return mapped;
+  };
+
   const uploadAttachmentsAndInsertRows = async (entryId: string, list: PendingAttachment[]) => {
     if (!entryId || list.length === 0) return;
     const uploadedPaths: string[] = [];
@@ -569,7 +608,13 @@ export default function VehicleEntryPage() {
       }
 
       const { error: insErr } = await supabase.from('vehicle_entry_attachments' as any).insert(rows);
-      if (insErr) throw insErr;
+      if (insErr) {
+        const msg = String((insErr as any)?.message || '');
+        if (isMissingAttachmentTable(msg) || isAttachmentSchemaOutdated(msg)) {
+          return;
+        }
+        throw insErr;
+      }
     } catch (e) {
       if (uploadedPaths.length > 0) {
         try {
@@ -582,6 +627,19 @@ export default function VehicleEntryPage() {
 
   const fetchAttachments = async (entryId: string) => {
     try {
+      try {
+        const st = await fetchAttachmentsFromStorage(entryId);
+        setAttachments(st);
+        return;
+      } catch (stErr: any) {
+        const smsg = String(stErr?.message || stErr);
+        if (isStorageNotReady(smsg)) {
+          toast.error("Lampiran belum bisa dipakai: Storage/bucket belum siap. Jalankan migration 20260427_vehicle_entry_attachments_storage.sql (bucket + policy), lalu coba lagi.");
+          setAttachments([]);
+          return;
+        }
+      }
+
       const { data, error } = await supabase
         .from('vehicle_entry_attachments' as any)
         .select('id, vehicle_entry_id, file_name, mime_type, data_url, storage_bucket, storage_path, size_original, size_stored, created_at')
@@ -592,7 +650,7 @@ export default function VehicleEntryPage() {
     } catch (e: any) {
       const msg = String(e?.message || '');
       if (isMissingAttachmentTable(msg)) {
-        toast.error("Lampiran belum bisa dipakai: tabel 'vehicle_entry_attachments' belum ada/Belum ke-refresh di Supabase. Jalankan migration 20260425_create_vehicle_entry_attachments.sql dan 20260427_vehicle_entry_attachments_storage.sql lalu refresh schema cache Supabase.");
+        toast.error("Lampiran belum bisa dipakai: tabel 'vehicle_entry_attachments' belum ada/Belum ke-refresh di Supabase. Jalankan migration 20260425_create_vehicle_entry_attachments.sql lalu refresh schema cache Supabase.");
       } else {
         toast.error('Gagal memuat lampiran: ' + msg);
       }
@@ -602,6 +660,19 @@ export default function VehicleEntryPage() {
 
   const fetchAttachmentsForDialog = async (entryId: string) => {
     try {
+      try {
+        const st = await fetchAttachmentsFromStorage(entryId);
+        setAttachmentDialogAttachments(st);
+        return;
+      } catch (stErr: any) {
+        const smsg = String(stErr?.message || stErr);
+        if (isStorageNotReady(smsg)) {
+          toast.error("Lampiran belum bisa dipakai: Storage/bucket belum siap. Jalankan migration 20260427_vehicle_entry_attachments_storage.sql (bucket + policy), lalu coba lagi.");
+          setAttachmentDialogAttachments([]);
+          return;
+        }
+      }
+
       const { data, error } = await supabase
         .from('vehicle_entry_attachments' as any)
         .select('id, vehicle_entry_id, file_name, mime_type, data_url, storage_bucket, storage_path, size_original, size_stored, created_at')
@@ -612,7 +683,7 @@ export default function VehicleEntryPage() {
     } catch (e: any) {
       const msg = String(e?.message || '');
       if (isMissingAttachmentTable(msg)) {
-        toast.error("Lampiran belum bisa dipakai: tabel 'vehicle_entry_attachments' belum ada/Belum ke-refresh di Supabase. Jalankan migration 20260425_create_vehicle_entry_attachments.sql dan 20260427_vehicle_entry_attachments_storage.sql lalu refresh schema cache Supabase.");
+        toast.error("Lampiran belum bisa dipakai: tabel 'vehicle_entry_attachments' belum ada/Belum ke-refresh di Supabase. Jalankan migration 20260425_create_vehicle_entry_attachments.sql lalu refresh schema cache Supabase.");
       } else {
         toast.error('Gagal memuat lampiran: ' + msg);
       }
@@ -673,8 +744,13 @@ export default function VehicleEntryPage() {
         const { error: stErr } = await supabase.storage.from(a.storage_bucket).remove([a.storage_path]);
         if (stErr) throw stErr;
       }
-      const { error } = await supabase.from('vehicle_entry_attachments' as any).delete().eq('id', a.id);
-      if (error) throw error;
+      if (isProbablyUuid(a.id)) {
+        const { error } = await supabase.from('vehicle_entry_attachments' as any).delete().eq('id', a.id);
+        if (error) {
+          const msg = String((error as any)?.message || '');
+          if (!isMissingAttachmentTable(msg)) throw error;
+        }
+      }
       toast.success('Lampiran dihapus');
       await fetchAttachmentsForDialog(entryId);
     } catch (e: any) {
@@ -720,8 +796,13 @@ export default function VehicleEntryPage() {
         const { error: stErr } = await supabase.storage.from(a.storage_bucket).remove([a.storage_path]);
         if (stErr) throw stErr;
       }
-      const { error } = await supabase.from('vehicle_entry_attachments' as any).delete().eq('id', a.id);
-      if (error) throw error;
+      if (isProbablyUuid(a.id)) {
+        const { error } = await supabase.from('vehicle_entry_attachments' as any).delete().eq('id', a.id);
+        if (error) {
+          const msg = String((error as any)?.message || '');
+          if (!isMissingAttachmentTable(msg)) throw error;
+        }
+      }
       setAttachments((prev) => prev.filter((x) => x.id !== a.id));
       toast.success('Lampiran dihapus');
     } catch (e: any) {

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext';
 import { 
@@ -127,12 +127,19 @@ export function Sidebar() {
   const location = useLocation();
   const { user, logout } = useAuth();
   const [openMenus, setOpenMenus] = useState<string[]>(['Data Base', 'Transaksi', 'Keuangan', 'Kepegawaian', 'Daftar Laporan']);
+  const [openReportGroups, setOpenReportGroups] = useState<string[]>([]);
 
   const toggleMenu = (name: string) => {
     setOpenMenus(prev => 
       prev.includes(name) 
         ? prev.filter(item => item !== name)
         : [...prev, name]
+    );
+  };
+
+  const toggleReportGroup = (name: string) => {
+    setOpenReportGroups((prev) =>
+      prev.includes(name) ? prev.filter((x) => x !== name) : [...prev, name]
     );
   };
 
@@ -145,6 +152,29 @@ export function Sidebar() {
     if (key === 'reports') return allowed.includes('reports') || allowed.some((k: string) => String(k).startsWith('report_'));
     return allowed.includes(key);
   };
+
+  const currentPath = location.pathname + location.search;
+
+  useEffect(() => {
+    if (!openMenus.includes('Daftar Laporan')) return;
+    const reportItem = navigation.find((x) => x.key === 'reports');
+    const children = reportItem?.children || [];
+    let activeGroup: string | null = null;
+    let currentGroup: string | null = null;
+    for (const child of children) {
+      if (child.type === 'group') {
+        currentGroup = child.name;
+        continue;
+      }
+      if (!hasAccess(child.key)) continue;
+      if (currentPath === child.href) {
+        activeGroup = currentGroup;
+        break;
+      }
+    }
+    if (!activeGroup) return;
+    setOpenReportGroups((prev) => (prev.includes(activeGroup) ? prev : [...prev, activeGroup]));
+  }, [currentPath, openMenus, user]);
 
   return (
     <div className="flex h-full w-72 flex-col bg-[#0f172a] text-slate-300 shadow-2xl transition-all duration-300 ease-in-out">
@@ -217,42 +247,121 @@ export function Sidebar() {
                 
                 {openMenus.includes(item.name) && (
                   <div className="ml-4 space-y-1 pl-2 border-l-2 border-slate-800 animate-in slide-in-from-left-2 duration-200">
-                    {visibleChildren.map((child) => {
-                      if (child.type === 'group') {
+                    {item.key === 'reports' ? (
+                      (() => {
+                        const groups: { name: string; links: Extract<NavChild, { href: string }>[] }[] = [];
+                        let g: { name: string; links: Extract<NavChild, { href: string }>[] } | null = null;
+                        for (const child of children) {
+                          if (child.type === 'group') {
+                            g = { name: child.name, links: [] };
+                            groups.push(g);
+                            continue;
+                          }
+                          if (!hasAccess(child.key)) continue;
+                          if (!g) {
+                            g = { name: 'Laporan', links: [] };
+                            groups.push(g);
+                          }
+                          g.links.push(child as any);
+                        }
+                        const visibleGroups = groups.filter((x) => x.links.length > 0);
                         return (
-                          <div
-                            key={`group-${child.name}`}
-                            className="px-3 pt-3 pb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500"
-                          >
-                            {child.name}
+                          <div className="space-y-1">
+                            {visibleGroups.map((grp) => {
+                              const isOpen = openReportGroups.includes(grp.name);
+                              const groupHasActive = grp.links.some((l) => l.href === currentPath);
+                              return (
+                                <div key={`report-group-${grp.name}`} className="space-y-1">
+                                  <button
+                                    onClick={() => toggleReportGroup(grp.name)}
+                                    className={cn(
+                                      "flex w-full items-center justify-between rounded-md px-3 py-2 text-xs font-semibold uppercase tracking-wide transition-all duration-200",
+                                      "hover:bg-slate-800/30 hover:text-slate-200",
+                                      isOpen || groupHasActive ? "text-slate-200 bg-slate-900/20" : "text-slate-500"
+                                    )}
+                                  >
+                                    <span>{grp.name}</span>
+                                    {isOpen ? (
+                                      <ChevronDown className="h-4 w-4 text-slate-600" />
+                                    ) : (
+                                      <ChevronRight className="h-4 w-4 text-slate-600" />
+                                    )}
+                                  </button>
+
+                                  {(isOpen || groupHasActive) && (
+                                    <div className="ml-3 space-y-1 pl-2 border-l border-slate-800/70">
+                                      {grp.links.map((link) => {
+                                        const active = currentPath === link.href;
+                                        return (
+                                          <NavLink
+                                            key={link.key}
+                                            to={link.href}
+                                            className={() =>
+                                              cn(
+                                                "flex items-center rounded-md px-3 py-2 text-sm transition-all duration-200",
+                                                active
+                                                  ? "bg-indigo-600/10 text-indigo-300 font-medium"
+                                                  : "text-slate-500 hover:text-slate-200 hover:bg-slate-800/30"
+                                              )
+                                            }
+                                          >
+                                            <span
+                                              className={cn(
+                                                "mr-3 h-1.5 w-1.5 rounded-full transition-all",
+                                                active ? "bg-indigo-400 scale-125" : "bg-slate-600"
+                                              )}
+                                            />
+                                            {link.name}
+                                          </NavLink>
+                                        );
+                                      })}
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })}
                           </div>
                         );
-                      }
+                      })()
+                    ) : (
+                      visibleChildren.map((child) => {
+                        if (child.type === 'group') {
+                          return (
+                            <div
+                              key={`group-${child.name}`}
+                              className="px-3 pt-3 pb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500"
+                            >
+                              {child.name}
+                            </div>
+                          );
+                        }
 
-                      const current = location.pathname + location.search;
-                      const active = current === child.href;
+                        const active = currentPath === child.href;
 
-                      return (
-                        <NavLink
-                          key={child.name}
-                          to={child.href}
-                          className={() =>
-                            cn(
-                              "flex items-center rounded-md px-3 py-2 text-sm transition-all duration-200",
-                              active
-                                ? "bg-indigo-600/10 text-indigo-300 font-medium"
-                                : "text-slate-500 hover:text-slate-200 hover:bg-slate-800/30"
-                            )
-                          }
-                        >
-                          <span className={cn(
-                            "mr-3 h-1.5 w-1.5 rounded-full transition-all",
-                            active ? "bg-indigo-400 scale-125" : "bg-slate-600"
-                          )} />
-                          {child.name}
-                        </NavLink>
-                      );
-                    })}
+                        return (
+                          <NavLink
+                            key={child.name}
+                            to={child.href}
+                            className={() =>
+                              cn(
+                                "flex items-center rounded-md px-3 py-2 text-sm transition-all duration-200",
+                                active
+                                  ? "bg-indigo-600/10 text-indigo-300 font-medium"
+                                  : "text-slate-500 hover:text-slate-200 hover:bg-slate-800/30"
+                              )
+                            }
+                          >
+                            <span
+                              className={cn(
+                                "mr-3 h-1.5 w-1.5 rounded-full transition-all",
+                                active ? "bg-indigo-400 scale-125" : "bg-slate-600"
+                              )}
+                            />
+                            {child.name}
+                          </NavLink>
+                        );
+                      })
+                    )}
                   </div>
                 )}
               </div>
