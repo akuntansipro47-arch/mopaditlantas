@@ -109,21 +109,36 @@ export default function CashBankBookReport() {
         )
       );
 
-      const paymentMap: Record<string, { amount: number; transfer_fee: number }> = {};
+      const paymentsById: Record<string, any> = {};
+      const paymentsByInvoiceId: Record<string, any[]> = {};
+
       if (paymentRefs.length > 0) {
         const chunkSize = 500;
+
         for (let i = 0; i < paymentRefs.length; i += chunkSize) {
           const chunk = paymentRefs.slice(i, i + chunkSize);
           const { data: pays, error: payErr } = await supabase
             .from('purchase_payments')
-            .select('id, amount, transfer_fee')
+            .select('id, invoice_id, payment_date, payment_account_id, amount, transfer_fee, created_at')
             .in('id', chunk);
           if (payErr) throw payErr;
           (pays || []).forEach((p: any) => {
-            paymentMap[String(p.id)] = {
-              amount: Number(p.amount || 0),
-              transfer_fee: Number(p.transfer_fee || 0),
-            };
+            paymentsById[String(p.id)] = p;
+          });
+        }
+
+        for (let i = 0; i < paymentRefs.length; i += chunkSize) {
+          const chunk = paymentRefs.slice(i, i + chunkSize);
+          const { data: pays, error: payErr } = await supabase
+            .from('purchase_payments')
+            .select('id, invoice_id, payment_date, payment_account_id, amount, transfer_fee, created_at')
+            .in('invoice_id', chunk);
+          if (payErr) throw payErr;
+          (pays || []).forEach((p: any) => {
+            const invId = String(p.invoice_id || '');
+            if (!invId) return;
+            if (!paymentsByInvoiceId[invId]) paymentsByInvoiceId[invId] = [];
+            paymentsByInvoiceId[invId].push(p);
           });
         }
       }
@@ -157,6 +172,7 @@ export default function CashBankBookReport() {
         const entryId = String(item.journal_entries?.id || '');
         const ref = String(item.journal_entries?.reference || '').trim();
         const entryType = String(item.journal_entries?.entry_type || '').toUpperCase();
+        const entryDate = String(item.journal_entries?.entry_date || '');
 
         mapped.push({
           id: item.id,
@@ -170,14 +186,28 @@ export default function CashBankBookReport() {
           balance: running,
         });
 
-        if (
-          entryType === 'PAYMENT' &&
-          entryId &&
-          ref &&
-          paymentMap[ref] &&
-          !addedFeeForEntry.has(entryId)
-        ) {
-          const pay = paymentMap[ref];
+        if (entryType === 'PAYMENT' && entryId && ref && !addedFeeForEntry.has(entryId)) {
+          let pay = paymentsById[ref] || null;
+          if (!pay) {
+            const candidates = paymentsByInvoiceId[ref] || [];
+            if (candidates.length > 0) {
+              const bankMove = Math.max(Number(credit || 0), Number(debit || 0));
+              const exact = candidates.find((p: any) => {
+                const pd = String(p.payment_date || '');
+                const pa = String(p.payment_account_id || '');
+                const amt = Number(p.amount || 0);
+                return (!entryDate || pd === entryDate) && pa === selectedAccount && Math.abs(amt - bankMove) < 0.01;
+              });
+              const byDate = candidates.find((p: any) => {
+                const pd = String(p.payment_date || '');
+                const pa = String(p.payment_account_id || '');
+                return (!entryDate || pd === entryDate) && pa === selectedAccount;
+              });
+              pay = exact || byDate || candidates[0];
+            }
+          }
+
+          if (!pay) continue;
           const fee = Math.max(0, Number(pay.transfer_fee || 0));
           if (fee > 0) {
             const totalCredit = Number(totalsByEntryId[entryId]?.credit || 0);
