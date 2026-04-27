@@ -51,7 +51,9 @@ type EntryAttachment = {
   vehicle_entry_id: string;
   file_name: string;
   mime_type: string;
-  data_url: string;
+  data_url?: string | null;
+  storage_bucket?: string | null;
+  storage_path?: string | null;
   size_original?: number | null;
   size_stored?: number | null;
   created_at?: string | null;
@@ -61,7 +63,7 @@ type PendingAttachment = {
   temp_id: string;
   file_name: string;
   mime_type: string;
-  data_url: string;
+  blob: Blob;
   size_original?: number;
   size_stored?: number;
 };
@@ -382,64 +384,143 @@ export default function VehicleEntryPage() {
     setPendingAttachments([]);
   };
 
-  const toDataUrl = (file: File) =>
-    new Promise<string>((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(String(reader.result || ''));
-      reader.onerror = () => reject(reader.error || new Error('Gagal membaca file'));
-      reader.readAsDataURL(file);
-    });
+  const VEHICLE_ENTRY_ATTACHMENT_BUCKET = 'vehicle-entry-attachments';
+  const MAX_ATTACHMENT_BYTES = 20_000_000;
+  const TARGET_IMAGE_BYTES = 650_000;
 
-  const compressImageDataUrl = (dataUrl: string) =>
-    new Promise<string>((resolve, reject) => {
-      const img = new Image();
-      img.onload = () => {
-        const w = img.width || 0;
-        const h = img.height || 0;
-        if (!w || !h) {
-          resolve(dataUrl);
-          return;
-        }
-        const encode = (maxSide: number, quality: number) => {
-          const scale = Math.min(1, maxSide / Math.max(w, h));
-          const tw = Math.max(1, Math.round(w * scale));
-          const th = Math.max(1, Math.round(h * scale));
-          const canvas = document.createElement('canvas');
-          canvas.width = tw;
-          canvas.height = th;
-          const ctx = canvas.getContext('2d');
-          if (!ctx) return dataUrl;
-          ctx.drawImage(img, 0, 0, tw, th);
-          return canvas.toDataURL('image/jpeg', quality);
-        };
+  const sanitizeFileName = (name: string) => {
+    const cleaned = String(name || 'attachment').replace(/[^\w.\-()]+/g, '_');
+    return cleaned.length > 120 ? cleaned.slice(-120) : cleaned;
+  };
 
-        let out = encode(1600, 0.7);
-        if (out.length > 900000) out = encode(1400, 0.65);
-        if (out.length > 700000) out = encode(1200, 0.6);
-        if (out.length > 550000) out = encode(1000, 0.55);
-        resolve(out);
+  const triggerDownload = (blob: Blob, fileName: string) => {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = sanitizeFileName(fileName || 'attachment');
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+  };
+
+  const openBlob = (blob: Blob) => {
+    const url = URL.createObjectURL(blob);
+    window.open(url, '_blank');
+    window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+  };
+
+  const downloadBlob = (blob: Blob, fileName: string) => {
+    triggerDownload(blob, fileName);
+  };
+
+  const getStoredAttachmentUrl = (a: EntryAttachment) => {
+    if (a.data_url) return a.data_url;
+    const bucket = String(a.storage_bucket || '');
+    const path = String(a.storage_path || '');
+    if (!bucket || !path) return '';
+    return supabase.storage.from(bucket).getPublicUrl(path).data.publicUrl || '';
+  };
+
+  const openStoredAttachment = (a: EntryAttachment) => {
+    const url = getStoredAttachmentUrl(a);
+    if (!url) {
+      toast.error('Lampiran tidak punya URL.');
+      return;
+    }
+    window.open(url, '_blank');
+  };
+
+  const downloadStoredAttachment = async (a: EntryAttachment) => {
+    try {
+      if (a.data_url) {
+        const res = await fetch(a.data_url);
+        const blob = await res.blob();
+        downloadBlob(blob, a.file_name);
+        return;
+      }
+      const bucket = String(a.storage_bucket || '');
+      const path = String(a.storage_path || '');
+      if (!bucket || !path) {
+        toast.error('Lampiran tidak punya file untuk di-download.');
+        return;
+      }
+      const { data, error } = await supabase.storage.from(bucket).download(path);
+      if (error) throw error;
+      downloadBlob(data, a.file_name);
+    } catch (e: any) {
+      toast.error('Gagal download lampiran: ' + String(e?.message || e));
+    }
+  };
+
+  const compressImageFileToJpegBlob = async (file: File) => {
+    const bitmap = await createImageBitmap(file);
+    try {
+      const w = bitmap.width || 0;
+      const h = bitmap.height || 0;
+      if (!w || !h) return file as unknown as Blob;
+
+      const encode = async (maxSide: number, quality: number) => {
+        const scale = Math.min(1, maxSide / Math.max(w, h));
+        const tw = Math.max(1, Math.round(w * scale));
+        const th = Math.max(1, Math.round(h * scale));
+        const canvas = document.createElement('canvas');
+        canvas.width = tw;
+        canvas.height = th;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) throw new Error('Gagal memproses gambar');
+        ctx.drawImage(bitmap, 0, 0, tw, th);
+        const blob = await new Promise<Blob>((resolve, reject) => {
+          canvas.toBlob(
+            (b) => (b ? resolve(b) : reject(new Error('Gagal memproses gambar'))),
+            'image/jpeg',
+            quality
+          );
+        });
+        return blob;
       };
-      img.onerror = () => reject(new Error('Gagal memproses gambar'));
-      img.src = dataUrl;
-    });
+
+      let out = await encode(1800, 0.75);
+      if (out.size > TARGET_IMAGE_BYTES) out = await encode(1600, 0.7);
+      if (out.size > TARGET_IMAGE_BYTES) out = await encode(1400, 0.65);
+      if (out.size > TARGET_IMAGE_BYTES) out = await encode(1200, 0.6);
+      if (out.size > TARGET_IMAGE_BYTES) out = await encode(1000, 0.55);
+      return out;
+    } finally {
+      (bitmap as any).close?.();
+    }
+  };
 
   const buildPendingAttachment = async (file: File): Promise<PendingAttachment> => {
-    const mime = String(file.type || '').toLowerCase();
+    const mimeOriginal = String(file.type || '').toLowerCase();
     const originalSize = file.size;
-    if (mime === 'application/pdf' && originalSize > 2_000_000) {
-      throw new Error('PDF terlalu besar. Silakan kompres PDF terlebih dahulu sebelum di-upload.');
+    const isImage = mimeOriginal.startsWith('image/');
+    const isPdf = mimeOriginal === 'application/pdf';
+    if (!isImage && !isPdf) {
+      throw new Error('Format file tidak didukung. Gunakan JPEG/PNG atau PDF.');
     }
-    if (mime.startsWith('image/') && originalSize > 8_000_000) {
-      throw new Error('Gambar terlalu besar. Silakan pilih file yang lebih kecil.');
+    if (originalSize > MAX_ATTACHMENT_BYTES) {
+      throw new Error('File terlalu besar. Silakan pilih file yang lebih kecil.');
     }
-    const rawDataUrl = await toDataUrl(file);
-    const storedDataUrl = mime.startsWith('image/') ? await compressImageDataUrl(rawDataUrl) : rawDataUrl;
-    const storedSize = storedDataUrl.length;
+
+    let blob: Blob;
+    let mimeStored = mimeOriginal || 'application/octet-stream';
+    let fileName = file.name || 'attachment';
+    if (isImage) {
+      blob = await compressImageFileToJpegBlob(file);
+      mimeStored = 'image/jpeg';
+      const base = fileName.replace(/\.[^/.]+$/, '');
+      fileName = `${base || 'attachment'}.jpg`;
+    } else {
+      blob = file;
+    }
+
+    const storedSize = blob.size;
     return {
       temp_id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
-      file_name: file.name || 'attachment',
-      mime_type: mime || 'application/octet-stream',
-      data_url: storedDataUrl,
+      file_name: sanitizeFileName(fileName),
+      mime_type: mimeStored,
+      blob,
       size_original: originalSize,
       size_stored: storedSize,
     };
@@ -455,11 +536,55 @@ export default function VehicleEntryPage() {
     );
   };
 
+  const isAttachmentSchemaOutdated = (msg: string) => {
+    const m = String(msg || '').toLowerCase();
+    return (
+      m.includes('null value') &&
+      (m.includes('data_url') || m.includes('violates not-null constraint'))
+    );
+  };
+
+  const uploadAttachmentsAndInsertRows = async (entryId: string, list: PendingAttachment[]) => {
+    if (!entryId || list.length === 0) return;
+    const uploadedPaths: string[] = [];
+    try {
+      const rows: any[] = [];
+      for (const a of list) {
+        const path = `vehicle-entries/${entryId}/${a.temp_id}-${sanitizeFileName(a.file_name)}`;
+        const { error: upErr } = await supabase.storage.from(VEHICLE_ENTRY_ATTACHMENT_BUCKET).upload(path, a.blob, {
+          contentType: a.mime_type,
+          upsert: false,
+        });
+        if (upErr) throw upErr;
+        uploadedPaths.push(path);
+        rows.push({
+          vehicle_entry_id: entryId,
+          file_name: a.file_name,
+          mime_type: a.mime_type,
+          storage_bucket: VEHICLE_ENTRY_ATTACHMENT_BUCKET,
+          storage_path: path,
+          size_original: a.size_original,
+          size_stored: a.size_stored,
+        });
+      }
+
+      const { error: insErr } = await supabase.from('vehicle_entry_attachments' as any).insert(rows);
+      if (insErr) throw insErr;
+    } catch (e) {
+      if (uploadedPaths.length > 0) {
+        try {
+          await supabase.storage.from(VEHICLE_ENTRY_ATTACHMENT_BUCKET).remove(uploadedPaths);
+        } catch {}
+      }
+      throw e;
+    }
+  };
+
   const fetchAttachments = async (entryId: string) => {
     try {
       const { data, error } = await supabase
         .from('vehicle_entry_attachments' as any)
-        .select('id, vehicle_entry_id, file_name, mime_type, data_url, size_original, size_stored, created_at')
+        .select('id, vehicle_entry_id, file_name, mime_type, data_url, storage_bucket, storage_path, size_original, size_stored, created_at')
         .eq('vehicle_entry_id', entryId)
         .order('created_at', { ascending: false });
       if (error) throw error;
@@ -467,7 +592,7 @@ export default function VehicleEntryPage() {
     } catch (e: any) {
       const msg = String(e?.message || '');
       if (isMissingAttachmentTable(msg)) {
-        toast.error("Lampiran belum bisa dipakai: tabel 'vehicle_entry_attachments' belum ada/Belum ke-refresh di Supabase. Jalankan migration 20260425_create_vehicle_entry_attachments.sql lalu refresh schema cache Supabase.");
+        toast.error("Lampiran belum bisa dipakai: tabel 'vehicle_entry_attachments' belum ada/Belum ke-refresh di Supabase. Jalankan migration 20260425_create_vehicle_entry_attachments.sql dan 20260427_vehicle_entry_attachments_storage.sql lalu refresh schema cache Supabase.");
       } else {
         toast.error('Gagal memuat lampiran: ' + msg);
       }
@@ -479,7 +604,7 @@ export default function VehicleEntryPage() {
     try {
       const { data, error } = await supabase
         .from('vehicle_entry_attachments' as any)
-        .select('id, vehicle_entry_id, file_name, mime_type, data_url, size_original, size_stored, created_at')
+        .select('id, vehicle_entry_id, file_name, mime_type, data_url, storage_bucket, storage_path, size_original, size_stored, created_at')
         .eq('vehicle_entry_id', entryId)
         .order('created_at', { ascending: false });
       if (error) throw error;
@@ -487,7 +612,7 @@ export default function VehicleEntryPage() {
     } catch (e: any) {
       const msg = String(e?.message || '');
       if (isMissingAttachmentTable(msg)) {
-        toast.error("Lampiran belum bisa dipakai: tabel 'vehicle_entry_attachments' belum ada/Belum ke-refresh di Supabase. Jalankan migration 20260425_create_vehicle_entry_attachments.sql lalu refresh schema cache Supabase.");
+        toast.error("Lampiran belum bisa dipakai: tabel 'vehicle_entry_attachments' belum ada/Belum ke-refresh di Supabase. Jalankan migration 20260425_create_vehicle_entry_attachments.sql dan 20260427_vehicle_entry_attachments_storage.sql lalu refresh schema cache Supabase.");
       } else {
         toast.error('Gagal memuat lampiran: ' + msg);
       }
@@ -521,22 +646,15 @@ export default function VehicleEntryPage() {
     try {
       setLoading(true);
       const built = await Promise.all(accepted.map(buildPendingAttachment));
-      const payload = built.map((a) => ({
-        vehicle_entry_id: entryId,
-        file_name: a.file_name,
-        mime_type: a.mime_type,
-        data_url: a.data_url,
-        size_original: a.size_original,
-        size_stored: a.size_stored,
-      }));
-      const { error: insErr } = await supabase.from('vehicle_entry_attachments' as any).insert(payload);
-      if (insErr) throw insErr;
+      await uploadAttachmentsAndInsertRows(entryId, built);
       toast.success('Lampiran tersimpan');
       await fetchAttachmentsForDialog(entryId);
     } catch (e: any) {
       const msg = String(e?.message || '');
       if (isMissingAttachmentTable(msg)) {
-        toast.error("Lampiran gagal disimpan: tabel 'vehicle_entry_attachments' belum ada/Belum ke-refresh di Supabase. Jalankan migration 20260425_create_vehicle_entry_attachments.sql lalu refresh schema cache Supabase.");
+        toast.error("Lampiran gagal disimpan: tabel 'vehicle_entry_attachments' belum ada/Belum ke-refresh di Supabase. Jalankan migration 20260425_create_vehicle_entry_attachments.sql dan 20260427_vehicle_entry_attachments_storage.sql lalu refresh schema cache Supabase.");
+      } else if (isAttachmentSchemaOutdated(msg)) {
+        toast.error("Lampiran gagal disimpan: schema tabel lampiran belum update. Jalankan migration 20260427_vehicle_entry_attachments_storage.sql lalu refresh schema cache Supabase.");
       } else {
         toast.error('Lampiran gagal disimpan: ' + msg);
       }
@@ -546,12 +664,16 @@ export default function VehicleEntryPage() {
     }
   };
 
-  const handleRemoveAttachmentDialog = async (id: string) => {
+  const handleRemoveAttachmentDialog = async (a: EntryAttachment) => {
     const entryId = attachmentDialogEntry?.id;
     if (!entryId) return;
     if (!confirm('Hapus lampiran ini?')) return;
     try {
-      const { error } = await supabase.from('vehicle_entry_attachments' as any).delete().eq('id', id);
+      if (a.storage_bucket && a.storage_path) {
+        const { error: stErr } = await supabase.storage.from(a.storage_bucket).remove([a.storage_path]);
+        if (stErr) throw stErr;
+      }
+      const { error } = await supabase.from('vehicle_entry_attachments' as any).delete().eq('id', a.id);
       if (error) throw error;
       toast.success('Lampiran dihapus');
       await fetchAttachmentsForDialog(entryId);
@@ -591,12 +713,16 @@ export default function VehicleEntryPage() {
     setPendingAttachments((prev) => prev.filter((x) => x.temp_id !== tempId));
   };
 
-  const handleRemoveAttachment = async (id: string) => {
+  const handleRemoveAttachment = async (a: EntryAttachment) => {
     if (!confirm('Hapus lampiran ini?')) return;
     try {
-      const { error } = await supabase.from('vehicle_entry_attachments' as any).delete().eq('id', id);
+      if (a.storage_bucket && a.storage_path) {
+        const { error: stErr } = await supabase.storage.from(a.storage_bucket).remove([a.storage_path]);
+        if (stErr) throw stErr;
+      }
+      const { error } = await supabase.from('vehicle_entry_attachments' as any).delete().eq('id', a.id);
       if (error) throw error;
-      setAttachments((prev) => prev.filter((x) => x.id !== id));
+      setAttachments((prev) => prev.filter((x) => x.id !== a.id));
       toast.success('Lampiran dihapus');
     } catch (e: any) {
       toast.error('Gagal menghapus lampiran: ' + String(e?.message || e));
@@ -941,25 +1067,13 @@ export default function VehicleEntryPage() {
 
       if (targetId && pendingAttachments.length > 0) {
         try {
-          const { error: tableErr } = await supabase
-            .from('vehicle_entry_attachments' as any)
-            .select('id')
-            .limit(1);
-          if (tableErr) throw tableErr;
-          const payload = pendingAttachments.map((a) => ({
-            vehicle_entry_id: targetId,
-            file_name: a.file_name,
-            mime_type: a.mime_type,
-            data_url: a.data_url,
-            size_original: a.size_original,
-            size_stored: a.size_stored,
-          }));
-          const { error: insErr } = await supabase.from('vehicle_entry_attachments' as any).insert(payload);
-          if (insErr) throw insErr;
+          await uploadAttachmentsAndInsertRows(targetId, pendingAttachments);
         } catch (e: any) {
           const msg = String(e?.message || '');
           if (isMissingAttachmentTable(msg)) {
-            toast.error("Lampiran gagal disimpan: tabel 'vehicle_entry_attachments' belum ada/Belum ke-refresh di Supabase. Jalankan migration 20260425_create_vehicle_entry_attachments.sql lalu refresh schema cache Supabase.");
+            toast.error("Lampiran gagal disimpan: tabel 'vehicle_entry_attachments' belum ada/Belum ke-refresh di Supabase. Jalankan migration 20260425_create_vehicle_entry_attachments.sql dan 20260427_vehicle_entry_attachments_storage.sql lalu refresh schema cache Supabase.");
+          } else if (isAttachmentSchemaOutdated(msg)) {
+            toast.error("Lampiran gagal disimpan: schema tabel lampiran belum update. Jalankan migration 20260427_vehicle_entry_attachments_storage.sql lalu refresh schema cache Supabase.");
           } else {
             toast.error('Lampiran gagal disimpan: ' + msg);
           }
@@ -1378,8 +1492,11 @@ export default function VehicleEntryPage() {
                               <div className="text-[11px] text-muted-foreground">{a.mime_type}</div>
                             </div>
                             <div className="flex items-center gap-2">
-                              <Button type="button" variant="outline" size="sm" onClick={() => window.open(a.data_url, '_blank')}>
+                              <Button type="button" variant="outline" size="sm" onClick={() => openBlob(a.blob)}>
                                 Buka
+                              </Button>
+                              <Button type="button" variant="outline" size="sm" onClick={() => downloadBlob(a.blob, a.file_name)}>
+                                Download
                               </Button>
                               <Button type="button" variant="ghost" size="sm" className="text-red-600" onClick={() => handleRemovePendingAttachment(a.temp_id)}>
                                 Hapus
@@ -1395,10 +1512,13 @@ export default function VehicleEntryPage() {
                               <div className="text-[11px] text-muted-foreground">{a.mime_type}</div>
                             </div>
                             <div className="flex items-center gap-2">
-                              <Button type="button" variant="outline" size="sm" onClick={() => window.open(a.data_url, '_blank')}>
+                              <Button type="button" variant="outline" size="sm" onClick={() => openStoredAttachment(a)}>
                                 Buka
                               </Button>
-                              <Button type="button" variant="ghost" size="sm" className="text-red-600" onClick={() => handleRemoveAttachment(a.id)}>
+                              <Button type="button" variant="outline" size="sm" onClick={() => downloadStoredAttachment(a)}>
+                                Download
+                              </Button>
+                              <Button type="button" variant="ghost" size="sm" className="text-red-600" onClick={() => handleRemoveAttachment(a)}>
                                 Hapus
                               </Button>
                             </div>
@@ -1598,10 +1718,13 @@ export default function VehicleEntryPage() {
                         <div className="text-[11px] text-muted-foreground">{a.mime_type}</div>
                       </div>
                       <div className="flex items-center gap-2">
-                        <Button type="button" variant="outline" size="sm" onClick={() => window.open(a.data_url, '_blank')}>
+                        <Button type="button" variant="outline" size="sm" onClick={() => openStoredAttachment(a)}>
                           Buka
                         </Button>
-                        <Button type="button" variant="ghost" size="sm" className="text-red-600" onClick={() => handleRemoveAttachmentDialog(a.id)}>
+                        <Button type="button" variant="outline" size="sm" onClick={() => downloadStoredAttachment(a)}>
+                          Download
+                        </Button>
+                        <Button type="button" variant="ghost" size="sm" className="text-red-600" onClick={() => handleRemoveAttachmentDialog(a)}>
                           Hapus
                         </Button>
                       </div>
