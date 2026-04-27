@@ -394,26 +394,30 @@ export default function VehicleEntryPage() {
     new Promise<string>((resolve, reject) => {
       const img = new Image();
       img.onload = () => {
-        const maxSide = 1600;
         const w = img.width || 0;
         const h = img.height || 0;
         if (!w || !h) {
           resolve(dataUrl);
           return;
         }
-        const scale = Math.min(1, maxSide / Math.max(w, h));
-        const tw = Math.max(1, Math.round(w * scale));
-        const th = Math.max(1, Math.round(h * scale));
-        const canvas = document.createElement('canvas');
-        canvas.width = tw;
-        canvas.height = th;
-        const ctx = canvas.getContext('2d');
-        if (!ctx) {
-          resolve(dataUrl);
-          return;
-        }
-        ctx.drawImage(img, 0, 0, tw, th);
-        resolve(canvas.toDataURL('image/jpeg', 0.7));
+        const encode = (maxSide: number, quality: number) => {
+          const scale = Math.min(1, maxSide / Math.max(w, h));
+          const tw = Math.max(1, Math.round(w * scale));
+          const th = Math.max(1, Math.round(h * scale));
+          const canvas = document.createElement('canvas');
+          canvas.width = tw;
+          canvas.height = th;
+          const ctx = canvas.getContext('2d');
+          if (!ctx) return dataUrl;
+          ctx.drawImage(img, 0, 0, tw, th);
+          return canvas.toDataURL('image/jpeg', quality);
+        };
+
+        let out = encode(1600, 0.7);
+        if (out.length > 900000) out = encode(1400, 0.65);
+        if (out.length > 700000) out = encode(1200, 0.6);
+        if (out.length > 550000) out = encode(1000, 0.55);
+        resolve(out);
       };
       img.onerror = () => reject(new Error('Gagal memproses gambar'));
       img.src = dataUrl;
@@ -422,6 +426,12 @@ export default function VehicleEntryPage() {
   const buildPendingAttachment = async (file: File): Promise<PendingAttachment> => {
     const mime = String(file.type || '').toLowerCase();
     const originalSize = file.size;
+    if (mime === 'application/pdf' && originalSize > 2_000_000) {
+      throw new Error('PDF terlalu besar. Silakan kompres PDF terlebih dahulu sebelum di-upload.');
+    }
+    if (mime.startsWith('image/') && originalSize > 8_000_000) {
+      throw new Error('Gambar terlalu besar. Silakan pilih file yang lebih kecil.');
+    }
     const rawDataUrl = await toDataUrl(file);
     const storedDataUrl = mime.startsWith('image/') ? await compressImageDataUrl(rawDataUrl) : rawDataUrl;
     const storedSize = storedDataUrl.length;
@@ -435,6 +445,16 @@ export default function VehicleEntryPage() {
     };
   };
 
+  const isMissingAttachmentTable = (msg: string) => {
+    const m = String(msg || '').toLowerCase();
+    return (
+      m.includes('schema cache') ||
+      m.includes('could not find the table') ||
+      m.includes('relation') ||
+      m.includes('does not exist')
+    );
+  };
+
   const fetchAttachments = async (entryId: string) => {
     try {
       const { data, error } = await supabase
@@ -446,8 +466,8 @@ export default function VehicleEntryPage() {
       setAttachments((data as any) || []);
     } catch (e: any) {
       const msg = String(e?.message || '');
-      if (msg.toLowerCase().includes('relation') || msg.toLowerCase().includes('does not exist')) {
-        toast.error("DB belum siap: tabel 'vehicle_entry_attachments' belum ada. Jalankan migration 20260425_create_vehicle_entry_attachments.sql di Supabase.");
+      if (isMissingAttachmentTable(msg)) {
+        toast.error("Lampiran belum bisa dipakai: tabel 'vehicle_entry_attachments' belum ada/Belum ke-refresh di Supabase. Jalankan migration 20260425_create_vehicle_entry_attachments.sql lalu refresh schema cache Supabase.");
       } else {
         toast.error('Gagal memuat lampiran: ' + msg);
       }
@@ -466,8 +486,8 @@ export default function VehicleEntryPage() {
       setAttachmentDialogAttachments((data as any) || []);
     } catch (e: any) {
       const msg = String(e?.message || '');
-      if (msg.toLowerCase().includes('relation') || msg.toLowerCase().includes('does not exist')) {
-        toast.error("DB belum siap: tabel 'vehicle_entry_attachments' belum ada. Jalankan migration 20260425_create_vehicle_entry_attachments.sql di Supabase.");
+      if (isMissingAttachmentTable(msg)) {
+        toast.error("Lampiran belum bisa dipakai: tabel 'vehicle_entry_attachments' belum ada/Belum ke-refresh di Supabase. Jalankan migration 20260425_create_vehicle_entry_attachments.sql lalu refresh schema cache Supabase.");
       } else {
         toast.error('Gagal memuat lampiran: ' + msg);
       }
@@ -515,8 +535,8 @@ export default function VehicleEntryPage() {
       await fetchAttachmentsForDialog(entryId);
     } catch (e: any) {
       const msg = String(e?.message || '');
-      if (msg.toLowerCase().includes('relation') || msg.toLowerCase().includes('does not exist')) {
-        toast.error("Lampiran gagal disimpan: tabel 'vehicle_entry_attachments' belum ada. Jalankan migration 20260425_create_vehicle_entry_attachments.sql di Supabase.");
+      if (isMissingAttachmentTable(msg)) {
+        toast.error("Lampiran gagal disimpan: tabel 'vehicle_entry_attachments' belum ada/Belum ke-refresh di Supabase. Jalankan migration 20260425_create_vehicle_entry_attachments.sql lalu refresh schema cache Supabase.");
       } else {
         toast.error('Lampiran gagal disimpan: ' + msg);
       }
@@ -938,8 +958,8 @@ export default function VehicleEntryPage() {
           if (insErr) throw insErr;
         } catch (e: any) {
           const msg = String(e?.message || '');
-          if (msg.toLowerCase().includes('relation') || msg.toLowerCase().includes('does not exist')) {
-            toast.error("Lampiran gagal disimpan: tabel 'vehicle_entry_attachments' belum ada. Jalankan migration 20260425_create_vehicle_entry_attachments.sql di Supabase.");
+          if (isMissingAttachmentTable(msg)) {
+            toast.error("Lampiran gagal disimpan: tabel 'vehicle_entry_attachments' belum ada/Belum ke-refresh di Supabase. Jalankan migration 20260425_create_vehicle_entry_attachments.sql lalu refresh schema cache Supabase.");
           } else {
             toast.error('Lampiran gagal disimpan: ' + msg);
           }
