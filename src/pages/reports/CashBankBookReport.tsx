@@ -99,10 +99,54 @@ export default function CashBankBookReport() {
 
       if (currError) throw currError;
 
+      const items = (currentItems || []) as any[];
+      const paymentRefs = Array.from(
+        new Set(
+          items
+            .filter((it: any) => String(it.journal_entries?.entry_type || '').toUpperCase() === 'PAYMENT')
+            .map((it: any) => String(it.journal_entries?.reference || '').trim())
+            .filter(Boolean)
+        )
+      );
+
+      const paymentMap: Record<string, { amount: number; transfer_fee: number }> = {};
+      if (paymentRefs.length > 0) {
+        const chunkSize = 500;
+        for (let i = 0; i < paymentRefs.length; i += chunkSize) {
+          const chunk = paymentRefs.slice(i, i + chunkSize);
+          const { data: pays, error: payErr } = await supabase
+            .from('purchase_payments')
+            .select('id, amount, transfer_fee')
+            .in('id', chunk);
+          if (payErr) throw payErr;
+          (pays || []).forEach((p: any) => {
+            paymentMap[String(p.id)] = {
+              amount: Number(p.amount || 0),
+              transfer_fee: Number(p.transfer_fee || 0),
+            };
+          });
+        }
+      }
+
+      const totalsByEntryId: Record<string, { credit: number; debit: number }> = {};
+      items.forEach((it: any) => {
+        const entryId = String(it.journal_entries?.id || '');
+        if (!entryId) return;
+        const debit = Number(it.debit) || 0;
+        const credit = Number(it.credit) || 0;
+        if (!totalsByEntryId[entryId]) totalsByEntryId[entryId] = { credit: 0, debit: 0 };
+        totalsByEntryId[entryId].credit += credit;
+        totalsByEntryId[entryId].debit += debit;
+      });
+
       let running = openBal;
-      const mapped = (currentItems || []).map((item: any) => {
+      const addedFeeForEntry = new Set<string>();
+      const mapped: any[] = [];
+
+      for (const item of items) {
         const debit = Number(item.debit) || 0;
         const credit = Number(item.credit) || 0;
+
         if (account.balance_type === 'DEBIT') running += (debit - credit);
         else running += (credit - debit);
 
@@ -110,18 +154,62 @@ export default function CashBankBookReport() {
         const lineDesc = item.description;
         const desc = (lineDesc && String(lineDesc).trim().length > 20) ? lineDesc : (headerDesc || lineDesc || '');
 
-        return {
+        const entryId = String(item.journal_entries?.id || '');
+        const ref = String(item.journal_entries?.reference || '').trim();
+        const entryType = String(item.journal_entries?.entry_type || '').toUpperCase();
+
+        mapped.push({
           id: item.id,
           entry_date: item.journal_entries?.entry_date,
           voucher_no: item.journal_entries?.voucher_no,
-          reference: item.journal_entries?.reference,
+          reference: ref,
           entry_type: item.journal_entries?.entry_type,
           description: desc,
           debit,
           credit,
           balance: running,
-        };
-      });
+        });
+
+        if (
+          entryType === 'PAYMENT' &&
+          entryId &&
+          ref &&
+          paymentMap[ref] &&
+          !addedFeeForEntry.has(entryId)
+        ) {
+          const pay = paymentMap[ref];
+          const fee = Math.max(0, Number(pay.transfer_fee || 0));
+          if (fee > 0) {
+            const totalCredit = Number(totalsByEntryId[entryId]?.credit || 0);
+            const totalDebit = Number(totalsByEntryId[entryId]?.debit || 0);
+            const tol = 0.01;
+            const shouldAddLine =
+              Math.abs(totalCredit - (pay.amount + fee)) > tol &&
+              Math.abs(totalDebit - (pay.amount + fee)) > tol &&
+              Math.abs(totalCredit - pay.amount) < tol;
+
+            if (shouldAddLine) {
+              const vDebit = 0;
+              const vCredit = fee;
+              if (account.balance_type === 'DEBIT') running += (vDebit - vCredit);
+              else running += (vCredit - vDebit);
+
+              mapped.push({
+                id: `${item.id}-fee`,
+                entry_date: item.journal_entries?.entry_date,
+                voucher_no: item.journal_entries?.voucher_no,
+                reference: ref,
+                entry_type: item.journal_entries?.entry_type,
+                description: 'Biaya Admin/Transfer',
+                debit: vDebit,
+                credit: vCredit,
+                balance: running,
+              });
+              addedFeeForEntry.add(entryId);
+            }
+          }
+        }
+      }
 
       setTransactions(mapped);
     } catch (e: any) {
@@ -308,4 +396,3 @@ export default function CashBankBookReport() {
     </div>
   );
 }
-

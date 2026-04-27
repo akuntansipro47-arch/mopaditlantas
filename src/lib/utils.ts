@@ -6,11 +6,12 @@ export function cn(...inputs: ClassValue[]) {
 }
 
 export function formatCurrency(amount: number) {
+  const safe = Number.isFinite(amount) ? amount : 0;
   return new Intl.NumberFormat("id-ID", {
     style: "currency",
     currency: "IDR",
     minimumFractionDigits: 0,
-  }).format(amount);
+  }).format(safe);
 }
 
 export function formatDate(date: string | Date | null | undefined) {
