@@ -112,6 +112,7 @@ const navigation: NavItem[] = [
       { name: 'Rekap Barang Keluar', href: '/reports?tab=issue', icon: PackageMinus, key: 'report_issue' },
       { name: 'Laporan Detail Barang Keluar', href: '/reports?tab=issuedetail', icon: PackageMinus, key: 'report_issue' },
       { name: 'Laporan Unit Masuk', href: '/reports?tab=vehicle_entry', icon: FileInput, key: 'report_vehicle_entry' },
+      { name: 'Laporan Unit Keluar', href: '/reports?tab=vehicle_exit', icon: Car, key: 'report_vehicle_exit' },
       { name: 'Laporan Estimasi vs Realisasi', href: '/reports?tab=estimation', icon: BarChart3, key: 'report_estimation' },
       { name: 'Laporan Estimasi Part Belum PO', href: '/reports?tab=estimation_unpo', icon: ShoppingCart, key: 'report_unordered_parts' },
       { name: 'Detail WO', href: '/reports?tab=wodetail', icon: ClipboardCheck, key: 'report_wo' },

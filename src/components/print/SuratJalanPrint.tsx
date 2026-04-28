@@ -80,7 +80,7 @@ export default function SuratJalanPrint({ id }: SuratJalanPrintProps) {
               <span className="text-gray-500 text-[9px]">NO. SJ</span>
             </div>
             <div>
-              <span className="block text-[10px]">{formatDate(new Date())}</span>
+              <span className="block text-[10px]">{formatDate(wo.completed_at || wo.work_date || new Date())}</span>
               <span className="text-gray-500 text-[9px]">TANGGAL</span>
             </div>
           </div>

@@ -327,12 +327,24 @@ export default function WorkOrder() {
 
   const handleStatusChange = async (id: string, newStatus: string) => {
     try {
+      const isDone = newStatus === 'COMPLETED' || newStatus === 'CLOSED';
       const { error } = await supabase
         .from('work_orders')
-        .update({ status: newStatus } as any)
+        .update({ status: newStatus, completed_at: isDone ? new Date().toISOString() : null } as any)
         .eq('id', id);
       
-      if (error) throw error;
+      if (error) {
+        const msg = String((error as any)?.message || '');
+        if (msg.toLowerCase().includes('completed_at')) {
+          const { error: retryErr } = await supabase
+            .from('work_orders')
+            .update({ status: newStatus } as any)
+            .eq('id', id);
+          if (retryErr) throw retryErr;
+        } else {
+          throw error;
+        }
+      }
       
       toast.success(`Status WO diubah menjadi ${newStatus}`);
       await fetchWOs();

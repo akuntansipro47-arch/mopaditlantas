@@ -185,21 +185,43 @@ const WorkOrderV2 = () => {
       return;
     }
 
-    const woData = {
+    const status = String(currentWo.status || 'OPEN');
+    const isDone = status === 'COMPLETED' || status === 'CLOSED';
+
+    const woData: any = {
       ...currentWo,
       wo_number: currentWo.wo_number || generateTransactionNumber('WO'),
-      status: currentWo.status || 'OPEN',
+      status,
+      completed_at: isDone ? (currentWo as any).completed_at || new Date().toISOString() : null,
     };
 
     try {
       let result;
       if (isEditing) {
-        const { data, error } = await supabase.from('work_orders').update(woData).eq('id', currentWo.id).select();
+        let { data, error } = await supabase.from('work_orders').update(woData).eq('id', currentWo.id).select();
+        if (error) {
+          const msg = String((error as any)?.message || '');
+          if (msg.toLowerCase().includes('completed_at')) {
+            const { completed_at, ...fallback } = woData;
+            const retry = await supabase.from('work_orders').update(fallback as any).eq('id', currentWo.id).select();
+            data = retry.data as any;
+            error = retry.error as any;
+          }
+        }
         if (error) throw error;
         result = data;
         toast.success("Work Order berhasil diperbarui.");
       } else {
-        const { data, error } = await supabase.from('work_orders').insert(woData).select();
+        let { data, error } = await supabase.from('work_orders').insert(woData).select();
+        if (error) {
+          const msg = String((error as any)?.message || '');
+          if (msg.toLowerCase().includes('completed_at')) {
+            const { completed_at, ...fallback } = woData;
+            const retry = await supabase.from('work_orders').insert(fallback as any).select();
+            data = retry.data as any;
+            error = retry.error as any;
+          }
+        }
         if (error) throw error;
         result = data;
         toast.success("Work Order berhasil dibuat.");
@@ -325,8 +347,16 @@ const WorkOrderV2 = () => {
         return;
       }
 
-      const { error } = await supabase.from('work_orders').update({ status: 'COMPLETED' }).eq('id', wo.id);
-      if (error) throw error;
+      const { error } = await supabase.from('work_orders').update({ status: 'COMPLETED', completed_at: new Date().toISOString() } as any).eq('id', wo.id);
+      if (error) {
+        const msg = String((error as any)?.message || '');
+        if (msg.toLowerCase().includes('completed_at')) {
+          const { error: retryErr } = await supabase.from('work_orders').update({ status: 'COMPLETED' } as any).eq('id', wo.id);
+          if (retryErr) throw retryErr;
+        } else {
+          throw error;
+        }
+      }
       toast.success("Work Order telah diselesaikan.");
       fetchWOs();
     } catch (error: any) {
@@ -337,8 +367,16 @@ const WorkOrderV2 = () => {
   const handleReopenWO = async (woId: string) => {
     if (window.confirm("Apakah Anda yakin ingin membuka kembali Work Order ini?")) {
       try {
-        const { error } = await supabase.from('work_orders').update({ status: 'OPEN' }).eq('id', woId);
-        if (error) throw error;
+        const { error } = await supabase.from('work_orders').update({ status: 'OPEN', completed_at: null } as any).eq('id', woId);
+        if (error) {
+          const msg = String((error as any)?.message || '');
+          if (msg.toLowerCase().includes('completed_at')) {
+            const { error: retryErr } = await supabase.from('work_orders').update({ status: 'OPEN' } as any).eq('id', woId);
+            if (retryErr) throw retryErr;
+          } else {
+            throw error;
+          }
+        }
         toast.success("Work Order telah dibuka kembali.");
         fetchWOs();
       } catch (error: any) {

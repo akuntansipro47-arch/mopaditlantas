@@ -20,6 +20,7 @@ import PurchasePaymentHistoryReport from './reports/PurchasePaymentHistoryReport
 import CashBankBookReport from './reports/CashBankBookReport';
 import CashFlowReport from './reports/CashFlowReport';
 import VehicleEntryReport from './reports/VehicleEntryReport';
+import VehicleExitReport from './reports/VehicleExitReport';
 import EstimationVsRealizationReport from './reports/EstimationVsRealizationReport';
 import UnorderedSparepartEstimationReport from './reports/UnorderedSparepartEstimationReport';
 import BudgetMonitoringReport from './reports/BudgetMonitoringReport';
@@ -28,6 +29,7 @@ import { Activity } from 'lucide-react';
 
 type ReportKey =
   | 'vehicle_entry'
+  | 'vehicle_exit'
   | 'wo'
   | 'wodetail'
   | 'po'
@@ -85,6 +87,7 @@ export default function Reports() {
       if (canAccess('report_issue')) return 'issue';
       if (canAccess('report_wo')) return 'wo';
       if (canAccess('report_vehicle_entry')) return 'vehicle_entry';
+      if (canAccess('report_vehicle_exit')) return 'vehicle_exit';
       if (canAccess('report_profit')) return 'profit';
       if (canAccess('report_profit_loss')) return 'profit_loss';
       if (canAccess('report_balance_sheet')) return 'balance_sheet';
@@ -118,6 +121,7 @@ export default function Reports() {
   const activeTab = (searchParams.get('tab') as ReportKey | null) || defaultTab;
   const allowedTabs: ReportKey[] = [
     canAccess('report_vehicle_entry') ? 'vehicle_entry' : null,
+    canAccess('report_vehicle_exit') ? 'vehicle_exit' : null,
     canAccess('report_wo') ? 'wo' : null,
     canAccess('report_wo') ? 'wodetail' : null,
     canAccess('report_po') ? 'po' : null,
@@ -145,6 +149,7 @@ export default function Reports() {
 
   const renderReport = (key: ReportKey) => {
     if (key === 'vehicle_entry') return <VehicleEntryReport />;
+    if (key === 'vehicle_exit') return <VehicleExitReport />;
     if (key === 'wo') return <WorkOrderReport />;
     if (key === 'wodetail') return <WorkOrderDetailReport />;
     if (key === 'po') return <PurchaseOrderReport />;
