@@ -942,6 +942,7 @@ export default function PurchaseOrderV2() {
                         <TableHead className="w-[200px]">Merk / Tipe</TableHead>
                         <TableHead className="w-[100px]">Qty</TableHead>
                         <TableHead className="w-[180px]">Harga Satuan</TableHead>
+                        <TableHead className="w-[180px]">Total</TableHead>
                         <TableHead className="w-[50px]"></TableHead>
                       </TableRow>
                     </TableHeader>
@@ -1056,6 +1057,9 @@ export default function PurchaseOrderV2() {
                               }} 
                               disabled={isReadOnly || lockLine || Boolean((item as any).locked_unit_price)}
                             />
+                          </TableCell>
+                          <TableCell className="text-right font-semibold">
+                            {formatCurrency((Number(item.quantity) || 0) * (Number(item.unit_price) || 0))}
                           </TableCell>
                           <TableCell>
                             {!isReadOnly && returnedGoodsIds.length === 0 && poItems.length > 1 && (

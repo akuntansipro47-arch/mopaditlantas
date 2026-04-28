@@ -359,8 +359,7 @@ export default function PurchaseOrderReturn() {
     if (stockInvalid) {
       const delta = Number(stockInvalid.return_qty || 0) - Number(stockInvalid.original_qty || 0);
       const cur = Number(stockById.get(String(stockInvalid.goods_id)) || 0);
-      toast.error(`Stok tidak cukup untuk menambah retur ${stockInvalid.name}. Stok: ${cur}, Tambahan Retur: ${delta}.`);
-      return;
+      toast.warning(`Stok tidak cukup untuk menambah retur ${stockInvalid.name}. Stok: ${cur}, Tambahan Retur: ${delta}. Proses tetap dilanjutkan.`);
     }
 
     const itemsToSave = normalizedLines.filter(l => Number(l.return_qty || 0) > 0);
@@ -409,7 +408,7 @@ export default function PurchaseOrderReturn() {
         const delta = Number(l.return_qty || 0) - Number(l.original_qty || 0);
         if (!delta) continue;
         const cur = Number(stockById.get(gid) || 0);
-        const next = Math.max(0, cur - delta);
+        const next = cur - delta;
         const { error: uErr } = await supabase.from('goods').update({ current_stock: next }).eq('id', gid);
         if (uErr) throw uErr;
       }
@@ -805,8 +804,7 @@ export default function PurchaseOrderReturn() {
       const name = line?.name || line?.item_code || stockInvalidId;
       const req = Number(qtyByGoodsId.get(stockInvalidId) || 0);
       const cur = Number(stockById.get(stockInvalidId) || 0);
-      toast.error(`Stok tidak cukup untuk retur ${name}. Stok: ${cur}, Retur: ${req}.`);
-      return;
+      toast.warning(`Stok tidak cukup untuk retur ${name}. Stok: ${cur}, Retur: ${req}. Proses tetap dilanjutkan.`);
     }
 
     setIsProcessing(true);
@@ -851,7 +849,7 @@ export default function PurchaseOrderReturn() {
           continue;
         }
         const cur = Number(stockById.get(gid) || 0);
-        const newStock = Math.max(0, cur - Number(qty || 0));
+        const newStock = cur - Number(qty || 0);
         const { error: uErr } = await supabase
           .from('goods')
           .update({ current_stock: newStock })
@@ -1245,7 +1243,7 @@ export default function PurchaseOrderReturn() {
               </TableBody>
             </Table>
           </div>
-          <p className="text-xs text-yellow-600 mt-1"><AlertTriangle className="inline-block h-3 w-3 mr-1" />Qty retur tidak boleh melebihi sisa diterima, dan stok harus cukup (barang belum dipakai).</p>
+          <p className="text-xs text-yellow-600 mt-1"><AlertTriangle className="inline-block h-3 w-3 mr-1" />Qty retur tidak boleh melebihi sisa diterima.</p>
 
           <div className="mt-4 border rounded-md">
             <div className="px-3 py-2 border-b flex items-center justify-between">

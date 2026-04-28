@@ -306,9 +306,15 @@ export default function GoodsIssuePage() {
     const lastIssueNumber = issuedMap[goodsId]?.lastIssueNumber || '';
     const lastIssueDate = issuedMap[goodsId]?.lastIssueDate || '';
 
-    const cap = Number.isFinite(Number(it.cap_quantity)) ? Number(it.cap_quantity) : null;
+    const cap =
+      it.cap_quantity === null || it.cap_quantity === undefined
+        ? null
+        : Number.isFinite(Number(it.cap_quantity))
+          ? Number(it.cap_quantity)
+          : null;
     const remaining = cap !== null ? Math.max(0, cap - issued) : null;
-    const locked = cap === null ? issued > 0 : remaining !== null && remaining <= 0;
+    const isManual = it.source === 'MANUAL';
+    const locked = isManual ? false : (cap === null ? issued > 0 : remaining !== null && remaining <= 0);
 
     const nextQty = cap === null ? (locked ? 0 : it.quantity) : (remaining ?? 0);
     const hintIssued =
@@ -718,7 +724,12 @@ export default function GoodsIssuePage() {
         if (!it.goods_id) continue;
         if (Boolean(it.value_only)) continue;
         const issued = Number(issuedMap[it.goods_id]?.qty || 0);
-        const cap = Number.isFinite(Number(it.cap_quantity)) ? Number(it.cap_quantity) : null;
+        const cap =
+          it.cap_quantity === null || it.cap_quantity === undefined
+            ? null
+            : Number.isFinite(Number(it.cap_quantity))
+              ? Number(it.cap_quantity)
+              : null;
         const qty = Number(it.quantity || 0);
 
         const oldQty = Number(oldQtyByGoodsId[it.goods_id] || 0);
@@ -726,7 +737,7 @@ export default function GoodsIssuePage() {
         if (editingId && delta <= 0) continue;
 
         if (cap === null) {
-          if (issued > 0 && qty > 0) {
+          if (issued > 0 && qty > 0 && it.source !== 'MANUAL') {
             const gName = goodsList.find((g) => g.id === it.goods_id)?.name || it.goods_id;
             offenders.push(`${gName} (sudah keluar ${issued})`);
           }
@@ -1093,6 +1104,8 @@ export default function GoodsIssuePage() {
                           className="h-8 text-center" 
                           value={item.quantity} 
                           disabled={item.locked}
+                          onFocus={(e) => e.currentTarget.select()}
+                          onClick={(e) => e.currentTarget.select()}
                           onChange={(e) => {
                             const val = e.target.value.replace(/[^0-9]/g, '');
                             handleItemChange(index, 'quantity', val ? parseInt(val) : 0);
@@ -1219,7 +1232,9 @@ export default function GoodsIssuePage() {
                     key={g.id}
                     onSelect={() => {
                       const issued = Number(issuedByGoodsId[g.id]?.qty || 0);
-                      if (issued > 0 && !editingId) {
+                      const current = activeItemIndex !== null ? issueItems[activeItemIndex] : null;
+                      const isManual = (current?.source || 'MANUAL') === 'MANUAL';
+                      if (issued > 0 && !editingId && !isManual) {
                         toast.error(`Barang ini sudah pernah keluar untuk WO ini (qty ${issued}). Pilih barang lain.`);
                         return;
                       }

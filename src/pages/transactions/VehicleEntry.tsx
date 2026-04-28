@@ -114,6 +114,7 @@ export default function VehicleEntryPage() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [attachments, setAttachments] = useState<EntryAttachment[]>([]);
   const [pendingAttachments, setPendingAttachments] = useState<PendingAttachment[]>([]);
+  const [attachmentCounts, setAttachmentCounts] = useState<Record<string, number>>({});
 
   const attachmentDialogFileInputRef = useRef<HTMLInputElement | null>(null);
   const [isAttachmentDialogOpen, setIsAttachmentDialogOpen] = useState(false);
@@ -184,12 +185,76 @@ export default function VehicleEntryPage() {
       if (error) throw error;
       
       setEntries(data as any || []);
+      await fetchAttachmentCountsForEntries((data as any) || []);
     } catch (error: any) {
       toast.error('Gagal mengambil data entry: ' + error.message);
     } finally {
       setLoading(false);
     }
   }
+
+  const fetchAttachmentCountsForEntries = async (rows: EntryWithDetails[]) => {
+    try {
+      const ids = (rows || []).map((r: any) => String(r?.id || '')).filter(Boolean);
+      if (ids.length === 0) {
+        setAttachmentCounts({});
+        return;
+      }
+
+      const counts: Record<string, number> = {};
+      const chunkSize = 250;
+      const chunks: string[][] = [];
+      for (let i = 0; i < ids.length; i += chunkSize) chunks.push(ids.slice(i, i + chunkSize));
+
+      for (const part of chunks) {
+        const { data, error } = await supabase
+          .from('vehicle_entry_attachments' as any)
+          .select('vehicle_entry_id')
+          .in('vehicle_entry_id', part);
+        if (error) {
+          const msg = String((error as any)?.message || '');
+          if (isMissingAttachmentTable(msg)) throw error;
+          break;
+        }
+        const rows = (data as any[]) || [];
+        for (const r of rows) {
+          const id = String((r as any)?.vehicle_entry_id || '');
+          if (!id) continue;
+          counts[id] = (counts[id] || 0) + 1;
+        }
+      }
+
+      if (Object.keys(counts).length > 0) {
+        setAttachmentCounts(counts);
+        return;
+      }
+
+      const stCounts: Record<string, number> = {};
+      const prefixOf = (id: string) => `vehicle-entries/${id}`;
+      for (let i = 0; i < ids.length; i += 6) {
+        const slice = ids.slice(i, i + 6);
+        const results = await Promise.all(
+          slice.map(async (id) => {
+            try {
+              const { data, error } = await supabase.storage
+                .from(VEHICLE_ENTRY_ATTACHMENT_BUCKET)
+                .list(prefixOf(id), { limit: 1, offset: 0 });
+              if (error) return { id, n: 0 };
+              return { id, n: (data || []).length > 0 ? 1 : 0 };
+            } catch {
+              return { id, n: 0 };
+            }
+          })
+        );
+        for (const r of results) {
+          if (r.n > 0) stCounts[r.id] = r.n;
+        }
+      }
+      setAttachmentCounts(stCounts);
+    } catch {
+      setAttachmentCounts({});
+    }
+  };
 
   const [isPartSearchOpen, setIsPartSearchOpen] = useState(false);
   const [activePartIndex, setActivePartIndex] = useState<number | null>(null);
@@ -1876,6 +1941,11 @@ export default function VehicleEntryPage() {
                         <div className="flex flex-col">
                           <span className="font-medium">{item.vehicles?.license_plate}</span>
                           <span className="text-xs text-muted-foreground">{item.vehicles?.brand_type}</span>
+                          {(attachmentCounts[item.id] || 0) > 0 && (
+                            <span className="text-xs font-medium text-emerald-700">
+                              Ada lampiran ({attachmentCounts[item.id]})
+                            </span>
+                          )}
                         </div>
                       </TableCell>
                       <TableCell>
@@ -1990,7 +2060,12 @@ export default function VehicleEntryPage() {
                                 {isLocked ? <Eye className="h-4 w-4" /> : <Printer className="h-4 w-4" />}
                               </Button>
                               <Button variant="ghost" size="icon" onClick={() => openAttachmentDialog(item)} title="Lampiran">
-                                <Paperclip className="h-4 w-4" />
+                                <span className="relative inline-flex">
+                                  <Paperclip className="h-4 w-4" />
+                                  {(attachmentCounts[item.id] || 0) > 0 && (
+                                    <span className="absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full bg-emerald-500 ring-2 ring-white" />
+                                  )}
+                                </span>
                               </Button>
                               {canEditThis && (
                                 <>
