@@ -284,8 +284,12 @@ export default function PurchasePayment() {
             .select(`
                 *,
                 purchase_invoices (
+                    id,
                     invoice_number,
-                    purchase_orders (po_number),
+                    total_amount,
+                    paid_amount,
+                    status,
+                    purchase_orders (po_number, status),
                     suppliers (name)
                 ),
                 payment_account:chart_of_accounts!purchase_payments_payment_account_id_fkey (account_name),
