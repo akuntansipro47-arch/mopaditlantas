@@ -148,6 +148,28 @@ export default function ItemHistoryReport() {
                 throw outError;
             }
 
+            const { data: returns, error: retError } = await supabase
+                .from('purchase_return_items')
+                .select(`
+                    quantity: quantity_returned,
+                    unit_price,
+                    created_at,
+                    purchase_returns (
+                        return_date,
+                        return_number,
+                        purchase_orders (
+                            po_number,
+                            suppliers (name)
+                        )
+                    )
+                `)
+                .eq('goods_id', selectedGood.id);
+            
+            if (retError) {
+                console.error("Error fetching returns:", retError);
+                throw retError;
+            }
+
             const { data: poItems } = await supabase
               .from('purchase_order_items')
               .select(
@@ -198,6 +220,8 @@ export default function ItemHistoryReport() {
               }
               return last;
             };
+
+            const unwrap = (v: any) => (Array.isArray(v) ? v[0] : v);
 
             // setDebugInfo({ incoming: incoming?.length || 0, outgoing: outgoing?.length || 0 });
 
@@ -258,6 +282,15 @@ export default function ItemHistoryReport() {
                 `)
                 .eq('goods_id', selectedGood.id);
 
+             const { data: allReturns } = await supabase
+                .from('purchase_return_items')
+                .select(`
+                    quantity: quantity_returned,
+                    created_at,
+                    purchase_returns (return_date)
+                `)
+                .eq('goods_id', selectedGood.id);
+
             // Calculate Opening Balance
             let openingBalance = 0;
             const start = new Date(dateRange.start);
@@ -277,6 +310,15 @@ export default function ItemHistoryReport() {
                 }
             });
 
+            allReturns?.forEach((item: any) => {
+                const pr = unwrap(item.purchase_returns);
+                const dateRaw = String(pr?.return_date || item.created_at || '');
+                const d = new Date(dateRaw);
+                if (d < start) {
+                    openingBalance -= Math.abs(Number(item.quantity || 0));
+                }
+            });
+
             const openingHpp = getCostAt(dateRange.start);
             const openingValue = openingBalance * openingHpp;
 
@@ -285,7 +327,8 @@ export default function ItemHistoryReport() {
               (allOutgoing?.reduce((s: number, it: any) => {
                 if (it.is_info_only || it.value_only) return s;
                 return s + Number(it.quantity || 0);
-              }, 0) || 0);
+              }, 0) || 0) -
+              (allReturns?.reduce((s: number, it: any) => s + Math.abs(Number(it.quantity || 0)), 0) || 0);
             setComputedStock(computedNow);
 
             // 4. Map & Combine Transactions
@@ -349,6 +392,39 @@ export default function ItemHistoryReport() {
                           : 'Pemakaian / Keluar',
                         is_info_only: item.is_info_only,
                         value_only: item.value_only
+                    });
+                 }
+            });
+
+            returns?.forEach((item: any) => {
+                 const pr = unwrap(item.purchase_returns);
+                 const dateRaw = String(pr?.return_date || item.created_at || '');
+                 const d = new Date(dateRaw);
+                 const inRange = d >= new Date(dateRange.start) && d <= new Date(dateRange.end);
+                 
+                 if (showAllHistory || inRange) {
+                    const qtyOut = Math.abs(Number(item.quantity || 0));
+                    const directHpp = Number(item.unit_price || 0);
+                    const costAt = dateRaw || dateRange.start;
+                    const hpp = directHpp > 0 ? directHpp : getCostAt(costAt);
+                    const valueOut = qtyOut * (Number(hpp) || 0);
+                    const rn = String(pr?.return_number || '-');
+                    const po = String(pr?.purchase_orders?.po_number || '');
+                    const ref = po ? `${rn} (${po})` : rn;
+                    combined.push({
+                        date: dateRaw,
+                        type: 'OUT',
+                        ref_number: ref,
+                        secondary_ref: pr?.purchase_orders?.suppliers?.name || 'Supplier Umum',
+                        tertiary_ref: '-',
+                        qty_in: 0,
+                        qty_out: qtyOut,
+                        balance: 0,
+                        hpp: Number(hpp) || 0,
+                        value_in: 0,
+                        value_out: valueOut,
+                        value_balance: 0,
+                        description: 'Retur Pembelian / Keluar'
                     });
                  }
             });
@@ -541,6 +617,7 @@ export default function ItemHistoryReport() {
                                     <TableHead className="w-[180px]">Supplier</TableHead>
                                     <TableHead className="w-[150px]">No. WO</TableHead>
                                     <TableHead className="w-[120px]">No. Polisi</TableHead>
+                                    <TableHead className="w-[180px]">Keterangan</TableHead>
                                     <TableHead className="text-right w-[100px] text-green-600">Masuk (Debit)</TableHead>
                                     <TableHead className="text-right w-[100px] text-red-600">Keluar (Kredit)</TableHead>
                                     <TableHead className="text-right w-[120px] font-bold">Saldo</TableHead>
@@ -550,21 +627,22 @@ export default function ItemHistoryReport() {
                             </TableHeader>
                             <TableBody>
                                 {loading ? (
-                                    <TableRow><TableCell colSpan={10} className="text-center h-24">Memuat data...</TableCell></TableRow>
+                                    <TableRow><TableCell colSpan={11} className="text-center h-24">Memuat data...</TableCell></TableRow>
                                 ) : transactions.length === 0 ? (
-                                    <TableRow><TableCell colSpan={10} className="text-center h-24 text-gray-500">{selectedGood ? 'Tidak ada transaksi pada periode ini.' : 'Silakan pilih barang terlebih dahulu.'}</TableCell></TableRow>
+                                    <TableRow><TableCell colSpan={11} className="text-center h-24 text-gray-500">{selectedGood ? 'Tidak ada transaksi pada periode ini.' : 'Silakan pilih barang terlebih dahulu.'}</TableCell></TableRow>
                                 ) : (
                                     transactions.map((t, i) => (
                                         <TableRow key={i} className={t.description === 'Saldo Awal' ? 'bg-gray-100 font-medium' : ''}>
                                             <TableCell>{formatDate(t.date)}</TableCell>
                                             <TableCell>
                                                 <div className="flex flex-col">
-                                                    <span>{t.type === 'IN' ? t.ref_number : '-'}</span>
+                                                    <span>{t.type === 'IN' || String(t.description || '').startsWith('Retur') ? t.ref_number : '-'}</span>
                                                 </div>
                                             </TableCell>
                                             <TableCell>{t.secondary_ref}</TableCell>
-                                            <TableCell>{t.type === 'OUT' ? t.ref_number : '-'}</TableCell>
+                                            <TableCell>{t.type === 'OUT' && !String(t.description || '').startsWith('Retur') ? t.ref_number : '-'}</TableCell>
                                             <TableCell>{t.tertiary_ref}</TableCell>
+                                            <TableCell className="text-sm">{t.description}</TableCell>
                                             <TableCell className="text-right">
                                                 {t.qty_in > 0 ? <span className="text-green-600 font-medium">+{t.qty_in}</span> : '-'}
                                             </TableCell>

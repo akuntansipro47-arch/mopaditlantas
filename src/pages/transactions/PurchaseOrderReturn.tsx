@@ -333,7 +333,7 @@ export default function PurchaseOrderReturn() {
       return;
     }
 
-    const normalizedLines = (editLines || []).map(l => ({ ...l, return_qty: Number(l.return_qty || 0) }));
+    const normalizedLines = (editLines || []).map(l => ({ ...l, return_qty: Math.abs(Number(l.return_qty || 0)) }));
     const invalid = normalizedLines.find(l => l.return_qty < 0 || l.return_qty > l.max_qty + 1e-9);
     if (invalid) {
       toast.error(`Qty retur tidak valid untuk ${invalid.name || invalid.item_code}. Maks: ${invalid.max_qty}.`);
@@ -756,7 +756,7 @@ export default function PurchaseOrderReturn() {
     }
 
     const itemsToReturn = (returnLines || [])
-      .map((l) => ({ ...l, return_qty: Number(l.return_qty || 0) }))
+      .map((l) => ({ ...l, return_qty: Math.abs(Number(l.return_qty || 0)) }))
       .filter((l) => l.return_qty > 0);
 
     if (itemsToReturn.length === 0) {
@@ -1229,7 +1229,7 @@ export default function PurchaseOrderReturn() {
                             const newQty = e.target.value;
                             setReturnLines(prev =>
                               prev.map((l, i) =>
-                                i === index ? { ...l, return_qty: Number(newQty) } : l
+                                i === index ? { ...l, return_qty: Math.abs(Number(newQty) || 0) } : l
                               )
                             );
                           }}
@@ -1429,7 +1429,7 @@ export default function PurchaseOrderReturn() {
                           value={line.return_qty}
                           onChange={(e) => {
                             const newQty = e.target.value;
-                            setEditLines(prev => prev.map((l, i) => i === index ? { ...l, return_qty: Number(newQty) } : l));
+                            setEditLines(prev => prev.map((l, i) => i === index ? { ...l, return_qty: Math.abs(Number(newQty) || 0) } : l));
                           }}
                           max={line.max_qty}
                           min={0}
