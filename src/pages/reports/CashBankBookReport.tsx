@@ -27,6 +27,9 @@ export default function CashBankBookReport() {
   const [openingBalance, setOpeningBalance] = useState(0);
   const [transactions, setTransactions] = useState<any[]>([]);
 
+  const isUuid = (v: string) =>
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(v || '').trim());
+
   useEffect(() => {
     fetchAccounts();
   }, []);
@@ -100,7 +103,7 @@ export default function CashBankBookReport() {
       if (currError) throw currError;
 
       const items = (currentItems || []) as any[];
-      const paymentRefs = Array.from(
+      const paymentRefsRaw = Array.from(
         new Set(
           items
             .filter((it: any) => String(it.journal_entries?.entry_type || '').toUpperCase() === 'PAYMENT')
@@ -108,6 +111,7 @@ export default function CashBankBookReport() {
             .filter(Boolean)
         )
       );
+      const paymentRefs = paymentRefsRaw.filter(isUuid);
 
       const paymentsById: Record<string, any> = {};
       const paymentsByInvoiceId: Record<string, any[]> = {};
