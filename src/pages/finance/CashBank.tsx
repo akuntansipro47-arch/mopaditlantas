@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import { 
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow 
@@ -10,12 +10,12 @@ import { toast } from 'sonner';
 import { formatCurrency, formatDate } from '@/lib/utils';
 import { Search, Plus, Trash2, Save, RefreshCw, Calendar as CalendarIcon, Pencil } from 'lucide-react';
 import { Label } from "@/components/ui/label";
-import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
-} from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { useRealtimeRefetch } from '@/hooks/useRealtimeRefetch';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Button as UIButton } from '@/components/ui/button';
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
 
 // Types
 type COA = {
@@ -30,7 +30,7 @@ type COA = {
 type JournalEntryItem = {
   id: string; // temp id for UI key
   account_id: string;
-  amount: number;
+  amount: string;
   memo: string;
 };
 
@@ -47,7 +47,7 @@ export default function CashBank() {
     memo: ''
   });
   const [depositItems, setDepositItems] = useState<JournalEntryItem[]>([
-    { id: '1', account_id: '', amount: 0, memo: '' }
+    { id: '1', account_id: '', amount: '', memo: '' }
   ]);
 
   // --- Payment State ---
@@ -58,7 +58,7 @@ export default function CashBank() {
     memo: ''
   });
   const [paymentItems, setPaymentItems] = useState<JournalEntryItem[]>([
-    { id: '1', account_id: '', amount: 0, memo: '' }
+    { id: '1', account_id: '', amount: '', memo: '' }
   ]);
 
   // --- History State ---
@@ -172,7 +172,7 @@ export default function CashBank() {
       date: new Date().toISOString().split('T')[0],
       memo: ''
     });
-    setDepositItems([{ id: '1', account_id: '', amount: 0, memo: '' }]);
+    setDepositItems([{ id: '1', account_id: '', amount: '', memo: '' }]);
   };
 
   const resetPaymentForm = () => {
@@ -182,7 +182,7 @@ export default function CashBank() {
       date: new Date().toISOString().split('T')[0],
       memo: ''
     });
-    setPaymentItems([{ id: '1', account_id: '', amount: 0, memo: '' }]);
+    setPaymentItems([{ id: '1', account_id: '', amount: '', memo: '' }]);
   };
 
   const cancelEdit = () => {
@@ -241,10 +241,10 @@ export default function CashBank() {
             ? details.map((i: any, idx: number) => ({
                 id: `${idx + 1}`,
                 account_id: String(i.account_id || ''),
-                amount: Number(i.credit || 0),
+                amount: String(Number(i.credit || 0) || ''),
                 memo: String(i.description || memo || ''),
               }))
-            : [{ id: '1', account_id: '', amount: 0, memo: '' }]
+            : [{ id: '1', account_id: '', amount: '', memo: '' }]
         );
         setActiveTab('deposit');
         return;
@@ -267,10 +267,10 @@ export default function CashBank() {
             ? details.map((i: any, idx: number) => ({
                 id: `${idx + 1}`,
                 account_id: String(i.account_id || ''),
-                amount: Number(i.debit || 0),
+                amount: String(Number(i.debit || 0) || ''),
                 memo: String(i.description || memo || ''),
               }))
-            : [{ id: '1', account_id: '', amount: 0, memo: '' }]
+            : [{ id: '1', account_id: '', amount: '', memo: '' }]
         );
         setActiveTab('payment');
         return;
@@ -313,9 +313,88 @@ export default function CashBank() {
   // All accounts for Detail
   const allAccounts = accounts;
 
+  const normalizeNumericOnly = (value: string) => {
+    const cleaned = String(value || '').replace(/[^\d]/g, '');
+    return cleaned;
+  };
+
+  const getAccountLabel = (accountId: string) => {
+    const a = accounts.find((x) => x.id === accountId);
+    if (!a) return '';
+    return `${a.account_code} - ${a.account_name}`;
+  };
+
+  const AccountPicker = ({
+    value,
+    onChange,
+    list,
+    placeholder,
+    triggerClassName,
+  }: {
+    value: string;
+    onChange: (id: string) => void;
+    list: COA[];
+    placeholder: string;
+    triggerClassName?: string;
+  }) => {
+    const [open, setOpen] = useState(false);
+    const [query, setQuery] = useState('');
+    const filtered = useMemo(() => {
+      const q = query.trim().toLowerCase();
+      if (!q) return list;
+      return list.filter((a) => {
+        const code = String(a.account_code || '').toLowerCase();
+        const name = String(a.account_name || '').toLowerCase();
+        return code.includes(q) || name.includes(q);
+      });
+    }, [list, query]);
+
+    const label = value ? getAccountLabel(value) : '';
+
+    return (
+      <Popover open={open} onOpenChange={setOpen}>
+        <PopoverTrigger asChild>
+          <UIButton
+            type="button"
+            variant="outline"
+            className={cn("w-full justify-between font-normal", !label && "text-muted-foreground", triggerClassName)}
+          >
+            <span className="truncate">{label || placeholder}</span>
+            <Search className="ml-2 h-4 w-4 shrink-0 opacity-60" />
+          </UIButton>
+        </PopoverTrigger>
+        <PopoverContent className="p-0 w-[420px]" align="start">
+          <Command>
+            <CommandInput placeholder="Cari akun..." value={query} onValueChange={setQuery} />
+            <CommandList>
+              <CommandEmpty>Akun tidak ditemukan.</CommandEmpty>
+              <CommandGroup heading="Daftar Akun">
+                {filtered.slice(0, 80).map((a) => (
+                  <CommandItem
+                    key={a.id}
+                    value={`${a.account_code} ${a.account_name}`}
+                    onSelect={() => {
+                      onChange(a.id);
+                      setOpen(false);
+                      setQuery('');
+                    }}
+                    className="flex flex-col items-start py-2"
+                  >
+                    <span className="font-medium text-sm">{a.account_code} - {a.account_name}</span>
+                    <span className="text-xs text-muted-foreground">{a.category} • {a.sub_category}</span>
+                  </CommandItem>
+                ))}
+              </CommandGroup>
+            </CommandList>
+          </Command>
+        </PopoverContent>
+      </Popover>
+    );
+  };
+
   // --- Deposit Logic ---
   const addDepositItem = () => {
-    setDepositItems([...depositItems, { id: Math.random().toString(), account_id: '', amount: 0, memo: '' }]);
+    setDepositItems([...depositItems, { id: Math.random().toString(), account_id: '', amount: '', memo: '' }]);
   };
 
   const removeDepositItem = (id: string) => {
@@ -389,7 +468,7 @@ export default function CashBank() {
           journal_entry_id: entryId,
           account_id: item.account_id,
           debit: 0,
-          credit: item.amount,
+          credit: Number(item.amount) || 0,
           description: item.memo || depositHeader.memo
         });
       });
@@ -416,7 +495,7 @@ export default function CashBank() {
 
   // --- Payment Logic ---
   const addPaymentItem = () => {
-    setPaymentItems([...paymentItems, { id: Math.random().toString(), account_id: '', amount: 0, memo: '' }]);
+    setPaymentItems([...paymentItems, { id: Math.random().toString(), account_id: '', amount: '', memo: '' }]);
   };
 
   const removePaymentItem = (id: string) => {
@@ -489,7 +568,7 @@ export default function CashBank() {
         itemsPayload.push({
           journal_entry_id: entryId,
           account_id: item.account_id,
-          debit: item.amount,
+          debit: Number(item.amount) || 0,
           credit: 0,
           description: item.memo || paymentHeader.memo
         });
@@ -546,16 +625,13 @@ export default function CashBank() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6 p-4 bg-slate-50 rounded-lg border">
                 <div className="space-y-2">
                   <Label>Deposit To (Masuk ke Akun)</Label>
-                  <Select value={depositHeader.deposit_to} onValueChange={v => setDepositHeader({...depositHeader, deposit_to: v})}>
-                    <SelectTrigger className="bg-white border-green-200">
-                      <SelectValue placeholder="Pilih Akun Kas/Bank..." />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {cashBankAccounts.map(acc => (
-                        <SelectItem key={acc.id} value={acc.id}>{acc.account_code} - {acc.account_name}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <AccountPicker
+                    value={depositHeader.deposit_to}
+                    onChange={(v) => setDepositHeader({ ...depositHeader, deposit_to: v })}
+                    list={cashBankAccounts}
+                    placeholder="Pilih Akun Kas/Bank..."
+                    triggerClassName="bg-white border-green-200"
+                  />
                   <p className="text-xs text-green-600 font-medium">*Posisi: Debit (Bertambah)</p>
                 </div>
                 
@@ -612,22 +688,20 @@ export default function CashBank() {
                         {depositItems.map((item, index) => (
                             <TableRow key={item.id}>
                                 <TableCell>
-                                    <Select value={item.account_id} onValueChange={v => updateDepositItem(item.id, 'account_id', v)}>
-                                        <SelectTrigger className="h-9">
-                                            <SelectValue placeholder="Pilih Akun..." />
-                                        </SelectTrigger>
-                                        <SelectContent>
-                                            {allAccounts.map(acc => (
-                                                <SelectItem key={acc.id} value={acc.id}>{acc.account_code} - {acc.account_name}</SelectItem>
-                                            ))}
-                                        </SelectContent>
-                                    </Select>
+                                    <AccountPicker
+                                      value={item.account_id}
+                                      onChange={(v) => updateDepositItem(item.id, 'account_id', v)}
+                                      list={allAccounts}
+                                      placeholder="Pilih Akun..."
+                                      triggerClassName="h-9"
+                                    />
                                 </TableCell>
                                 <TableCell>
                                     <Input 
-                                        type="number" 
+                                        type="text"
+                                        inputMode="numeric"
                                         value={item.amount || ''} 
-                                        onChange={e => updateDepositItem(item.id, 'amount', parseFloat(e.target.value))}
+                                        onChange={e => updateDepositItem(item.id, 'amount', normalizeNumericOnly(e.target.value))}
                                         className="h-9 text-right"
                                         placeholder="0"
                                     />
@@ -686,16 +760,13 @@ export default function CashBank() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6 p-4 bg-slate-50 rounded-lg border">
                 <div className="space-y-2">
                   <Label>Payment From (Keluar dari Akun)</Label>
-                  <Select value={paymentHeader.payment_from} onValueChange={v => setPaymentHeader({...paymentHeader, payment_from: v})}>
-                    <SelectTrigger className="bg-white border-red-200">
-                      <SelectValue placeholder="Pilih Akun Kas/Bank..." />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {cashBankAccounts.map(acc => (
-                        <SelectItem key={acc.id} value={acc.id}>{acc.account_code} - {acc.account_name}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <AccountPicker
+                    value={paymentHeader.payment_from}
+                    onChange={(v) => setPaymentHeader({ ...paymentHeader, payment_from: v })}
+                    list={cashBankAccounts}
+                    placeholder="Pilih Akun Kas/Bank..."
+                    triggerClassName="bg-white border-red-200"
+                  />
                   <p className="text-xs text-red-600 font-medium">*Posisi: Kredit (Berkurang)</p>
                 </div>
                 
@@ -752,22 +823,20 @@ export default function CashBank() {
                         {paymentItems.map((item, index) => (
                             <TableRow key={item.id}>
                                 <TableCell>
-                                    <Select value={item.account_id} onValueChange={v => updatePaymentItem(item.id, 'account_id', v)}>
-                                        <SelectTrigger className="h-9">
-                                            <SelectValue placeholder="Pilih Akun..." />
-                                        </SelectTrigger>
-                                        <SelectContent>
-                                            {allAccounts.map(acc => (
-                                                <SelectItem key={acc.id} value={acc.id}>{acc.account_code} - {acc.account_name}</SelectItem>
-                                            ))}
-                                        </SelectContent>
-                                    </Select>
+                                    <AccountPicker
+                                      value={item.account_id}
+                                      onChange={(v) => updatePaymentItem(item.id, 'account_id', v)}
+                                      list={allAccounts}
+                                      placeholder="Pilih Akun..."
+                                      triggerClassName="h-9"
+                                    />
                                 </TableCell>
                                 <TableCell>
                                     <Input 
-                                        type="number" 
+                                        type="text"
+                                        inputMode="numeric"
                                         value={item.amount || ''} 
-                                        onChange={e => updatePaymentItem(item.id, 'amount', parseFloat(e.target.value))}
+                                        onChange={e => updatePaymentItem(item.id, 'amount', normalizeNumericOnly(e.target.value))}
                                         className="h-9 text-right"
                                         placeholder="0"
                                     />
