@@ -251,10 +251,10 @@ export default function PurchaseOrderPrintDotMatrix({ id }: POPrintProps) {
           letter-spacing: 0.1px;
           white-space: pre;
           margin: 0;
-          padding: 9mm 0 var(--po-pad-bottom, 0mm) 3mm;
+          padding: 5mm 0 var(--po-pad-bottom, 0mm) 3mm;
         }
         @media print {
-          @page { size: 241mm 140mm; margin: 16mm 1mm 4mm 2mm; }
+          @page { size: 241mm 140mm; margin: 10mm 1mm 4mm 2mm; }
           html, body { margin: 0; padding: 0; -webkit-print-color-adjust: exact; }
           .printable-area { position: static !important; left: auto !important; top: auto !important; width: auto !important; }
         }
