@@ -12,6 +12,9 @@ import * as XLSX from 'xlsx';
 export default function PurchasePaymentHistoryReport() {
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState<any[]>([]);
+  const [journalByPaymentId, setJournalByPaymentId] = useState<Record<string, boolean>>({});
+  const [syncingBank, setSyncingBank] = useState(false);
+  const [syncNote, setSyncNote] = useState('');
   const [search, setSearch] = useState('');
   const [dateRange, setDateRange] = useState({
     start: new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0],
@@ -22,6 +25,51 @@ export default function PurchasePaymentHistoryReport() {
     fetchData();
   }, [dateRange]);
 
+  async function fetchApAccount() {
+    const { data } = await supabase
+      .from('chart_of_accounts')
+      .select('id, account_code, account_name')
+      .eq('account_type', 'DETAIL')
+      .or('account_name.ilike.%hutang usaha%,account_name.ilike.%hutang dagang%,account_name.ilike.%accounts payable%,account_code.like.21%')
+      .order('account_code', { ascending: true })
+      .limit(1)
+      .maybeSingle();
+    if (data) return data;
+    const { data: data2 } = await supabase
+      .from('chart_of_accounts')
+      .select('id, account_code, account_name')
+      .eq('sub_category', 'HUTANG')
+      .eq('account_type', 'DETAIL')
+      .order('account_code', { ascending: true })
+      .limit(1)
+      .maybeSingle();
+    return data2 || null;
+  }
+
+  async function fetchJournalMap(paymentIds: string[]) {
+    try {
+      if (paymentIds.length === 0) {
+        setJournalByPaymentId({});
+        return;
+      }
+      const { data: rows, error } = await supabase
+        .from('journal_entries')
+        .select('reference, entry_type')
+        .eq('entry_type', 'PAYMENT')
+        .in('reference', paymentIds);
+      if (error) throw error;
+      const map: Record<string, boolean> = {};
+      (rows || []).forEach((r: any) => {
+        const ref = String(r.reference || '').trim();
+        if (!ref) return;
+        map[ref] = true;
+      });
+      setJournalByPaymentId(map);
+    } catch {
+      setJournalByPaymentId({});
+    }
+  }
+
   async function fetchData() {
     setLoading(true);
     try {
@@ -31,6 +79,8 @@ export default function PurchasePaymentHistoryReport() {
           id,
           payment_date,
           amount,
+          transfer_fee,
+          fee_account_id,
           payment_method,
           notes,
           created_at,
@@ -54,9 +104,13 @@ export default function PurchasePaymentHistoryReport() {
 
       if (error) throw error;
       setData(rows || []);
+      await fetchJournalMap((rows || []).map((r: any) => String(r.id || '')).filter(Boolean));
+      setSyncNote('');
     } catch (e: any) {
       toast.error('Gagal memuat laporan: ' + (e?.message || 'Unknown error'));
       setData([]);
+      setJournalByPaymentId({});
+      setSyncNote('');
     } finally {
       setLoading(false);
     }
@@ -82,6 +136,14 @@ export default function PurchasePaymentHistoryReport() {
     });
   }, [data, search]);
 
+  const missingBankCount = useMemo(() => {
+    return filteredData.reduce((acc: number, p: any) => {
+      const id = String(p.id || '');
+      if (!id) return acc;
+      return journalByPaymentId[id] ? acc : acc + 1;
+    }, 0);
+  }, [filteredData, journalByPaymentId]);
+
   const totalAmount = filteredData.reduce((sum: number, p: any) => sum + (Number(p.amount) || 0), 0);
 
   const exportToExcel = () => {
@@ -105,6 +167,114 @@ export default function PurchasePaymentHistoryReport() {
     XLSX.writeFile(wb, `Laporan_Riwayat_Pembayaran_Hutang_${dateRange.start}_sd_${dateRange.end}.xlsx`);
   };
 
+  const syncToBank = async () => {
+    const payments = filteredData as any[];
+    const missing = payments.filter((p) => !journalByPaymentId[String(p.id || '')]);
+    if (missing.length === 0) {
+      toast.success('Semua transaksi sudah tercatat di Bank.');
+      setSyncNote('Semua transaksi pada filter ini sudah tercatat di Bank.');
+      return;
+    }
+    setSyncingBank(true);
+    try {
+      toast.success(`Menyinkronkan ke Bank: ${missing.length} transaksi...`);
+      setSyncNote(`Menyinkronkan ke Bank: ${missing.length} transaksi...`);
+      const ap = await fetchApAccount();
+      if (!ap?.id) {
+        toast.error('Akun Hutang Usaha (AP) belum ditemukan. Mohon set COA Hutang Usaha.');
+        setSyncNote('Gagal: Akun Hutang Usaha (AP) belum ditemukan.');
+        return;
+      }
+
+      let created = 0;
+      const skipped: string[] = [];
+
+      for (const p of missing) {
+        const payId = String(p.id || '');
+        const inv = p.purchase_invoices || {};
+        const invoiceNumber = String(inv.invoice_number || '');
+        const supplier = String(inv.suppliers?.name || '');
+        const bankAccId = String(p.payment_account_id || '');
+        const amount = Number(p.amount || 0);
+        const fee = Math.max(0, Number(p.transfer_fee || 0));
+        const cashOut = amount + fee;
+
+        if (!payId || !bankAccId || cashOut <= 0) {
+          skipped.push(invoiceNumber || payId || '-');
+          continue;
+        }
+
+        const { data: exists } = await supabase
+          .from('journal_entries')
+          .select('id')
+          .eq('entry_type', 'PAYMENT')
+          .eq('reference', payId)
+          .limit(1)
+          .maybeSingle();
+        if (exists?.id) {
+          created += 0;
+          continue;
+        }
+
+        const { data: entry, error: entryError } = await supabase
+          .from('journal_entries')
+          .insert([{
+            entry_date: p.payment_date,
+            voucher_no: `PAY-${invoiceNumber || payId}-${Date.now().toString().slice(-4)}`,
+            description: `Pembayaran Hutang ${invoiceNumber}${supplier ? ` (${supplier})` : ''}${p.notes ? ` - ${p.notes}` : ''}`.trim(),
+            entry_type: 'PAYMENT',
+            total_amount: cashOut,
+            reference: payId,
+          }])
+          .select()
+          .single();
+        if (entryError) throw entryError;
+
+        const itemsPayload: any[] = [
+          {
+            journal_entry_id: entry.id,
+            account_id: ap.id,
+            debit: amount,
+            credit: 0,
+            description: 'Pelunasan Hutang',
+          },
+        ];
+        if (fee > 0 && p.fee_account_id) {
+          itemsPayload.push({
+            journal_entry_id: entry.id,
+            account_id: p.fee_account_id,
+            debit: fee,
+            credit: 0,
+            description: 'Biaya Admin/Transfer',
+          });
+        }
+        itemsPayload.push({
+          journal_entry_id: entry.id,
+          account_id: bankAccId,
+          debit: 0,
+          credit: cashOut,
+          description: 'Pengeluaran Kas/Bank',
+        });
+
+        const { error: itemsErr } = await supabase.from('journal_entry_items').insert(itemsPayload);
+        if (itemsErr) throw itemsErr;
+        created += 1;
+      }
+
+      await fetchJournalMap((data || []).map((r: any) => String(r.id || '')).filter(Boolean));
+      toast.success(`Sinkronisasi Bank selesai. Dibuat jurnal: ${created}${skipped.length ? `, dilewati: ${skipped.length}` : ''}`);
+      setSyncNote(`Sinkronisasi selesai. Dibuat jurnal: ${created}${skipped.length ? `, dilewati: ${skipped.length}` : ''}`);
+      if (skipped.length) {
+        toast.error(`Dilewati (data kurang lengkap): ${skipped.slice(0, 5).join(', ')}${skipped.length > 5 ? '…' : ''}`);
+      }
+    } catch (e: any) {
+      toast.error('Gagal sinkronkan ke Bank: ' + String(e?.message || e));
+      setSyncNote('Gagal sinkronkan ke Bank: ' + String(e?.message || e));
+    } finally {
+      setSyncingBank(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row justify-between gap-4">
@@ -112,13 +282,22 @@ export default function PurchasePaymentHistoryReport() {
           <h2 className="text-3xl font-bold tracking-tight">Laporan Riwayat Pembayaran Hutang</h2>
           <p className="text-muted-foreground">Daftar transaksi pembayaran hutang supplier per periode.</p>
           <p className="text-xs text-blue-600 font-medium mt-1">Total Data: {filteredData.length} transaksi</p>
+          {filteredData.length > 0 && (
+            <p className="text-xs text-amber-700 font-medium mt-1">Belum tercatat di Bank: {missingBankCount}</p>
+          )}
         </div>
         <div className="flex gap-2">
           <Button variant="outline" onClick={exportToExcel} disabled={filteredData.length === 0}>
             <Download className="mr-2 h-4 w-4" /> Export Excel
           </Button>
+          <Button variant="outline" onClick={syncToBank} disabled={filteredData.length === 0 || syncingBank}>
+            {syncingBank ? 'Menyinkronkan...' : 'Sinkronkan Bank'}
+          </Button>
         </div>
       </div>
+      {syncNote && (
+        <div className="text-xs text-slate-600">{syncNote}</div>
+      )}
 
       <div className="grid gap-4 md:grid-cols-3">
         <Card className="bg-white shadow-md border-slate-200">
@@ -182,6 +361,7 @@ export default function PurchasePaymentHistoryReport() {
                 <TableHead className="font-semibold text-slate-700">No. PO</TableHead>
                 <TableHead className="font-semibold text-slate-700">Supplier</TableHead>
                 <TableHead className="font-semibold text-slate-700">Akun Pembayar</TableHead>
+                <TableHead className="font-semibold text-slate-700">Bank</TableHead>
                 <TableHead className="font-semibold text-slate-700">Metode</TableHead>
                 <TableHead className="text-right font-semibold text-slate-700">Jumlah</TableHead>
                 <TableHead className="font-semibold text-slate-700">Catatan</TableHead>
@@ -189,12 +369,13 @@ export default function PurchasePaymentHistoryReport() {
             </TableHeader>
             <TableBody>
               {loading ? (
-                <TableRow><TableCell colSpan={8} className="text-center py-12 text-muted-foreground">Memuat data...</TableCell></TableRow>
+                <TableRow><TableCell colSpan={9} className="text-center py-12 text-muted-foreground">Memuat data...</TableCell></TableRow>
               ) : filteredData.length === 0 ? (
-                <TableRow><TableCell colSpan={8} className="text-center py-12 text-muted-foreground">Tidak ada data ditemukan.</TableCell></TableRow>
+                <TableRow><TableCell colSpan={9} className="text-center py-12 text-muted-foreground">Tidak ada data ditemukan.</TableCell></TableRow>
               ) : (
                 filteredData.map((p: any) => {
                   const inv = p.purchase_invoices;
+                  const hasBank = Boolean(journalByPaymentId[String(p.id || '')]);
                   return (
                     <TableRow key={p.id} className="hover:bg-slate-50/80 transition-colors">
                       <TableCell className="text-sm">{formatDate(p.payment_date)}</TableCell>
@@ -202,6 +383,11 @@ export default function PurchasePaymentHistoryReport() {
                       <TableCell className="font-mono text-xs">{inv?.purchase_orders?.po_number || '-'}</TableCell>
                       <TableCell className="text-sm">{inv?.suppliers?.name || '-'}</TableCell>
                       <TableCell className="text-sm">{p.payment_account ? `${p.payment_account.account_code} - ${p.payment_account.account_name}` : '-'}</TableCell>
+                      <TableCell className="text-sm">
+                        <span className={hasBank ? 'text-emerald-700 font-medium' : 'text-amber-700 font-medium'}>
+                          {hasBank ? 'OK' : 'Belum'}
+                        </span>
+                      </TableCell>
                       <TableCell className="text-sm">{p.payment_method || '-'}</TableCell>
                       <TableCell className="text-right font-bold text-slate-900">{formatCurrency(p.amount || 0)}</TableCell>
                       <TableCell className="text-sm">{p.notes || '-'}</TableCell>

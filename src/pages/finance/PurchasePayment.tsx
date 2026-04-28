@@ -96,6 +96,29 @@ export default function PurchasePayment() {
     }
   }, [activeTab, dateFilter]);
 
+  async function resolveApAccount() {
+    const { data } = await supabase
+      .from('chart_of_accounts')
+      .select('id, account_code, account_name')
+      .eq('account_type', 'DETAIL')
+      .or('account_name.ilike.%hutang usaha%,account_name.ilike.%hutang dagang%')
+      .limit(1)
+      .maybeSingle();
+    if (data) {
+      setApAccount(data);
+      return data;
+    }
+    const { data: data2 } = await supabase
+      .from('chart_of_accounts')
+      .select('id, account_code, account_name')
+      .eq('sub_category', 'HUTANG')
+      .eq('account_type', 'DETAIL')
+      .limit(1)
+      .maybeSingle();
+    if (data2) setApAccount(data2);
+    return data2 || null;
+  }
+
   async function fetchApAccount() {
     try {
         const { data } = await supabase
@@ -410,9 +433,68 @@ export default function PurchasePayment() {
         return;
       }
 
+      const ap = apAccount || (await resolveApAccount());
+      if (!ap?.id) {
+        toast.error("Akun Hutang Usaha (AP) belum diset. Mohon set COA Hutang Usaha.");
+        return;
+      }
+
+      const createJournal = async (ref: string) => {
+        const cashOut = amount + transferFee;
+        const { data: entry, error: entryError } = await supabase
+          .from('journal_entries')
+          .insert([{
+            entry_date: paymentData.payment_date,
+            voucher_no: `PAY-${selectedInvoice.invoice_number}-${Date.now().toString().slice(-4)}`,
+            description: `Pembayaran Hutang ${selectedInvoice.invoice_number} (${selectedInvoice.suppliers?.name || ''}) - ${paymentData.notes}`,
+            entry_type: 'PAYMENT',
+            total_amount: cashOut,
+            reference: ref,
+          }])
+          .select()
+          .single();
+        if (entryError) throw entryError;
+        if (!entry?.id) throw new Error('Gagal membuat jurnal pembayaran (header).');
+
+        const itemsPayload: any[] = [
+          {
+            journal_entry_id: entry.id,
+            account_id: ap.id,
+            debit: amount,
+            credit: 0,
+            description: 'Pelunasan Hutang',
+          },
+        ];
+
+        if (transferFee > 0 && paymentData.fee_account_id) {
+          itemsPayload.push({
+            journal_entry_id: entry.id,
+            account_id: paymentData.fee_account_id,
+            debit: transferFee,
+            credit: 0,
+            description: 'Biaya Admin/Transfer',
+          });
+        }
+
+        itemsPayload.push({
+          journal_entry_id: entry.id,
+          account_id: paymentData.payment_account_id,
+          debit: 0,
+          credit: cashOut,
+          description: 'Pengeluaran Kas/Bank',
+        });
+
+        const { error: itemsErr } = await supabase.from('journal_entry_items').insert(itemsPayload);
+        if (itemsErr) throw itemsErr;
+        return entry.id as string;
+      };
+
       let paymentId = editingPaymentId;
 
       if (editingPaymentId) {
+          const tempRef = `${editingPaymentId}:tmp:${Date.now().toString().slice(-6)}`;
+          const newJournalId = await createJournal(tempRef);
+
           const { error: updateError } = await supabase
             .from('purchase_payments')
             .update({
@@ -431,12 +513,17 @@ export default function PurchasePayment() {
           const adjustedPaidAmount = currentPaid - originalPaymentAmount + amount;
           const newStatus = adjustedPaidAmount >= selectedInvoice.total_amount ? 'PAID' : 'PARTIAL';
 
-          await supabase
+          const { error: invErr } = await supabase
             .from('purchase_invoices')
             .update({ paid_amount: adjustedPaidAmount, status: newStatus })
             .eq('id', selectedInvoice.id);
+          if (invErr) throw invErr;
             
-          await supabase.from('journal_entries').delete().eq('reference', editingPaymentId);
+          const { error: delOldErr } = await supabase.from('journal_entries').delete().eq('reference', editingPaymentId);
+          if (delOldErr) throw delOldErr;
+
+          const { error: refErr } = await supabase.from('journal_entries').update({ reference: editingPaymentId }).eq('id', newJournalId);
+          if (refErr) throw refErr;
           
       } else {
           const { data: newPay, error: payError } = await supabase
@@ -459,58 +546,19 @@ export default function PurchasePayment() {
 
           const newPaidAmount = currentPaid + amount;
           const newStatus = newPaidAmount >= selectedInvoice.total_amount ? 'PAID' : 'PARTIAL';
-          await supabase
+
+          try {
+            await createJournal(paymentId);
+          } catch (e: any) {
+            await supabase.from('purchase_payments').delete().eq('id', paymentId);
+            throw e;
+          }
+
+          const { error: invErr } = await supabase
             .from('purchase_invoices')
             .update({ paid_amount: newPaidAmount, status: newStatus })
             .eq('id', selectedInvoice.id);
-      }
-
-      if (apAccount && paymentData.payment_account_id && paymentId) {
-          const cashOut = amount + transferFee;
-          const { data: entry, error: entryError } = await supabase
-            .from('journal_entries')
-            .insert([{
-                entry_date: paymentData.payment_date,
-                voucher_no: `PAY-${selectedInvoice.invoice_number}-${Date.now().toString().slice(-4)}`,
-                description: `Pembayaran Hutang ${selectedInvoice.invoice_number} (${selectedInvoice.suppliers?.name || ''}) - ${paymentData.notes}`,
-                entry_type: 'PAYMENT',
-                total_amount: cashOut,
-                reference: paymentId
-            }])
-            .select()
-            .single();
-        
-         if (!entryError && entry) {
-             const itemsPayload: any[] = [
-                 {
-                     journal_entry_id: entry.id,
-                     account_id: apAccount.id,
-                     debit: amount,
-                     credit: 0,
-                     description: 'Pelunasan Hutang'
-                 },
-             ];
-
-             if (transferFee > 0 && paymentData.fee_account_id) {
-               itemsPayload.push({
-                 journal_entry_id: entry.id,
-                 account_id: paymentData.fee_account_id,
-                 debit: transferFee,
-                 credit: 0,
-                 description: 'Biaya Admin/Transfer'
-               });
-             }
-
-             itemsPayload.push({
-               journal_entry_id: entry.id,
-               account_id: paymentData.payment_account_id,
-               debit: 0,
-               credit: cashOut,
-               description: 'Pengeluaran Kas/Bank'
-             });
-
-             await supabase.from('journal_entry_items').insert(itemsPayload);
-         }
+          if (invErr) throw invErr;
       }
 
       toast.success(editingPaymentId ? "Pembayaran berhasil diperbarui" : "Pembayaran berhasil diproses");

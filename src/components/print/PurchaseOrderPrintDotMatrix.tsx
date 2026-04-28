@@ -217,6 +217,22 @@ export default function PurchaseOrderPrintDotMatrix({ id }: POPrintProps) {
     return [...headerLines, ...projectLines, line(WIDTH, '-'), head, line(WIDTH, '-'), ...itemLines, ...footerLines].join('\n');
   }, [agency, items, po]);
 
+  const lineCount = useMemo(() => {
+    if (!content) return 0;
+    return content.split('\n').length;
+  }, [content]);
+
+  const printVars = useMemo(() => {
+    const fs = lineCount > 42 ? 11 : lineCount > 38 ? 12 : 13;
+    const lh = lineCount > 42 ? 1.1 : 1.15;
+    const pb = lineCount > 42 ? 0 : lineCount > 38 ? 1 : 2;
+    return {
+      ['--po-font-size' as any]: `${fs}pt`,
+      ['--po-line-height' as any]: String(lh),
+      ['--po-pad-bottom' as any]: `${pb}mm`,
+    };
+  }, [lineCount]);
+
   if (loading) {
     return (
       <div className="flex justify-center items-center h-screen">
@@ -228,22 +244,23 @@ export default function PurchaseOrderPrintDotMatrix({ id }: POPrintProps) {
   if (!po) return <div>Data PO tidak ditemukan.</div>;
 
   return (
-    <div className="printable-area min-h-screen bg-white p-0">
+    <div className="printable-area min-h-screen bg-white p-0" style={printVars}>
       <pre className="po-dotmatrix">{content}</pre>
       <style>{`
         .po-dotmatrix {
           font-family: "Courier New", Courier, monospace;
-          font-size: 13pt;
-          line-height: 1.15;
+          font-size: var(--po-font-size, 13pt);
+          line-height: var(--po-line-height, 1.15);
           font-weight: 700;
           letter-spacing: 0.1px;
           white-space: pre;
           margin: 0;
-          padding: 9mm 0 0 3mm;
+          padding: 9mm 0 var(--po-pad-bottom, 0mm) 3mm;
         }
         @media print {
           @page { size: 241mm 140mm; margin: 16mm 1mm 4mm 2mm; }
           html, body { margin: 0; padding: 0; -webkit-print-color-adjust: exact; }
+          .printable-area { position: static !important; left: auto !important; top: auto !important; width: auto !important; }
         }
       `}</style>
     </div>
