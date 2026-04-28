@@ -6,8 +6,9 @@ import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { toast } from 'sonner';
 import { formatCurrency, formatDate } from '@/lib/utils';
-import { Calendar as CalendarIcon, Download, Search } from 'lucide-react';
+import { Calendar as CalendarIcon, Download, RefreshCw, Search } from 'lucide-react';
 import * as XLSX from 'xlsx';
+import { useRealtimeRefetch } from '@/hooks/useRealtimeRefetch';
 
 export default function PurchasePaymentHistoryReport() {
   const [loading, setLoading] = useState(true);
@@ -24,6 +25,26 @@ export default function PurchasePaymentHistoryReport() {
   useEffect(() => {
     fetchData();
   }, [dateRange]);
+
+  useEffect(() => {
+    const onFocus = () => {
+      fetchData();
+    };
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') fetchData();
+    };
+    window.addEventListener('focus', onFocus);
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => {
+      window.removeEventListener('focus', onFocus);
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
+  }, []);
+
+  useRealtimeRefetch({
+    tables: ['purchase_payments', 'journal_entries', 'journal_entry_items'],
+    onRefetch: fetchData,
+  });
 
   async function fetchApAccount() {
     const { data } = await supabase
@@ -289,6 +310,9 @@ export default function PurchasePaymentHistoryReport() {
         <div className="flex gap-2">
           <Button variant="outline" onClick={exportToExcel} disabled={filteredData.length === 0}>
             <Download className="mr-2 h-4 w-4" /> Export Excel
+          </Button>
+          <Button variant="outline" onClick={fetchData} disabled={loading}>
+            <RefreshCw className="mr-2 h-4 w-4" /> Refresh
           </Button>
           <Button variant="outline" onClick={syncToBank} disabled={filteredData.length === 0 || syncingBank}>
             {syncingBank ? 'Menyinkronkan...' : 'Sinkronkan Bank'}

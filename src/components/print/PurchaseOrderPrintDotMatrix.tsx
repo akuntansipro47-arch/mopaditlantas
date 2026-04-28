@@ -223,12 +223,8 @@ export default function PurchaseOrderPrintDotMatrix({ id }: POPrintProps) {
   }, [content]);
 
   const printVars = useMemo(() => {
-    const fs = lineCount > 42 ? 11 : lineCount > 38 ? 12 : 13;
-    const lh = lineCount > 42 ? 1.1 : 1.15;
     const pb = lineCount > 42 ? 0 : lineCount > 38 ? 1 : 2;
     return {
-      ['--po-font-size' as any]: `${fs}pt`,
-      ['--po-line-height' as any]: String(lh),
       ['--po-pad-bottom' as any]: `${pb}mm`,
     };
   }, [lineCount]);
@@ -249,8 +245,8 @@ export default function PurchaseOrderPrintDotMatrix({ id }: POPrintProps) {
       <style>{`
         .po-dotmatrix {
           font-family: "Courier New", Courier, monospace;
-          font-size: var(--po-font-size, 13pt);
-          line-height: var(--po-line-height, 1.15);
+          font-size: 13pt;
+          line-height: 1.15;
           font-weight: 700;
           letter-spacing: 0.1px;
           white-space: pre;
