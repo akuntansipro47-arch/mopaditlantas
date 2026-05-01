@@ -26,7 +26,7 @@ import PurchaseOrderReturn from "@/pages/transactions/PurchaseOrderReturn";
 
 // Keuangan
 import PurchasePayment from "@/pages/finance/PurchasePayment";
-import SalesInvoice from "@/pages/finance/SalesInvoice";
+import SalesInvoiceDisabled from "@/pages/finance/SalesInvoiceDisabled";
 import CashBank from "@/pages/finance/CashBank";
 import ManualJournalEntry from "@/pages/finance/ManualJournalEntry";
 import GeneralLedger from "@/pages/finance/GeneralLedger";
@@ -77,7 +77,7 @@ export default function App() {
 
               {/* Keuangan */}
               <Route path="/finance/payments" element={<PurchasePayment />} />
-              <Route path="/finance/sales" element={<SalesInvoice />} />
+              <Route path="/finance/sales" element={<SalesInvoiceDisabled />} />
               <Route path="/finance/cash-bank" element={<CashBank />} />
               <Route path="/finance/journal-entry" element={<ManualJournalEntry />} />
               <Route path="/finance/general-ledger" element={<GeneralLedger />} />

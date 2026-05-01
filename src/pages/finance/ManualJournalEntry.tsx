@@ -169,6 +169,10 @@ export default function ManualJournalEntry() {
   };
 
   const selectAccount = (account: any) => {
+      if (String(account?.account_name || '').toLowerCase().includes('piutang usaha')) {
+          toast.error('Transaksi yang mencatat Piutang Usaha dinonaktifkan.');
+          return;
+      }
       if (activeLineIndex !== null) {
           setLines((prev) => {
               const next = [...prev];
@@ -256,6 +260,11 @@ export default function ManualJournalEntry() {
       
       const validLines = lines.filter(l => l.account_id && ((Number(l.debit) || 0) > 0 || (Number(l.credit) || 0) > 0));
       if (validLines.length < 2) return toast.error("Minimal 2 akun yang valid (Debit & Kredit)");
+      const hasPiutangUsaha = validLines.some((l) => {
+          const acc = accounts.find((a) => a.id === l.account_id);
+          return String(acc?.account_name || '').toLowerCase().includes('piutang usaha');
+      });
+      if (hasPiutangUsaha) return toast.error('Transaksi yang mencatat Piutang Usaha dinonaktifkan.');
 
       setLoading(true);
       try {

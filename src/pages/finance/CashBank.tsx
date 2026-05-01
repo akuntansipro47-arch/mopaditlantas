@@ -39,6 +39,11 @@ export default function CashBank() {
   const [accounts, setAccounts] = useState<COA[]>([]);
   const [loading, setLoading] = useState(true);
 
+  const isPiutangUsahaAccountId = (accountId: string) => {
+    const acc = accounts.find((a) => String(a.id) === String(accountId));
+    return String(acc?.account_name || '').toLowerCase().includes('piutang usaha');
+  };
+
   // --- Deposit State ---
   const [depositHeader, setDepositHeader] = useState({
     deposit_to: '', // Account ID
@@ -374,6 +379,10 @@ export default function CashBank() {
                     key={a.id}
                     value={`${a.account_code} ${a.account_name}`}
                     onSelect={() => {
+                      if (String(a.account_name || '').toLowerCase().includes('piutang usaha')) {
+                        toast.error('Transaksi yang mencatat Piutang Usaha dinonaktifkan.');
+                        return;
+                      }
                       onChange(a.id);
                       setOpen(false);
                       setQuery('');
@@ -413,6 +422,9 @@ export default function CashBank() {
     if (!depositHeader.deposit_to) return toast.error('Pilih akun Deposit To');
     if (depositTotal <= 0) return toast.error('Total amount harus lebih dari 0');
     if (depositItems.some(i => !i.account_id)) return toast.error('Lengkapi semua akun pada baris detail');
+    if (isPiutangUsahaAccountId(depositHeader.deposit_to) || depositItems.some((i) => isPiutangUsahaAccountId(i.account_id))) {
+      return toast.error('Transaksi yang mencatat Piutang Usaha dinonaktifkan.');
+    }
 
     setLoading(true);
     try {
@@ -514,6 +526,9 @@ export default function CashBank() {
     if (!paymentHeader.payment_from) return toast.error('Pilih akun Payment From');
     if (paymentTotal <= 0) return toast.error('Total amount harus lebih dari 0');
     if (paymentItems.some(i => !i.account_id)) return toast.error('Lengkapi semua akun pada baris detail');
+    if (isPiutangUsahaAccountId(paymentHeader.payment_from) || paymentItems.some((i) => isPiutangUsahaAccountId(i.account_id))) {
+      return toast.error('Transaksi yang mencatat Piutang Usaha dinonaktifkan.');
+    }
 
     setLoading(true);
     try {

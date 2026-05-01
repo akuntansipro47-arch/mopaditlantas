@@ -158,6 +158,8 @@ export default function DebugSync() {
   };
 
   const rebuildWoJournal = async (woNumber: string) => {
+    toast.error('Fitur Piutang Usaha sedang dinonaktifkan.');
+    return;
     setLoading(true);
     try {
       if (!woNumber) throw new Error('WO number kosong.');
@@ -261,6 +263,8 @@ export default function DebugSync() {
   };
 
   const handleSync = async (wo: any) => {
+    toast.error('Fitur Piutang Usaha sedang dinonaktifkan.');
+    return;
     setLoading(true);
     try {
         addLog(`Memproses WO: ${wo.wo_number}...`);

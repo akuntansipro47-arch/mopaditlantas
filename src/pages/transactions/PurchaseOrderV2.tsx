@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { Fragment, useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { Database } from '@/types/supabase';
 import { 
@@ -82,6 +82,8 @@ export default function PurchaseOrderV2() {
     from_work_order?: boolean;
   }[]>([{ line_type: 'PART', goods_id: '', job_type_id: '', service_name: '', brand: '', quantity: 1, unit_price: 0 }]);
 
+  const [woDuplicateMap, setWoDuplicateMap] = useState<Record<string, any[]>>({});
+
   const [itemSearchOpen, setItemSearchOpen] = useState(false);
   const [itemSearchQuery, setItemSearchQuery] = useState('');
   const [activeItemIndex, setActiveItemIndex] = useState<number | null>(null);
@@ -134,6 +136,104 @@ export default function PurchaseOrderV2() {
   
   const [woSearchOpen, setWoSearchOpen] = useState(false);
   const [woSearchQuery, setWoSearchQuery] = useState('');
+
+  const makeItemKey = (it: any) => {
+    const lt = String(it?.line_type || 'PART').toUpperCase();
+    if (lt === 'JASA') {
+      const jobId = String(it?.job_type_id || '').trim();
+      if (jobId) return `JASA|JOB|${jobId}`;
+      const name = normalizeText(String(it?.service_name || ''));
+      if (name) return `JASA|NAME|${name}`;
+      return '';
+    }
+    const gid = String(it?.goods_id || '').trim();
+    if (gid) return `PART|${gid}`;
+    return '';
+  };
+
+  useEffect(() => {
+    if (!isDialogOpen) return;
+    if (poType !== 'WO') {
+      setWoDuplicateMap({});
+      return;
+    }
+    const woId = String(formData.work_order_id || '');
+    if (!woId || woId === 'NONE') {
+      setWoDuplicateMap({});
+      return;
+    }
+
+    const keys = Array.from(new Set(poItems.map(makeItemKey).filter(Boolean)));
+    if (keys.length === 0) {
+      setWoDuplicateMap({});
+      return;
+    }
+
+    const timer = window.setTimeout(async () => {
+      try {
+        const { data, error } = await supabase
+          .from('purchase_order_items')
+          .select(`
+            id,
+            po_id,
+            line_type,
+            goods_id,
+            job_type_id,
+            service_name,
+            purchase_orders!inner(
+              id,
+              po_number,
+              status,
+              work_order_id,
+              created_at,
+              purchase_invoices (
+                id,
+                invoice_number,
+                status,
+                total_amount,
+                paid_amount
+              )
+            )
+          `)
+          .eq('purchase_orders.work_order_id', woId)
+          .order('purchase_orders(created_at)', { ascending: false })
+          .limit(2000);
+
+        if (error) throw error;
+
+        const filtered = (data || []).filter((row: any) => {
+          if (editingId && String(row.po_id) === String(editingId)) return false;
+          const k = makeItemKey(row);
+          return k && keys.includes(k);
+        });
+
+        const map: Record<string, any[]> = {};
+        filtered.forEach((row: any) => {
+          const k = makeItemKey(row);
+          if (!k) return;
+          if (!map[k]) map[k] = [];
+          const po = row.purchase_orders || {};
+          const invs = Array.isArray(po.purchase_invoices) ? po.purchase_invoices : [];
+          const inv = invs.length > 0 ? invs[0] : null;
+          map[k].push({
+            po_id: row.po_id,
+            po_number: po.po_number,
+            po_status: po.status,
+            invoice_number: inv?.invoice_number || '',
+            invoice_status: inv?.status || '',
+            paid_amount: inv?.paid_amount || 0,
+            total_amount: inv?.total_amount || 0,
+          });
+        });
+
+        setWoDuplicateMap(map);
+      } catch (e: any) {
+        setWoDuplicateMap({});
+      }
+    }, 300);
+
+    return () => window.clearTimeout(timer);
+  }, [editingId, formData.work_order_id, isDialogOpen, poItems, poType]);
 
   async function fetchMasterData() {
     const { data: s } = await supabase.from('suppliers').select('*').order('name', { ascending: true });
@@ -463,6 +563,28 @@ export default function PurchaseOrderV2() {
     ) {
       toast.error('Mohon lengkapi daftar barang/jasa (minimal 1 item dengan Qty > 0)');
       return;
+    }
+
+    if (poType === 'WO' && formData.work_order_id !== 'NONE') {
+      const keys = Array.from(new Set(poItems.map(makeItemKey).filter(Boolean)));
+      const overlap = keys.filter((k) => Array.isArray(woDuplicateMap[k]) && woDuplicateMap[k].length > 0);
+      if (overlap.length > 0) {
+        const label = overlap
+          .slice(0, 5)
+          .map((k) => {
+            if (k.startsWith('PART|')) {
+              const gid = k.split('|')[1] || '';
+              const g = goodsList.find((x: any) => String(x.id) === String(gid));
+              return g?.name || 'Part';
+            }
+            return 'Jasa';
+          })
+          .join(', ');
+        const ok = window.confirm(
+          `Ada item yang sudah pernah dibuatkan PO untuk WO ini (${label}${overlap.length > 5 ? ', ...' : ''}).\n\nLanjutkan simpan PO?`
+        );
+        if (!ok) return;
+      }
     }
 
     setLoading(true);
@@ -947,14 +1069,21 @@ export default function PurchaseOrderV2() {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {poItems.map((item, index) => (
-                        <TableRow key={index}>
-                          {(() => {
-                            const isReturnEditMode = !isReadOnly && returnedGoodsIds.length > 0;
-                          const editableSet = new Set(editableReturnIndexes);
-                          const lockLine = isReturnEditMode && !editableSet.has(index);
-                            return (
-                              <>
+                      {poItems.map((item, index) => {
+                        const key = makeItemKey(item);
+                        const dups = key ? (woDuplicateMap[key] || []) : [];
+                        const isWO = poType === 'WO' && formData.work_order_id !== 'NONE';
+                        const showDup = isWO && !isReadOnly && dups.length > 0;
+
+                        return (
+                          <Fragment key={index}>
+                            <TableRow>
+                              {(() => {
+                                const isReturnEditMode = !isReadOnly && returnedGoodsIds.length > 0;
+                                const editableSet = new Set(editableReturnIndexes);
+                                const lockLine = isReturnEditMode && !editableSet.has(index);
+                                return (
+                                  <>
                           <TableCell>
                             <Select
                               value={(item as any).line_type || 'PART'}
@@ -1071,8 +1200,37 @@ export default function PurchaseOrderV2() {
                               </>
                             );
                           })()}
-                        </TableRow>
-                      ))}
+                            </TableRow>
+                            {showDup && (
+                              <TableRow>
+                                <TableCell colSpan={7} className="py-2">
+                                  <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-800">
+                                    <div className="font-semibold">Item ini sudah pernah dibuat PO untuk WO yang sama.</div>
+                                    <div className="mt-1 space-y-0.5">
+                                      {dups.slice(0, 3).map((d: any, i: number) => {
+                                        const poStatus = String(d.po_status || '');
+                                        const received = poStatus === 'RECEIVED_FULL' || poStatus === 'RECEIVED_PART' || poStatus === 'RETURNED_FULL';
+                                        const invStatus = String(d.invoice_status || '');
+                                        const paid = invStatus === 'PAID';
+                                        return (
+                                          <div key={i}>
+                                            PO {d.po_number || '-'} • Status: {poStatus || '-'}
+                                            {received ? ' • Sudah diterima' : ''}
+                                            {d.invoice_number ? ` • ${d.invoice_number}` : ''}
+                                            {invStatus ? ` (${invStatus})` : ''}
+                                            {paid ? ' • Sudah lunas' : ''}
+                                          </div>
+                                        );
+                                      })}
+                                      {dups.length > 3 && <div>+{dups.length - 3} PO lainnya</div>}
+                                    </div>
+                                  </div>
+                                </TableCell>
+                              </TableRow>
+                            )}
+                          </Fragment>
+                        );
+                      })}
                     </TableBody>
                   </Table>
                   
