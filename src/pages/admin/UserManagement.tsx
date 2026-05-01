@@ -113,6 +113,10 @@ export default function UserManagement() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<AppUser | null>(null);
   const [showPassword, setShowPassword] = useState(false);
+  const [resetOpen, setResetOpen] = useState(false);
+  const [resetTarget, setResetTarget] = useState<AppUser | null>(null);
+  const [resetPassword, setResetPassword] = useState('');
+  const [showResetPassword, setShowResetPassword] = useState(false);
   const [form, setForm] = useState({
     username: '',
     full_name: '',
@@ -131,6 +135,13 @@ export default function UserManagement() {
   useEffect(() => {
     fetchUsers();
   }, []);
+
+  const generatePassword = () => {
+    const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789';
+    let out = '';
+    for (let i = 0; i < 10; i++) out += alphabet[Math.floor(Math.random() * alphabet.length)];
+    return out;
+  };
 
   async function fetchUsers() {
     setLoading(true);
@@ -177,6 +188,41 @@ export default function UserManagement() {
       allowedSet: new Set<string>(allowAll ? [] : allowed),
     });
     setDialogOpen(true);
+  }
+
+  function openReset(u: AppUser) {
+    setResetTarget(u);
+    setResetPassword(generatePassword());
+    setShowResetPassword(true);
+    setResetOpen(true);
+  }
+
+  async function handleResetPassword() {
+    if (!resetTarget?.id) return;
+    if (!resetPassword.trim()) {
+      toast.error('Password baru wajib diisi.');
+      return;
+    }
+    setSaving(true);
+    try {
+      const allowed = normalizeAllowedMenus(resetTarget.allowed_menus);
+      const { error } = await supabase.rpc('upsert_user', {
+        p_id: resetTarget.id,
+        p_username: resetTarget.username,
+        p_password: resetPassword.trim(),
+        p_full_name: resetTarget.full_name,
+        p_role: resetTarget.role,
+        p_allowed_menus: allowed,
+      });
+      if (error) throw error;
+      toast.success('Password berhasil direset.');
+      setResetOpen(false);
+      await fetchUsers();
+    } catch (e: any) {
+      toast.error('Gagal reset password: ' + e.message);
+    } finally {
+      setSaving(false);
+    }
   }
 
   async function handleToggleActive(u: AppUser) {
@@ -302,6 +348,7 @@ export default function UserManagement() {
                     <TableHead>Username</TableHead>
                     <TableHead>Nama</TableHead>
                     <TableHead>Role</TableHead>
+                    <TableHead>Password</TableHead>
                     <TableHead>Status</TableHead>
                     <TableHead className="text-right">Aksi</TableHead>
                   </TableRow>
@@ -309,7 +356,7 @@ export default function UserManagement() {
                 <TableBody>
                   {filteredUsers.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={5} className="text-center py-10 text-muted-foreground">
+                      <TableCell colSpan={6} className="text-center py-10 text-muted-foreground">
                         Tidak ada user.
                       </TableCell>
                     </TableRow>
@@ -320,6 +367,11 @@ export default function UserManagement() {
                         <TableCell>{u.full_name || '-'}</TableCell>
                         <TableCell>
                           <Badge variant="outline">{u.role}</Badge>
+                        </TableCell>
+                        <TableCell>
+                          <Button variant="outline" size="sm" onClick={() => openReset(u)} disabled={saving}>
+                            Reset
+                          </Button>
                         </TableCell>
                         <TableCell>
                           <button
@@ -481,6 +533,49 @@ export default function UserManagement() {
             <Button onClick={handleSave} disabled={saving} className="flex items-center gap-2">
               {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
               Simpan
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={resetOpen} onOpenChange={setResetOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Reset Password</DialogTitle>
+            <DialogDescription>
+              Password lama tidak bisa ditampilkan. Set password baru untuk user {resetTarget?.username || '-'}.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            <Label>Password Baru</Label>
+            <div className="relative">
+              <Input
+                type={showResetPassword ? 'text' : 'password'}
+                value={resetPassword}
+                onChange={(e) => setResetPassword(e.target.value)}
+                className="pr-10"
+              />
+              <button
+                type="button"
+                onClick={() => setShowResetPassword(!showResetPassword)}
+                className="absolute inset-y-0 right-0 flex items-center px-3 text-slate-500 hover:text-slate-800"
+              >
+                {showResetPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
+              </button>
+            </div>
+            <div className="flex gap-2">
+              <Button type="button" variant="outline" onClick={() => setResetPassword(generatePassword())} disabled={saving}>
+                Generate
+              </Button>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setResetOpen(false)} disabled={saving}>
+              Batal
+            </Button>
+            <Button onClick={handleResetPassword} disabled={saving}>
+              {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+              Simpan Password
             </Button>
           </DialogFooter>
         </DialogContent>
