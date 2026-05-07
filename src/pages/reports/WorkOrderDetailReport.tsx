@@ -604,8 +604,29 @@ const WorkOrderDetailReport = () => {
             );
         }
 
+        if (statusFilter === 'realisasi') {
+            filtered = filtered
+                .map((entry) => ({
+                    ...entry,
+                    items: entry.items.filter((it) => it.source === 'REALIZED'),
+                }))
+                .filter((entry) => entry.items.length > 0);
+        }
+
         return filtered;
-    }, [reportData, vehicleGroupFilter, searchTerm]);
+    }, [reportData, statusFilter, vehicleGroupFilter, searchTerm]);
+
+    const totals = useMemo(() => {
+        let totalPagu = 0;
+        let totalHpp = 0;
+        filteredReportData.forEach((entry) => {
+            entry.items.forEach((item) => {
+                totalPagu += Number(item.total_price || 0);
+                totalHpp += Number(item.total_hpp || 0);
+            });
+        });
+        return { totalPagu, totalHpp };
+    }, [filteredReportData]);
 
     const handleExport = () => {
         const dataToExport = filteredReportData.flatMap(entry =>
@@ -713,6 +734,25 @@ const WorkOrderDetailReport = () => {
                         />
                     </div>
 
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
+                        <Card className="border-slate-200">
+                            <CardHeader className="py-3">
+                                <CardTitle className="text-sm font-semibold text-slate-700">Total Pagu (Sesuai Filter)</CardTitle>
+                            </CardHeader>
+                            <CardContent className="pt-0 pb-3">
+                                <div className="text-lg font-bold">{totals.totalPagu.toLocaleString('id-ID')}</div>
+                            </CardContent>
+                        </Card>
+                        <Card className="border-slate-200">
+                            <CardHeader className="py-3">
+                                <CardTitle className="text-sm font-semibold text-slate-700">Total HPP (Sesuai Filter)</CardTitle>
+                            </CardHeader>
+                            <CardContent className="pt-0 pb-3">
+                                <div className="text-lg font-bold">{totals.totalHpp.toLocaleString('id-ID')}</div>
+                            </CardContent>
+                        </Card>
+                    </div>
+
                     <div ref={topScrollRef} className="w-full overflow-x-auto overflow-y-hidden border rounded-md mb-2">
                         <div style={{ width: tableScrollWidth }} className="h-4" />
                     </div>
@@ -752,7 +792,10 @@ const WorkOrderDetailReport = () => {
                                     {filteredReportData.length > 0 ? (
                                         filteredReportData.map((entry, entryIndex) => (
                                             entry.items.map((item, itemIndex) => (
-                                                <TableRow key={`${entry.wo_id}-${itemIndex}`}>
+                                                <TableRow
+                                                    key={`${entry.wo_id}-${itemIndex}`}
+                                                    className={item.source === 'ESTIMATE_ONLY' ? 'bg-amber-50' : ''}
+                                                >
                                                     {itemIndex === 0 && (
                                                         <TableCell rowSpan={entry.items.length} className="sticky left-0 bg-white z-10 font-medium align-top w-[200px]">
                                                             <div className="flex flex-col gap-1">
