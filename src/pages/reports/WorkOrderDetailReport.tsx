@@ -178,6 +178,7 @@ const WorkOrderDetailReport = () => {
 
             const [
                 { data: receivedPoItemsWo, error: receivedPoWoError },
+                { data: poItemsWoAll, error: poItemsWoAllError },
                 { data: purchaseOrdersWo, error: purchaseOrdersWoError },
                 { data: vehiclesData, error: vehiclesError },
                 { data: jobTypesData, error: jobTypesError },
@@ -188,6 +189,11 @@ const WorkOrderDetailReport = () => {
                     .in('purchase_orders.status', ['RECEIVED_PART', 'RECEIVED_FULL'])
                     .in('purchase_orders.work_order_id', workOrderIds)
                     .not('unit_price', 'is', null)
+                    .limit(20000),
+                supabase
+                    .from('purchase_order_items')
+                    .select('goods_id, job_type_id, service_name, line_type, purchase_orders!inner(id, po_number, status, work_order_id)')
+                    .in('purchase_orders.work_order_id', workOrderIds)
                     .limit(20000),
                 supabase
                     .from('purchase_orders')
@@ -201,6 +207,7 @@ const WorkOrderDetailReport = () => {
             ]);
 
             if (receivedPoWoError) throw new Error(`Gagal mengambil data HPP (PO WO): ${receivedPoWoError.message}`);
+            if (poItemsWoAllError) throw new Error(`Gagal mengambil data PO WO (semua): ${poItemsWoAllError.message}`);
             if (purchaseOrdersWoError) throw new Error(`Gagal mengambil data PO WO: ${purchaseOrdersWoError.message}`);
             if (vehiclesError) throw new Error(`Gagal mengambil data kendaraan: ${vehiclesError.message}`);
             if (jobTypesError) throw new Error(`Gagal mengambil data jenis pekerjaan: ${jobTypesError.message}`);
@@ -329,6 +336,43 @@ const WorkOrderDetailReport = () => {
             const receivedPartItems = receivedItems.filter((it) => (it.line_type || 'PART') === 'PART' && it.goods_id);
             const receivedJobItems = receivedItems.filter((it) => it.line_type === 'JASA');
 
+            const poReceiveStatusByNumber = new Map<string, string>();
+            const poAnyPartByWoGoods = new Map<string, Set<string>>();
+            const poAnyJobByWoJobType = new Map<string, Set<string>>();
+            const poAnyJobByWoName = new Map<string, Set<string>>();
+            (poItemsWoAll || []).forEach((it: any) => {
+                const woId = String(it.purchase_orders?.work_order_id || '').trim();
+                const poNumber = String(it.purchase_orders?.po_number || '').trim();
+                const poStatus = String(it.purchase_orders?.status || '').trim();
+                if (poNumber && poStatus) poReceiveStatusByNumber.set(poNumber, poStatus);
+                if (!woId || !poNumber) return;
+
+                const lt = String(it.line_type || 'PART').toUpperCase();
+                if (lt === 'JASA') {
+                    const jobTypeId = it.job_type_id ? String(it.job_type_id).trim() : '';
+                    const serviceName = normalizeText(String(it.service_name || ''));
+                    if (jobTypeId) {
+                        const key = `${woId}:${jobTypeId}`;
+                        const set = poAnyJobByWoJobType.get(key) || new Set<string>();
+                        set.add(poNumber);
+                        poAnyJobByWoJobType.set(key, set);
+                    } else if (serviceName) {
+                        const key = `${woId}:${serviceName}`;
+                        const set = poAnyJobByWoName.get(key) || new Set<string>();
+                        set.add(poNumber);
+                        poAnyJobByWoName.set(key, set);
+                    }
+                    return;
+                }
+
+                const goodsId = it.goods_id ? String(it.goods_id).trim() : '';
+                if (!goodsId) return;
+                const key = `${woId}:${goodsId}`;
+                const set = poAnyPartByWoGoods.get(key) || new Set<string>();
+                set.add(poNumber);
+                poAnyPartByWoGoods.set(key, set);
+            });
+
             const partHppByWoGoods = new Map<string, { sumQty: number; sumValue: number }>();
             const partPoByWoGoods = new Map<string, Set<string>>();
             receivedPartItems.forEach((it) => {
@@ -426,6 +470,16 @@ const WorkOrderDetailReport = () => {
                         return { hpp: agg.sumValue / agg.sumQty, po_info: poLabel ? `PO WO: ${poLabel}` : 'PO WO' };
                     }
                 }
+                if (woId) {
+                    const poSet = poAnyPartByWoGoods.get(`${woId}:${goodsId}`);
+                    if (poSet && poSet.size > 0) {
+                        const poLabel = getPoLabel(poSet);
+                        const anyReceived = Array.from(poSet).some((n) =>
+                            ['RECEIVED_PART', 'RECEIVED_FULL'].includes(String(poReceiveStatusByNumber.get(n) || '').toUpperCase())
+                        );
+                        return { hpp: 0, po_info: `PO WO: ${poLabel || 'PO WO'}${anyReceived ? '' : ' (Belum diterima)'}` };
+                    }
+                }
                 return { hpp: 0, po_info: 'Belum ada PO WO' };
             };
 
@@ -443,6 +497,26 @@ const WorkOrderDetailReport = () => {
                     if (agg && agg.sumQty > 0) {
                         const poLabel = getPoLabel(jobPoByWoName.get(key));
                         return { hpp: agg.sumValue / agg.sumQty, po_info: poLabel ? `PO WO: ${poLabel}` : 'PO WO' };
+                    }
+                }
+                if (woId && jobTypeId) {
+                    const poSet = poAnyJobByWoJobType.get(`${woId}:${jobTypeId}`);
+                    if (poSet && poSet.size > 0) {
+                        const poLabel = getPoLabel(poSet);
+                        const anyReceived = Array.from(poSet).some((n) =>
+                            ['RECEIVED_PART', 'RECEIVED_FULL'].includes(String(poReceiveStatusByNumber.get(n) || '').toUpperCase())
+                        );
+                        return { hpp: 0, po_info: `PO WO: ${poLabel || 'PO WO'}${anyReceived ? '' : ' (Belum diterima)'}` };
+                    }
+                }
+                if (woId) {
+                    const poSet = poAnyJobByWoName.get(`${woId}:${normalizeText(jobName)}`);
+                    if (poSet && poSet.size > 0) {
+                        const poLabel = getPoLabel(poSet);
+                        const anyReceived = Array.from(poSet).some((n) =>
+                            ['RECEIVED_PART', 'RECEIVED_FULL'].includes(String(poReceiveStatusByNumber.get(n) || '').toUpperCase())
+                        );
+                        return { hpp: 0, po_info: `PO WO: ${poLabel || 'PO WO'}${anyReceived ? '' : ' (Belum diterima)'}` };
                     }
                 }
                 if (jobTypeId) return { hpp: Number(jobTypesHppMap.get(jobTypeId) || 0), po_info: 'Master Jasa' };
@@ -476,22 +550,24 @@ const WorkOrderDetailReport = () => {
                     }
 
                     woIds.forEach((woId) => {
-                        const hppInfo = isPart
-                            ? getPartHppInfo(woId, goodsId)
-                            : getJobHppInfo(woId, jobTypeId ? String(jobTypeId) : null, itemName);
-                        
                         const sellingPrice = isPart
                             ? Number(item.estimated_price || 0)
                             : Number(item.estimated_price || jobTypesSellMap.get(jobTypeId) || 0);
                         
                         const qty = item.qty || (isPart ? 0 : 1);
                         const totalSellingPrice = sellingPrice * qty;
-                        const totalHpp = hppInfo.hpp * qty;
+                        const isValueOnly = Boolean((item as any)?.value_only);
+                        const hppInfo = isValueOnly
+                            ? { hpp: 0, po_info: isPart ? 'N/A Part' : 'N/A Jasa' }
+                            : isPart
+                                ? getPartHppInfo(woId, goodsId)
+                                : getJobHppInfo(woId, jobTypeId ? String(jobTypeId) : null, itemName);
+                        const totalHpp = (hppInfo.hpp || 0) * qty;
     
                         const reportItem: ReportItem = {
                             item_type: type,
                             item_name: itemName,
-                            value_only: Boolean((item as any)?.value_only),
+                            value_only: isValueOnly,
                             qty, unit_price: sellingPrice, total_price: totalSellingPrice,
                             hpp: hppInfo.hpp, total_hpp: totalHpp, profit: totalSellingPrice - totalHpp,
                             po_info: hppInfo.po_info,
