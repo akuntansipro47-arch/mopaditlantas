@@ -17,9 +17,9 @@ const formatCurrency = (value: number) => {
 };
 
 // Komponen untuk satu kartu statistik
-function StatCard({ title, value, icon: Icon, loading }: { title: string, value: string | number, icon: React.ElementType, loading: boolean }) {
+function StatCard({ title, value, icon: Icon, loading, className }: { title: string, value: string | number, icon: React.ElementType, loading: boolean, className?: string }) {
   return (
-    <Card>
+    <Card className={className}>
       <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
         <CardTitle className="text-sm font-medium">{title}</CardTitle>
         <Icon className="h-4 w-4 text-muted-foreground" />
@@ -116,25 +116,26 @@ export default function Dashboard() {
         const startOfMonth = new Date();
         startOfMonth.setDate(1);
         startOfMonth.setHours(0, 0, 0, 0);
+        const startOfMonthDate = startOfMonth.toISOString().split('T')[0];
 
         // Monthly Revenue
         const { data: revenueData, error: revenueError } = await supabase
-          .from('invoices')
-          .select('total_amount')
-          .gte('invoice_date', startOfMonth.toISOString())
-          .in('status', ['PAID', 'PARTIALLY_PAID']);
+          .from('sales_invoices')
+          .select('total_amount, paid_amount, status')
+          .gte('invoice_date', startOfMonthDate)
+          .in('status', ['PAID', 'PARTIAL']);
 
         // Outstanding AR (Piutang)
         const { data: arData, error: arError } = await supabase
-          .from('invoices')
-          .select('balance_due')
-          .gt('balance_due', 0);
+          .from('sales_invoices')
+          .select('total_amount, paid_amount, status')
+          .in('status', ['UNPAID', 'PARTIAL']);
 
         // Outstanding AP (Utang)
         const { data: apData, error: apError } = await supabase
-          .from('purchase_orders')
-          .select('balance_due')
-          .gt('balance_due', 0);
+          .from('purchase_invoices')
+          .select('total_amount, paid_amount, status')
+          .in('status', ['UNPAID', 'PARTIAL']);
 
         // Low Stock Items
         const { count: lowStockCount, error: lowStockError } = await supabase
@@ -199,9 +200,9 @@ export default function Dashboard() {
         if (poPendingError) throw poPendingError;
         if (poItemsError) throw poItemsError;
         if (lowStockError) throw lowStockError;
-        if (revenueError) throw revenueError;
-        if (arError) throw arError;
-        if (apError) throw apError;
+        if (revenueError) console.error('Error fetching monthly revenue:', revenueError);
+        if (arError) console.error('Error fetching outstanding AR:', arError);
+        if (apError) console.error('Error fetching outstanding AP:', apError);
         if (issuedItemsError) throw issuedItemsError;
         if (activeWoError) throw activeWoError;
 
@@ -297,9 +298,28 @@ export default function Dashboard() {
         
         setFastMovingItems(sortedItems);
 
-        const totalRevenue = revenueData?.reduce((sum, inv) => sum + inv.total_amount, 0) || 0;
-        const totalAR = arData?.reduce((sum, inv) => sum + inv.balance_due, 0) || 0;
-        const totalAP = apData?.reduce((sum, po) => sum + po.balance_due, 0) || 0;
+        const totalRevenue = revenueData?.reduce((sum, inv: any) => {
+          const totalAmount = Number(inv.total_amount || 0);
+          const paidAmount = Number(inv.paid_amount || 0);
+          const status = String(inv.status || '').toUpperCase();
+          if (status === 'PAID') return sum + totalAmount;
+          return sum + Math.min(paidAmount, totalAmount);
+        }, 0) || 0;
+
+        const totalAR = arData?.reduce((sum, inv: any) => {
+          const totalAmount = Number(inv.total_amount || 0);
+          const paidAmount = Number(inv.paid_amount || 0);
+          const remaining = totalAmount - paidAmount;
+          if (remaining <= 0) return sum;
+          return sum + remaining;
+        }, 0) || 0;
+        const totalAP = apData?.reduce((sum, inv: any) => {
+          const totalAmount = Number(inv.total_amount || 0);
+          const paidAmount = Number(inv.paid_amount || 0);
+          const remaining = totalAmount - paidAmount;
+          if (remaining <= 0) return sum;
+          return sum + remaining;
+        }, 0) || 0;
 
         setStats({
           woR4: woR4Count || 0,

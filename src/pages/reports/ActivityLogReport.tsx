@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/context/AuthContext';
 import { CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -35,8 +35,17 @@ export default function ActivityLogReport() {
     start: new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0],
     end: new Date().toISOString().split('T')[0],
   });
+  const missingTableWarnedRef = useRef(false);
 
   const isAllowed = user?.role === 'SUPER_ADMIN' || user?.role === 'ADMIN';
+  const isMissingActivityLogsTable = (msg: string) => {
+    const m = String(msg || '').toLowerCase();
+    return (
+      (m.includes('could not find the table') && m.includes('activity_logs')) ||
+      (m.includes('schema cache') && m.includes('activity_logs')) ||
+      (m.includes('relation') && m.includes('activity_logs') && m.includes('does not exist'))
+    );
+  };
 
   const actions = useMemo(() => {
     const set = new Set<string>();
@@ -89,7 +98,15 @@ export default function ActivityLogReport() {
       if (error) throw error;
       setRows((data as any) || []);
     } catch (e: any) {
-      toast.error('Gagal memuat log aktivitas: ' + String(e?.message || e));
+      const msg = String(e?.message || e);
+      if (isMissingActivityLogsTable(msg)) {
+        if (!missingTableWarnedRef.current) {
+          missingTableWarnedRef.current = true;
+          toast.error("Log Aktivitas belum aktif: tabel 'activity_logs' belum ada / schema cache belum update. Jalankan migration 20260508_activity_logs.sql lalu refresh schema cache Supabase.");
+        }
+      } else {
+        toast.error('Gagal memuat log aktivitas: ' + msg);
+      }
       setRows([]);
     } finally {
       setLoading(false);
@@ -238,4 +255,3 @@ export default function ActivityLogReport() {
     </>
   );
 }
-
