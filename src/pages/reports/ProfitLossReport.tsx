@@ -56,8 +56,10 @@ export default function ProfitLossReport() {
 
     const goodsIds = new Set<string>();
     const jobTypeIds = new Set<string>();
+    const woIds = new Set<string>();
 
     (wos || []).forEach((wo: any) => {
+      if (wo?.id) woIds.add(String(wo.id));
       const bills = Array.isArray(wo.work_order_billings) ? wo.work_order_billings : [];
       bills.forEach((b: any) => {
         const type = String(b.item_type || '').toUpperCase();
@@ -66,19 +68,49 @@ export default function ProfitLossReport() {
       });
     });
 
-    const partCostMap: Record<string, number> = {};
+    const partHppByWoGoods: Record<string, number> = {};
+    const partHppAvgStockMap: Record<string, number> = {};
     if (goodsIds.size > 0) {
       const { data: poItems, error: poErr } = await supabase
         .from('purchase_order_items')
-        .select('goods_id, unit_price, created_at')
+        .select('goods_id, quantity, unit_price, purchase_orders!inner(work_order_id, status)')
+        .in('purchase_orders.status', ['RECEIVED_PART', 'RECEIVED_FULL'])
         .in('goods_id', Array.from(goodsIds))
-        .order('created_at', { ascending: false });
+        .not('unit_price', 'is', null)
+        .limit(50000);
       if (poErr) throw poErr;
+
+      const woAgg = new Map<string, { sumQty: number; sumValue: number }>();
+      const stockAgg = new Map<string, { sumQty: number; sumValue: number }>();
       (poItems || []).forEach((it: any) => {
-        const gid = String(it.goods_id || '');
-        if (!gid) return;
-        if (partCostMap[gid] !== undefined) return;
-        partCostMap[gid] = Number(it.unit_price || 0);
+        const gid = String(it.goods_id || '').trim();
+        const qty = Number(it.quantity || 0);
+        const price = Number(it.unit_price || 0);
+        if (!gid || qty <= 0 || price <= 0) return;
+
+        const woId = String(it.purchase_orders?.work_order_id || '').trim();
+        if (woId && woIds.has(woId)) {
+          const key = `${woId}:${gid}`;
+          const cur = woAgg.get(key) || { sumQty: 0, sumValue: 0 };
+          cur.sumQty += qty;
+          cur.sumValue += qty * price;
+          woAgg.set(key, cur);
+          return;
+        }
+
+        if (!woId) {
+          const cur = stockAgg.get(gid) || { sumQty: 0, sumValue: 0 };
+          cur.sumQty += qty;
+          cur.sumValue += qty * price;
+          stockAgg.set(gid, cur);
+        }
+      });
+
+      woAgg.forEach((v, k) => {
+        if (v.sumQty > 0) partHppByWoGoods[k] = v.sumValue / v.sumQty;
+      });
+      stockAgg.forEach((v, gid) => {
+        if (v.sumQty > 0) partHppAvgStockMap[gid] = v.sumValue / v.sumQty;
       });
     }
 
@@ -102,7 +134,13 @@ export default function ProfitLossReport() {
         if (qty <= 0) return;
         const type = String(b.item_type || '').toUpperCase();
         if (type === 'PART' && b.goods_id) {
-          const hpp = partCostMap[String(b.goods_id)] || 0;
+          const woKey = `${String(wo.id)}:${String(b.goods_id)}`;
+          const hpp =
+            partHppByWoGoods[woKey] !== undefined
+              ? partHppByWoGoods[woKey] || 0
+              : partHppAvgStockMap[String(b.goods_id)] !== undefined
+                ? partHppAvgStockMap[String(b.goods_id)] || 0
+                : 0;
           total += hpp * qty;
         } else if (type === 'JOB' && b.job_type_id) {
           const hpp = jobCostMap[String(b.job_type_id)] || 0;
