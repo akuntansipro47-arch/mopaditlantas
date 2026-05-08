@@ -140,7 +140,6 @@ export default function PrintSPK({ id }: { id: string }) {
           </button>
         </div>
       </div>
-      </div>
     );
   }
 
@@ -386,6 +385,7 @@ export default function PrintSPK({ id }: { id: string }) {
             <span>ID: {wo.id?.slice(0, 13)?.toUpperCase() || 'N/A'} | {new Date().toLocaleString('id-ID')}</span>
           </div>
         </footer>
+      </div>
       </div>
 
       <style>{`

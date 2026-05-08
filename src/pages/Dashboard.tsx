@@ -69,15 +69,6 @@ export default function Dashboard() {
     monthlyRevenue: 0,
     outstandingAR: 0,
     outstandingAP: 0,
-    monthlyRevenue: 0,
-    outstandingAR: 0,
-    outstandingAP: 0,
-    monthlyRevenue: 0,
-    outstandingAR: 0,
-    outstandingAP: 0,
-    monthlyRevenue: 0,
-    outstandingAR: 0,
-    outstandingAP: 0,
   });
   const [fastMovingItems, setFastMovingItems] = useState<FastMovingItem[]>([]);
   const [leadTimeData, setLeadTimeData] = useState<LeadTimeData[]>([]);
@@ -121,75 +112,6 @@ export default function Dashboard() {
         const { data: poItems, error: poItemsError } = await supabase
           .from('purchase_order_items')
           .select('quantity, unit_price, created_at');
-
-        const startOfMonth = new Date();
-        startOfMonth.setDate(1);
-        startOfMonth.setHours(0, 0, 0, 0);
-
-        // Monthly Revenue
-        const { data: revenueData, error: revenueError } = await supabase
-          .from('invoices')
-          .select('total_amount')
-          .gte('invoice_date', startOfMonth.toISOString())
-          .in('status', ['PAID', 'PARTIALLY_PAID']);
-
-        // Outstanding AR (Piutang)
-        const { data: arData, error: arError } = await supabase
-          .from('invoices')
-          .select('balance_due')
-          .gt('balance_due', 0);
-
-        // Outstanding AP (Utang)
-        const { data: apData, error: apError } = await supabase
-          .from('purchase_orders')
-          .select('balance_due')
-          .gt('balance_due', 0);
-
-        const startOfMonth = new Date();
-        startOfMonth.setDate(1);
-        startOfMonth.setHours(0, 0, 0, 0);
-
-        // Monthly Revenue
-        const { data: revenueData, error: revenueError } = await supabase
-          .from('invoices')
-          .select('total_amount')
-          .gte('invoice_date', startOfMonth.toISOString())
-          .in('status', ['PAID', 'PARTIALLY_PAID']);
-
-        // Outstanding AR (Piutang)
-        const { data: arData, error: arError } = await supabase
-          .from('invoices')
-          .select('balance_due')
-          .gt('balance_due', 0);
-
-        // Outstanding AP (Utang)
-        const { data: apData, error: apError } = await supabase
-          .from('purchase_orders')
-          .select('balance_due')
-          .gt('balance_due', 0);
-
-        const startOfMonth = new Date();
-        startOfMonth.setDate(1);
-        startOfMonth.setHours(0, 0, 0, 0);
-
-        // Monthly Revenue
-        const { data: revenueData, error: revenueError } = await supabase
-          .from('invoices')
-          .select('total_amount')
-          .gte('invoice_date', startOfMonth.toISOString())
-          .in('status', ['PAID', 'PARTIALLY_PAID']);
-
-        // Outstanding AR (Piutang)
-        const { data: arData, error: arError } = await supabase
-          .from('invoices')
-          .select('balance_due')
-          .gt('balance_due', 0);
-
-        // Outstanding AP (Utang)
-        const { data: apData, error: apError } = await supabase
-          .from('purchase_orders')
-          .select('balance_due')
-          .gt('balance_due', 0);
 
         const startOfMonth = new Date();
         startOfMonth.setDate(1);
