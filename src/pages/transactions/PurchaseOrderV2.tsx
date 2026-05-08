@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useState } from 'react';
+import { Fragment, useEffect, useMemo, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { Database } from '@/types/supabase';
 import { 
@@ -150,6 +150,47 @@ export default function PurchaseOrderV2() {
     if (gid) return `PART|${gid}`;
     return '';
   };
+
+  const valueOnlyBlock = useMemo(() => {
+    const isWO = poType === 'WO' && String(formData.work_order_id || '') !== 'NONE';
+    if (!isWO) {
+      return {
+        isWO: false,
+        partGoodsIds: new Set<string>(),
+        partNameKeys: new Set<string>(),
+        jobTypeIds: new Set<string>(),
+        jobNameKeys: new Set<string>(),
+      };
+    }
+
+    const woId = String(formData.work_order_id || '');
+    const wo = workOrders.find((w: any) => String(w.id) === woId);
+    const ve = wo?.vehicle_entries;
+    const parts = Array.isArray(ve?.vehicle_entry_spareparts) ? ve.vehicle_entry_spareparts : [];
+    const jobs = Array.isArray(ve?.vehicle_entry_jobs) ? ve.vehicle_entry_jobs : [];
+
+    const partGoodsIds = new Set<string>();
+    const partNameKeys = new Set<string>();
+    parts.forEach((p: any) => {
+      if (!Boolean(p?.value_only)) return;
+      const gid = String(p?.goods_id || '').trim();
+      if (gid) partGoodsIds.add(gid);
+      const nameKey = normalizeText(String(p?.item_name || ''));
+      if (nameKey) partNameKeys.add(nameKey);
+    });
+
+    const jobTypeIds = new Set<string>();
+    const jobNameKeys = new Set<string>();
+    jobs.forEach((j: any) => {
+      if (!Boolean(j?.value_only)) return;
+      const jid = String(j?.job_type_id || '').trim();
+      if (jid) jobTypeIds.add(jid);
+      const nameKey = normalizeText(String(j?.job_types?.job_name || j?.notes || ''));
+      if (nameKey) jobNameKeys.add(nameKey);
+    });
+
+    return { isWO: true, partGoodsIds, partNameKeys, jobTypeIds, jobNameKeys };
+  }, [formData.work_order_id, poType, workOrders]);
 
   useEffect(() => {
     if (!isDialogOpen) return;
@@ -563,6 +604,29 @@ export default function PurchaseOrderV2() {
     ) {
       toast.error('Mohon lengkapi daftar barang/jasa (minimal 1 item dengan Qty > 0)');
       return;
+    }
+
+    if (valueOnlyBlock.isWO) {
+      const blockedIdx = poItems.findIndex((it: any) => {
+        const lt = String(it?.line_type || 'PART').toUpperCase();
+        if (lt === 'JASA') {
+          const jid = String(it?.job_type_id || '').trim();
+          if (jid && valueOnlyBlock.jobTypeIds.has(jid)) return true;
+          const nameKey = normalizeText(String(it?.service_name || ''));
+          if (nameKey && valueOnlyBlock.jobNameKeys.has(nameKey)) return true;
+          return false;
+        }
+        const gid = String(it?.goods_id || '').trim();
+        if (gid && valueOnlyBlock.partGoodsIds.has(gid)) return true;
+        const g = goodsList.find((x: any) => String(x.id) === String(gid));
+        const nameKey = normalizeText(String(g?.name || it?.estimated_name || ''));
+        if (nameKey && valueOnlyBlock.partNameKeys.has(nameKey)) return true;
+        return false;
+      });
+      if (blockedIdx >= 0) {
+        toast.error(`Item nilai saja tidak boleh dibuat PO. Cek baris: ${blockedIdx + 1}`);
+        return;
+      }
     }
 
     if (poType === 'WO' && formData.work_order_id !== 'NONE') {
@@ -1418,10 +1482,19 @@ export default function PurchaseOrderV2() {
                 {goodsList
                   .filter(g => g.name.toLowerCase().includes(itemSearchQuery.toLowerCase()))
                   .slice(0, 50)
-                  .map((g) => (
+                  .map((g) => {
+                    const blocked =
+                      valueOnlyBlock.isWO &&
+                      (valueOnlyBlock.partGoodsIds.has(String(g.id)) ||
+                        valueOnlyBlock.partNameKeys.has(normalizeText(String(g.name || ''))));
+                    return (
                   <CommandItem
                     key={g.id}
                     onSelect={() => {
+                      if (blocked) {
+                        toast.error('Item ini bertanda nilai saja (tidak boleh dibuat PO).');
+                        return;
+                      }
                       if (activeItemIndex !== null) {
                         handleItemChange(activeItemIndex, 'line_type', 'PART');
                         handleItemChange(activeItemIndex, 'goods_id', g.id);
@@ -1435,7 +1508,7 @@ export default function PurchaseOrderV2() {
                       setItemSearchOpen(false);
                       setActiveItemIndex(null);
                     }}
-                    className="cursor-pointer p-2 hover:bg-slate-100"
+                    className={cn("cursor-pointer p-2 hover:bg-slate-100", blocked && "opacity-50")}
                   >
                     <Check
                       className={cn(
@@ -1447,10 +1520,14 @@ export default function PurchaseOrderV2() {
                     />
                     <div className="flex flex-col">
                       <span className="font-medium">{g.name}</span>
-                      <span className="text-xs text-muted-foreground">{g.unit} - Stok: {g.current_stock}</span>
+                      <span className="text-xs text-muted-foreground">
+                        {g.unit} - Stok: {g.current_stock}
+                        {blocked ? ' • Nilai saja' : ''}
+                      </span>
                     </div>
                   </CommandItem>
-                ))}
+                );
+                  })}
               </CommandGroup>
             </CommandList>
           </Command>
@@ -1471,10 +1548,16 @@ export default function PurchaseOrderV2() {
                 {jobTypes
                   .filter((j: any) => String(j.job_name || '').toLowerCase().includes(jobSearchQuery.toLowerCase()))
                   .slice(0, 50)
-                  .map((j: any) => (
+                  .map((j: any) => {
+                    const blocked = valueOnlyBlock.isWO && valueOnlyBlock.jobTypeIds.has(String(j.id));
+                    return (
                     <CommandItem
                       key={j.id}
                       onSelect={() => {
+                        if (blocked) {
+                          toast.error('Jasa ini bertanda nilai saja (tidak boleh dibuat PO).');
+                          return;
+                        }
                         if (activeJobItemIndex !== null) {
                           handleItemChange(activeJobItemIndex, 'line_type', 'JASA');
                           handleItemChange(activeJobItemIndex, 'job_type_id', j.id);
@@ -1488,7 +1571,7 @@ export default function PurchaseOrderV2() {
                         setJobSearchOpen(false);
                         setActiveJobItemIndex(null);
                       }}
-                      className="cursor-pointer p-2 hover:bg-slate-100"
+                      className={cn("cursor-pointer p-2 hover:bg-slate-100", blocked && "opacity-50")}
                     >
                       <Check
                         className={cn(
@@ -1500,10 +1583,14 @@ export default function PurchaseOrderV2() {
                       />
                       <div className="flex flex-col">
                         <span className="font-medium">{j.job_name}</span>
-                        <span className="text-xs text-muted-foreground">{j.job_group || '-'} • HPP: {formatCurrency(Number(j.hpp || 0))}</span>
+                        <span className="text-xs text-muted-foreground">
+                          {j.job_group || '-'} • HPP: {formatCurrency(Number(j.hpp || 0))}
+                          {blocked ? ' • Nilai saja' : ''}
+                        </span>
                       </div>
                     </CommandItem>
-                  ))}
+                    );
+                  })}
               </CommandGroup>
             </CommandList>
           </Command>
