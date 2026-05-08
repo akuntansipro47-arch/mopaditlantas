@@ -9,13 +9,44 @@ interface PrintSPKProps {
     wo: WOWithDetails;
     entry: any;
   };
+  printCount?: number;
 }
 
-const PrintSPK: React.FC<PrintSPKProps> = ({ data }) => {
+const PrintSPK: React.FC<PrintSPKProps> = ({ data, printCount = 1 }) => {
   const { wo, entry } = data;
+  const isCopy = printCount > 1;
 
   return (
-    <div className="printable-area p-8 font-sans bg-white text-gray-900">
+    <div className="printable-area p-8 font-sans bg-white text-gray-900 relative">
+      {isCopy && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            pointerEvents: 'none',
+            zIndex: 0,
+          }}
+        >
+          <div
+            style={{
+              transform: 'rotate(-30deg)',
+              fontSize: '84px',
+              fontWeight: 900,
+              color: '#000',
+              opacity: 0.1,
+              letterSpacing: '2px',
+              textTransform: 'uppercase',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            COPY WO
+          </div>
+        </div>
+      )}
+      <div className="relative z-10">
       <header className="flex justify-between items-center pb-4 border-b-2 border-gray-800">
         <div>
           <h1 className="text-3xl font-bold text-gray-800">SURAT PERINTAH KERJA</h1>
@@ -24,6 +55,7 @@ const PrintSPK: React.FC<PrintSPKProps> = ({ data }) => {
         <div className="text-right">
           <p className="text-lg font-semibold">No. WO: {wo.wo_number}</p>
           <p className="text-sm text-gray-500">Tanggal: {formatDate(wo.work_date)}</p>
+          <p className={`text-xs ${isCopy ? 'font-bold text-red-700' : 'text-gray-500'}`}>Cetakan ke-{printCount}</p>
         </div>
       </header>
 
@@ -137,6 +169,7 @@ const PrintSPK: React.FC<PrintSPKProps> = ({ data }) => {
         </div>
         <p className="text-center mt-6">Dokumen ini dicetak secara otomatis oleh sistem.</p>
       </footer>
+      </div>
     </div>
   );
 };

@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import { formatCurrency, formatDate } from '@/lib/utils';
 import { Loader2 } from 'lucide-react';
+import { incrementDocumentPrintCounter } from '@/lib/printCounter';
 
 interface POPrintProps {
   id: string;
@@ -12,6 +13,7 @@ export default function PurchaseOrderPrint({ id }: POPrintProps) {
   const [items, setItems] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [agency, setAgency] = useState<any>(null);
+  const [printCount, setPrintCount] = useState<number>(1);
 
   const getItemName = (item: any) => {
     const lt = String(item?.line_type || '').toUpperCase();
@@ -65,6 +67,9 @@ export default function PurchaseOrderPrint({ id }: POPrintProps) {
       if (itemError) throw itemError;
       setItems(itemData || []);
 
+      const cnt = await incrementDocumentPrintCounter('PO', String(id));
+      setPrintCount(cnt);
+
       // Auto print after loading
       setTimeout(() => {
         window.print();
@@ -83,8 +88,39 @@ export default function PurchaseOrderPrint({ id }: POPrintProps) {
 
   if (!po) return <div>Data PO tidak ditemukan.</div>;
 
+  const isCopy = printCount > 1;
+
   return (
-    <div className="printable-area p-2 max-w-[210mm] mx-auto bg-white min-h-screen text-[10px] font-sans leading-tight">
+    <div className="printable-area p-2 max-w-[210mm] mx-auto bg-white min-h-screen text-[10px] font-sans leading-tight relative">
+      {isCopy && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            pointerEvents: 'none',
+            zIndex: 0,
+          }}
+        >
+          <div
+            style={{
+              transform: 'rotate(-30deg)',
+              fontSize: '72px',
+              fontWeight: 900,
+              color: '#000',
+              opacity: 0.1,
+              letterSpacing: '2px',
+              textTransform: 'uppercase',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            COPY PO
+          </div>
+        </div>
+      )}
+      <div className="relative z-10">
       {/* Header */}
       <div className="border-b-2 border-black pb-1 mb-2">
         <div className="flex justify-between items-start">
@@ -109,6 +145,11 @@ export default function PurchaseOrderPrint({ id }: POPrintProps) {
             <div>
               <span className="block text-[10px]">{formatDate(po.po_date)}</span>
               <span className="text-gray-500 text-[9px]">TANGGAL</span>
+            </div>
+            <div>
+              <span className={`block text-[9px] ${isCopy ? 'font-bold text-red-700' : 'text-gray-500'}`}>
+                Cetakan ke-{printCount}
+              </span>
             </div>
           </div>
         </div>
@@ -215,6 +256,7 @@ export default function PurchaseOrderPrint({ id }: POPrintProps) {
           .no-print { display: none !important; }
         }
       `}</style>
+      </div>
     </div>
   );
 }

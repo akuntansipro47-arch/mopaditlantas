@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { toast } from 'sonner';
+import { logActivity } from '@/lib/activityLog';
 
 export interface User {
   id: string;
@@ -64,6 +65,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       });
 
       if (error) {
+        void logActivity({
+          user_id: null,
+          username,
+          role: null,
+          action: 'LOGIN_FAILED',
+          module: 'AUTH',
+          details: error.message,
+        });
         toast.error('Login failed: ' + error.message);
         return false;
       }
@@ -82,23 +91,63 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
           setUser(loggedInUser);
           localStorage.setItem('app_user', JSON.stringify(loggedInUser));
+          void logActivity({
+            user_id: loggedInUser.id,
+            username: loggedInUser.username,
+            role: loggedInUser.role,
+            action: 'LOGIN_SUCCESS',
+            module: 'AUTH',
+          });
           toast.success(`Welcome back, ${loggedInUser.full_name}!`);
           return true;
         }
 
+        void logActivity({
+          user_id: null,
+          username,
+          role: null,
+          action: 'LOGIN_FAILED',
+          module: 'AUTH',
+          details: String(result.message || 'Login failed'),
+        });
         toast.error(result.message || 'Login failed');
         return false;
       }
 
+      void logActivity({
+        user_id: null,
+        username,
+        role: null,
+        action: 'LOGIN_FAILED',
+        module: 'AUTH',
+        details: 'Invalid response from server',
+      });
       toast.error('Invalid response from server');
       return false;
     } catch (err: any) {
+      void logActivity({
+        user_id: null,
+        username,
+        role: null,
+        action: 'LOGIN_FAILED',
+        module: 'AUTH',
+        details: String(err?.message || err),
+      });
       toast.error('Login error: ' + err.message);
       return false;
     }
   };
 
   const logout = () => {
+    if (user) {
+      void logActivity({
+        user_id: user.id,
+        username: user.username,
+        role: user.role,
+        action: 'LOGOUT',
+        module: 'AUTH',
+      });
+    }
     setUser(null);
     localStorage.removeItem('app_user');
     toast.info('Logged out successfully');

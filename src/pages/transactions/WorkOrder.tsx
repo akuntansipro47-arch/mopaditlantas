@@ -22,6 +22,8 @@ import { Badge } from "@/components/ui/badge";
 import { useReactToPrint } from 'react-to-print';
 import PrintSPK from '@/components/ui/PrintSPK';
 import { useAuth } from '@/context/AuthContext';
+import { incrementDocumentPrintCounter } from '@/lib/printCounter';
+import { logActivity } from '@/lib/activityLog';
 
 type WO = Database['public']['Tables']['work_orders']['Row'];
 type VehicleEntry = Database['public']['Tables']['vehicle_entries']['Row'];
@@ -44,6 +46,7 @@ export default function WorkOrder() {
   const [currentId, setCurrentId] = useState<string | null>(null);
   const [printData, setPrintData] = useState<{ wo: WOWithDetails; entry: any } | null>(null);
   const [printingSPKId, setPrintingSPKId] = useState<string | null>(null);
+  const [spkPrintCount, setSpkPrintCount] = useState<number>(1);
   const printComponentRef = useRef<HTMLDivElement>(null);
 
   const [entries, setEntries] = useState<(VehicleEntry & { vehicles: Vehicle | null })[]>([]);
@@ -161,6 +164,8 @@ export default function WorkOrder() {
 
     setPrintingSPKId(wo.id);
     try {
+      const cnt = await incrementDocumentPrintCounter('SPK', String(wo.id));
+      setSpkPrintCount(cnt);
       let entry: any = null;
       if (wo.vehicle_entry_id) {
         const { data: entryData, error: entryError } = await supabase
@@ -371,6 +376,18 @@ export default function WorkOrder() {
         }
 
         toast.success('Work Order berhasil dihapus');
+        if (user) {
+          void logActivity({
+            user_id: user.id,
+            username: user.username,
+            role: user.role,
+            action: 'WO_DELETE',
+            module: 'WORK_ORDER',
+            entity_type: 'work_orders',
+            entity_id: String(id),
+            meta: { vehicle_entry_id: vehicleEntryId },
+          });
+        }
         await fetchWOs();
         await fetchMasterData();
       } catch (error: any) {
@@ -397,8 +414,21 @@ export default function WorkOrder() {
           .eq('id', currentId);
         if (error) throw error;
         toast.success('WO diperbarui');
+        if (user) {
+          void logActivity({
+            user_id: user.id,
+            username: user.username,
+            role: user.role,
+            action: 'WO_UPDATE',
+            module: 'WORK_ORDER',
+            entity_type: 'work_orders',
+            entity_id: String(currentId),
+            meta: payload,
+          });
+        }
       } else {
         let insertError: any = null;
+        let createdWoNumber: string | null = null;
         for (let attempt = 0; attempt < 3; attempt++) {
           const woNumber = generateTransactionNumber('WO');
           const { error } = await supabase
@@ -406,6 +436,7 @@ export default function WorkOrder() {
             .insert([{ ...payload, wo_number: woNumber, status: 'OPEN' } as any]);
           if (!error) {
             insertError = null;
+            createdWoNumber = woNumber;
             break;
           }
 
@@ -431,6 +462,18 @@ export default function WorkOrder() {
         }
 
         toast.success('WO berhasil dibuat');
+        if (user) {
+          void logActivity({
+            user_id: user.id,
+            username: user.username,
+            role: user.role,
+            action: 'WO_CREATE',
+            module: 'WORK_ORDER',
+            entity_type: 'work_orders',
+            entity_id: String(createdWoNumber || ''),
+            meta: { ...payload, wo_number: createdWoNumber },
+          });
+        }
       }
       
       setIsDialogOpen(false);
@@ -700,7 +743,7 @@ export default function WorkOrder() {
       <div className="printable-area" style={{ position: 'absolute', left: '-100000px', top: 0 }} aria-hidden="true">
         {printData && (
           <div ref={printComponentRef}>
-            <PrintSPK data={printData} />
+            <PrintSPK data={printData} printCount={spkPrintCount} />
           </div>
         )}
       </div>

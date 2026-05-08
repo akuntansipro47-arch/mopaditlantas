@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
-import { Wrench, ShoppingCart, Car, Wallet, Tractor, Truck, ArchiveX } from 'lucide-react';
+import { Wrench, ShoppingCart, Car, Wallet, Tractor, Truck, ArchiveX, TrendingUp, CircleDollarSign, Landmark } from 'lucide-react';
 
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -66,6 +66,18 @@ export default function Dashboard() {
     woR2: 0,
     poPendingCount: 0,
     lowStockItems: 0,
+    monthlyRevenue: 0,
+    outstandingAR: 0,
+    outstandingAP: 0,
+    monthlyRevenue: 0,
+    outstandingAR: 0,
+    outstandingAP: 0,
+    monthlyRevenue: 0,
+    outstandingAR: 0,
+    outstandingAP: 0,
+    monthlyRevenue: 0,
+    outstandingAR: 0,
+    outstandingAP: 0,
   });
   const [fastMovingItems, setFastMovingItems] = useState<FastMovingItem[]>([]);
   const [leadTimeData, setLeadTimeData] = useState<LeadTimeData[]>([]);
@@ -109,6 +121,98 @@ export default function Dashboard() {
         const { data: poItems, error: poItemsError } = await supabase
           .from('purchase_order_items')
           .select('quantity, unit_price, created_at');
+
+        const startOfMonth = new Date();
+        startOfMonth.setDate(1);
+        startOfMonth.setHours(0, 0, 0, 0);
+
+        // Monthly Revenue
+        const { data: revenueData, error: revenueError } = await supabase
+          .from('invoices')
+          .select('total_amount')
+          .gte('invoice_date', startOfMonth.toISOString())
+          .in('status', ['PAID', 'PARTIALLY_PAID']);
+
+        // Outstanding AR (Piutang)
+        const { data: arData, error: arError } = await supabase
+          .from('invoices')
+          .select('balance_due')
+          .gt('balance_due', 0);
+
+        // Outstanding AP (Utang)
+        const { data: apData, error: apError } = await supabase
+          .from('purchase_orders')
+          .select('balance_due')
+          .gt('balance_due', 0);
+
+        const startOfMonth = new Date();
+        startOfMonth.setDate(1);
+        startOfMonth.setHours(0, 0, 0, 0);
+
+        // Monthly Revenue
+        const { data: revenueData, error: revenueError } = await supabase
+          .from('invoices')
+          .select('total_amount')
+          .gte('invoice_date', startOfMonth.toISOString())
+          .in('status', ['PAID', 'PARTIALLY_PAID']);
+
+        // Outstanding AR (Piutang)
+        const { data: arData, error: arError } = await supabase
+          .from('invoices')
+          .select('balance_due')
+          .gt('balance_due', 0);
+
+        // Outstanding AP (Utang)
+        const { data: apData, error: apError } = await supabase
+          .from('purchase_orders')
+          .select('balance_due')
+          .gt('balance_due', 0);
+
+        const startOfMonth = new Date();
+        startOfMonth.setDate(1);
+        startOfMonth.setHours(0, 0, 0, 0);
+
+        // Monthly Revenue
+        const { data: revenueData, error: revenueError } = await supabase
+          .from('invoices')
+          .select('total_amount')
+          .gte('invoice_date', startOfMonth.toISOString())
+          .in('status', ['PAID', 'PARTIALLY_PAID']);
+
+        // Outstanding AR (Piutang)
+        const { data: arData, error: arError } = await supabase
+          .from('invoices')
+          .select('balance_due')
+          .gt('balance_due', 0);
+
+        // Outstanding AP (Utang)
+        const { data: apData, error: apError } = await supabase
+          .from('purchase_orders')
+          .select('balance_due')
+          .gt('balance_due', 0);
+
+        const startOfMonth = new Date();
+        startOfMonth.setDate(1);
+        startOfMonth.setHours(0, 0, 0, 0);
+
+        // Monthly Revenue
+        const { data: revenueData, error: revenueError } = await supabase
+          .from('invoices')
+          .select('total_amount')
+          .gte('invoice_date', startOfMonth.toISOString())
+          .in('status', ['PAID', 'PARTIALLY_PAID']);
+
+        // Outstanding AR (Piutang)
+        const { data: arData, error: arError } = await supabase
+          .from('invoices')
+          .select('balance_due')
+          .gt('balance_due', 0);
+
+        // Outstanding AP (Utang)
+        const { data: apData, error: apError } = await supabase
+          .from('purchase_orders')
+          .select('balance_due')
+          .gt('balance_due', 0);
 
         // Low Stock Items
         const { count: lowStockCount, error: lowStockError } = await supabase
@@ -173,6 +277,9 @@ export default function Dashboard() {
         if (poPendingError) throw poPendingError;
         if (poItemsError) throw poItemsError;
         if (lowStockError) throw lowStockError;
+        if (revenueError) throw revenueError;
+        if (arError) throw arError;
+        if (apError) throw apError;
         if (issuedItemsError) throw issuedItemsError;
         if (activeWoError) throw activeWoError;
 
@@ -268,11 +375,18 @@ export default function Dashboard() {
         
         setFastMovingItems(sortedItems);
 
+        const totalRevenue = revenueData?.reduce((sum, inv) => sum + inv.total_amount, 0) || 0;
+        const totalAR = arData?.reduce((sum, inv) => sum + inv.balance_due, 0) || 0;
+        const totalAP = apData?.reduce((sum, po) => sum + po.balance_due, 0) || 0;
+
         setStats({
           woR4: woR4Count || 0,
           woR2: woR2Count || 0,
           poPendingCount: poPendingCount || 0,
           lowStockItems: lowStockCount || 0,
+          monthlyRevenue: totalRevenue,
+          outstandingAR: totalAR,
+          outstandingAP: totalAP,
         });
 
       } catch (error: any) {
@@ -290,6 +404,42 @@ export default function Dashboard() {
       <h2 className="text-3xl font-bold tracking-tight">Dashboard</h2>
       
       {/* Stat Cards Row */}
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7">
+        <StatCard 
+          title="Pendapatan Bulan Ini" 
+          value={formatCurrency(stats.monthlyRevenue)} 
+          icon={TrendingUp} 
+          loading={loading}
+          className="xl:col-span-2"
+        />
+        <StatCard 
+          title="Piutang Belum Lunas" 
+          value={formatCurrency(stats.outstandingAR)} 
+          icon={CircleDollarSign} 
+          loading={loading}
+          className="xl:col-span-2"
+        />
+         <StatCard 
+          title="Utang Belum Lunas" 
+          value={formatCurrency(stats.outstandingAP)} 
+          icon={Landmark} 
+          loading={loading}
+          className="xl:col-span-1"
+        />
+        <StatCard 
+          title="PO Pending" 
+          value={stats.poPendingCount} 
+          icon={ShoppingCart} 
+          loading={loading} 
+        />
+        <StatCard 
+          title="Stok Mau Habis" 
+          value={stats.lowStockItems} 
+          icon={ArchiveX} 
+          loading={loading} 
+        />
+      </div>
+
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         <StatCard 
           title="Total WO Roda 4" 

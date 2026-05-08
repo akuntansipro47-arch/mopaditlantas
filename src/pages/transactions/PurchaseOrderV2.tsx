@@ -23,6 +23,8 @@ import {
 } from "@/components/ui/select";
 import { formatCurrency, formatDate, generateTransactionNumber } from '@/lib/utils';
 import { useRealtimeRefetch } from '@/hooks/useRealtimeRefetch';
+import { useAuth } from '@/context/AuthContext';
+import { logActivity } from '@/lib/activityLog';
 
 type PO = Database['public']['Tables']['purchase_orders']['Row'];
 type POItem = Database['public']['Tables']['purchase_order_items']['Row'];
@@ -43,6 +45,7 @@ const normalizeText = (v: string) =>
     .replace(/\s+/g, ' ');
 
 export default function PurchaseOrderV2() {
+  const { user } = useAuth();
   const [pos, setPos] = useState<POWithDetails[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -746,6 +749,25 @@ export default function PurchaseOrderV2() {
       }
 
       toast.success(editingId ? 'PO berhasil diperbarui' : 'Purchase Order berhasil dibuat');
+      if (user) {
+        void logActivity({
+          user_id: user.id,
+          username: user.username,
+          role: user.role,
+          action: editingId ? 'PO_UPDATE' : 'PO_CREATE',
+          module: 'PURCHASE_ORDER',
+          entity_type: 'purchase_orders',
+          entity_id: String(targetPoId || ''),
+          details: `${editingId ? 'Update' : 'Create'} PO ${poType === 'WO' ? 'WO' : 'STOCK'}`,
+          meta: {
+            po_id: targetPoId,
+            supplier_id: formData.supplier_id,
+            work_order_id: poType === 'WO' && formData.work_order_id !== 'NONE' ? formData.work_order_id : null,
+            item_count: poItems.length,
+            total_amount: calculateTotal(),
+          },
+        });
+      }
       setIsDialogOpen(false);
       resetForm();
       fetchPOs();

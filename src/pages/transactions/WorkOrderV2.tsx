@@ -10,6 +10,7 @@ import { useAuth } from '@/context/AuthContext';
 import { PlusCircle, Edit, Trash2, CheckCircle, Search, Barcode, RefreshCw } from 'lucide-react';
 import { generateTransactionNumber, formatDate } from '@/lib/utils';
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
+import { incrementDocumentPrintCounter } from '@/lib/printCounter';
 
 import ReactToPrint from 'react-to-print';
 import { Card, CardContent } from '@/components/ui/card';
@@ -59,6 +60,7 @@ const WorkOrderV2 = () => {
   const [mechanics, setMechanics] = useState<Mechanic[]>([]);
   const printComponentRef = useRef<HTMLDivElement>(null);
   const [selectedWoForPrint, setSelectedWoForPrint] = useState<WorkOrder | null>(null);
+  const [spkPrintCount, setSpkPrintCount] = useState<number>(1);
 
   const fetchWOs = useCallback(async () => {
     setLoading(true);
@@ -442,7 +444,11 @@ const WorkOrderV2 = () => {
                           )}
                           content={() => printComponentRef.current}
                           documentTitle={`SPK-${selectedWoForPrint?.wo_number}`}
-                          onBeforeGetContent={() => setSelectedWoForPrint(wo)}
+                          onBeforeGetContent={async () => {
+                            setSelectedWoForPrint(wo);
+                            const cnt = await incrementDocumentPrintCounter('SPK', String(wo.id));
+                            setSpkPrintCount(cnt);
+                          }}
                           onAfterPrint={() => setSelectedWoForPrint(null)}
                         />
                         <Button variant="ghost" size="icon" onClick={() => handleEdit(wo)} title="Edit">
@@ -568,38 +574,47 @@ const WorkOrderV2 = () => {
                   .signatures { margin-top: 30px; display: flex; justify-content: space-around; font-size: 10pt; }
                   .signatures div { text-align: center; }
                   .signatures div p { margin-top: 50px; border-top: 1px solid #000; padding-top: 5px; }
+                  .watermark { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; pointer-events: none; z-index: 0; }
+                  .watermark-text { transform: rotate(-30deg); font-size: 84pt; font-weight: 900; color: #000; opacity: 0.1; letter-spacing: 2px; }
+                  .print-content { position: relative; z-index: 1; }
                 }
               `}</style>
-              <div className="print-header text-center mb-4">
-                <h1 className="text-xl font-bold">SURAT PERINTAH KERJA</h1>
-                <p>{selectedWoForPrint.wo_number}</p>
-              </div>
-              <div className="info-grid text-sm">
-                <strong>No. Polisi:</strong><span>{selectedWoForPrint.vehicle_entries?.vehicles?.license_plate}</span>
-                <strong>Kendaraan:</strong><span>{selectedWoForPrint.vehicle_entries?.vehicles?.brand_type}</span>
-                <strong>Pemilik:</strong><span>{selectedWoForPrint.vehicle_entries?.vehicles?.owner_name}</span>
-                <strong>Tanggal:</strong><span>{formatDate(selectedWoForPrint.work_date)}</span>
-                <strong>Mekanik:</strong><span>{selectedWoForPrint.mechanics?.name}</span>
-              </div>
-              <div className="mt-4">
-                <h2 className="font-bold border-b border-black">KELUHAN:</h2>
-                <p className="mt-2 text-sm">{selectedWoForPrint.vehicle_entries?.complaint}</p>
-              </div>
-              <div className="mt-4">
-                <h2 className="font-bold border-b border-black">DETAIL PEKERJAAN / SPAREPART:</h2>
-                <div className="min-h-[200px] border-x border-b border-black mt-2">
-                  {/* Details will be added here later */}
+              {spkPrintCount > 1 && (
+                <div className="watermark">
+                  <div className="watermark-text">COPY WO</div>
                 </div>
-              </div>
-              <div className="signatures mt-8">
-                <div>
-                  <p>Pemilik Kendaraan</p>
+              )}
+              <div className="print-content">
+                <div className="print-header text-center mb-4">
+                  <h1 className="text-xl font-bold">SURAT PERINTAH KERJA</h1>
+                  <p>{selectedWoForPrint.wo_number}</p>
+                  <p className={spkPrintCount > 1 ? "font-bold text-red-700" : ""}>Cetakan ke-{spkPrintCount}</p>
                 </div>
-                <div>
-                  <p>Service Advisor</p>
+                <div className="info-grid text-sm">
+                  <strong>No. Polisi:</strong><span>{selectedWoForPrint.vehicle_entries?.vehicles?.license_plate}</span>
+                  <strong>Kendaraan:</strong><span>{selectedWoForPrint.vehicle_entries?.vehicles?.brand_type}</span>
+                  <strong>Pemilik:</strong><span>{selectedWoForPrint.vehicle_entries?.vehicles?.owner_name}</span>
+                  <strong>Tanggal:</strong><span>{formatDate(selectedWoForPrint.work_date)}</span>
+                  <strong>Mekanik:</strong><span>{selectedWoForPrint.mechanics?.name}</span>
                 </div>
-                <div>
-                  <p>Mekanik</p>
+                <div className="mt-4">
+                  <h2 className="font-bold border-b border-black">KELUHAN:</h2>
+                  <p className="mt-2 text-sm">{selectedWoForPrint.vehicle_entries?.complaint}</p>
+                </div>
+                <div className="mt-4">
+                  <h2 className="font-bold border-b border-black">DETAIL PEKERJAAN / SPAREPART:</h2>
+                  <div className="min-h-[200px] border-x border-b border-black mt-2"></div>
+                </div>
+                <div className="signatures mt-8">
+                  <div>
+                    <p>Pemilik Kendaraan</p>
+                  </div>
+                  <div>
+                    <p>Service Advisor</p>
+                  </div>
+                  <div>
+                    <p>Mekanik</p>
+                  </div>
                 </div>
               </div>
             </div>

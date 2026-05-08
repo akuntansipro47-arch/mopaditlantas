@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { Loader2 } from 'lucide-react';
+import { incrementDocumentPrintCounter } from '@/lib/printCounter';
 
 function padRight(v: string, len: number) {
   const s = String(v ?? '');
@@ -47,6 +48,7 @@ export default function PurchaseOrderPrintDotMatrix({ id }: POPrintProps) {
   const [items, setItems] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [agency, setAgency] = useState<any>(null);
+  const [printCount, setPrintCount] = useState<number>(1);
 
   useEffect(() => {
     fetchData();
@@ -92,6 +94,9 @@ export default function PurchaseOrderPrintDotMatrix({ id }: POPrintProps) {
       if (itemError) throw itemError;
       setItems(itemData || []);
 
+      const cnt = await incrementDocumentPrintCounter('PO', String(id));
+      setPrintCount(cnt);
+
       setTimeout(() => {
         window.print();
       }, 500);
@@ -124,12 +129,19 @@ export default function PurchaseOrderPrintDotMatrix({ id }: POPrintProps) {
     const vehiclePlate = String(po.work_orders?.vehicle_entries?.vehicles?.license_plate || '-');
     const vehicleName = String(po.work_orders?.vehicle_entries?.vehicles?.brand_type || '-');
 
+    const copyLines =
+      printCount > 1
+        ? [padRight(`*** COPY PO - CETAKAN KE-${printCount} ***`, WIDTH), line(WIDTH, '-')]
+        : [];
+
     const headerLines = [
       padRight(agencyName, WIDTH),
       padRight(agencyAddress, WIDTH),
       padRight([agencyPhone ? `Telp: ${agencyPhone}` : '', agencyEmail ? `Email: ${agencyEmail}` : ''].filter(Boolean).join(' | '), WIDTH),
       line(WIDTH, '='),
+      ...copyLines,
       padRight(`PURCHASE ORDER  ${poNumber}`, WIDTH - dateCol) + padLeft(dateLabel, dateCol),
+      padRight(`CETAKAN KE-${printCount}`, WIDTH),
       line(WIDTH, '-'),
       padRight(`SUPPLIER : ${supplierName}`, WIDTH),
       padRight(`ALAMAT   : ${supplierAddress}`, WIDTH),
@@ -215,7 +227,7 @@ export default function PurchaseOrderPrintDotMatrix({ id }: POPrintProps) {
     ];
 
     return [...headerLines, ...projectLines, line(WIDTH, '-'), head, line(WIDTH, '-'), ...itemLines, ...footerLines].join('\n');
-  }, [agency, items, po]);
+  }, [agency, items, po, printCount]);
 
   const lineCount = useMemo(() => {
     if (!content) return 0;

@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import { formatDate } from '@/lib/utils';
+import { incrementDocumentPrintCounter } from '@/lib/printCounter';
 
 console.log('[SPKPrint] Component mounted');
 
@@ -9,6 +10,7 @@ export default function PrintSPK({ id }: { id: string }) {
   const [data, setData] = useState<any>(null);
   const [agency, setAgency] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
+  const [printCount, setPrintCount] = useState<number>(1);
 
   useEffect(() => {
     console.log('[SPKPrint] useEffect triggered, id:', id);
@@ -67,9 +69,11 @@ export default function PrintSPK({ id }: { id: string }) {
     }
   }
 
-  const handlePrint = () => {
+  const handlePrint = async () => {
     console.log('[SPKPrint] Print button clicked');
-    window.print();
+    const cnt = await incrementDocumentPrintCounter('SPK', String(id));
+    setPrintCount(cnt);
+    window.setTimeout(() => window.print(), 50);
   };
 
   console.log('[SPKPrint] Rendering, phase:', phase, 'error:', error, 'has data:', !!data);
@@ -136,6 +140,7 @@ export default function PrintSPK({ id }: { id: string }) {
           </button>
         </div>
       </div>
+      </div>
     );
   }
 
@@ -165,6 +170,7 @@ export default function PrintSPK({ id }: { id: string }) {
   }
 
   const { wo, entry } = data;
+  const isCopy = printCount > 1;
 
   return (
     <div className="printable-area" style={{ background: '#f3f4f6', minHeight: '100vh' }}>
@@ -221,7 +227,36 @@ export default function PrintSPK({ id }: { id: string }) {
       </div>
 
       {/* Document */}
-      <div style={{ maxWidth: '210mm', margin: '32px auto', padding: '40px', background: 'white', boxShadow: '0 25px 50px -12px rgba(0,0,0,0.25)' }}>
+      <div style={{ maxWidth: '210mm', margin: '32px auto', padding: '40px', background: 'white', boxShadow: '0 25px 50px -12px rgba(0,0,0,0.25)', position: 'relative' }}>
+        {isCopy && (
+          <div
+            style={{
+              position: 'fixed',
+              inset: 0,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              pointerEvents: 'none',
+              zIndex: 0,
+            }}
+          >
+            <div
+              style={{
+                transform: 'rotate(-30deg)',
+                fontSize: '84px',
+                fontWeight: 900,
+                color: '#000',
+                opacity: 0.1,
+                letterSpacing: '2px',
+                textTransform: 'uppercase',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              COPY WO
+            </div>
+          </div>
+        )}
+        <div style={{ position: 'relative', zIndex: 1 }}>
         
         {/* Header */}
         <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', borderBottom: '4px solid #111827', paddingBottom: '24px', marginBottom: '32px' }}>
@@ -241,6 +276,9 @@ export default function PrintSPK({ id }: { id: string }) {
             </div>
             <p style={{ margin: 0, fontSize: '14px', fontWeight: 'bold' }}>NO: {wo.wo_number}</p>
             <p style={{ margin: '4px 0 0 0', fontSize: '12px', color: '#6b7280' }}>{formatDate(wo.work_date)}</p>
+            <p style={{ margin: '4px 0 0 0', fontSize: '11px', fontWeight: isCopy ? 'bold' : 'normal', color: isCopy ? '#b91c1c' : '#6b7280' }}>
+              Cetakan ke-{printCount}
+            </p>
           </div>
         </header>
 

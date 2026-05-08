@@ -23,6 +23,7 @@ import {
   LogOut,
   CreditCard,
   Building2,
+  Activity,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import LogoMark from '@/components/brand/LogoMark';
@@ -42,20 +43,6 @@ type NavItem = {
 const navigation: NavItem[] = [
   { name: 'Dashboard', href: '/', icon: LayoutDashboard, key: 'dashboard' },
   { 
-    name: 'Master Data', 
-    icon: Database,
-    key: 'master',
-    children: [
-      { name: 'Kendaraan', href: '/master/vehicles', icon: Car, key: 'master_vehicles' },
-      { name: 'Barang/Jasa', href: '/master/goods', icon: Package, key: 'master_goods' },
-      { name: 'Anggaran', href: '/master/budget', icon: Wallet, key: 'master_budget' },
-      { name: 'Pekerjaan', href: '/master/jobs', icon: Wrench, key: 'master_jobs' },
-      { name: 'Supplier', href: '/master/suppliers', icon: Users, key: 'master_suppliers' },
-      { name: 'Mekanik', href: '/master/mechanics', icon: UserCog, key: 'master_mechanics' },
-      { name: 'Akun Perkiraan (COA)', href: '/master/coa', icon: Database, key: 'master_coa' },
-    ]
-  },
-  { 
     name: 'Transaksi', 
     icon: ClipboardList,
     key: 'transactions',
@@ -66,6 +53,20 @@ const navigation: NavItem[] = [
       { name: 'Penerimaan Barang', href: '/transactions/receive', icon: PackageCheck, key: 'trans_receive' },
       { name: 'Barang Keluar', href: '/transactions/issue', icon: PackageMinus, key: 'trans_issue' },
       { name: 'Retur Pembelian', href: '/transactions/po-return', icon: PackageMinus, key: 'trans_po_return' }, // New Return Menu
+    ]
+  },
+  { 
+    name: 'Master Data', 
+    icon: Database,
+    key: 'master',
+    children: [
+      { name: 'Kendaraan', href: '/master/vehicles', icon: Car, key: 'master_vehicles' },
+      { name: 'Barang/Jasa', href: '/master/goods', icon: Package, key: 'master_goods' },
+      { name: 'Pekerjaan', href: '/master/jobs', icon: Wrench, key: 'master_jobs' },
+      { name: 'Supplier', href: '/master/suppliers', icon: Users, key: 'master_suppliers' },
+      { name: 'Mekanik', href: '/master/mechanics', icon: UserCog, key: 'master_mechanics' },
+      { name: 'Akun Perkiraan (COA)', href: '/master/coa', icon: Database, key: 'master_coa' },
+      { name: 'Anggaran', href: '/master/budget', icon: Wallet, key: 'master_budget' },
     ]
   },
   { 
@@ -93,20 +94,6 @@ const navigation: NavItem[] = [
     icon: BarChart3,
     key: 'reports',
     children: [
-      { type: 'group', name: 'Laporan Keuangan' },
-      { name: 'Neraca', href: '/reports?tab=balance_sheet', icon: Building2, key: 'report_balance_sheet' },
-      { name: 'Laba Rugi', href: '/reports?tab=profit_loss', icon: BarChart3, key: 'report_profit_loss' },
-      { name: 'Laba Kotor', href: '/reports?tab=profit', icon: BarChart3, key: 'report_profit' },
-      { name: 'Arus Kas (Langsung)', href: '/reports?tab=cash_flow&method=direct', icon: Wallet, key: 'report_cash_flow' },
-      { name: 'Arus Kas (Tidak Langsung)', href: '/reports?tab=cash_flow&method=indirect', icon: Wallet, key: 'report_cash_flow' },
-      { name: 'Buku Bank/Kas', href: '/reports?tab=cash_bank_book', icon: Wallet, key: 'report_cash_bank_book' },
-      { name: 'Monitoring Pagu', href: '/reports?tab=budget', icon: Wallet, key: 'report_budget' },
-      { type: 'group', name: 'Laporan Pembelian' },
-      { name: 'Pembelian (PO)', href: '/reports?tab=po', icon: ShoppingCart, key: 'report_po' },
-      { name: 'Barang Masuk', href: '/reports?tab=receipt', icon: PackageCheck, key: 'report_receipt' },
-      { name: 'Rincian Pembelian (Detail)', href: '/reports?tab=podetail', icon: ShoppingCart, key: 'report_podetail' },
-      { name: 'Hutang Supplier', href: '/reports?tab=supplier_payable', icon: Wallet, key: 'report_supplier_payable' },
-      { name: 'Riwayat Bayar Hutang', href: '/reports?tab=payment_history_ap', icon: Wallet, key: 'report_payment_history_ap' },
       { type: 'group', name: 'Laporan Operasional' },
       { name: 'Rekap Barang Keluar', href: '/reports?tab=issue', icon: PackageMinus, key: 'report_issue' },
       { name: 'Laporan Detail Barang Keluar', href: '/reports?tab=issuedetail', icon: PackageMinus, key: 'report_issue' },
@@ -115,10 +102,25 @@ const navigation: NavItem[] = [
       { name: 'Laporan Estimasi vs Realisasi', href: '/reports?tab=estimation', icon: BarChart3, key: 'report_estimation' },
       { name: 'Laporan Estimasi Part Belum PO', href: '/reports?tab=estimation_unpo', icon: ShoppingCart, key: 'report_unordered_parts' },
       { name: 'Detail WO', href: '/reports?tab=wodetail', icon: ClipboardCheck, key: 'report_wo' },
+      { type: 'group', name: 'Laporan Pembelian' },
+      { name: 'Pembelian (PO)', href: '/reports?tab=po', icon: ShoppingCart, key: 'report_po' },
+      { name: 'Barang Masuk', href: '/reports?tab=receipt', icon: PackageCheck, key: 'report_receipt' },
+      { name: 'Rincian Pembelian (Detail)', href: '/reports?tab=podetail', icon: ShoppingCart, key: 'report_podetail' },
+      { name: 'Hutang Supplier', href: '/reports?tab=supplier_payable', icon: Wallet, key: 'report_supplier_payable' },
+      { name: 'Riwayat Bayar Hutang', href: '/reports?tab=payment_history_ap', icon: Wallet, key: 'report_payment_history_ap' },
       { type: 'group', name: 'Laporan Persediaan' },
       { name: 'Stok Barang', href: '/reports?tab=stock', icon: Package, key: 'report_stock' },
       { name: 'Nilai Persediaan', href: '/reports?tab=inventory_value', icon: Package, key: 'report_stock' },
       { name: 'History Barang', href: '/reports?tab=item_history', icon: Package, key: 'report_stock' },
+      { type: 'group', name: 'Laporan Keuangan' },
+      { name: 'Neraca', href: '/reports?tab=balance_sheet', icon: Building2, key: 'report_balance_sheet' },
+      { name: 'Laba Rugi', href: '/reports?tab=profit_loss', icon: BarChart3, key: 'report_profit_loss' },
+      { name: 'Laba Kotor', href: '/reports?tab=profit', icon: BarChart3, key: 'report_profit' },
+      { name: 'Arus Kas (Langsung)', href: '/reports?tab=cash_flow&method=direct', icon: Wallet, key: 'report_cash_flow' },
+      { name: 'Arus Kas (Tidak Langsung)', href: '/reports?tab=cash_flow&method=indirect', icon: Wallet, key: 'report_cash_flow' },
+      { name: 'Buku Bank/Kas', href: '/reports?tab=cash_bank_book', icon: Wallet, key: 'report_cash_bank_book' },
+      { name: 'Monitoring Pagu', href: '/reports?tab=budget', icon: Wallet, key: 'report_budget' },
+      { name: 'Log Aktivitas', href: '/reports?tab=activity_log', icon: Activity, key: 'report_activity_log' },
     ]
   },
 ];
@@ -126,7 +128,7 @@ const navigation: NavItem[] = [
 export function Sidebar() {
   const location = useLocation();
   const { user, logout } = useAuth();
-  const [openMenus, setOpenMenus] = useState<string[]>(['Data Base', 'Transaksi', 'Keuangan', 'Kepegawaian', 'Daftar Laporan']);
+  const [openMenus, setOpenMenus] = useState<string[]>(['Transaksi', 'Master Data', 'Keuangan', 'Kepegawaian', 'Daftar Laporan']);
   const [openReportGroups, setOpenReportGroups] = useState<string[]>([]);
 
   const toggleMenu = (name: string) => {
@@ -147,6 +149,7 @@ export function Sidebar() {
   const hasAccess = (key: string) => {
     if (!user) return false;
     if (user.role === 'SUPER_ADMIN') return true;
+    if (key === 'report_activity_log') return user.role === 'ADMIN';
     const allowed = Array.isArray(user.allowed_menus) ? user.allowed_menus : [];
     if (allowed.includes('*')) return true;
     if (key === 'reports') return allowed.includes('reports') || allowed.some((k: string) => String(k).startsWith('report_'));

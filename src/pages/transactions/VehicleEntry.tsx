@@ -618,6 +618,27 @@ export default function VehicleEntryPage() {
     ) || m.includes('not found') || m.includes('unauthorized') || m.includes('permission') || m.includes('access denied');
   };
 
+  const fetchAttachmentMetaByStoragePath = async (entryId: string) => {
+    try {
+      const { data, error } = await supabase
+        .from('vehicle_entry_attachments' as any)
+        .select('id, vehicle_entry_id, file_name, mime_type, data_url, storage_bucket, storage_path, size_original, size_stored, created_at')
+        .eq('vehicle_entry_id', entryId);
+      if (error) throw error;
+      const map = new Map<string, EntryAttachment>();
+      (data || []).forEach((r: any) => {
+        const p = String(r?.storage_path || '').trim();
+        if (!p) return;
+        map.set(p, r as any);
+      });
+      return map;
+    } catch (e: any) {
+      const msg = String(e?.message || '');
+      if (isMissingAttachmentTable(msg) || isAttachmentSchemaOutdated(msg)) return new Map<string, EntryAttachment>();
+      return new Map<string, EntryAttachment>();
+    }
+  };
+
   const fetchAttachmentsFromStorage = async (entryId: string) => {
     const prefix = `vehicle-entries/${entryId}`;
     const { data, error } = await supabase.storage.from(VEHICLE_ENTRY_ATTACHMENT_BUCKET).list(prefix, {
@@ -626,26 +647,71 @@ export default function VehicleEntryPage() {
       sortBy: { column: 'created_at', order: 'desc' },
     });
     if (error) throw error;
+    const metaByPath = await fetchAttachmentMetaByStoragePath(entryId);
     const mapped: EntryAttachment[] = (data || [])
       .filter((x: any) => x && x.name && !String(x.name).endsWith('/'))
       .map((x: any) => {
         const fullPath = `${prefix}/${x.name}`;
         const meta = (x as any)?.metadata || {};
         const mime = String(meta?.mimetype || meta?.contentType || '');
+        const db = metaByPath.get(fullPath);
         return {
-          id: `${VEHICLE_ENTRY_ATTACHMENT_BUCKET}:${fullPath}`,
+          id: db?.id ? String(db.id) : `${VEHICLE_ENTRY_ATTACHMENT_BUCKET}:${fullPath}`,
           vehicle_entry_id: entryId,
-          file_name: String(x.name),
-          mime_type: mime || 'application/octet-stream',
-          data_url: null,
+          file_name: db?.file_name ? String(db.file_name) : String(x.name),
+          mime_type: db?.mime_type ? String(db.mime_type) : mime || 'application/octet-stream',
+          data_url: db?.data_url ?? null,
           storage_bucket: VEHICLE_ENTRY_ATTACHMENT_BUCKET,
           storage_path: fullPath,
-          size_original: null,
-          size_stored: Number.isFinite(Number(meta?.size)) ? Number(meta?.size) : null,
-          created_at: (x as any)?.created_at || (x as any)?.updated_at || null,
+          size_original: db?.size_original ?? null,
+          size_stored:
+            db?.size_stored ??
+            (Number.isFinite(Number(meta?.size)) ? Number(meta?.size) : null),
+          created_at: db?.created_at ?? (x as any)?.created_at ?? (x as any)?.updated_at ?? null,
         };
       });
     return mapped;
+  };
+
+  const handleRenameAttachmentCore = async (a: EntryAttachment, entryId: string, setList: (updater: (prev: EntryAttachment[]) => EntryAttachment[]) => void) => {
+    const current = String(a.file_name || '').trim();
+    const raw = window.prompt('Ubah nama file', current);
+    if (raw === null) return;
+    let next = sanitizeFileName(String(raw || '').trim());
+    if (!next) {
+      toast.error('Nama file tidak boleh kosong.');
+      return;
+    }
+    const currentExt = current.includes('.') ? current.split('.').pop() : '';
+    const hasExt = next.includes('.');
+    if (!hasExt && currentExt) next = `${next}.${currentExt}`;
+
+    try {
+      const patch = { file_name: next };
+      if (isProbablyUuid(a.id)) {
+        const { error } = await supabase.from('vehicle_entry_attachments' as any).update(patch).eq('id', a.id);
+        if (error) throw error;
+      } else if (a.storage_path) {
+        const { error } = await supabase
+          .from('vehicle_entry_attachments' as any)
+          .update(patch)
+          .eq('vehicle_entry_id', entryId)
+          .eq('storage_path', a.storage_path);
+        if (error) throw error;
+      } else {
+        toast.error('Lampiran ini tidak punya metadata untuk diubah.');
+        return;
+      }
+      setList((prev) => prev.map((x) => (x.id === a.id || (a.storage_path && x.storage_path === a.storage_path) ? { ...x, file_name: next } : x)));
+      toast.success('Nama file diperbarui');
+    } catch (e: any) {
+      const msg = String(e?.message || '');
+      if (isMissingAttachmentTable(msg) || isAttachmentSchemaOutdated(msg)) {
+        toast.error("Rename gagal: tabel lampiran belum siap. Jalankan migration lampiran lalu refresh schema cache Supabase.");
+        return;
+      }
+      toast.error('Gagal ubah nama file: ' + msg);
+    }
   };
 
   const uploadAttachmentsAndInsertRows = async (entryId: string, list: PendingAttachment[]) => {
@@ -1658,6 +1724,16 @@ export default function VehicleEntryPage() {
                               <div className="text-[11px] text-muted-foreground">{a.mime_type}</div>
                             </div>
                             <div className="flex items-center gap-2">
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                onClick={() => currentId && handleRenameAttachmentCore(a, currentId, setAttachments)}
+                                disabled={!currentId}
+                              >
+                                <Pencil className="h-3.5 w-3.5 mr-1" />
+                                Ubah Nama
+                              </Button>
                               <Button type="button" variant="outline" size="sm" onClick={() => openStoredAttachment(a)}>
                                 Buka
                               </Button>
@@ -1864,6 +1940,19 @@ export default function VehicleEntryPage() {
                         <div className="text-[11px] text-muted-foreground">{a.mime_type}</div>
                       </div>
                       <div className="flex items-center gap-2">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() =>
+                            attachmentDialogEntry?.id &&
+                            handleRenameAttachmentCore(a, attachmentDialogEntry.id, setAttachmentDialogAttachments)
+                          }
+                          disabled={!attachmentDialogEntry?.id}
+                        >
+                          <Pencil className="h-3.5 w-3.5 mr-1" />
+                          Ubah Nama
+                        </Button>
                         <Button type="button" variant="outline" size="sm" onClick={() => openStoredAttachment(a)}>
                           Buka
                         </Button>

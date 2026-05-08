@@ -24,6 +24,7 @@ import VehicleExitReport from './reports/VehicleExitReport';
 import EstimationVsRealizationReport from './reports/EstimationVsRealizationReport';
 import UnorderedSparepartEstimationReport from './reports/UnorderedSparepartEstimationReport';
 import BudgetMonitoringReport from './reports/BudgetMonitoringReport';
+import ActivityLogReport from './reports/ActivityLogReport';
 import { Card } from '@/components/ui/card';
 import { Activity } from 'lucide-react';
 
@@ -50,7 +51,8 @@ type ReportKey =
   | 'cash_bank_book'
   | 'budget'
   | 'estimation'
-  | 'estimation_unpo';
+  | 'estimation_unpo'
+  | 'activity_log';
 
 export default function Reports() {
   const [searchParams] = useSearchParams();
@@ -62,6 +64,7 @@ export default function Reports() {
   const canAccess = (reportKey: string) => {
     if (!user) return false;
     if (user.role === 'SUPER_ADMIN') return true;
+    if (String(reportKey).trim().toLowerCase() === 'report_activity_log') return user.role === 'ADMIN';
     const allowed = Array.isArray(user.allowed_menus) ? user.allowed_menus : [];
     const allowedLower = allowed.map((v) => String(v).trim().toLowerCase()).filter(Boolean);
     if (allowedLower.includes('*')) return true;
@@ -98,6 +101,7 @@ export default function Reports() {
       if (canAccess('report_estimation')) return 'estimation';
       if (canAccess('report_unordered_parts')) return 'estimation_unpo';
       if (canAccess('report_budget')) return 'budget';
+      if (canAccess('report_activity_log')) return 'activity_log';
       return '';
   };
 
@@ -143,6 +147,7 @@ export default function Reports() {
     canAccess('report_estimation') ? 'estimation' : null,
     canAccess('report_unordered_parts') ? 'estimation_unpo' : null,
     canAccess('report_budget') ? 'budget' : null,
+    canAccess('report_activity_log') ? 'activity_log' : null,
   ].filter(Boolean) as ReportKey[];
 
   const effectiveTab = allowedTabs.includes(activeTab) ? activeTab : defaultTab;
@@ -171,6 +176,7 @@ export default function Reports() {
     if (key === 'estimation') return <EstimationVsRealizationReport />;
     if (key === 'estimation_unpo') return <UnorderedSparepartEstimationReport />;
     if (key === 'budget') return <BudgetMonitoringReport />;
+    if (key === 'activity_log') return <ActivityLogReport />;
     return null;
   };
 
