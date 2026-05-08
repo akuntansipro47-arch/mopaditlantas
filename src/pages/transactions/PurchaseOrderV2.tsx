@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useState } from 'react';
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { Database } from '@/types/supabase';
 import { 
@@ -136,6 +136,7 @@ export default function PurchaseOrderV2() {
   
   const [woSearchOpen, setWoSearchOpen] = useState(false);
   const [woSearchQuery, setWoSearchQuery] = useState('');
+  const valueOnlyWarnedRef = useRef(false);
 
   const makeItemKey = (it: any) => {
     const lt = String(it?.line_type || 'PART').toUpperCase();
@@ -177,6 +178,9 @@ export default function PurchaseOrderV2() {
       if (gid) partGoodsIds.add(gid);
       const nameKey = normalizeText(String(p?.item_name || ''));
       if (nameKey) partNameKeys.add(nameKey);
+      const g = gid ? goodsList.find((x: any) => String(x.id) === gid) : null;
+      const gKey = normalizeText(String(g?.name || ''));
+      if (gKey) partNameKeys.add(gKey);
     });
 
     const jobTypeIds = new Set<string>();
@@ -190,7 +194,33 @@ export default function PurchaseOrderV2() {
     });
 
     return { isWO: true, partGoodsIds, partNameKeys, jobTypeIds, jobNameKeys };
-  }, [formData.work_order_id, poType, workOrders]);
+  }, [formData.work_order_id, goodsList, poType, workOrders]);
+
+  const isValueOnlyItem = (it: any) => {
+    if (!valueOnlyBlock.isWO) return false;
+    const lt = String(it?.line_type || 'PART').toUpperCase();
+    if (lt === 'JASA') {
+      const jid = String(it?.job_type_id || '').trim();
+      if (jid && valueOnlyBlock.jobTypeIds.has(jid)) return true;
+      const key = normalizeText(String(it?.service_name || ''));
+      if (!key) return false;
+      for (const k of valueOnlyBlock.jobNameKeys) {
+        if (!k) continue;
+        if (key.includes(k) || k.includes(key)) return true;
+      }
+      return false;
+    }
+    const gid = String(it?.goods_id || '').trim();
+    if (gid && valueOnlyBlock.partGoodsIds.has(gid)) return true;
+    const g = gid ? goodsList.find((x: any) => String(x.id) === gid) : null;
+    const key = normalizeText(String(g?.name || it?.estimated_name || ''));
+    if (!key) return false;
+    for (const k of valueOnlyBlock.partNameKeys) {
+      if (!k) continue;
+      if (key.includes(k) || k.includes(key)) return true;
+    }
+    return false;
+  };
 
   useEffect(() => {
     if (!isDialogOpen) return;
@@ -283,54 +313,58 @@ export default function PurchaseOrderV2() {
     setGoodsList(g || []);
     const { data: j } = await supabase.from('job_types').select('*').or('is_active.is.null,is_active.eq.true').order('job_name', { ascending: true });
     setJobTypes((j as any[]) || []);
-    // Fetch OPEN Work Orders with Vehicle info and estimations
     {
+      const supportsColumn = async (table: string, column: string) => {
+        const { error } = await supabase.from(table as any).select(column as any).limit(1);
+        return !error;
+      };
+      const [supportsJobEstimated, supportsJobValueOnly, supportsPartGoodsId, supportsPartItemCode, supportsPartValueOnly] = await Promise.all([
+        supportsColumn('vehicle_entry_jobs', 'estimated_price'),
+        supportsColumn('vehicle_entry_jobs', 'value_only'),
+        supportsColumn('vehicle_entry_spareparts', 'goods_id'),
+        supportsColumn('vehicle_entry_spareparts', 'item_code'),
+        supportsColumn('vehicle_entry_spareparts', 'value_only'),
+      ]);
+
+      if (!supportsPartValueOnly && !valueOnlyWarnedRef.current) {
+        valueOnlyWarnedRef.current = true;
+        toast.warning("Catatan: kolom 'value_only' untuk estimasi sparepart belum tersedia/terbaca. Item Nilai Saja mungkin belum bisa dikunci di PO.");
+      }
+      if (!supportsJobValueOnly && !valueOnlyWarnedRef.current) {
+        valueOnlyWarnedRef.current = true;
+        toast.warning("Catatan: kolom 'value_only' untuk estimasi jasa belum tersedia/terbaca. Item Nilai Saja mungkin belum bisa dikunci di PO.");
+      }
+
+      const jobCols = ['job_type_id', 'notes'];
+      if (supportsJobEstimated) jobCols.push('estimated_price');
+      if (supportsJobValueOnly) jobCols.push('value_only');
+      jobCols.push('job_types (job_name, job_group, selling_price)');
+
+      const partCols = ['item_name', 'qty', 'estimated_price'];
+      if (supportsPartGoodsId) partCols.unshift('goods_id');
+      if (supportsPartItemCode) partCols.unshift('item_code');
+      if (supportsPartValueOnly) partCols.push('value_only');
+
       const { data: w, error: wErr } = await supabase
         .from('work_orders')
-        .select(`
+        .select(
+          `
           *,
           vehicle_entries (
             id,
             entry_number,
             vehicles (license_plate, brand_type),
-            vehicle_entry_jobs (
-              job_type_id,
-              notes,
-              estimated_price,
-              value_only,
-              job_types (job_name, job_group, selling_price)
-            ),
-            vehicle_entry_spareparts (goods_id, item_code, item_name, qty, estimated_price, value_only)
+            vehicle_entry_jobs (${jobCols.join(', ')}),
+            vehicle_entry_spareparts (${partCols.join(', ')})
           )
-        `)
-        .in('status', ['OPEN', 'IN_PROGRESS']); // Fetch both OPEN and IN_PROGRESS
-      if (!wErr) {
-        setWorkOrders(w || []);
+        `
+        )
+        .in('status', ['OPEN', 'IN_PROGRESS']);
+      if (wErr) {
+        toast.error('Gagal memuat Work Order: ' + wErr.message);
+        setWorkOrders([]);
       } else {
-        const { data: w2, error: w2Err } = await supabase
-          .from('work_orders')
-          .select(`
-            *,
-            vehicle_entries (
-              id,
-              entry_number,
-              vehicles (license_plate, brand_type),
-              vehicle_entry_jobs (
-                job_type_id,
-                notes,
-                estimated_price,
-                job_types (job_name, job_group, selling_price)
-              ),
-              vehicle_entry_spareparts (item_name, qty, estimated_price)
-            )
-          `)
-          .in('status', ['OPEN', 'IN_PROGRESS']);
-        if (w2Err) {
-          toast.error('Gagal memuat Work Order: ' + (w2Err.message || wErr.message));
-          setWorkOrders([]);
-        } else {
-          setWorkOrders(w2 || []);
-        }
+        setWorkOrders(w || []);
       }
     }
   }
@@ -607,22 +641,7 @@ export default function PurchaseOrderV2() {
     }
 
     if (valueOnlyBlock.isWO) {
-      const blockedIdx = poItems.findIndex((it: any) => {
-        const lt = String(it?.line_type || 'PART').toUpperCase();
-        if (lt === 'JASA') {
-          const jid = String(it?.job_type_id || '').trim();
-          if (jid && valueOnlyBlock.jobTypeIds.has(jid)) return true;
-          const nameKey = normalizeText(String(it?.service_name || ''));
-          if (nameKey && valueOnlyBlock.jobNameKeys.has(nameKey)) return true;
-          return false;
-        }
-        const gid = String(it?.goods_id || '').trim();
-        if (gid && valueOnlyBlock.partGoodsIds.has(gid)) return true;
-        const g = goodsList.find((x: any) => String(x.id) === String(gid));
-        const nameKey = normalizeText(String(g?.name || it?.estimated_name || ''));
-        if (nameKey && valueOnlyBlock.partNameKeys.has(nameKey)) return true;
-        return false;
-      });
+      const blockedIdx = poItems.findIndex((it: any) => isValueOnlyItem(it));
       if (blockedIdx >= 0) {
         toast.error(`Item nilai saja tidak boleh dibuat PO. Cek baris: ${blockedIdx + 1}`);
         return;
@@ -1139,6 +1158,8 @@ export default function PurchaseOrderV2() {
                         const isWO = poType === 'WO' && formData.work_order_id !== 'NONE';
                         const showDup = isWO && !isReadOnly && dups.length > 0;
 
+                        const isBlockedValueOnly = isValueOnlyItem(item);
+
                         return (
                           <Fragment key={index}>
                             <TableRow>
@@ -1146,6 +1167,8 @@ export default function PurchaseOrderV2() {
                                 const isReturnEditMode = !isReadOnly && returnedGoodsIds.length > 0;
                                 const editableSet = new Set(editableReturnIndexes);
                                 const lockLine = isReturnEditMode && !editableSet.has(index);
+                                const hardLock = !isReadOnly && isBlockedValueOnly;
+                                const disabledRow = lockLine || hardLock;
                                 return (
                                   <>
                           <TableCell>
@@ -1172,7 +1195,7 @@ export default function PurchaseOrderV2() {
                                 }
                                 setPoItems(next as any);
                               }}
-                              disabled={isReadOnly || isReturnEditMode || lockLine}
+                              disabled={isReadOnly || isReturnEditMode || disabledRow}
                             >
                               <SelectTrigger className="h-9">
                                 <SelectValue placeholder="Pilih..." />
@@ -1191,10 +1214,11 @@ export default function PurchaseOrderV2() {
                                 "w-full justify-between text-left font-normal", 
                                 (item as any).line_type === 'PART' && !item.goods_id && !item.estimated_name && "text-muted-foreground",
                                 (item as any).line_type === 'JASA' && !(item as any).job_type_id && "text-muted-foreground",
-                                (item as any).line_type === 'PART' && !item.goods_id && item.estimated_name && "bg-amber-100 text-amber-800 border-amber-300 hover:bg-amber-200"
+                                (item as any).line_type === 'PART' && !item.goods_id && item.estimated_name && "bg-amber-100 text-amber-800 border-amber-300 hover:bg-amber-200",
+                                hardLock && "bg-red-50 text-red-800 border-red-200 hover:bg-red-50"
                               )}
                               onClick={() => handleOpenSearch(index)}
-                              disabled={isReadOnly || lockLine}
+                              disabled={isReadOnly || disabledRow}
                             >
                               <span>
                                 {((item as any).line_type || 'PART') === 'JASA'
@@ -1216,13 +1240,18 @@ export default function PurchaseOrderV2() {
                               </span>
                               <Search className="ml-2 h-4 w-4 opacity-50" />
                             </Button>
+                            {hardLock && (
+                              <div className="mt-1 text-[11px] text-red-700">
+                                Nilai saja (tidak boleh dibuat PO)
+                              </div>
+                            )}
                           </TableCell>
                           <TableCell>
                             <Input 
                               className="h-9" placeholder="Merk/Tipe..."
                               value={item.brand} 
                               onChange={(e) => handleItemChange(index, 'brand', e.target.value)} 
-                              disabled={isReadOnly || lockLine}
+                              disabled={isReadOnly || disabledRow}
                             />
                           </TableCell>
                           <TableCell>
@@ -1235,7 +1264,7 @@ export default function PurchaseOrderV2() {
                                 const val = e.target.value.replace(/[^0-9]/g, '');
                                 handleItemChange(index, 'quantity', val ? parseInt(val) : 0);
                               }}
-                              disabled={isReadOnly || lockLine}
+                              disabled={isReadOnly || disabledRow}
                             />
                           </TableCell>
                           <TableCell>
@@ -1248,7 +1277,7 @@ export default function PurchaseOrderV2() {
                                 const val = e.target.value.replace(/[^0-9]/g, '');
                                 handleItemChange(index, 'unit_price', val ? parseInt(val) : 0);
                               }} 
-                              disabled={isReadOnly || lockLine || Boolean((item as any).locked_unit_price)}
+                              disabled={isReadOnly || disabledRow || Boolean((item as any).locked_unit_price)}
                             />
                           </TableCell>
                           <TableCell className="text-right font-semibold">
@@ -1483,10 +1512,7 @@ export default function PurchaseOrderV2() {
                   .filter(g => g.name.toLowerCase().includes(itemSearchQuery.toLowerCase()))
                   .slice(0, 50)
                   .map((g) => {
-                    const blocked =
-                      valueOnlyBlock.isWO &&
-                      (valueOnlyBlock.partGoodsIds.has(String(g.id)) ||
-                        valueOnlyBlock.partNameKeys.has(normalizeText(String(g.name || ''))));
+                    const blocked = valueOnlyBlock.isWO && isValueOnlyItem({ line_type: 'PART', goods_id: String(g.id), estimated_name: g.name });
                     return (
                   <CommandItem
                     key={g.id}
@@ -1549,7 +1575,7 @@ export default function PurchaseOrderV2() {
                   .filter((j: any) => String(j.job_name || '').toLowerCase().includes(jobSearchQuery.toLowerCase()))
                   .slice(0, 50)
                   .map((j: any) => {
-                    const blocked = valueOnlyBlock.isWO && valueOnlyBlock.jobTypeIds.has(String(j.id));
+                    const blocked = valueOnlyBlock.isWO && isValueOnlyItem({ line_type: 'JASA', job_type_id: String(j.id), service_name: j.job_name });
                     return (
                     <CommandItem
                       key={j.id}
