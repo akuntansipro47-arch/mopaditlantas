@@ -393,24 +393,59 @@ export default function GrossProfitReport() {
         });
       });
 
-      // 3. Fetch Last Purchase Price for PARTS
-      const partHppMap: Record<string, number> = {};
+      // 3. Fetch HPP PARTS: prioritas PO by WO, fallback rata-rata pembelian stok
+      const partHppByWoGoods: Record<string, number> = {};
+      const partHppAvgStockMap: Record<string, number> = {};
       let hasPoHistory = false;
 
       if (goodsIds.size > 0) {
-        const { data: poItems } = await supabase
+        const { data: poItems, error: poErr } = await supabase
           .from('purchase_order_items')
-          .select('goods_id, unit_price, created_at')
+          .select('goods_id, quantity, unit_price, purchase_orders!inner(work_order_id, status)')
+          .in('purchase_orders.status', ['RECEIVED_PART', 'RECEIVED_FULL'])
           .in('goods_id', Array.from(goodsIds))
-          .order('created_at', { ascending: false });
-        
-        if (poItems && poItems.length > 0) {
-            hasPoHistory = true;
-            poItems.forEach(item => {
-                if (item.goods_id && partHppMap[item.goods_id] === undefined) {
-                    partHppMap[item.goods_id] = item.unit_price;
-                }
-            });
+          .not('unit_price', 'is', null)
+          .limit(50000);
+
+        if (poErr) {
+          console.warn('Could not fetch PO items for gross profit report:', poErr.message);
+        } else if (poItems && poItems.length > 0) {
+          hasPoHistory = true;
+
+          const woSet = new Set<string>(woIds.map((x: any) => String(x)));
+          const woAgg = new Map<string, { sumQty: number; sumValue: number }>();
+          const stockAgg = new Map<string, { sumQty: number; sumValue: number }>();
+
+          poItems.forEach((it: any) => {
+            const gid = String(it.goods_id || '').trim();
+            const qty = Number(it.quantity || 0);
+            const price = Number(it.unit_price || 0);
+            if (!gid || qty <= 0 || price <= 0) return;
+
+            const woId = String(it.purchase_orders?.work_order_id || '').trim();
+            if (woId && woSet.has(woId)) {
+              const key = `${woId}:${gid}`;
+              const cur = woAgg.get(key) || { sumQty: 0, sumValue: 0 };
+              cur.sumQty += qty;
+              cur.sumValue += qty * price;
+              woAgg.set(key, cur);
+              return;
+            }
+
+            if (!woId) {
+              const cur = stockAgg.get(gid) || { sumQty: 0, sumValue: 0 };
+              cur.sumQty += qty;
+              cur.sumValue += qty * price;
+              stockAgg.set(gid, cur);
+            }
+          });
+
+          woAgg.forEach((v, k) => {
+            if (v.sumQty > 0) partHppByWoGoods[k] = v.sumValue / v.sumQty;
+          });
+          stockAgg.forEach((v, gid) => {
+            if (v.sumQty > 0) partHppAvgStockMap[gid] = v.sumValue / v.sumQty;
+          });
         }
       }
       setMissingPoHistory(!hasPoHistory && goodsIds.size > 0);
@@ -549,8 +584,19 @@ export default function GrossProfitReport() {
                     totalHarga = ep * (q || 0);
                   }
                 } else {
-                hppSatuan = partHppMap[bill.goods_id] || 0;
-                hppSource = partHppMap[bill.goods_id] !== undefined ? 'PO Terakhir' : 'Tidak Ada PO';
+                {
+                  const woKey = `${String(wo.id)}:${String(bill.goods_id)}`;
+                  if (partHppByWoGoods[woKey] !== undefined) {
+                    hppSatuan = partHppByWoGoods[woKey] || 0;
+                    hppSource = 'PO WO';
+                  } else if (partHppAvgStockMap[String(bill.goods_id)] !== undefined) {
+                    hppSatuan = partHppAvgStockMap[String(bill.goods_id)] || 0;
+                    hppSource = 'Avg Stok';
+                  } else {
+                    hppSatuan = 0;
+                    hppSource = 'Tidak Ada PO';
+                  }
+                }
                 }
             } else if (bill.item_type === 'JOB' && bill.job_type_id) {
                 const isValueOnlyJob = valueOnlyJobs.some((j: any) => String(j.job_type_id) === String(bill.job_type_id));
@@ -603,8 +649,16 @@ export default function GrossProfitReport() {
           const hargaPagu = Number(v.unit || 0);
           const totalHarga = hargaPagu * billQty;
 
-          const hppSatuan = partHppMap[gid] || 0;
-          const hppSource = partHppMap[gid] !== undefined ? 'PO Terakhir' : 'Tidak Ada PO';
+          let hppSatuan = 0;
+          let hppSource = 'Tidak Ada PO';
+          const woKey = `${String(wo.id)}:${String(gid)}`;
+          if (partHppByWoGoods[woKey] !== undefined) {
+            hppSatuan = partHppByWoGoods[woKey] || 0;
+            hppSource = 'PO WO';
+          } else if (partHppAvgStockMap[String(gid)] !== undefined) {
+            hppSatuan = partHppAvgStockMap[String(gid)] || 0;
+            hppSource = 'Avg Stok';
+          }
           const hppTotal = hppSatuan * billQty;
           const margin = totalHarga - hppTotal;
           const marginPercent = totalHarga ? (margin / totalHarga) * 100 : 0;

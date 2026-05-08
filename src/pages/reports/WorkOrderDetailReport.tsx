@@ -178,7 +178,6 @@ const WorkOrderDetailReport = () => {
 
             const [
                 { data: receivedPoItemsWo, error: receivedPoWoError },
-                { data: receivedPoItemsFallback, error: receivedPoFallbackError },
                 { data: purchaseOrdersWo, error: purchaseOrdersWoError },
                 { data: vehiclesData, error: vehiclesError },
                 { data: jobTypesData, error: jobTypesError },
@@ -190,16 +189,6 @@ const WorkOrderDetailReport = () => {
                     .in('purchase_orders.work_order_id', workOrderIds)
                     .not('unit_price', 'is', null)
                     .limit(20000),
-                allGoodsIds.length > 0
-                    ? supabase
-                        .from('purchase_order_items')
-                        .select('goods_id, quantity, unit_price, purchase_orders!inner(id, po_number, status)')
-                        .in('purchase_orders.status', ['RECEIVED_PART', 'RECEIVED_FULL'])
-                        .in('goods_id', allGoodsIds)
-                        .not('unit_price', 'is', null)
-                        .order('created_at', { ascending: false })
-                        .limit(5000)
-                    : Promise.resolve({ data: [], error: null } as any),
                 supabase
                     .from('purchase_orders')
                     .select('id, po_number, work_order_id')
@@ -212,7 +201,6 @@ const WorkOrderDetailReport = () => {
             ]);
 
             if (receivedPoWoError) throw new Error(`Gagal mengambil data HPP (PO WO): ${receivedPoWoError.message}`);
-            if (receivedPoFallbackError) throw new Error(`Gagal mengambil data HPP (Fallback): ${receivedPoFallbackError.message}`);
             if (purchaseOrdersWoError) throw new Error(`Gagal mengambil data PO WO: ${purchaseOrdersWoError.message}`);
             if (vehiclesError) throw new Error(`Gagal mengambil data kendaraan: ${vehiclesError.message}`);
             if (jobTypesError) throw new Error(`Gagal mengambil data jenis pekerjaan: ${jobTypesError.message}`);
@@ -244,7 +232,7 @@ const WorkOrderDetailReport = () => {
             const goodsIdByNameMap = new Map(goodsData.map(g => [g.name, g.id]));
             
             const normalizeText = (s: string) => s.toLowerCase().replace(/\s+/g, ' ').trim();
-            const receivedItems = ([] as any[]).concat(receivedPoItemsWo || [], receivedPoItemsFallback || []);
+            const receivedItems = ([] as any[]).concat(receivedPoItemsWo || []);
             const poIdByNumber = new Map<string, string>();
             const woPoIds = new Map<string, Set<string>>();
             receivedItems.forEach((it) => {
@@ -343,7 +331,6 @@ const WorkOrderDetailReport = () => {
 
             const partHppByWoGoods = new Map<string, { sumQty: number; sumValue: number }>();
             const partPoByWoGoods = new Map<string, Set<string>>();
-            const partFallbackByGoods = new Map<string, { maxQty: number; unitPrice: number; poNumber: string }>();
             receivedPartItems.forEach((it) => {
                 const woId = it.purchase_orders?.work_order_id;
                 const goodsId = it.goods_id;
@@ -360,12 +347,6 @@ const WorkOrderDetailReport = () => {
                         const set = partPoByWoGoods.get(key) || new Set<string>();
                         set.add(poNumber);
                         partPoByWoGoods.set(key, set);
-                    }
-                }
-                if (goodsId && qty > 0 && price > 0) {
-                    const cur = partFallbackByGoods.get(goodsId);
-                    if (!cur || qty > cur.maxQty) {
-                        partFallbackByGoods.set(goodsId, { maxQty: qty, unitPrice: price, poNumber });
                     }
                 }
             });
@@ -445,11 +426,7 @@ const WorkOrderDetailReport = () => {
                         return { hpp: agg.sumValue / agg.sumQty, po_info: poLabel ? `PO WO: ${poLabel}` : 'PO WO' };
                     }
                 }
-                const fb = partFallbackByGoods.get(goodsId);
-                if (fb && fb.unitPrice) {
-                    return { hpp: fb.unitPrice, po_info: fb.poNumber ? `PO Stok: ${fb.poNumber}` : 'PO Stok' };
-                }
-                return { hpp: 0, po_info: '' };
+                return { hpp: 0, po_info: 'Belum ada PO WO' };
             };
 
             const getJobHppInfo = (woId: string | undefined, jobTypeId: string | null, jobName: string): { hpp: number; po_info: string } => {
@@ -470,12 +447,6 @@ const WorkOrderDetailReport = () => {
                 }
                 if (jobTypeId) return { hpp: Number(jobTypesHppMap.get(jobTypeId) || 0), po_info: 'Master Jasa' };
                 return { hpp: 0, po_info: '' };
-            };
-
-            const getHpp = (goodsId: string | null): number => {
-                if (!goodsId) return 0;
-                const fb = partFallbackByGoods.get(goodsId);
-                return fb ? fb.unitPrice : 0;
             };
 
             // Step 6: Group items by WO from Estimation data
