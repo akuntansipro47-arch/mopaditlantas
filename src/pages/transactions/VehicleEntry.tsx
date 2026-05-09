@@ -21,6 +21,7 @@ import {
 } from "@/components/ui/command";
 import { useRealtimeRefetch } from '@/hooks/useRealtimeRefetch';
 import { useAuth } from '@/context/AuthContext';
+import { logActivity } from '@/lib/activityLog';
 
 type VehicleEntry = Database['public']['Tables']['vehicle_entries']['Row'];
 type Vehicle = Database['public']['Tables']['vehicles']['Row'];
@@ -704,6 +705,20 @@ export default function VehicleEntryPage() {
       }
       setList((prev) => prev.map((x) => (x.id === a.id || (a.storage_path && x.storage_path === a.storage_path) ? { ...x, file_name: next } : x)));
       toast.success('Nama file diperbarui');
+      void logActivity({
+        action: 'VE_ATTACHMENT_RENAME',
+        module: 'VEHICLE_ENTRY',
+        entity_type: 'vehicle_entry_attachments',
+        entity_id: isProbablyUuid(a.id) ? String(a.id) : String(a.storage_path || ''),
+        details: `Rename lampiran ${current} → ${next}`,
+        meta: {
+          entry_id: entryId,
+          file_name_before: current,
+          file_name_after: next,
+          storage_bucket: a.storage_bucket || null,
+          storage_path: a.storage_path || null,
+        },
+      });
     } catch (e: any) {
       const msg = String(e?.message || '');
       if (isMissingAttachmentTable(msg) || isAttachmentSchemaOutdated(msg)) {
@@ -850,6 +865,19 @@ export default function VehicleEntryPage() {
       const built = await Promise.all(accepted.map(buildPendingAttachment));
       await uploadAttachmentsAndInsertRows(entryId, built);
       toast.success('Lampiran tersimpan');
+      void logActivity({
+        action: 'VE_ATTACHMENT_UPLOAD',
+        module: 'VEHICLE_ENTRY',
+        entity_type: 'vehicle_entries',
+        entity_id: String(entryId),
+        details: `Upload lampiran (${built.length} file)`,
+        meta: {
+          entry_id: entryId,
+          entry_number: attachmentDialogEntry?.entry_number || null,
+          file_count: built.length,
+          files: built.map((x) => ({ file_name: x.file_name, mime_type: x.mime_type, size_original: x.size_original || null, size_stored: x.size_stored || null })),
+        },
+      });
       await fetchAttachmentsForDialog(entryId);
     } catch (e: any) {
       const msg = String(e?.message || '');
@@ -883,6 +911,14 @@ export default function VehicleEntryPage() {
         }
       }
       toast.success('Lampiran dihapus');
+      void logActivity({
+        action: 'VE_ATTACHMENT_DELETE',
+        module: 'VEHICLE_ENTRY',
+        entity_type: 'vehicle_entry_attachments',
+        entity_id: isProbablyUuid(a.id) ? String(a.id) : String(a.storage_path || ''),
+        details: `Delete lampiran ${String(a.file_name || '').trim()}`,
+        meta: { entry_id: entryId, file_name: a.file_name || null, storage_bucket: a.storage_bucket || null, storage_path: a.storage_path || null },
+      });
       await fetchAttachmentsForDialog(entryId);
     } catch (e: any) {
       toast.error('Gagal menghapus lampiran: ' + String(e?.message || e));
@@ -936,6 +972,14 @@ export default function VehicleEntryPage() {
       }
       setAttachments((prev) => prev.filter((x) => x.id !== a.id));
       toast.success('Lampiran dihapus');
+      void logActivity({
+        action: 'VE_ATTACHMENT_DELETE',
+        module: 'VEHICLE_ENTRY',
+        entity_type: 'vehicle_entry_attachments',
+        entity_id: isProbablyUuid(a.id) ? String(a.id) : String(a.storage_path || ''),
+        details: `Delete lampiran ${String(a.file_name || '').trim()}`,
+        meta: { entry_id: a.vehicle_entry_id || null, file_name: a.file_name || null, storage_bucket: a.storage_bucket || null, storage_path: a.storage_path || null },
+      });
     } catch (e: any) {
       toast.error('Gagal menghapus lampiran: ' + String(e?.message || e));
     }
@@ -943,6 +987,17 @@ export default function VehicleEntryPage() {
 
   const handlePrintEntry = (id: string) => {
     window.open(`/print/entry/${id}`, '_blank');
+    const entry = entries.find((x: any) => String(x.id) === String(id)) as any;
+    const entryNumber = String(entry?.entry_number || '').trim() || null;
+    const plate = String(entry?.vehicles?.license_plate || '').trim() || null;
+    void logActivity({
+      action: 'PRINT',
+      module: 'PRINT_ENTRY',
+      entity_type: 'vehicle_entries',
+      entity_id: String(id),
+      details: `Cetak Entry${entryNumber ? ` ${entryNumber}` : ''}${plate ? ` • ${plate}` : ''}`.trim(),
+      meta: { entry_id: id, entry_number: entryNumber, license_plate: plate },
+    });
   };
 
   const handleEdit = async (item: EntryWithDetails) => {
@@ -1131,6 +1186,20 @@ export default function VehicleEntryPage() {
       const { error } = await supabase.from('vehicle_entries').delete().eq('id', id);
       if (error) throw error;
       toast.success('Data dihapus');
+      {
+        const entry = entries.find((x: any) => String(x.id) === String(id)) as any;
+        const entryNumber = String(entry?.entry_number || '').trim() || null;
+        const plate = String(entry?.vehicles?.license_plate || '').trim() || null;
+        const nota = String(entry?.nota_dinas_number || '').trim() || null;
+        void logActivity({
+          action: 'VE_DELETE',
+          module: 'VEHICLE_ENTRY',
+          entity_type: 'vehicle_entries',
+          entity_id: String(id),
+          details: `Delete Entry${entryNumber ? ` ${entryNumber}` : ''}${plate ? ` • ${plate}` : ''}`.trim(),
+          meta: { entry_id: id, entry_number: entryNumber, license_plate: plate, nota_dinas_number: nota },
+        });
+      }
       fetchEntries();
     } catch (error: any) {
       toast.error('Gagal menghapus: ' + error.message);
@@ -1191,6 +1260,7 @@ export default function VehicleEntryPage() {
         
         if (error) throw error;
         targetId = newEntry.id;
+        (entryPayload as any).entry_number = (newEntry as any)?.entry_number || null;
       }
         
       if (targetId && entryJobs.length > 0) {
@@ -1276,6 +1346,30 @@ export default function VehicleEntryPage() {
       }
 
       toast.success(isEditing ? 'Entry diperbarui' : 'Entry kendaraan berhasil');
+      {
+        const entry = targetId ? (entries.find((x: any) => String(x.id) === String(targetId)) as any) : null;
+        const entryNumber = String((entryPayload as any)?.entry_number || entry?.entry_number || '').trim() || null;
+        const plate =
+          String(entry?.vehicles?.license_plate || vehicles.find((v: any) => String(v.id) === String(formData.vehicle_id))?.license_plate || '').trim() || null;
+        const nota = String(formData.nota_dinas_number || '').trim() || null;
+        void logActivity({
+          action: isEditing ? 'VE_UPDATE' : 'VE_CREATE',
+          module: 'VEHICLE_ENTRY',
+          entity_type: 'vehicle_entries',
+          entity_id: String(targetId || ''),
+          details: `${isEditing ? 'Update' : 'Create'} Entry${entryNumber ? ` ${entryNumber}` : ''}${plate ? ` • ${plate}` : ''}`.trim(),
+          meta: {
+            entry_id: targetId,
+            entry_number: entryNumber,
+            vehicle_id: formData.vehicle_id || null,
+            license_plate: plate,
+            nota_dinas_number: nota,
+            entry_date: formData.entry_date,
+            estimated_finish_date: formData.estimated_finish_date || null,
+            job_count: entryJobs.length,
+          },
+        });
+      }
 
       if (targetId && pendingAttachments.length > 0) {
         try {

@@ -17,6 +17,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
+import { logActivity } from '@/lib/activityLog';
 
 type COA = Database['public']['Tables']['chart_of_accounts']['Row'];
 
@@ -120,6 +121,14 @@ export default function ChartOfAccounts() {
       if (error) throw error;
 
       toast.success('Root PERSEDIAAN berhasil dibuat.');
+      void logActivity({
+        action: 'MASTER_COA_CREATE_ROOT',
+        module: 'MASTER_COA',
+        entity_type: 'chart_of_accounts',
+        entity_id: '',
+        details: 'Create root PERSEDIAAN',
+        meta: { account_code: String(codeNum), account_name: 'PERSEDIAAN' },
+      });
       fetchAccounts();
     } catch (e: any) {
       toast.error('Gagal membuat root PERSEDIAAN: ' + (e?.message || 'Unknown error'));
@@ -194,6 +203,19 @@ export default function ChartOfAccounts() {
       const { error } = await supabase.from('chart_of_accounts').delete().eq('id', id);
       if (error) throw error;
       toast.success('Akun dihapus');
+      {
+        const acc = accounts.find((x) => String(x.id) === String(id)) as any;
+        const code = String(acc?.account_code || '').trim() || null;
+        const name = String(acc?.account_name || '').trim() || null;
+        void logActivity({
+          action: 'MASTER_COA_DELETE',
+          module: 'MASTER_COA',
+          entity_type: 'chart_of_accounts',
+          entity_id: String(id),
+          details: `Hapus akun${code ? ` ${code}` : ''}${name ? ` - ${name}` : ''}`.trim(),
+          meta: { coa_id: id, account_code: code, account_name: name },
+        });
+      }
       fetchAccounts();
     } catch (error: any) {
       toast.error('Gagal menghapus: ' + error.message);
@@ -222,12 +244,28 @@ export default function ChartOfAccounts() {
           .eq('id', currentId);
         if (error) throw error;
         toast.success('Akun diperbarui');
+        void logActivity({
+          action: 'MASTER_COA_UPDATE',
+          module: 'MASTER_COA',
+          entity_type: 'chart_of_accounts',
+          entity_id: String(currentId),
+          details: `Update akun ${String(formData.account_code || '').trim()} - ${String(formData.account_name || '').trim()}`.trim(),
+          meta: { coa_id: currentId, account_code: formData.account_code, account_name: formData.account_name, account_type: formData.account_type },
+        });
       } else {
         const { error } = await supabase
           .from('chart_of_accounts')
           .insert([payload]);
         if (error) throw error;
         toast.success('Akun dibuat');
+        void logActivity({
+          action: 'MASTER_COA_CREATE',
+          module: 'MASTER_COA',
+          entity_type: 'chart_of_accounts',
+          entity_id: '',
+          details: `Create akun ${String(formData.account_code || '').trim()} - ${String(formData.account_name || '').trim()}`.trim(),
+          meta: { account_code: formData.account_code, account_name: formData.account_name, account_type: formData.account_type },
+        });
       }
       
       setIsDialogOpen(false);

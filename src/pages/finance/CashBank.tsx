@@ -16,6 +16,7 @@ import { useRealtimeRefetch } from '@/hooks/useRealtimeRefetch';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Button as UIButton } from '@/components/ui/button';
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
+import { logActivity } from '@/lib/activityLog';
 
 // Types
 type COA = {
@@ -300,6 +301,20 @@ export default function CashBank() {
       if (error) throw error;
       if (editingId === id) cancelEdit();
       toast.success('Transaksi dihapus');
+      {
+        const row = history.find((x: any) => String(x.id) === String(id)) as any;
+        const voucherNo = String(row?.voucher_no || '').trim() || null;
+        const entryType = String(row?.entry_type || '').trim() || null;
+        const totalAmount = Number(row?.total_amount || 0);
+        void logActivity({
+          action: 'CASHBANK_DELETE',
+          module: 'CASH_BANK',
+          entity_type: 'journal_entries',
+          entity_id: String(id),
+          details: `Hapus transaksi ${voucherNo || id}`,
+          meta: { journal_entry_id: id, voucher_no: voucherNo, entry_type: entryType, total_amount: totalAmount > 0 ? totalAmount : null },
+        });
+      }
       fetchHistory();
     } catch (e: any) {
       toast.error('Gagal menghapus: ' + String(e?.message || e));
@@ -492,6 +507,21 @@ export default function CashBank() {
       if (itemsError) throw itemsError;
 
       toast.success(isEditingDeposit ? 'Penerimaan berhasil diperbarui' : 'Penerimaan berhasil disimpan');
+      void logActivity({
+        action: isEditingDeposit ? 'CASHBANK_DEPOSIT_UPDATE' : 'CASHBANK_DEPOSIT_CREATE',
+        module: 'CASH_BANK',
+        entity_type: 'journal_entries',
+        entity_id: String(entryId),
+        details: `${isEditingDeposit ? 'Update' : 'Create'} penerimaan ${voucherNo}`,
+        meta: {
+          journal_entry_id: entryId,
+          voucher_no: voucherNo,
+          entry_type: 'DEPOSIT',
+          total_amount: depositTotal,
+          account_to: depositHeader.deposit_to,
+          date: depositHeader.date,
+        },
+      });
       setEditingId(null);
       setEditingType(null);
       resetDepositForm();
@@ -596,6 +626,21 @@ export default function CashBank() {
       if (itemsError) throw itemsError;
 
       toast.success(isEditingPayment ? 'Pengeluaran berhasil diperbarui' : 'Pengeluaran berhasil disimpan');
+      void logActivity({
+        action: isEditingPayment ? 'CASHBANK_PAYMENT_UPDATE' : 'CASHBANK_PAYMENT_CREATE',
+        module: 'CASH_BANK',
+        entity_type: 'journal_entries',
+        entity_id: String(entryId),
+        details: `${isEditingPayment ? 'Update' : 'Create'} pengeluaran ${voucherNo}`,
+        meta: {
+          journal_entry_id: entryId,
+          voucher_no: voucherNo,
+          entry_type: 'PAYMENT',
+          total_amount: paymentTotal,
+          account_from: paymentHeader.payment_from,
+          date: paymentHeader.date,
+        },
+      });
       setEditingId(null);
       setEditingType(null);
       resetPaymentForm();

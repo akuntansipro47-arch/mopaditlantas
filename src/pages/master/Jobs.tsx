@@ -19,6 +19,7 @@ import {
 import { Checkbox } from "@/components/ui/checkbox";
 
 import { formatCurrency } from '@/lib/utils';
+import { logActivity } from '@/lib/activityLog';
 
 type Job = Database['public']['Tables']['job_types']['Row'];
 
@@ -108,6 +109,18 @@ export default function Jobs() {
       const { error } = await supabase.from('job_types').delete().eq('id', id);
       if (error) throw error;
       toast.success('Data dihapus');
+      {
+        const j = jobs.find((x) => String(x.id) === String(id)) as any;
+        const name = String(j?.job_name || '').trim() || null;
+        void logActivity({
+          action: 'MASTER_JOB_DELETE',
+          module: 'MASTER_JOBS',
+          entity_type: 'job_types',
+          entity_id: String(id),
+          details: `Hapus pekerjaan${name ? ` ${name}` : ''}`.trim(),
+          meta: { job_type_id: id, job_name: name },
+        });
+      }
       fetchJobs();
     } catch (error: any) {
       toast.error('Gagal menghapus: ' + error.message);
@@ -127,10 +140,26 @@ export default function Jobs() {
         const { error } = await supabase.from('job_types').update(payload as any).eq('id', currentId);
         if (error) throw error;
         toast.success('Data diperbarui');
+        void logActivity({
+          action: 'MASTER_JOB_UPDATE',
+          module: 'MASTER_JOBS',
+          entity_type: 'job_types',
+          entity_id: String(currentId),
+          details: `Update pekerjaan ${String(formData.job_name || '').trim()}`.trim(),
+          meta: { job_type_id: currentId, job_name: String(formData.job_name || '').trim() || null, job_group: formData.job_group },
+        });
       } else {
         const { error } = await supabase.from('job_types').insert([payload as any]);
         if (error) throw error;
         toast.success('Data ditambahkan');
+        void logActivity({
+          action: 'MASTER_JOB_CREATE',
+          module: 'MASTER_JOBS',
+          entity_type: 'job_types',
+          entity_id: '',
+          details: `Create pekerjaan ${String(formData.job_name || '').trim()}`.trim(),
+          meta: { job_name: String(formData.job_name || '').trim() || null, job_group: formData.job_group },
+        });
       }
       setIsDialogOpen(false);
       resetForm();

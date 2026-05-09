@@ -31,6 +31,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { logActivity } from '@/lib/activityLog';
 
 type Vehicle = Database['public']['Tables']['vehicles']['Row'];
 
@@ -137,6 +138,18 @@ export default function Vehicles() {
       if (error) throw error;
       
       toast.success('Data berhasil dihapus');
+      {
+        const v = vehicles.find((x) => String(x.id) === String(id)) as any;
+        const plate = String(v?.license_plate || '').trim() || null;
+        void logActivity({
+          action: 'MASTER_VEHICLE_DELETE',
+          module: 'MASTER_VEHICLES',
+          entity_type: 'vehicles',
+          entity_id: String(id),
+          details: `Hapus kendaraan${plate ? ` ${plate}` : ''}`.trim(),
+          meta: { vehicle_id: id, license_plate: plate },
+        });
+      }
       fetchVehicles();
     } catch (error: any) {
       toast.error('Gagal menghapus data: ' + error.message);
@@ -168,12 +181,28 @@ export default function Vehicles() {
           .eq('id', currentId);
         if (error) throw error;
         toast.success('Data berhasil diperbarui');
+        void logActivity({
+          action: 'MASTER_VEHICLE_UPDATE',
+          module: 'MASTER_VEHICLES',
+          entity_type: 'vehicles',
+          entity_id: String(currentId),
+          details: `Update kendaraan ${String(formData.license_plate || '').trim()}`,
+          meta: { vehicle_id: currentId, license_plate: String(formData.license_plate || '').trim() || null, vehicle_type: formData.vehicle_type },
+        });
       } else {
         const { error } = await supabase
           .from('vehicles')
           .insert([formData as any]);
         if (error) throw error;
         toast.success('Data berhasil ditambahkan');
+        void logActivity({
+          action: 'MASTER_VEHICLE_CREATE',
+          module: 'MASTER_VEHICLES',
+          entity_type: 'vehicles',
+          entity_id: '',
+          details: `Create kendaraan ${String(formData.license_plate || '').trim()}`,
+          meta: { license_plate: String(formData.license_plate || '').trim() || null, vehicle_type: formData.vehicle_type },
+        });
       }
       
       setIsDialogOpen(false);

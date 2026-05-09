@@ -13,6 +13,7 @@ import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger,
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
+import { logActivity } from '@/lib/activityLog';
 
 type Supplier = Database['public']['Tables']['suppliers']['Row'];
 
@@ -80,6 +81,18 @@ export default function Suppliers() {
       const { error } = await supabase.from('suppliers').delete().eq('id', id);
       if (error) throw error;
       toast.success('Data dihapus');
+      {
+        const s = suppliers.find((x) => String(x.id) === String(id)) as any;
+        const name = String(s?.name || '').trim() || null;
+        void logActivity({
+          action: 'MASTER_SUPPLIER_DELETE',
+          module: 'MASTER_SUPPLIERS',
+          entity_type: 'suppliers',
+          entity_id: String(id),
+          details: `Hapus supplier${name ? ` ${name}` : ''}`.trim(),
+          meta: { supplier_id: id, name },
+        });
+      }
       fetchSuppliers();
     } catch (error: any) {
       toast.error('Gagal menghapus: ' + error.message);
@@ -94,10 +107,26 @@ export default function Suppliers() {
         const { error } = await supabase.from('suppliers').update(formData as any).eq('id', currentId);
         if (error) throw error;
         toast.success('Data diperbarui');
+        void logActivity({
+          action: 'MASTER_SUPPLIER_UPDATE',
+          module: 'MASTER_SUPPLIERS',
+          entity_type: 'suppliers',
+          entity_id: String(currentId),
+          details: `Update supplier ${String(formData.name || '').trim()}`.trim(),
+          meta: { supplier_id: currentId, name: String(formData.name || '').trim() || null },
+        });
       } else {
         const { error } = await supabase.from('suppliers').insert([formData as any]);
         if (error) throw error;
         toast.success('Data ditambahkan');
+        void logActivity({
+          action: 'MASTER_SUPPLIER_CREATE',
+          module: 'MASTER_SUPPLIERS',
+          entity_type: 'suppliers',
+          entity_id: '',
+          details: `Create supplier ${String(formData.name || '').trim()}`.trim(),
+          meta: { name: String(formData.name || '').trim() || null },
+        });
       }
       setIsDialogOpen(false);
       resetForm();

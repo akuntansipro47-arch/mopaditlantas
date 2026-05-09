@@ -16,6 +16,7 @@ import { Label } from "@/components/ui/label";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
+import { logActivity } from '@/lib/activityLog';
 
 type Mechanic = Database['public']['Tables']['mechanics']['Row'];
 
@@ -92,6 +93,18 @@ export default function Mechanics() {
       const { error } = await supabase.from('mechanics').delete().eq('id', id);
       if (error) throw error;
       toast.success('Data dihapus');
+      {
+        const m = mechanics.find((x) => String(x.id) === String(id)) as any;
+        const name = String(m?.name || '').trim() || null;
+        void logActivity({
+          action: 'MASTER_MECHANIC_DELETE',
+          module: 'MASTER_MECHANICS',
+          entity_type: 'mechanics',
+          entity_id: String(id),
+          details: `Hapus mekanik${name ? ` ${name}` : ''}`.trim(),
+          meta: { mechanic_id: id, name },
+        });
+      }
       fetchMechanics();
     } catch (error: any) {
       toast.error('Gagal menghapus: ' + error.message);
@@ -106,10 +119,26 @@ export default function Mechanics() {
         const { error } = await supabase.from('mechanics').update(formData as any).eq('id', currentId);
         if (error) throw error;
         toast.success('Data diperbarui');
+        void logActivity({
+          action: 'MASTER_MECHANIC_UPDATE',
+          module: 'MASTER_MECHANICS',
+          entity_type: 'mechanics',
+          entity_id: String(currentId),
+          details: `Update mekanik ${String(formData.name || '').trim()}`.trim(),
+          meta: { mechanic_id: currentId, name: String(formData.name || '').trim() || null },
+        });
       } else {
         const { error } = await supabase.from('mechanics').insert([formData as any]);
         if (error) throw error;
         toast.success('Data ditambahkan');
+        void logActivity({
+          action: 'MASTER_MECHANIC_CREATE',
+          module: 'MASTER_MECHANICS',
+          entity_type: 'mechanics',
+          entity_id: '',
+          details: `Create mekanik ${String(formData.name || '').trim()}`.trim(),
+          meta: { name: String(formData.name || '').trim() || null },
+        });
       }
       setIsDialogOpen(false);
       resetForm();

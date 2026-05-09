@@ -17,6 +17,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { formatCurrency } from '@/lib/utils';
+import { logActivity } from '@/lib/activityLog';
 
 type BudgetPeriod = Database['public']['Tables']['budget_periods']['Row'];
 type BudgetAllocation = Database['public']['Tables']['budget_allocations']['Row'];
@@ -124,6 +125,17 @@ export default function Budget() {
       const { error } = await supabase.from('budget_allocations').delete().eq('id', id);
       if (error) throw error;
       toast.success('Data dihapus');
+      {
+        const row = allocations.find((x) => String(x.id) === String(id)) as any;
+        void logActivity({
+          action: 'MASTER_BUDGET_DELETE',
+          module: 'MASTER_BUDGET',
+          entity_type: 'budget_allocations',
+          entity_id: String(id),
+          details: `Hapus anggaran ${String(row?.period_month || '').trim()} ${String(row?.period_year || '').trim()}`.trim(),
+          meta: { allocation_id: id, month: row?.period_month || null, year: row?.period_year || null, vehicle_type: row?.vehicle_type || null, service_group: row?.service_group || null },
+        });
+      }
       fetchBudgets();
     } catch (error: any) {
       toast.error('Gagal menghapus: ' + error.message);
@@ -173,12 +185,28 @@ export default function Budget() {
           .eq('id', currentId);
         if (error) throw error;
         toast.success('Anggaran diperbarui');
+        void logActivity({
+          action: 'MASTER_BUDGET_UPDATE',
+          module: 'MASTER_BUDGET',
+          entity_type: 'budget_allocations',
+          entity_id: String(currentId),
+          details: `Update anggaran ${formData.month} ${formData.year}`.trim(),
+          meta: { allocation_id: currentId, month: formData.month, year: Number(formData.year), vehicle_type: formData.vehicle_type, service_group: formData.service_group, amount: Number(formData.amount || 0) },
+        });
       } else {
         const { error } = await supabase
           .from('budget_allocations')
           .insert([allocationData as any]);
         if (error) throw error;
         toast.success('Anggaran ditambahkan');
+        void logActivity({
+          action: 'MASTER_BUDGET_CREATE',
+          module: 'MASTER_BUDGET',
+          entity_type: 'budget_allocations',
+          entity_id: '',
+          details: `Create anggaran ${formData.month} ${formData.year}`.trim(),
+          meta: { month: formData.month, year: Number(formData.year), vehicle_type: formData.vehicle_type, service_group: formData.service_group, amount: Number(formData.amount || 0) },
+        });
       }
       
       setIsDialogOpen(false);

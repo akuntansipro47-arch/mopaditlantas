@@ -15,6 +15,7 @@ import {
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useRealtimeRefetch } from '@/hooks/useRealtimeRefetch';
+import { logActivity } from '@/lib/activityLog';
 
 export default function ManualJournalEntry() {
   const [loading, setLoading] = useState(false);
@@ -243,6 +244,18 @@ export default function ManualJournalEntry() {
       if (delEntryErr) throw delEntryErr;
 
       toast.success('Jurnal umum berhasil dihapus');
+      {
+        const row = history.find((x: any) => String(x.id) === String(id)) as any;
+        const vNo = String(row?.voucher_no || '').trim() || null;
+        void logActivity({
+          action: 'GJ_DELETE',
+          module: 'GENERAL_JOURNAL',
+          entity_type: 'journal_entries',
+          entity_id: String(id),
+          details: `Hapus jurnal ${vNo || id}`,
+          meta: { journal_entry_id: id, voucher_no: vNo, entry_date: row?.entry_date || null },
+        });
+      }
       if (editingId === id) handleCancelEdit();
       fetchHistory();
     } catch (error: any) {
@@ -322,6 +335,20 @@ export default function ManualJournalEntry() {
           if (itemsError) throw itemsError;
 
           toast.success(editingId ? 'Jurnal Umum berhasil diperbarui' : 'Jurnal Umum berhasil disimpan');
+          void logActivity({
+            action: editingId ? 'GJ_UPDATE' : 'GJ_CREATE',
+            module: 'GENERAL_JOURNAL',
+            entity_type: 'journal_entries',
+            entity_id: String(entryId || ''),
+            details: `${editingId ? 'Update' : 'Create'} jurnal ${voucherNo}`.trim(),
+            meta: {
+              journal_entry_id: entryId,
+              voucher_no: voucherNo,
+              entry_date: entryDate,
+              total_amount: totalDebit,
+              line_count: validLines.length,
+            },
+          });
           resetForm();
           fetchHistory();
           setActiveTab('history');

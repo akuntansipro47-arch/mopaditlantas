@@ -18,6 +18,7 @@ import {
 } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useRealtimeRefetch } from '@/hooks/useRealtimeRefetch';
+import { logActivity } from '@/lib/activityLog';
 
 export default function PurchasePayment() {
   const [activeTab, setActiveTab] = useState('invoices');
@@ -225,6 +226,12 @@ export default function PurchasePayment() {
 
         if (missingPos.length === 0) {
             toast.success("Semua data sudah sinkron.");
+            void logActivity({
+              action: 'SYNC_AP_INVOICES',
+              module: 'PURCHASE_PAYMENT',
+              details: 'Sinkron tagihan: tidak ada data baru',
+              meta: { created_count: 0 },
+            });
             return;
         }
 
@@ -242,6 +249,12 @@ export default function PurchasePayment() {
         if (error) throw error;
 
         toast.success(`Berhasil membuat ${newInvoices.length} tagihan baru dari PO lama.`);
+        void logActivity({
+          action: 'SYNC_AP_INVOICES',
+          module: 'PURCHASE_PAYMENT',
+          details: `Sinkron tagihan: buat ${newInvoices.length} tagihan`,
+          meta: { created_count: newInvoices.length },
+        });
         fetchInvoices();
 
     } catch (error: any) {
@@ -385,6 +398,20 @@ export default function PurchasePayment() {
       if (delErr) throw delErr;
 
       toast.success(`Pembayaran ${invoice.invoice_number} berhasil dibatalkan`);
+      void logActivity({
+        action: 'AP_PAYMENT_DELETE',
+        module: 'PURCHASE_PAYMENT',
+        entity_type: 'purchase_payments',
+        entity_id: String(payment.id),
+        details: `Batalkan pembayaran ${invoice.invoice_number}`,
+        meta: {
+          payment_id: payment.id,
+          invoice_id: invoice.id,
+          invoice_number: invoice.invoice_number,
+          amount: Number(payment.amount || 0),
+          payment_date: payment.payment_date || null,
+        },
+      });
       setIsPayOpen(false);
       setEditingPaymentId(null);
       setEditingPayment(null);
@@ -566,6 +593,25 @@ export default function PurchasePayment() {
       }
 
       toast.success(editingPaymentId ? "Pembayaran berhasil diperbarui" : "Pembayaran berhasil diproses");
+      void logActivity({
+        action: editingPaymentId ? 'AP_PAYMENT_UPDATE' : 'AP_PAYMENT_CREATE',
+        module: 'PURCHASE_PAYMENT',
+        entity_type: 'purchase_payments',
+        entity_id: String(paymentId || ''),
+        details: `${editingPaymentId ? 'Update' : 'Create'} pembayaran ${String(selectedInvoice?.invoice_number || '').trim()}`.trim(),
+        meta: {
+          payment_id: paymentId,
+          invoice_id: selectedInvoice?.id || null,
+          invoice_number: selectedInvoice?.invoice_number || null,
+          supplier_name: selectedInvoice?.suppliers?.name || null,
+          amount: Number(amount || 0),
+          transfer_fee: Number(transferFee || 0),
+          payment_account_id: paymentData.payment_account_id || null,
+          fee_account_id: paymentData.fee_account_id || null,
+          payment_date: paymentData.payment_date,
+          method: paymentData.payment_method,
+        },
+      });
       setIsPayOpen(false);
       fetchInvoices();
       if (activeTab === 'history') fetchPaymentHistory();

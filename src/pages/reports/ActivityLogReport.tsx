@@ -30,6 +30,10 @@ export default function ActivityLogReport() {
   const [loading, setLoading] = useState(true);
   const [rows, setRows] = useState<ActivityLogRow[]>([]);
   const [appUsers, setAppUsers] = useState<Array<{ id: string; username: string; full_name: string | null; role: string; is_active: boolean }>>([]);
+  const PAGE_SIZE = 2000;
+  const [page, setPage] = useState(0);
+  const [hasMore, setHasMore] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [search, setSearch] = useState('');
   const [actionFilter, setActionFilter] = useState('');
   const [userFilter, setUserFilter] = useState('');
@@ -110,7 +114,7 @@ export default function ActivityLogReport() {
 
   useEffect(() => {
     if (!isAllowed) return;
-    const t = window.setTimeout(() => fetchData(), 250);
+    const t = window.setTimeout(() => fetchData({ reset: true }), 250);
     return () => window.clearTimeout(t);
   }, [dateRange.start, dateRange.end, isAllowed]);
 
@@ -132,21 +136,36 @@ export default function ActivityLogReport() {
     }
   }
 
-  async function fetchData() {
+  async function fetchData(opts?: { reset?: boolean }) {
     if (!isAllowed) return;
-    setLoading(true);
+    const reset = Boolean(opts?.reset);
+    if (reset) {
+      setLoading(true);
+      setPage(0);
+    } else {
+      setLoadingMore(true);
+    }
     try {
       const startIso = `${dateRange.start}T00:00:00`;
       const endIso = `${dateRange.end}T23:59:59`;
+      const from = reset ? 0 : (page + 1) * PAGE_SIZE;
+      const to = from + PAGE_SIZE - 1;
       const { data, error } = await supabase
         .from('activity_logs' as any)
         .select('id, occurred_at, user_id, username, role, action, module, entity_type, entity_id, details, meta')
         .gte('occurred_at', startIso)
         .lte('occurred_at', endIso)
         .order('occurred_at', { ascending: false })
-        .limit(2000);
+        .range(from, to);
       if (error) throw error;
-      setRows((data as any) || []);
+      const nextRows = ((data as any) || []) as ActivityLogRow[];
+      setHasMore(nextRows.length >= PAGE_SIZE);
+      if (reset) {
+        setRows(nextRows);
+      } else {
+        setRows((prev) => [...prev, ...nextRows]);
+        setPage((p) => p + 1);
+      }
     } catch (e: any) {
       const msg = String(e?.message || e);
       if (isMissingActivityLogsTable(msg)) {
@@ -157,9 +176,10 @@ export default function ActivityLogReport() {
       } else {
         toast.error('Gagal memuat log aktivitas: ' + msg);
       }
-      setRows([]);
+      if (reset) setRows([]);
     } finally {
-      setLoading(false);
+      if (reset) setLoading(false);
+      setLoadingMore(false);
     }
   }
 
@@ -316,6 +336,13 @@ export default function ActivityLogReport() {
             </TableBody>
           </Table>
         </div>
+        {hasMore && (
+          <div className="flex justify-center mt-3">
+            <Button variant="outline" onClick={() => fetchData({ reset: false })} disabled={loadingMore || loading}>
+              {loadingMore ? 'Memuat...' : 'Muat Lagi'}
+            </Button>
+          </div>
+        )}
       </CardContent>
     </>
   );

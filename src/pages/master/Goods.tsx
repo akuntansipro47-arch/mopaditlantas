@@ -19,6 +19,7 @@ import {
 } from "@/components/ui/select";
 
 import { formatCurrency } from '@/lib/utils';
+import { logActivity } from '@/lib/activityLog';
 
 type Goods = Database['public']['Tables']['goods']['Row'];
 
@@ -105,6 +106,18 @@ export default function Goods() {
       const { error } = await supabase.from('goods').delete().eq('id', id);
       if (error) throw error;
       toast.success('Data dihapus');
+      {
+        const g = goods.find((x) => String(x.id) === String(id)) as any;
+        const name = String(g?.name || '').trim() || null;
+        void logActivity({
+          action: 'MASTER_GOODS_DELETE',
+          module: 'MASTER_GOODS',
+          entity_type: 'goods',
+          entity_id: String(id),
+          details: `Hapus barang/jasa${name ? ` ${name}` : ''}`.trim(),
+          meta: { goods_id: id, name },
+        });
+      }
       fetchGoods();
     } catch (error: any) {
       toast.error('Gagal menghapus: ' + error.message);
@@ -130,10 +143,26 @@ export default function Goods() {
         const { error } = await supabase.from('goods').update(formData as any).eq('id', currentId);
         if (error) throw error;
         toast.success('Data diperbarui');
+        void logActivity({
+          action: 'MASTER_GOODS_UPDATE',
+          module: 'MASTER_GOODS',
+          entity_type: 'goods',
+          entity_id: String(currentId),
+          details: `Update barang/jasa ${String(formData.name || '').trim()}`.trim(),
+          meta: { goods_id: currentId, name: String(formData.name || '').trim() || null, item_type: formData.item_type },
+        });
       } else {
         const { error } = await supabase.from('goods').insert([formData as any]);
         if (error) throw error;
         toast.success('Data ditambahkan');
+        void logActivity({
+          action: 'MASTER_GOODS_CREATE',
+          module: 'MASTER_GOODS',
+          entity_type: 'goods',
+          entity_id: '',
+          details: `Create barang/jasa ${String(formData.name || '').trim()}`.trim(),
+          meta: { name: String(formData.name || '').trim() || null, item_type: formData.item_type },
+        });
       }
       setIsDialogOpen(false);
       resetForm();

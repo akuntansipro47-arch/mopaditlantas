@@ -15,6 +15,7 @@ import { Badge } from "@/components/ui/badge";
 import { formatDate, formatCurrency } from '@/lib/utils';
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { logActivity } from '@/lib/activityLog';
 
 type ReturnLine = {
   goods_id: string;
@@ -531,6 +532,22 @@ export default function PurchaseOrderReturn() {
       }
 
       toast.success('Retur berhasil diperbarui.');
+      void logActivity({
+        action: 'PR_UPDATE',
+        module: 'PURCHASE_RETURN',
+        entity_type: 'purchase_returns',
+        entity_id: String(editingReturn.id),
+        details: `Update Retur ${editingReturn.return_number} • PO ${selectedPO?.po_number || ''}`.trim(),
+        meta: {
+          return_id: editingReturn.id,
+          return_number: editingReturn.return_number,
+          po_id: selectedPO?.id || null,
+          po_number: selectedPO?.po_number || null,
+          settlement_type: effectiveSettlementType,
+          settlement_amount: totalReturnAmount,
+          return_date: returnDate,
+        },
+      });
       setIsEditOpen(false);
       setEditingReturn(null);
       await loadReturnHistory(poId);
@@ -591,6 +608,14 @@ export default function PurchaseOrderReturn() {
       if (delErr) throw delErr;
 
       toast.success('Retur berhasil dihapus.');
+      void logActivity({
+        action: 'PR_DELETE',
+        module: 'PURCHASE_RETURN',
+        entity_type: 'purchase_returns',
+        entity_id: String(ret.id),
+        details: `Delete Retur ${ret.return_number} • PO ${selectedPO?.po_number || ''}`.trim(),
+        meta: { return_id: ret.id, return_number: ret.return_number, po_id: selectedPO?.id || null, po_number: selectedPO?.po_number || null },
+      });
       await loadReturnHistory(poId);
       const { data: refreshed } = await supabase
         .from('purchase_orders')
@@ -995,6 +1020,22 @@ export default function PurchaseOrderReturn() {
       }
 
       toast.success('Retur berhasil diproses.');
+      void logActivity({
+        action: 'PR_CREATE',
+        module: 'PURCHASE_RETURN',
+        entity_type: 'purchase_returns',
+        entity_id: String(header.id),
+        details: `Create Retur ${header.return_number} • PO ${selectedPO?.po_number || ''}`.trim(),
+        meta: {
+          return_id: header.id,
+          return_number: header.return_number,
+          po_id: selectedPO?.id || null,
+          po_number: selectedPO?.po_number || null,
+          settlement_type: effectiveSettlementType,
+          settlement_amount: totalReturnAmount,
+          return_date: returnDate,
+        },
+      });
       setIsConfirmOpen(false);
       setSelectedPO(null);
     } catch (error: any) {

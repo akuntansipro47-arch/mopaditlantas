@@ -1,8 +1,26 @@
-import { Navigate, Outlet } from 'react-router-dom';
+import { Navigate, Outlet, useLocation } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext';
+import { useEffect, useRef } from 'react';
+import { logActivity } from '@/lib/activityLog';
 
 export default function ProtectedRoute() {
   const { user, loading } = useAuth();
+  const location = useLocation();
+  const lastPathRef = useRef<string>('');
+
+  useEffect(() => {
+    if (!user) return;
+    const next = `${location.pathname}${location.search || ''}`.trim();
+    if (!next) return;
+    if (lastPathRef.current === next) return;
+    lastPathRef.current = next;
+    void logActivity({
+      action: 'NAVIGATE',
+      module: 'ROUTER',
+      details: `Buka halaman ${next}`,
+      meta: { pathname: location.pathname, search: location.search || '' },
+    });
+  }, [user, location.pathname, location.search]);
 
   if (loading) {
     // Menampilkan state loading sederhana selagi memeriksa status autentikasi
