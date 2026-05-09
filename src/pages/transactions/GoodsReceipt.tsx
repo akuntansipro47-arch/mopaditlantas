@@ -9,6 +9,7 @@ import { Input } from '@/components/ui/input';
 import { Search, PackageCheck, CheckCircle2, Printer, Eye } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { toast } from 'sonner';
+import { logActivity } from '@/lib/activityLog';
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
@@ -562,6 +563,19 @@ export default function GoodsReceipt() {
         toast.success('Penerimaan berhasil dibatalkan.', {
             description: 'Catatan retur dibuat dan status PO telah dikembalikan ke "ISSUED".'
         });
+        void logActivity({
+          action: 'GR_CANCEL',
+          module: 'GOODS_RECEIPT',
+          entity_type: 'goods_receipts',
+          entity_id: String(receipt.id),
+          details: `Batal penerimaan ${String(receipt.receipt_number || '').trim()}${receipt.purchase_orders?.po_number ? ` • PO ${receipt.purchase_orders.po_number}` : ''}`.trim(),
+          meta: {
+            receipt_id: receipt.id,
+            receipt_number: receipt.receipt_number,
+            po_id: receipt.po_id,
+            po_number: receipt.purchase_orders?.po_number || null,
+          },
+        });
         console.log('--- PROSES PEMBATALAN & RETUR SUKSES ---');
         fetchReceiptHistory();
         fetchOpenPOs();
@@ -887,6 +901,25 @@ export default function GoodsReceipt() {
         }
 
         toast.success('PO jasa berhasil di-close dan hutang dicatat.');
+        void logActivity({
+          action: 'GR_CREATE',
+          module: 'GOODS_RECEIPT',
+          entity_type: 'goods_receipts',
+          entity_id: String(newReceipt.id),
+          details: `Close PO Jasa ${String(selectedPO.po_number || '').trim()} • GR ${String((newReceipt as any).receipt_number || '').trim()}`.trim(),
+          meta: {
+            receipt_id: newReceipt.id,
+            receipt_number: (newReceipt as any).receipt_number || null,
+            po_id: selectedPO.id,
+            po_number: selectedPO.po_number || null,
+            supplier_id: selectedPO.supplier_id,
+            supplier_name: selectedPO.suppliers?.name || null,
+            work_order_id: (selectedPO as any).work_order_id || null,
+            wo_number: (selectedPO as any)?.work_orders?.wo_number || null,
+            total_amount: closeAmount,
+            receipt_date: receiptData.receipt_date,
+          },
+        });
         setIsDialogOpen(false);
         fetchOpenPOs();
         fetchReceiptHistory();
@@ -1006,6 +1039,27 @@ export default function GoodsReceipt() {
       }
 
       setIsDialogOpen(false);
+      void logActivity({
+        action: 'GR_CREATE',
+        module: 'GOODS_RECEIPT',
+        entity_type: 'goods_receipts',
+        entity_id: String(newReceipt.id),
+        details: `Terima barang ${String((newReceipt as any).receipt_number || '').trim()} • PO ${String(selectedPO.po_number || '').trim()} • ${newStatus}`.trim(),
+        meta: {
+          receipt_id: newReceipt.id,
+          receipt_number: (newReceipt as any).receipt_number || null,
+          po_id: selectedPO.id,
+          po_number: selectedPO.po_number || null,
+          supplier_id: selectedPO.supplier_id,
+          supplier_name: selectedPO.suppliers?.name || null,
+          work_order_id: (selectedPO as any).work_order_id || null,
+          wo_number: (selectedPO as any)?.work_orders?.wo_number || null,
+          status: newStatus,
+          item_count: itemsToReceive.length,
+          total_amount: totalReceiptAmount,
+          receipt_date: receiptData.receipt_date,
+        },
+      });
       fetchOpenPOs();
       fetchReceiptHistory();
     } catch (error: any) {

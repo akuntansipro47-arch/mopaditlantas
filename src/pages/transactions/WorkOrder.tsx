@@ -377,6 +377,9 @@ export default function WorkOrder() {
 
         toast.success('Work Order berhasil dihapus');
         if (user) {
+          const wo = wos.find((x) => String(x.id) === String(id)) as any;
+          const woNumber = String(wo?.wo_number || '').trim();
+          const licensePlate = String(wo?.vehicle_entries?.vehicles?.license_plate || '').trim();
           void logActivity({
             user_id: user.id,
             username: user.username,
@@ -385,7 +388,8 @@ export default function WorkOrder() {
             module: 'WORK_ORDER',
             entity_type: 'work_orders',
             entity_id: String(id),
-            meta: { vehicle_entry_id: vehicleEntryId },
+            details: `Delete WO ${woNumber}${licensePlate ? ` • ${licensePlate}` : ''}`.trim(),
+            meta: { vehicle_entry_id: vehicleEntryId, wo_number: woNumber || null, license_plate: licensePlate || null },
           });
         }
         await fetchWOs();
@@ -415,6 +419,9 @@ export default function WorkOrder() {
         if (error) throw error;
         toast.success('WO diperbarui');
         if (user) {
+          const wo = wos.find((x) => String(x.id) === String(currentId)) as any;
+          const woNumber = String(wo?.wo_number || '').trim();
+          const licensePlate = String(wo?.vehicle_entries?.vehicles?.license_plate || '').trim();
           void logActivity({
             user_id: user.id,
             username: user.username,
@@ -423,20 +430,25 @@ export default function WorkOrder() {
             module: 'WORK_ORDER',
             entity_type: 'work_orders',
             entity_id: String(currentId),
-            meta: payload,
+            details: `Update WO ${woNumber}${licensePlate ? ` • ${licensePlate}` : ''}`.trim(),
+            meta: { ...payload, wo_number: woNumber || null, license_plate: licensePlate || null },
           });
         }
       } else {
         let insertError: any = null;
         let createdWoNumber: string | null = null;
+        let createdWoId: string | null = null;
         for (let attempt = 0; attempt < 3; attempt++) {
           const woNumber = generateTransactionNumber('WO');
-          const { error } = await supabase
+          const { data: createdRow, error } = await supabase
             .from('work_orders')
-            .insert([{ ...payload, wo_number: woNumber, status: 'OPEN' } as any]);
+            .insert([{ ...payload, wo_number: woNumber, status: 'OPEN' } as any])
+            .select('id, wo_number')
+            .single();
           if (!error) {
             insertError = null;
-            createdWoNumber = woNumber;
+            createdWoNumber = String(createdRow?.wo_number || woNumber);
+            createdWoId = String(createdRow?.id || '');
             break;
           }
 
@@ -463,6 +475,7 @@ export default function WorkOrder() {
 
         toast.success('WO berhasil dibuat');
         if (user) {
+          const licensePlate = String(selectedEntryDetails?.vehicles?.license_plate || '').trim();
           void logActivity({
             user_id: user.id,
             username: user.username,
@@ -470,8 +483,9 @@ export default function WorkOrder() {
             action: 'WO_CREATE',
             module: 'WORK_ORDER',
             entity_type: 'work_orders',
-            entity_id: String(createdWoNumber || ''),
-            meta: { ...payload, wo_number: createdWoNumber },
+            entity_id: String(createdWoId || ''),
+            details: `Create WO ${String(createdWoNumber || '').trim()}${licensePlate ? ` • ${licensePlate}` : ''}`.trim(),
+            meta: { ...payload, wo_id: createdWoId, wo_number: createdWoNumber, license_plate: licensePlate || null },
           });
         }
       }

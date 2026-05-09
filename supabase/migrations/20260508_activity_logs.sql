@@ -1,3 +1,5 @@
+create extension if not exists pgcrypto;
+
 create table if not exists public.activity_logs (
   id uuid primary key default gen_random_uuid(),
   occurred_at timestamptz not null default now(),
@@ -31,4 +33,3 @@ begin
 exception
   when duplicate_object then null;
 end $$;
-

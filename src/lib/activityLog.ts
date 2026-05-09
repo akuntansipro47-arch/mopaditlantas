@@ -18,11 +18,19 @@ export async function logActivity(payload: ActivityLogPayload) {
     const action = String(p.action || '').trim();
     if (!action) return;
 
+    let fallbackUser: any = null;
+    try {
+      const raw = localStorage.getItem('app_user');
+      if (raw) fallbackUser = JSON.parse(raw);
+    } catch {
+      fallbackUser = null;
+    }
+
     const { error } = await supabase.from('activity_logs' as any).insert([
       {
-        user_id: p.user_id ?? null,
-        username: p.username ?? null,
-        role: p.role ?? null,
+        user_id: p.user_id ?? fallbackUser?.id ?? null,
+        username: p.username ?? fallbackUser?.username ?? null,
+        role: p.role ?? fallbackUser?.role ?? null,
         action,
         module: p.module ?? null,
         entity_type: p.entity_type ?? null,
@@ -36,4 +44,3 @@ export async function logActivity(payload: ActivityLogPayload) {
     return;
   }
 }
-

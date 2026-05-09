@@ -23,6 +23,7 @@ import {
 import { cn } from "@/lib/utils";
 import { Check } from 'lucide-react';
 import { useRealtimeRefetch } from '@/hooks/useRealtimeRefetch';
+import { logActivity } from '@/lib/activityLog';
 
 type GoodsIssue = Database['public']['Tables']['goods_issues']['Row'];
 type GoodsIssueItem = Database['public']['Tables']['goods_issue_items']['Row'];
@@ -612,6 +613,19 @@ export default function GoodsIssuePage() {
       if (error) throw error;
 
       toast.success('Data dihapus dan stok dikembalikan');
+      {
+        const issue = issues.find((x) => String(x.id) === String(id)) as any;
+        const issueNumber = String(issue?.issue_number || '').trim() || null;
+        const woNumber = String(issue?.work_orders?.wo_number || '').trim() || null;
+        void logActivity({
+          action: 'GI_DELETE',
+          module: 'GOODS_ISSUE',
+          entity_type: 'goods_issues',
+          entity_id: String(id),
+          details: `Delete Barang Keluar${issueNumber ? ` ${issueNumber}` : ''}${woNumber ? ` • ${woNumber}` : ''}`.trim(),
+          meta: { issue_id: id, issue_number: issueNumber, work_order_id: issue?.work_order_id || null, wo_number: woNumber },
+        });
+      }
       fetchIssues();
       fetchMasterData();
     } catch (error: any) {
@@ -906,6 +920,24 @@ export default function GoodsIssuePage() {
       }
 
       toast.success(editingId ? 'Data berhasil diperbarui' : 'Pengeluaran barang berhasil dicatat');
+      {
+        const woNumber = String(wos.find((w) => String(w.id) === String(formData.work_order_id))?.wo_number || '').trim() || null;
+        void logActivity({
+          action: editingId ? 'GI_UPDATE' : 'GI_CREATE',
+          module: 'GOODS_ISSUE',
+          entity_type: 'goods_issues',
+          entity_id: String(targetIssueId),
+          details: `${editingId ? 'Update' : 'Create'} Barang Keluar ${String(issueNumber || '').trim()}${woNumber ? ` • ${woNumber}` : ''}`.trim(),
+          meta: {
+            issue_id: targetIssueId,
+            issue_number: issueNumber || null,
+            work_order_id: formData.work_order_id || null,
+            wo_number: woNumber,
+            item_count: itemsToSubmit.length,
+            issue_date: formData.issue_date,
+          },
+        });
+      }
       setIsDialogOpen(false);
       setFormData({ issue_date: new Date().toISOString().split('T')[0], work_order_id: '' });
       setIssueItems([{ goods_id: '', quantity: 1, cap_quantity: null, issued_quantity: 0, locked: false, source: 'MANUAL', mismatch: false, hint: '', value_only: false }]);

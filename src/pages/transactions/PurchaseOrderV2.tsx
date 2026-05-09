@@ -677,6 +677,7 @@ export default function PurchaseOrderV2() {
 
     try {
       let targetPoId = editingId;
+      let createdPO: any = null;
 
       if (editingId) {
         // UPDATE Existing PO
@@ -717,6 +718,7 @@ export default function PurchaseOrderV2() {
           .single();
         
         if (poError) throw poError;
+        createdPO = newPO;
         targetPoId = newPO.id;
       }
 
@@ -749,20 +751,31 @@ export default function PurchaseOrderV2() {
       }
 
       toast.success(editingId ? 'PO berhasil diperbarui' : 'Purchase Order berhasil dibuat');
-      if (user) {
+      {
+        const existingPo = editingId ? (pos.find((p) => String(p.id) === String(editingId)) as any) : null;
+        const poNumber = String(existingPo?.po_number || createdPO?.po_number || '').trim() || null;
+        const supplierName =
+          String(existingPo?.suppliers?.name || suppliers.find((s: any) => String(s.id) === String(formData.supplier_id))?.name || '').trim() || null;
+        const woId = poType === 'WO' && formData.work_order_id !== 'NONE' ? String(formData.work_order_id) : null;
+        const woNumber =
+          String(existingPo?.work_orders?.wo_number || workOrders.find((w: any) => String(w.id) === String(woId))?.wo_number || '').trim() || null;
+
         void logActivity({
-          user_id: user.id,
-          username: user.username,
-          role: user.role,
           action: editingId ? 'PO_UPDATE' : 'PO_CREATE',
           module: 'PURCHASE_ORDER',
           entity_type: 'purchase_orders',
           entity_id: String(targetPoId || ''),
-          details: `${editingId ? 'Update' : 'Create'} PO ${poType === 'WO' ? 'WO' : 'STOCK'}`,
+          details: `${editingId ? 'Update' : 'Create'} PO${poNumber ? ` ${poNumber}` : ''}${woNumber ? ` • WO ${woNumber}` : ''}${
+            supplierName ? ` • ${supplierName}` : ''
+          }`.trim(),
           meta: {
             po_id: targetPoId,
+            po_number: poNumber,
+            po_type: poType,
             supplier_id: formData.supplier_id,
-            work_order_id: poType === 'WO' && formData.work_order_id !== 'NONE' ? formData.work_order_id : null,
+            supplier_name: supplierName,
+            work_order_id: woId,
+            wo_number: woNumber,
             item_count: poItems.length,
             total_amount: calculateTotal(),
           },
@@ -829,6 +842,24 @@ export default function PurchaseOrderV2() {
       if (error) throw error;
       
       toast.success('PO dihapus');
+      {
+        const poNumber = String((poToDelete as any)?.po_number || '').trim() || null;
+        const woNumber = String((poToDelete as any)?.work_orders?.wo_number || '').trim() || null;
+        const supplierName = String((poToDelete as any)?.suppliers?.name || '').trim() || null;
+        void logActivity({
+          action: 'PO_DELETE',
+          module: 'PURCHASE_ORDER',
+          entity_type: 'purchase_orders',
+          entity_id: String(id),
+          details: `Delete PO${poNumber ? ` ${poNumber}` : ''}${woNumber ? ` • WO ${woNumber}` : ''}${supplierName ? ` • ${supplierName}` : ''}`.trim(),
+          meta: {
+            po_id: id,
+            po_number: poNumber,
+            wo_number: woNumber,
+            supplier_name: supplierName,
+          },
+        });
+      }
       fetchPOs();
     } catch (error: any) {
       const msg = String(error?.message || '');

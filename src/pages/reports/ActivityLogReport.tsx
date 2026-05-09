@@ -6,7 +6,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Download, RefreshCw } from 'lucide-react';
-import { formatDate } from '@/lib/utils';
+import { formatCurrency, formatDate } from '@/lib/utils';
 import * as XLSX from 'xlsx';
 import { toast } from 'sonner';
 import { logActivity } from '@/lib/activityLog';
@@ -29,8 +29,10 @@ export default function ActivityLogReport() {
   const { user } = useAuth();
   const [loading, setLoading] = useState(true);
   const [rows, setRows] = useState<ActivityLogRow[]>([]);
+  const [appUsers, setAppUsers] = useState<Array<{ id: string; username: string; full_name: string | null; role: string; is_active: boolean }>>([]);
   const [search, setSearch] = useState('');
   const [actionFilter, setActionFilter] = useState('');
+  const [userFilter, setUserFilter] = useState('');
   const [dateRange, setDateRange] = useState({
     start: new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0],
     end: new Date().toISOString().split('T')[0],
@@ -57,8 +59,14 @@ export default function ActivityLogReport() {
   }, [rows]);
 
   const filtered = useMemo(() => {
+    const selectedUser = userFilter ? appUsers.find((u) => String(u.id) === String(userFilter)) : null;
     const q = search.trim().toLowerCase();
     return rows.filter((r) => {
+      if (selectedUser) {
+        const okById = r.user_id && String(r.user_id) === String(selectedUser.id);
+        const okByUsername = !r.user_id && r.username && String(r.username).toLowerCase() === String(selectedUser.username || '').toLowerCase();
+        if (!okById && !okByUsername) return false;
+      }
       if (actionFilter && String(r.action || '') !== actionFilter) return false;
       if (!q) return true;
       const hay = [
@@ -69,18 +77,60 @@ export default function ActivityLogReport() {
         r.entity_type,
         r.entity_id,
         r.details,
+        JSON.stringify(r.meta || {}),
       ]
         .map((v) => String(v || '').toLowerCase())
         .join(' ');
       return hay.includes(q);
     });
-  }, [rows, search, actionFilter]);
+  }, [rows, search, actionFilter, userFilter, appUsers]);
+
+  const renderDetail = (r: ActivityLogRow) => {
+    const meta = r.meta || {};
+    const parts: string[] = [];
+    const poNumber = String(meta.po_number || '').trim();
+    const woNumber = String(meta.wo_number || '').trim();
+    const receiptNumber = String(meta.receipt_number || '').trim();
+    const issueNumber = String(meta.issue_number || '').trim();
+    const invoiceNumber = String(meta.invoice_number || '').trim();
+    if (poNumber) parts.push(`PO ${poNumber}`);
+    if (woNumber) parts.push(`WO ${woNumber}`);
+    if (receiptNumber) parts.push(`GR ${receiptNumber}`);
+    if (issueNumber) parts.push(`GI ${issueNumber}`);
+    if (invoiceNumber) parts.push(`INV ${invoiceNumber}`);
+    const totalAmount = Number(meta.total_amount || meta.amount || 0);
+    if (totalAmount > 0) parts.push(formatCurrency(totalAmount));
+
+    const base = String(r.details || '').trim();
+    if (!base && parts.length === 0) return '-';
+    if (!base) return parts.join(' • ');
+    if (parts.length === 0) return base;
+    return `${base} — ${parts.join(' • ')}`;
+  };
 
   useEffect(() => {
     if (!isAllowed) return;
     const t = window.setTimeout(() => fetchData(), 250);
     return () => window.clearTimeout(t);
   }, [dateRange.start, dateRange.end, isAllowed]);
+
+  useEffect(() => {
+    if (!isAllowed) return;
+    void fetchUsers();
+  }, [isAllowed]);
+
+  async function fetchUsers() {
+    try {
+      const { data, error } = await supabase
+        .from('app_users' as any)
+        .select('id, username, full_name, role, is_active')
+        .order('username', { ascending: true });
+      if (error) throw error;
+      setAppUsers((data as any) || []);
+    } catch {
+      setAppUsers([]);
+    }
+  }
 
   async function fetchData() {
     if (!isAllowed) return;
@@ -117,13 +167,15 @@ export default function ActivityLogReport() {
     try {
       const sheetRows = filtered.map((r) => ({
         Waktu: r.occurred_at ? new Date(r.occurred_at).toLocaleString('id-ID') : '-',
+        'User ID': r.user_id || '-',
         Username: r.username || '-',
         Role: r.role || '-',
         Aksi: r.action,
         Modul: r.module || '-',
         Entitas: r.entity_type || '-',
         'ID Entitas': r.entity_id || '-',
-        Detail: r.details || '-',
+        Detail: renderDetail(r),
+        Meta: r.meta ? JSON.stringify(r.meta) : '',
       }));
       const ws = XLSX.utils.json_to_sheet(sheetRows);
       const wb = XLSX.utils.book_new();
@@ -175,6 +227,19 @@ export default function ActivityLogReport() {
               value={dateRange.end}
               onChange={(e) => setDateRange((p) => ({ ...p, end: e.target.value }))}
             />
+            <select
+              className="h-9 rounded-md border border-input bg-transparent px-3 text-sm"
+              value={userFilter}
+              onChange={(e) => setUserFilter(e.target.value)}
+            >
+              <option value="">Semua User</option>
+              {appUsers.map((u) => (
+                <option key={u.id} value={u.id}>
+                  {u.username}
+                  {u.full_name ? ` - ${u.full_name}` : ''}
+                </option>
+              ))}
+            </select>
             <Input placeholder="Cari user/aksi/modul..." className="w-[240px]" value={search} onChange={(e) => setSearch(e.target.value)} />
             <select
               className="h-9 rounded-md border border-input bg-transparent px-3 text-sm"
@@ -238,7 +303,7 @@ export default function ActivityLogReport() {
                     <TableCell className="text-xs font-medium">{r.action}</TableCell>
                     <TableCell className="text-xs">{r.module || '-'}</TableCell>
                     <TableCell className="text-xs">
-                      <div className="truncate max-w-[560px]">{r.details || '-'}</div>
+                      <div className="truncate max-w-[560px]">{renderDetail(r)}</div>
                       {(r.entity_type || r.entity_id) && (
                         <div className="text-[10px] text-slate-400">
                           {r.entity_type || '-'} {r.entity_id ? `• ${r.entity_id}` : ''}
