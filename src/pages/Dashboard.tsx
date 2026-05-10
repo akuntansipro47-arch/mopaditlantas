@@ -16,8 +16,31 @@ const formatCurrency = (value: number) => {
   }).format(value);
 };
 
+const formatCurrencyPrecise = (value: number) => {
+  const rounded = Math.round((Number(value || 0) + Number.EPSILON) * 100) / 100;
+  const isInt = Number.isFinite(rounded) && Math.round(rounded) === rounded;
+  return new Intl.NumberFormat('id-ID', {
+    style: 'currency',
+    currency: 'IDR',
+    minimumFractionDigits: isInt ? 0 : 2,
+    maximumFractionDigits: 2,
+  }).format(rounded);
+};
+
 // Komponen untuk satu kartu statistik
-function StatCard({ title, value, icon: Icon, loading, className }: { title: string, value: string | number, icon: React.ElementType, loading: boolean, className?: string }) {
+function StatCard({
+  title,
+  value,
+  icon: Icon,
+  loading,
+  className,
+}: {
+  title: string;
+  value: React.ReactNode;
+  icon: React.ElementType;
+  loading: boolean;
+  className?: string;
+}) {
   return (
     <Card className={className}>
       <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
@@ -28,7 +51,11 @@ function StatCard({ title, value, icon: Icon, loading, className }: { title: str
         {loading ? (
           <div className="h-8 w-24 bg-gray-200 rounded animate-pulse" />
         ) : (
-          <div className="text-2xl font-bold">{value}</div>
+          typeof value === 'string' || typeof value === 'number' ? (
+            <div className="text-2xl font-bold break-all">{value}</div>
+          ) : (
+            value
+          )
         )}
       </CardContent>
     </Card>
@@ -60,12 +87,21 @@ interface MonthlyPoData {
   total: number;
 }
 
+interface CriticalStockItem {
+  id: string;
+  name: string;
+  item_code: string | null;
+  unit: string | null;
+  current_stock: number | null;
+}
+
 export default function Dashboard() {
   const [stats, setStats] = useState({
     woR4: 0,
     woR2: 0,
     poPendingCount: 0,
     lowStockItems: 0,
+    outOfStockItems: 0,
     monthlyRevenue: 0,
     outstandingAR: 0,
     outstandingAP: 0,
@@ -74,6 +110,7 @@ export default function Dashboard() {
   const [leadTimeData, setLeadTimeData] = useState<LeadTimeData[]>([]);
   const [monthlyProgress, setMonthlyProgress] = useState<MonthlyProgressData[]>([]);
   const [monthlyPoData, setMonthlyPoData] = useState<MonthlyPoData[]>([]);
+  const [criticalStockItems, setCriticalStockItems] = useState<CriticalStockItem[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -143,6 +180,21 @@ export default function Dashboard() {
           .select('*', { count: 'exact', head: true })
           .lt('current_stock', 3);
 
+        // Out Of Stock Items
+        const { count: outOfStockCount, error: outOfStockError } = await supabase
+          .from('goods')
+          .select('*', { count: 'exact', head: true })
+          .lte('current_stock', 0);
+
+        // Top Critical Stock Items (stok habis & menipis)
+        const { data: criticalItems, error: criticalError } = await supabase
+          .from('goods')
+          .select('id, name, item_code, unit, current_stock')
+          .lte('current_stock', 2)
+          .order('current_stock', { ascending: true })
+          .order('name', { ascending: true })
+          .limit(10);
+
         // Fast Moving Items (periode berjalan: dari awal bulan ini s.d. sekarang)
         const startOfRunningPeriod = new Date();
         startOfRunningPeriod.setDate(1);
@@ -200,6 +252,8 @@ export default function Dashboard() {
         if (poPendingError) throw poPendingError;
         if (poItemsError) throw poItemsError;
         if (lowStockError) throw lowStockError;
+        if (outOfStockError) throw outOfStockError;
+        if (criticalError) console.error('Error fetching critical stock items:', criticalError);
         if (revenueError) console.error('Error fetching monthly revenue:', revenueError);
         if (arError) console.error('Error fetching outstanding AR:', arError);
         if (apError) console.error('Error fetching outstanding AP:', apError);
@@ -297,6 +351,7 @@ export default function Dashboard() {
           .slice(0, 10);
         
         setFastMovingItems(sortedItems);
+        setCriticalStockItems((criticalItems as any) || []);
 
         const totalRevenue = revenueData?.reduce((sum, inv: any) => {
           const totalAmount = Number(inv.total_amount || 0);
@@ -326,6 +381,7 @@ export default function Dashboard() {
           woR2: woR2Count || 0,
           poPendingCount: poPendingCount || 0,
           lowStockItems: lowStockCount || 0,
+          outOfStockItems: outOfStockCount || 0,
           monthlyRevenue: totalRevenue,
           outstandingAR: totalAR,
           outstandingAP: totalAP,
@@ -363,10 +419,12 @@ export default function Dashboard() {
         />
          <StatCard 
           title="Utang Belum Lunas" 
-          value={formatCurrency(stats.outstandingAP)} 
+          value={
+            <div className="text-2xl font-bold break-all">{formatCurrencyPrecise(stats.outstandingAP)}</div>
+          }
           icon={Landmark} 
           loading={loading}
-          className="xl:col-span-1"
+          className="xl:col-span-2"
         />
         <StatCard 
           title="PO Pending" 
@@ -375,8 +433,15 @@ export default function Dashboard() {
           loading={loading} 
         />
         <StatCard 
-          title="Stok Mau Habis" 
-          value={stats.lowStockItems} 
+          title="Stok Menipis" 
+          value={
+            <div>
+              <div className="text-2xl font-bold">{stats.lowStockItems}</div>
+              <div className="text-xs text-slate-500 mt-1">
+                Habis: {stats.outOfStockItems} • Menipis: {stats.lowStockItems} (stok &lt; 3)
+              </div>
+            </div>
+          }
           icon={ArchiveX} 
           loading={loading} 
         />
@@ -403,7 +468,14 @@ export default function Dashboard() {
         />
         <StatCard 
           title="Stok Mau Habis (< 3)" 
-          value={stats.lowStockItems} 
+          value={
+            <div>
+              <div className="text-2xl font-bold">{stats.lowStockItems}</div>
+              <div className="text-xs text-slate-500 mt-1">
+                Habis: {stats.outOfStockItems} • Menipis: {stats.lowStockItems}
+              </div>
+            </div>
+          }
           icon={ArchiveX} 
           loading={loading} 
         />
@@ -472,8 +544,8 @@ export default function Dashboard() {
       </div>
 
       {/* Bottom Tables Row */}
-      <div className="grid gap-4 md:grid-cols-1 lg:grid-cols-2">
-        <Card>
+      <div className="grid gap-4 md:grid-cols-1 lg:grid-cols-7">
+        <Card className="lg:col-span-2">
           <CardHeader>
             <CardTitle>Top 10 Fast Moving Items (Periode Berjalan)</CardTitle>
           </CardHeader>
@@ -494,7 +566,49 @@ export default function Dashboard() {
             )}
           </CardContent>
         </Card>
-        <Card>
+        <Card className="lg:col-span-2">
+          <CardHeader>
+            <CardTitle>Stok Kritis (Top 10)</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {loading ? (
+              <p className="text-muted-foreground">Memuat data...</p>
+            ) : criticalStockItems.length > 0 ? (
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Barang</TableHead>
+                    <TableHead className="text-right">Stok</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {criticalStockItems.map((it) => {
+                    const stock = Number(it.current_stock || 0);
+                    const isOut = stock <= 0;
+                    const isLow = stock > 0 && stock <= 2;
+                    return (
+                      <TableRow key={it.id}>
+                        <TableCell className="text-xs">
+                          <div className="font-medium truncate max-w-[260px]">{it.name}</div>
+                          <div className="text-[10px] text-slate-400">
+                            {it.item_code ? it.item_code : '-'}
+                            {it.unit ? ` • ${it.unit}` : ''}
+                          </div>
+                        </TableCell>
+                        <TableCell className={`text-right text-xs font-bold ${isOut ? 'text-red-600' : isLow ? 'text-amber-600' : ''}`}>
+                          {stock.toLocaleString('id-ID')}
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            ) : (
+              <p className="text-muted-foreground">Tidak ada item stok kritis (≤ 2).</p>
+            )}
+          </CardContent>
+        </Card>
+        <Card className="lg:col-span-3">
           <CardHeader>
             <CardTitle>Laporan Progress Kendaraan Bulanan</CardTitle>
           </CardHeader>
