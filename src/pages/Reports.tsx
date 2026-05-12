@@ -64,7 +64,7 @@ export default function Reports() {
   const canAccess = (reportKey: string) => {
     if (!user) return false;
     if (user.role === 'SUPER_ADMIN') return true;
-    if (String(reportKey).trim().toLowerCase() === 'report_activity_log') return user.role === 'ADMIN';
+    if (String(reportKey).trim().toLowerCase() === 'report_activity_log') return false;
     const allowed = Array.isArray(user.allowed_menus) ? user.allowed_menus : [];
     const allowedLower = allowed.map((v) => String(v).trim().toLowerCase()).filter(Boolean);
     if (allowedLower.includes('*')) return true;

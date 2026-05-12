@@ -43,7 +43,7 @@ export default function ActivityLogReport() {
   });
   const missingTableWarnedRef = useRef(false);
 
-  const isAllowed = user?.role === 'SUPER_ADMIN' || user?.role === 'ADMIN';
+  const isAllowed = user?.role === 'SUPER_ADMIN';
   const isMissingActivityLogsTable = (msg: string) => {
     const m = String(msg || '').toLowerCase();
     return (
@@ -221,7 +221,7 @@ export default function ActivityLogReport() {
   if (!isAllowed) {
     return (
       <CardContent className="p-8">
-        <div className="text-center text-sm text-slate-500">Akses terbatas. Menu ini hanya untuk Administrator.</div>
+        <div className="text-center text-sm text-slate-500">Akses terbatas. Menu ini hanya untuk Super Admin.</div>
       </CardContent>
     );
   }
