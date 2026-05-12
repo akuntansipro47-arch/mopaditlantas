@@ -421,6 +421,10 @@ export default function PurchaseOrderV2() {
   }
 
   const handleAddItem = () => {
+    if (poType === 'WO') {
+      toast.error('Pengadaan berdasarkan WO: tambah item manual dinonaktifkan. Gunakan ambil item dari estimasi WO.');
+      return;
+    }
     setPoItems([...poItems, { line_type: 'PART', goods_id: '', job_type_id: '', service_name: '', brand: '', quantity: 1, unit_price: 0 }]);
   };
 
@@ -1176,7 +1180,18 @@ export default function PurchaseOrderV2() {
               <div className="space-y-4 border rounded-md p-4 bg-slate-50">
                   <div className="flex justify-between items-center">
                     <Label className="text-base font-semibold">Daftar Barang / Jasa</Label>
-                    {!isReadOnly && returnedGoodsIds.length === 0 && <Button type="button" variant="outline" size="sm" onClick={handleAddItem}>+ Tambah Item</Button>}
+                    {!isReadOnly && returnedGoodsIds.length === 0 && (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={handleAddItem}
+                        disabled={poType === 'WO'}
+                        title={poType === 'WO' ? 'Pengadaan berdasarkan WO: item diambil dari estimasi WO.' : undefined}
+                      >
+                        + Tambah Item
+                      </Button>
+                    )}
                   </div>
                   {!isReadOnly && returnedGoodsIds.length > 0 && (
                     <div className="p-3 bg-amber-50 border border-amber-200 text-amber-800 rounded-md text-sm">
