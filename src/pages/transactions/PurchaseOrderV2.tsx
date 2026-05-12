@@ -79,7 +79,7 @@ export default function PurchaseOrderV2() {
     service_name?: string;
     brand: string;
     quantity: number;
-    unit_price: number;
+    unit_price: number | '';
     estimated_name?: string;
     locked_unit_price?: boolean;
     from_work_order?: boolean;
@@ -449,7 +449,7 @@ export default function PurchaseOrderV2() {
   };
 
   const calculateTotal = () => {
-    return poItems.reduce((sum, item) => sum + (item.quantity * item.unit_price), 0);
+    return poItems.reduce((sum, item) => sum + (Number(item.quantity) || 0) * (Number(item.unit_price) || 0), 0);
   };
 
   const handlePoTypeChange = (type: 'WO' | 'STOCK') => {
@@ -739,8 +739,8 @@ export default function PurchaseOrderV2() {
                 ) || null,
           brand: item.brand || null,
           quantity: item.quantity,
-          unit_price: item.unit_price,
-          total_price: item.quantity * item.unit_price
+          unit_price: Number(item.unit_price) || 0,
+          total_price: (Number(item.quantity) || 0) * (Number(item.unit_price) || 0)
         }));
 
         const { error: itemsError } = await supabase
@@ -1054,18 +1054,11 @@ export default function PurchaseOrderV2() {
                                       service_name: String(j.job_types?.job_name || j.notes || ''),
                                       brand: '',
                                       quantity: 1,
-                                      unit_price: (() => {
-                                        const epRaw = j.estimated_price;
-                                        const ep = Number(epRaw);
-                                        if (Number.isFinite(ep) && ep > 0) return ep;
-                                        const sp = Number(j.job_types?.selling_price || 0);
-                                        if (sp > 0) return sp;
-                                        return 0;
-                                      })(),
+                                      unit_price: '',
                                       from_work_order: true,
                                       locked_unit_price: false,
                                     }))
-                                    .filter((x: any) => (x.job_type_id || String(x.service_name || '').trim()) && Number(x.unit_price || 0) > 0)
+                                    .filter((x: any) => x.job_type_id || String(x.service_name || '').trim())
                                 : [];
 
                               const parts = wo.vehicle_entries?.vehicle_entry_spareparts || [];
@@ -1098,14 +1091,13 @@ export default function PurchaseOrderV2() {
                                         service_name: '',
                                         brand: '',
                                         quantity: p.qty || 1,
-                                        unit_price: p.estimated_price || 0,
+                                        unit_price: '',
                                         estimated_name: p.item_name,
                                         from_work_order: true,
                                         locked_unit_price: false,
                                       };
                                     })
                                     .filter((x: any) => {
-                                      if (Number(x.unit_price || 0) <= 0) return false;
                                       if (!hasGoodsRefColumns) return true;
                                       return Boolean(x.goods_id);
                                     })
@@ -1328,7 +1320,7 @@ export default function PurchaseOrderV2() {
                               value={item.unit_price} 
                               onChange={(e) => {
                                 const val = e.target.value.replace(/[^0-9]/g, '');
-                                handleItemChange(index, 'unit_price', val ? parseInt(val) : 0);
+                                handleItemChange(index, 'unit_price', val ? parseInt(val) : '');
                               }} 
                               disabled={isReadOnly || disabledRow || Boolean((item as any).locked_unit_price)}
                             />
