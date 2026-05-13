@@ -92,28 +92,37 @@ export default function PurchaseRequest() {
   }
 
   async function fetchMasterData() {
-    const [{ data: g }, { data: w }] = await Promise.all([
-      supabase.from('goods').select('id, name, unit, item_code'),
-      supabase
-        .from('work_orders')
-        .select(
-          `
-          id,
-          wo_number,
-          status,
-          vehicle_entries (
+    try {
+      const [{ data: g, error: gErr }, { data: w, error: wErr }] = await Promise.all([
+        supabase.from('goods').select('id, name, unit, item_code'),
+        supabase
+          .from('work_orders')
+          .select(
+            `
             id,
-            entry_number,
-            vehicles (license_plate, brand_type),
-            vehicle_entry_jobs (job_type_id, notes, value_only, job_types (job_name, job_group)),
-            vehicle_entry_spareparts (goods_id, item_code, item_name, qty, value_only)
+            wo_number,
+            status,
+            vehicle_entries (
+              id,
+              entry_number,
+              vehicles (license_plate, brand_type),
+              vehicle_entry_jobs (job_type_id, notes, value_only, job_types (job_name, job_group)),
+              vehicle_entry_spareparts (goods_id, item_code, item_name, qty, value_only)
+            )
+          `
           )
-        `
-        )
-        .in('status', ['OPEN', 'IN_PROGRESS']),
-    ]);
-    setGoodsList((g as any) || []);
-    setWorkOrders((w as any) || []);
+          .in('status', ['OPEN', 'IN_PROGRESS', 'COMPLETED']),
+      ]);
+
+      if (gErr) throw gErr;
+      if (wErr) throw wErr;
+
+      setGoodsList((g as any) || []);
+      setWorkOrders((w as any) || []);
+    } catch (e: any) {
+      toast.error('Gagal memuat data master: ' + (e?.message || e));
+      console.error('fetchMasterData error:', e);
+    }
   }
 
   async function fetchPRs() {
@@ -154,9 +163,19 @@ export default function PurchaseRequest() {
     [workOrders, formData.work_order_id]
   );
 
+  const selectedWoDisplay = useMemo(() => {
+    if (!selectedWo) return null;
+    const ve = Array.isArray(selectedWo.vehicle_entries) ? selectedWo.vehicle_entries[0] : selectedWo.vehicle_entries;
+    return {
+      wo_number: selectedWo.wo_number,
+      license_plate: ve?.vehicles?.license_plate || '-',
+    };
+  }, [selectedWo]);
+
   const buildItemsFromWo = (wo: any) => {
-    const jobs = Array.isArray(wo?.vehicle_entries?.vehicle_entry_jobs) ? wo.vehicle_entries.vehicle_entry_jobs : [];
-    const parts = Array.isArray(wo?.vehicle_entries?.vehicle_entry_spareparts) ? wo.vehicle_entries.vehicle_entry_spareparts : [];
+    const ve = Array.isArray(wo?.vehicle_entries) ? wo.vehicle_entries[0] : wo.vehicle_entries;
+    const jobs = Array.isArray(ve?.vehicle_entry_jobs) ? ve.vehicle_entry_jobs : [];
+    const parts = Array.isArray(ve?.vehicle_entry_spareparts) ? ve.vehicle_entry_spareparts : [];
 
     const jobItems: PurchaseRequestItemRow[] = jobs
       .filter((j: any) => !Boolean(j?.value_only))
@@ -316,7 +335,8 @@ export default function PurchaseRequest() {
         if (insErr) throw insErr;
 
         if (user) {
-          const woNumber = String(workOrders.find((w: any) => String(w.id) === String(formData.work_order_id))?.wo_number || '').trim() || null;
+          const wo = workOrders.find((w: any) => String(w.id) === String(formData.work_order_id));
+          const woNumber = String(wo?.wo_number || '').trim() || null;
           void logActivity({
             user_id: user.id,
             username: user.username,
@@ -360,7 +380,8 @@ export default function PurchaseRequest() {
         if (insErr) throw insErr;
 
         if (user) {
-          const woNumber = String(workOrders.find((w: any) => String(w.id) === String(formData.work_order_id))?.wo_number || '').trim() || null;
+          const wo = workOrders.find((w: any) => String(w.id) === String(formData.work_order_id));
+          const woNumber = String(wo?.wo_number || '').trim() || null;
           void logActivity({
             user_id: user.id,
             username: user.username,
@@ -470,7 +491,8 @@ export default function PurchaseRequest() {
                   </TableRow>
                 ) : (
                   filtered.map((r) => {
-                    const v = r.work_orders?.vehicle_entries?.vehicles;
+                    const ve = Array.isArray(r.work_orders?.vehicle_entries) ? r.work_orders?.vehicle_entries[0] : r.work_orders?.vehicle_entries;
+                    const v = ve?.vehicles;
                     const unit = v?.license_plate ? `${v.license_plate} • ${v.brand_type || '-'}` : '-';
                     return (
                       <TableRow key={r.id}>
@@ -533,9 +555,9 @@ export default function PurchaseRequest() {
                 }}
                 disabled={isReadOnly || Boolean(editingId)}
               >
-                {selectedWo ? (
+                {selectedWoDisplay ? (
                   <span className="truncate">
-                    {selectedWo.wo_number} • {selectedWo.vehicle_entries?.vehicles?.license_plate || '-'}
+                    {selectedWoDisplay.wo_number} • {selectedWoDisplay.license_plate}
                   </span>
                 ) : (
                   <span className="text-muted-foreground">Pilih Work Order...</span>
@@ -655,28 +677,34 @@ export default function PurchaseRequest() {
                   .filter((wo: any) => {
                     const q = woSearchQuery.toLowerCase();
                     const woNumber = String(wo.wo_number || '').toLowerCase();
-                    const entryNumber = String(wo.vehicle_entries?.entry_number || '').toLowerCase();
-                    const licensePlate = String(wo.vehicle_entries?.vehicles?.license_plate || '').toLowerCase();
+                    
+                    const ve = Array.isArray(wo.vehicle_entries) ? wo.vehicle_entries[0] : wo.vehicle_entries;
+                    const entryNumber = String(ve?.entry_number || '').toLowerCase();
+                    const licensePlate = String(ve?.vehicles?.license_plate || '').toLowerCase();
+                    
                     return woNumber.includes(q) || entryNumber.includes(q) || licensePlate.includes(q);
                   })
-                  .map((wo: any) => (
-                    <CommandItem
-                      key={wo.id}
-                      onSelect={() => handleSelectWo(wo)}
-                      className="cursor-pointer p-3 hover:bg-slate-100 border-b last:border-0 aria-selected:bg-slate-100"
-                    >
-                      <div className="flex flex-col w-full gap-1">
-                        <div className="flex justify-between items-center">
-                          <span className="font-bold text-sm">{wo.wo_number}</span>
-                          <span className="text-[10px] px-2 py-0.5 rounded font-medium bg-green-100 text-green-700">{wo.status}</span>
+                  .map((wo: any) => {
+                    const ve = Array.isArray(wo.vehicle_entries) ? wo.vehicle_entries[0] : wo.vehicle_entries;
+                    return (
+                      <CommandItem
+                        key={wo.id}
+                        onSelect={() => handleSelectWo(wo)}
+                        className="cursor-pointer p-3 hover:bg-slate-100 border-b last:border-0 aria-selected:bg-slate-100"
+                      >
+                        <div className="flex flex-col w-full gap-1">
+                          <div className="flex justify-between items-center">
+                            <span className="font-bold text-sm">{wo.wo_number}</span>
+                            <span className="text-[10px] px-2 py-0.5 rounded font-medium bg-green-100 text-green-700">{wo.status}</span>
+                          </div>
+                          <div className="flex justify-between items-center text-xs text-muted-foreground">
+                            <span className="font-medium text-slate-700">{ve?.vehicles?.license_plate || '-'}</span>
+                            <span>{ve?.vehicles?.brand_type || '-'}</span>
+                          </div>
                         </div>
-                        <div className="flex justify-between items-center text-xs text-muted-foreground">
-                          <span className="font-medium text-slate-700">{wo.vehicle_entries?.vehicles?.license_plate || '-'}</span>
-                          <span>{wo.vehicle_entries?.vehicles?.brand_type || '-'}</span>
-                        </div>
-                      </div>
-                    </CommandItem>
-                  ))}
+                      </CommandItem>
+                    );
+                  })}
               </CommandGroup>
             </CommandList>
           </Command>
