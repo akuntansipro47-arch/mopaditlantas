@@ -46,6 +46,7 @@ import PrintGoodsIssue from "@/pages/print/PrintGoodsIssue";
 import PrintGoodsReceipt from "@/pages/print/PrintGoodsReceipt";
 import PrintPO from "@/pages/print/PrintPO";
 import PrintPODotMatrix from "@/pages/print/PrintPODotMatrix";
+import PrintPurchaseRequestDotMatrix from "@/pages/print/PrintPurchaseRequestDotMatrix";
 
 export default function App() {
   return (
@@ -102,6 +103,7 @@ export default function App() {
             <Route path="/print/receive/:id" element={<PrintGoodsReceipt />} />
             <Route path="/print/po/:id" element={<PrintPO />} />
             <Route path="/print/po-dot/:id" element={<PrintPODotMatrix />} />
+            <Route path="/print/pr-dot/:id" element={<PrintPurchaseRequestDotMatrix />} />
           </Route>
         </Routes>
       </Router>

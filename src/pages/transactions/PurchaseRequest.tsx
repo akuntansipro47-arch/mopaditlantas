@@ -10,7 +10,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { toast } from 'sonner';
 import { generateTransactionNumber } from '@/lib/utils';
 import { logActivity } from '@/lib/activityLog';
-import { Check, Eye, Pencil, Plus, Search, XCircle } from 'lucide-react';
+import { Check, Eye, Pencil, Plus, Printer, Search, XCircle } from 'lucide-react';
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
 
 type PurchaseRequestStatus = 'OPEN' | 'PO_CREATED' | 'CLOSED' | 'CANCELLED';
@@ -423,6 +423,10 @@ export default function PurchaseRequest() {
     }
   };
 
+  const handlePrintDotMatrix = (id: string) => {
+    window.open(`/print/pr-dot/${id}`, '_blank');
+  };
+
   const filtered = useMemo(() => prs, [prs]);
 
   return (
@@ -479,6 +483,10 @@ export default function PurchaseRequest() {
                         <TableCell className="text-sm">{r.po_number || '-'}</TableCell>
                         <TableCell className="text-right">
                           <div className="flex justify-end gap-2">
+                            <Button variant="outline" size="sm" className="text-blue-600 border-blue-200 hover:bg-blue-50" onClick={() => handlePrintDotMatrix(r.id)}>
+                              <Printer className="h-4 w-4 mr-2" />
+                              Dot
+                            </Button>
                             <Button variant="outline" size="sm" onClick={() => handleEdit(r, true)}>
                               <Eye className="h-4 w-4 mr-2" />
                               Detail
@@ -616,6 +624,14 @@ export default function PurchaseRequest() {
           </div>
 
           <DialogFooter>
+            <div className="flex-1 flex justify-start gap-2">
+              {editingId && (
+                <Button variant="outline" className="text-blue-600 border-blue-200 hover:bg-blue-50" onClick={() => handlePrintDotMatrix(editingId)}>
+                  <Printer className="h-4 w-4 mr-2" />
+                  Cetak Dot Matrix
+                </Button>
+              )}
+            </div>
             <Button variant="outline" onClick={() => (setIsDialogOpen(false), resetForm())}>
               Tutup
             </Button>
