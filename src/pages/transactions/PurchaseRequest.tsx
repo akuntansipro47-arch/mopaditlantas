@@ -10,7 +10,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { toast } from 'sonner';
 import { generateTransactionNumber } from '@/lib/utils';
 import { logActivity } from '@/lib/activityLog';
-import { Check, Eye, Pencil, Plus, Printer, Search, XCircle } from 'lucide-react';
+import { Check, Eye, Pencil, Plus, Printer, Search, Trash2, XCircle } from 'lucide-react';
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
 
 type PurchaseRequestStatus = 'OPEN' | 'PO_CREATED' | 'CLOSED' | 'CANCELLED';
@@ -468,6 +468,44 @@ export default function PurchaseRequest() {
     window.open(`/print/pr-dot/${id}`, '_blank');
   };
 
+  const handleDelete = async (row: PurchaseRequestRow) => {
+    if (row.status === 'PO_CREATED') {
+      toast.error('Purchase Request sudah diproses menjadi PO, tidak bisa dihapus.');
+      return;
+    }
+
+    if (!window.confirm(`Apakah Anda yakin ingin menghapus Purchase Request ${row.pr_number}?`)) {
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const { error } = await supabase.from('purchase_requests').delete().eq('id', row.id);
+      if (error) throw error;
+
+      toast.success('Purchase Request berhasil dihapus');
+      if (user) {
+        const woNumber = String(row.work_orders?.wo_number || '').trim() || null;
+        void logActivity({
+          user_id: user.id,
+          username: user.username,
+          role: user.role,
+          action: 'DELETE_PURCHASE_REQUEST',
+          module: 'PURCHASE_REQUEST',
+          entity_type: 'purchase_requests',
+          entity_id: row.id,
+          details: `Delete Purchase Request ${row.pr_number}${woNumber ? ` • WO ${woNumber}` : ''}`.trim(),
+          meta: { pr_number: row.pr_number, wo_number: woNumber },
+        });
+      }
+      await fetchPRs();
+    } catch (e: any) {
+      toast.error('Gagal menghapus Purchase Request: ' + String(e?.message || e));
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const filtered = useMemo(() => prs, [prs]);
 
   return (
@@ -541,6 +579,10 @@ export default function PurchaseRequest() {
                               <XCircle className="h-4 w-4 mr-2" />
                               Close
                             </Button>
+                            <Button variant="outline" size="sm" className="text-red-600 border-red-200 hover:bg-red-50" onClick={() => handleDelete(r)} disabled={r.status === 'PO_CREATED'}>
+                              <Trash2 className="h-4 w-4 mr-2" />
+                              Hapus
+                            </Button>
                           </div>
                         </TableCell>
                       </TableRow>
@@ -554,118 +596,120 @@ export default function PurchaseRequest() {
       </Card>
 
       <Dialog open={isDialogOpen} onOpenChange={(v) => (v ? setIsDialogOpen(true) : (setIsDialogOpen(false), resetForm()))}>
-        <DialogContent className="sm:max-w-[900px]">
-          <DialogHeader>
+        <DialogContent className="sm:max-w-[900px] max-h-[90vh] flex flex-col p-0">
+          <DialogHeader className="p-6 pb-2">
             <DialogTitle>
               {isReadOnly ? 'Detail Purchase Request' : editingId ? 'Edit Purchase Request' : 'Buat Purchase Request'}
             </DialogTitle>
           </DialogHeader>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label>Referensi No. WO</Label>
-              <Button
-                type="button"
-                variant="outline"
-                role="combobox"
-                className="w-full justify-between font-normal h-9 px-3"
-                onClick={() => {
-                  if (isReadOnly || editingId) return;
-                  handleOpenWoSearch();
-                }}
-                disabled={isReadOnly || Boolean(editingId)}
-              >
-                {selectedWoDisplay ? (
-                  <span className="truncate">
-                    {selectedWoDisplay.wo_number} • {selectedWoDisplay.license_plate}
-                  </span>
-                ) : (
-                  <span className="text-muted-foreground">Pilih Work Order...</span>
-                )}
-                <Search className="ml-2 h-4 w-4 opacity-50 shrink-0" />
-              </Button>
-            </div>
-            <div className="space-y-2">
-              <Label>Catatan</Label>
-              <Input
-                value={formData.notes}
-                onChange={(e) => setFormData((p) => ({ ...p, notes: e.target.value }))}
-                disabled={isReadOnly}
-                placeholder="Opsional..."
-              />
-            </div>
-          </div>
-
-          <div className="space-y-2 border rounded-md p-4 bg-slate-50 max-h-[60vh] overflow-y-auto">
-            <div className="flex justify-between items-center sticky top-0 bg-slate-50 z-10 pb-2">
-              <Label className="text-base font-semibold">Daftar Barang / Jasa</Label>
-              <div className="text-xs text-slate-500">{items.length.toLocaleString('id-ID')} item</div>
+          <div className="flex-1 overflow-y-auto p-6 pt-2 space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Referensi No. WO</Label>
+                <Button
+                  type="button"
+                  variant="outline"
+                  role="combobox"
+                  className="w-full justify-between font-normal h-9 px-3"
+                  onClick={() => {
+                    if (isReadOnly || editingId) return;
+                    handleOpenWoSearch();
+                  }}
+                  disabled={isReadOnly || Boolean(editingId)}
+                >
+                  {selectedWoDisplay ? (
+                    <span className="truncate">
+                      {selectedWoDisplay.wo_number} • {selectedWoDisplay.license_plate}
+                    </span>
+                  ) : (
+                    <span className="text-muted-foreground">Pilih Work Order...</span>
+                  )}
+                  <Search className="ml-2 h-4 w-4 opacity-50 shrink-0" />
+                </Button>
+              </div>
+              <div className="space-y-2">
+                <Label>Catatan</Label>
+                <Input
+                  value={formData.notes}
+                  onChange={(e) => setFormData((p) => ({ ...p, notes: e.target.value }))}
+                  disabled={isReadOnly}
+                  placeholder="Opsional..."
+                />
+              </div>
             </div>
 
-            <Table>
-              <TableHeader className="sticky top-[32px] bg-slate-50 z-10">
-                <TableRow>
-                  <TableHead className="w-[120px]">Tipe</TableHead>
-                  <TableHead>Item</TableHead>
-                  <TableHead className="w-[120px] text-right">Qty</TableHead>
-                  <TableHead className="w-[80px]"></TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {items.length === 0 ? (
+            <div className="space-y-2 border rounded-md p-4 bg-slate-50">
+              <div className="flex justify-between items-center pb-2">
+                <Label className="text-base font-semibold">Daftar Barang / Jasa</Label>
+                <div className="text-xs text-slate-500">{items.length.toLocaleString('id-ID')} item</div>
+              </div>
+
+              <Table>
+                <TableHeader>
                   <TableRow>
-                    <TableCell colSpan={4} className="h-16 text-center text-sm text-slate-500">
-                      Belum ada item.
-                    </TableCell>
+                    <TableHead className="w-[120px]">Tipe</TableHead>
+                    <TableHead>Item</TableHead>
+                    <TableHead className="w-[120px] text-right">Qty</TableHead>
+                    <TableHead className="w-[80px]"></TableHead>
                   </TableRow>
-                ) : (
-                  items.map((it, idx) => {
-                    const goodsName =
-                      it.line_type === 'PART'
-                        ? goodsList.find((g: any) => String(g.id) === String(it.goods_id))?.name || '-'
-                        : '';
-                    const serviceLabel =
-                      it.line_type === 'JASA'
-                        ? String(it.service_name || '').trim() || '-'
-                        : '';
-                    return (
-                      <Fragment key={`${it.line_type}-${it.goods_id || it.job_type_id || idx}`}>
-                        <TableRow>
-                          <TableCell className="text-xs font-semibold">{it.line_type}</TableCell>
-                          <TableCell className="text-sm">
-                            {it.line_type === 'PART' ? goodsName : serviceLabel}
-                          </TableCell>
-                          <TableCell className="text-right">
-                            <Input
-                              type="text"
-                              inputMode="numeric"
-                              className="h-9 text-right"
-                              value={it.quantity}
-                              onChange={(e) => {
-                                const val = e.target.value.replace(/[^0-9]/g, '');
-                                handleItemChange(idx, 'quantity', val ? parseInt(val) : 0);
-                              }}
-                              disabled={isReadOnly}
-                            />
-                          </TableCell>
-                          <TableCell className="text-right">
-                            {!isReadOnly && (
-                              <Button variant="ghost" size="icon" className="h-9 w-9 text-red-500" onClick={() => handleRemoveItem(idx)}>
-                                <XCircle className="h-4 w-4" />
-                              </Button>
-                            )}
-                            {isReadOnly && <Check className="h-4 w-4 text-slate-300 ml-auto" />}
-                          </TableCell>
-                        </TableRow>
-                      </Fragment>
-                    );
-                  })
-                )}
-              </TableBody>
-            </Table>
+                </TableHeader>
+                <TableBody>
+                  {items.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={4} className="h-16 text-center text-sm text-slate-500">
+                        Belum ada item.
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    items.map((it, idx) => {
+                      const goodsName =
+                        it.line_type === 'PART'
+                          ? goodsList.find((g: any) => String(g.id) === String(it.goods_id))?.name || '-'
+                          : '';
+                      const serviceLabel =
+                        it.line_type === 'JASA'
+                          ? String(it.service_name || it.notes || '').trim() || '-'
+                          : '';
+                      return (
+                        <Fragment key={`${it.line_type}-${it.goods_id || it.job_type_id || idx}`}>
+                          <TableRow>
+                            <TableCell className="text-xs font-semibold">{it.line_type}</TableCell>
+                            <TableCell className="text-sm">
+                              {it.line_type === 'PART' ? goodsName : serviceLabel}
+                            </TableCell>
+                            <TableCell className="text-right">
+                              <Input
+                                type="text"
+                                inputMode="numeric"
+                                className="h-9 text-right"
+                                value={it.quantity}
+                                onChange={(e) => {
+                                  const val = e.target.value.replace(/[^0-9]/g, '');
+                                  handleItemChange(idx, 'quantity', val ? parseInt(val) : 0);
+                                }}
+                                disabled={isReadOnly}
+                              />
+                            </TableCell>
+                            <TableCell className="text-right">
+                              {!isReadOnly && (
+                                <Button variant="ghost" size="icon" className="h-9 w-9 text-red-500" onClick={() => handleRemoveItem(idx)}>
+                                  <XCircle className="h-4 w-4" />
+                                </Button>
+                              )}
+                              {isReadOnly && <Check className="h-4 w-4 text-slate-300 ml-auto" />}
+                            </TableCell>
+                          </TableRow>
+                        </Fragment>
+                      );
+                    })
+                  )}
+                </TableBody>
+              </Table>
+            </div>
           </div>
 
-          <DialogFooter>
+          <DialogFooter className="p-6 pt-2 border-t">
             <div className="flex-1 flex justify-start gap-2">
               {editingId && (
                 <Button variant="outline" className="text-blue-600 border-blue-200 hover:bg-blue-50" onClick={() => handlePrintDotMatrix(editingId)}>
