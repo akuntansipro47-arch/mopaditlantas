@@ -18,6 +18,7 @@ type PurchaseRequestStatus = 'OPEN' | 'PO_CREATED' | 'CLOSED' | 'CANCELLED';
 type PurchaseRequestRow = {
   id: string;
   pr_number: string;
+  pr_date?: string | null;
   work_order_id: string;
   status: PurchaseRequestStatus;
   po_id: string | null;
@@ -53,6 +54,12 @@ export default function PurchaseRequest() {
   const [goodsList, setGoodsList] = useState<any[]>([]);
   const [workOrders, setWorkOrders] = useState<any[]>([]);
 
+  const [listSearch, setListSearch] = useState('');
+  const [dateFilter, setDateFilter] = useState({
+    startDate: new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0],
+    endDate: new Date().toISOString().split('T')[0],
+  });
+
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [isReadOnly, setIsReadOnly] = useState(false);
@@ -60,13 +67,16 @@ export default function PurchaseRequest() {
   const [woSearchOpen, setWoSearchOpen] = useState(false);
   const [woSearchQuery, setWoSearchQuery] = useState('');
 
-  const [formData, setFormData] = useState<{ work_order_id: string; notes: string }>({
+  const [formData, setFormData] = useState<{ work_order_id: string; pr_date: string; notes: string }>(() => ({
     work_order_id: '',
+    pr_date: new Date().toISOString().split('T')[0],
     notes: '',
-  });
+  }));
 
   const [items, setItems] = useState<PurchaseRequestItemRow[]>([]);
   const missingTableWarnedRef = useRef(false);
+  const overdueWarnedRef = useRef(false);
+  const dateFilterFirstRunRef = useRef(true);
 
   const isMissingPurchaseRequestTables = (msg: string) => {
     const m = String(msg || '').toLowerCase();
@@ -78,9 +88,37 @@ export default function PurchaseRequest() {
     );
   };
 
+  const getRowDate = (r: PurchaseRequestRow) => String(r.pr_date || String(r.created_at || '').slice(0, 10) || '');
+
+  const isRowOverdue = (r: PurchaseRequestRow) => {
+    if (r.status !== 'OPEN') return false;
+    const ds = getRowDate(r);
+    if (!ds) return false;
+    const d = new Date(`${ds}T00:00:00`);
+    if (Number.isNaN(d.getTime())) return false;
+    const diff = Math.floor((Date.now() - d.getTime()) / 86400000);
+    return diff > 3;
+  };
+
+  const formatDateId = (ds: string) => {
+    const s = String(ds || '').trim();
+    if (!s) return '-';
+    const d = new Date(`${s}T00:00:00`);
+    if (Number.isNaN(d.getTime())) return s;
+    return d.toLocaleDateString('id-ID');
+  };
+
   useEffect(() => {
     void fetchAll();
   }, []);
+
+  useEffect(() => {
+    if (dateFilterFirstRunRef.current) {
+      dateFilterFirstRunRef.current = false;
+      return;
+    }
+    void fetchPRs();
+  }, [dateFilter.endDate, dateFilter.startDate]);
 
   async function fetchAll() {
     setLoading(true);
@@ -147,7 +185,14 @@ export default function PurchaseRequest() {
 
   async function fetchPRs() {
     try {
-      const { data, error } = await supabase
+      const supportsColumn = async (table: string, column: string) => {
+        const { error } = await supabase.from(table as any).select(column as any).limit(1);
+        return !error;
+      };
+
+      const hasPrDate = await supportsColumn('purchase_requests', 'pr_date');
+
+      let query = supabase
         .from('purchase_requests' as any)
         .select(
           `
@@ -162,6 +207,13 @@ export default function PurchaseRequest() {
         `
         )
         .order('created_at', { ascending: false });
+
+      if (hasPrDate) {
+        if (dateFilter.startDate) query = query.gte('pr_date', dateFilter.startDate);
+        if (dateFilter.endDate) query = query.lte('pr_date', dateFilter.endDate);
+      }
+
+      const { data, error } = await query;
       if (error) throw error;
       setPrs(((data as any) || []) as PurchaseRequestRow[]);
     } catch (e: any) {
@@ -237,7 +289,7 @@ export default function PurchaseRequest() {
   const resetForm = () => {
     setEditingId(null);
     setIsReadOnly(false);
-    setFormData({ work_order_id: '', notes: '' });
+    setFormData({ work_order_id: '', pr_date: new Date().toISOString().split('T')[0], notes: '' });
     setItems([]);
   };
 
@@ -277,6 +329,7 @@ export default function PurchaseRequest() {
 
       setFormData({
         work_order_id: String(row.work_order_id || ''),
+        pr_date: getRowDate(row) || new Date().toISOString().split('T')[0],
         notes: String(row.notes || ''),
       });
       setItems(((lines as any) || []) as PurchaseRequestItemRow[]);
@@ -303,6 +356,7 @@ export default function PurchaseRequest() {
 
   const validate = () => {
     if (!formData.work_order_id) return 'Pilih Work Order.';
+    if (!String(formData.pr_date || '').trim()) return 'Tanggal wajib diisi.';
     if (items.length === 0) return 'Item request kosong.';
     for (const it of items) {
       if (it.line_type === 'PART' && !it.goods_id) return 'Ada item PART tanpa barang.';
@@ -334,7 +388,7 @@ export default function PurchaseRequest() {
 
         const { error: upErr } = await supabase
           .from('purchase_requests' as any)
-          .update({ notes: formData.notes || null, updated_at: new Date().toISOString() })
+          .update({ pr_date: formData.pr_date || null, notes: formData.notes || null, updated_at: new Date().toISOString() })
           .eq('id', editingId);
         if (upErr) throw upErr;
 
@@ -376,6 +430,7 @@ export default function PurchaseRequest() {
           .insert({
             pr_number: prNumber,
             work_order_id: formData.work_order_id,
+            pr_date: formData.pr_date || null,
             status: 'OPEN',
             notes: formData.notes || null,
             created_by: user?.id || null,
@@ -506,7 +561,33 @@ export default function PurchaseRequest() {
     }
   };
 
-  const filtered = useMemo(() => prs, [prs]);
+  const overdueCount = useMemo(() => prs.filter(isRowOverdue).length, [prs]);
+
+  useEffect(() => {
+    if (overdueCount <= 0) return;
+    if (overdueWarnedRef.current) return;
+    overdueWarnedRef.current = true;
+    toast.warning(`Reminder: ada ${overdueCount} Purchase Request OPEN lebih dari 3 hari.`);
+  }, [overdueCount]);
+
+  const filtered = useMemo(() => {
+    const q = normalizeText(listSearch);
+    return prs.filter((r) => {
+      const ds = getRowDate(r);
+      if (dateFilter.startDate && ds && ds < dateFilter.startDate) return false;
+      if (dateFilter.endDate && ds && ds > dateFilter.endDate) return false;
+      if (!q) return true;
+
+      const ve = Array.isArray(r.work_orders?.vehicle_entries) ? r.work_orders?.vehicle_entries[0] : r.work_orders?.vehicle_entries;
+      const plate = String(ve?.vehicles?.license_plate || '');
+      const brand = String(ve?.vehicles?.brand_type || '');
+      const statusLabel = r.status === 'PO_CREATED' ? 'PROSES PO' : r.status;
+      const hay = normalizeText(
+        [r.pr_number, ds, r.work_orders?.wo_number, plate, brand, statusLabel, r.po_number, r.notes].filter(Boolean).join(' ')
+      );
+      return hay.includes(q);
+    });
+  }, [dateFilter.endDate, dateFilter.startDate, listSearch, prs]);
 
   return (
     <div className="p-4 space-y-4">
@@ -522,11 +603,46 @@ export default function PurchaseRequest() {
           </Button>
         </CardHeader>
         <CardContent>
+          <div className="flex flex-col gap-3 mb-3 md:flex-row md:items-end">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 flex-1">
+              <div className="space-y-1">
+                <Label className="text-xs text-slate-600">Tanggal Awal</Label>
+                <Input
+                  type="date"
+                  value={dateFilter.startDate}
+                  onChange={(e) => setDateFilter((p) => ({ ...p, startDate: e.target.value }))}
+                  className="h-9"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs text-slate-600">Tanggal Akhir</Label>
+                <Input
+                  type="date"
+                  value={dateFilter.endDate}
+                  onChange={(e) => setDateFilter((p) => ({ ...p, endDate: e.target.value }))}
+                  className="h-9"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs text-slate-600">Pencarian</Label>
+                <Input
+                  value={listSearch}
+                  onChange={(e) => setListSearch(e.target.value)}
+                  placeholder="Cari PR / WO / Unit / Status / PO..."
+                  className="h-9"
+                />
+              </div>
+            </div>
+            <Button variant="outline" onClick={fetchAll} disabled={loading}>
+              Muat Ulang
+            </Button>
+          </div>
           <div className="rounded-md border">
             <Table>
               <TableHeader>
                 <TableRow>
                   <TableHead className="w-[160px]">No. PR</TableHead>
+                  <TableHead className="w-[130px]">Tanggal</TableHead>
                   <TableHead className="w-[180px]">No. WO</TableHead>
                   <TableHead>Unit</TableHead>
                   <TableHead className="w-[140px]">Status</TableHead>
@@ -537,28 +653,33 @@ export default function PurchaseRequest() {
               <TableBody>
                 {loading ? (
                   <TableRow>
-                    <TableCell colSpan={6} className="h-20 text-center text-sm text-slate-500">
+                    <TableCell colSpan={7} className="h-20 text-center text-sm text-slate-500">
                       Memuat...
                     </TableCell>
                   </TableRow>
                 ) : filtered.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={6} className="h-20 text-center text-sm text-slate-500">
+                    <TableCell colSpan={7} className="h-20 text-center text-sm text-slate-500">
                       Belum ada data.
                     </TableCell>
                   </TableRow>
                 ) : (
                   filtered.map((r) => {
+                    const ds = getRowDate(r);
+                    const overdue = isRowOverdue(r);
                     const ve = Array.isArray(r.work_orders?.vehicle_entries) ? r.work_orders?.vehicle_entries[0] : r.work_orders?.vehicle_entries;
                     const v = ve?.vehicles;
                     const unit = v?.license_plate ? `${v.license_plate} • ${v.brand_type || '-'}` : '-';
+                    const statusLabel = r.status === 'OPEN' ? 'OPEN' : r.status === 'PO_CREATED' ? 'PROSES PO' : r.status;
                     return (
-                      <TableRow key={r.id}>
+                      <TableRow key={r.id} className={overdue ? 'bg-amber-50' : undefined}>
                         <TableCell className="font-medium text-sm">{r.pr_number}</TableCell>
+                        <TableCell className="text-sm">{formatDateId(ds)}</TableCell>
                         <TableCell className="text-sm">{r.work_orders?.wo_number || '-'}</TableCell>
                         <TableCell className="text-sm">{unit}</TableCell>
                         <TableCell className="text-sm font-semibold">
-                          {r.status === 'OPEN' ? 'OPEN' : r.status === 'PO_CREATED' ? 'PROSES PO' : r.status}
+                          {statusLabel}
+                          {overdue && <span className="ml-2 text-[10px] px-2 py-0.5 rounded bg-amber-100 text-amber-800">REMINDER</span>}
                         </TableCell>
                         <TableCell className="text-sm">{r.po_number || '-'}</TableCell>
                         <TableCell className="text-right">
@@ -604,7 +725,7 @@ export default function PurchaseRequest() {
           </DialogHeader>
 
           <div className="flex-1 overflow-y-auto p-6 pt-2 space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div className="space-y-2">
                 <Label>Referensi No. WO</Label>
                 <Button
@@ -627,6 +748,15 @@ export default function PurchaseRequest() {
                   )}
                   <Search className="ml-2 h-4 w-4 opacity-50 shrink-0" />
                 </Button>
+              </div>
+              <div className="space-y-2">
+                <Label>Tanggal</Label>
+                <Input
+                  type="date"
+                  value={formData.pr_date}
+                  onChange={(e) => setFormData((p) => ({ ...p, pr_date: e.target.value }))}
+                  disabled={isReadOnly}
+                />
               </div>
               <div className="space-y-2">
                 <Label>Catatan</Label>
@@ -777,4 +907,3 @@ export default function PurchaseRequest() {
     </div>
   );
 }
-

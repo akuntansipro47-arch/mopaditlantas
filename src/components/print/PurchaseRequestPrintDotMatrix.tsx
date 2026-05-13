@@ -108,13 +108,15 @@ export default function PurchaseRequestPrintDotMatrix({ id }: PRPrintProps) {
     const agencyEmail = String(agency?.email || '');
 
     const prNumber = String(pr.pr_number || '-');
-    const prDate = new Date(pr.created_at).toLocaleDateString('id-ID').replace(/-/g, '/');
-    const dateLabel = `TGL ${prDate}`;
+    const prDateSource = String(pr.pr_date || String(pr.created_at || '').slice(0, 10) || '');
+    const prDate = prDateSource ? String(prDateSource).replace(/-/g, '/') : '';
+    const dateLabel = `TGL ${prDate || '-'}`;
     const dateCol = Math.max(12, dateLabel.length);
 
     const woNumber = String(pr.work_orders?.wo_number || '-');
-    const vehiclePlate = String(pr.work_orders?.vehicle_entries?.vehicles?.license_plate || '-');
-    const vehicleName = String(pr.work_orders?.vehicle_entries?.vehicles?.brand_type || '-');
+    const ve = Array.isArray(pr.work_orders?.vehicle_entries) ? pr.work_orders?.vehicle_entries[0] : pr.work_orders?.vehicle_entries;
+    const vehiclePlate = String(ve?.vehicles?.license_plate || '-');
+    const vehicleName = String(ve?.vehicles?.brand_type || '-');
 
     const copyLines =
       printCount > 1
@@ -127,8 +129,8 @@ export default function PurchaseRequestPrintDotMatrix({ id }: PRPrintProps) {
       padRight([agencyPhone ? `Telp: ${agencyPhone}` : '', agencyEmail ? `Email: ${agencyEmail}` : ''].filter(Boolean).join(' | '), WIDTH),
       line(WIDTH, '='),
       ...copyLines,
-      padRight(`PURCHASE REQUEST / REQUEST ITEM`, WIDTH),
-      padRight(`NO. PR   : ${prNumber}`, WIDTH - dateCol) + padLeft(dateLabel, dateCol),
+      padRight(`PERMINTAAN BARANG  ${prNumber}`, WIDTH - dateCol) + padLeft(dateLabel, dateCol),
+      padRight(`CETAKAN KE-${printCount}`, WIDTH),
       line(WIDTH, '-'),
       padRight(`NO. WO   : ${woNumber}`, WIDTH),
       padRight(`KENDARAAN: ${vehiclePlate} ${vehicleName}`, WIDTH),
@@ -189,9 +191,9 @@ export default function PurchaseRequestPrintDotMatrix({ id }: PRPrintProps) {
       '',
       padRight('Catatan: ' + (pr.notes || '-'), WIDTH),
       '',
-      padRight('Diminta Oleh,', 26) + padRight('Disetujui Oleh,', 27) + padRight('Diketahui Oleh,', 27),
+      padRight('Diminta Oleh,', 40) + padRight('Disetujui Oleh,', 40),
       '',
-      padRight('______________', 26) + padRight('______________', 27) + padRight('______________', 27),
+      padRight('______________', 40) + padRight('______________', 40),
     ];
 
     return [...headerLines, head, line(WIDTH, '-'), ...itemLines, ...footerLines].join('\n');

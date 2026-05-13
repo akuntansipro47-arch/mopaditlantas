@@ -3,6 +3,7 @@ create extension if not exists pgcrypto;
 create table if not exists public.purchase_requests (
   id uuid primary key default gen_random_uuid(),
   pr_number text not null unique,
+  pr_date date not null default current_date,
   work_order_id uuid not null references public.work_orders(id) on delete restrict,
   status text not null default 'OPEN',
   po_id uuid references public.purchase_orders(id) on delete set null,
@@ -44,6 +45,7 @@ alter table public.purchase_request_items
 create index if not exists purchase_request_items_request_id_idx on public.purchase_request_items(purchase_request_id);
 create index if not exists purchase_requests_work_order_id_idx on public.purchase_requests(work_order_id);
 create index if not exists purchase_requests_status_idx on public.purchase_requests(status);
+create index if not exists purchase_requests_pr_date_idx on public.purchase_requests(pr_date);
 
 alter table public.purchase_requests enable row level security;
 alter table public.purchase_request_items enable row level security;
@@ -95,4 +97,3 @@ begin
   create policy "Enable delete purchase request items" on public.purchase_request_items for delete using (true);
 exception when duplicate_object then null;
 end $$;
-
