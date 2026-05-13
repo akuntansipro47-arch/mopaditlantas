@@ -13,8 +13,9 @@ export function Header() {
     pathname.startsWith('/master/suppliers') ? 'Master Data • Supplier' :
     pathname.startsWith('/master/mechanics') ? 'Master Data • Mekanik' :
     pathname.startsWith('/master/coa') ? 'Master Data • Chart of Accounts' :
-    pathname.startsWith('/transactions/entry') ? 'Transaksi • Entry Kendaraan' :
+    pathname.startsWith('/transactions/entry') ? 'Transaksi • Entry Estimasi Kendaraan' :
     pathname.startsWith('/transactions/po-return') ? 'Transaksi • Retur Pembelian' :
+    pathname.startsWith('/transactions/purchase-request') ? 'Transaksi • Purchase Request' :
     pathname.startsWith('/transactions/po') ? 'Transaksi • Purchase Order' :
     pathname.startsWith('/transactions/receive') ? 'Transaksi • Penerimaan Barang' :
     pathname.startsWith('/transactions/issue') ? 'Transaksi • Barang Keluar' :

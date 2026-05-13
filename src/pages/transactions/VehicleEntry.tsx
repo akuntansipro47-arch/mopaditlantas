@@ -1620,7 +1620,7 @@ export default function VehicleEntryPage() {
                           {formErrors[`job_${index}`] && <p className="text-xs text-red-600">{formErrors[`job_${index}`]}</p>}
                         </div>
                         <div className="col-span-1 space-y-1">
-                          <Label className="text-xs">Nilai Saja</Label>
+                          <Label className="text-xs">N/A</Label>
                           <div className="flex items-center justify-center h-9 border rounded-md bg-white">
                             <Checkbox
                               checked={Boolean(job.value_only)}
@@ -1899,7 +1899,7 @@ export default function VehicleEntryPage() {
                                     />
                                 </div>
                                 <div className="w-24 space-y-1">
-                                    <Label className="text-xs">Nilai Saja</Label>
+                                    <Label className="text-xs">N/A</Label>
                                     <div className="flex items-center justify-center h-8 border rounded-md bg-white">
                                       <Checkbox
                                         checked={Boolean(part.value_only)}

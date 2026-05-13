@@ -478,7 +478,7 @@ export default function GoodsIssuePage() {
             locked: false,
             source: 'ESTIMASI',
             mismatch: false,
-            hint: 'Nilai saja (tidak mengurangi stok)',
+            hint: 'N/A (tidak mengurangi stok)',
             value_only: true,
           });
           return;
@@ -1091,7 +1091,7 @@ export default function GoodsIssuePage() {
                             </span>
                             {item.value_only && (
                               <span className="text-[10px] px-2 py-0.5 rounded-full bg-yellow-100 text-yellow-800 border border-yellow-200">
-                                Nilai saja
+                                N/A
                               </span>
                             )}
                             {item.mismatch && (

@@ -20,6 +20,7 @@ import ChartOfAccounts from "@/pages/master/ChartOfAccounts";
 import VehicleEntry from "@/pages/transactions/VehicleEntry";
 import WorkOrder from "@/pages/transactions/WorkOrder";
 import PurchaseOrderV2 from "@/pages/transactions/PurchaseOrderV2";
+import PurchaseRequest from "@/pages/transactions/PurchaseRequest";
 import GoodsReceipt from "@/pages/transactions/GoodsReceipt";
 import GoodsIssue from "@/pages/transactions/GoodsIssue";
 import PurchaseOrderReturn from "@/pages/transactions/PurchaseOrderReturn";
@@ -70,6 +71,7 @@ export default function App() {
               {/* Transaksi */}
               <Route path="/transactions/entry" element={<VehicleEntry />} />
               <Route path="/transactions/wo" element={<WorkOrder />} />
+              <Route path="/transactions/purchase-request" element={<PurchaseRequest />} />
               <Route path="/transactions/po" element={<PurchaseOrderV2 />} />
               <Route path="/transactions/receive" element={<GoodsReceipt />} />
               <Route path="/transactions/issue" element={<GoodsIssue />} />

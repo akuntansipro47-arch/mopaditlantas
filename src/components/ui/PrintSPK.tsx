@@ -102,7 +102,10 @@ const PrintSPK: React.FC<PrintSPKProps> = ({ data, printCount = 1 }) => {
                         {job.job_types?.job_group}
                       </Badge>
                     </td>
-                    <td className="p-2">{job.job_types?.job_name}</td>
+                    <td className="p-2">
+                      {job.job_types?.job_name}
+                      {job.value_only ? ' (N/A)' : ''}
+                    </td>
                     <td className="p-2 italic text-gray-600">{job.notes || '-'}</td>
                   </tr>
                 ))}
@@ -133,7 +136,10 @@ const PrintSPK: React.FC<PrintSPKProps> = ({ data, printCount = 1 }) => {
                   entry.vehicle_entry_spareparts.map((sp: any, index: number) => (
                     <tr key={index} className="border-t">
                       <td className="p-2">{index + 1}</td>
-                      <td className="p-2">{sp.spareparts?.name || sp.item_name || 'Nama tidak ditemukan'}</td>
+                      <td className="p-2">
+                        {sp.spareparts?.name || sp.item_name || 'Nama tidak ditemukan'}
+                        {sp.value_only ? ' (N/A)' : ''}
+                      </td>
                       <td className="p-2 text-right">{sp.qty}</td>
                       <td className="p-2">{sp.spareparts?.unit || '-'}</td>
                     </tr>

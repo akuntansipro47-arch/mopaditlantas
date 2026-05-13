@@ -700,7 +700,7 @@ export default function GrossProfitReport() {
             group: woFinalGroup,
             klasifikasi: woFinalGroup,
             sku: '-',
-            item: (j.job_types as any)?.job_name || 'Pekerjaan (Nilai Saja)',
+            item: (j.job_types as any)?.job_name || 'Pekerjaan (N/A)',
             qty,
             satuan: 'Jasa',
             harga_pagu: ep,

@@ -388,7 +388,7 @@ export default function ItemHistoryReport() {
                         description: item.is_info_only
                           ? 'Part Luar (Pemakaian)'
                           : item.value_only
-                          ? 'Nilai Saja (Tidak Kurangi Stok)'
+                          ? 'N/A (Tidak Kurangi Stok)'
                           : 'Pemakaian / Keluar',
                         is_info_only: item.is_info_only,
                         value_only: item.value_only

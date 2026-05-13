@@ -324,7 +324,10 @@ export default function PrintSPK({ id }: { id: string }) {
                   <tr key={index} style={{ borderBottom: '1px solid #e5e7eb' }}>
                     <td style={{ padding: '12px', textAlign: 'center', fontWeight: 'bold' }}>{index + 1}</td>
                     <td style={{ padding: '12px', fontWeight: 'bold', textTransform: 'uppercase', fontSize: '10px', color: '#6b7280' }}>{job.job_types?.job_group || '-'}</td>
-                    <td style={{ padding: '12px', fontWeight: 'bold' }}>{job.job_types?.job_name || '-'}</td>
+                    <td style={{ padding: '12px', fontWeight: 'bold' }}>
+                      {job.job_types?.job_name || '-'}
+                      {job.value_only ? ' (N/A)' : ''}
+                    </td>
                     <td style={{ padding: '12px', fontStyle: 'italic', color: '#9ca3af' }}>{job.notes || '-'}</td>
                   </tr>
                 ))
@@ -352,7 +355,10 @@ export default function PrintSPK({ id }: { id: string }) {
                 entry.vehicle_entry_spareparts.map((sp: any, index: number) => (
                   <tr key={index} style={{ borderBottom: '1px solid #e5e7eb' }}>
                     <td style={{ padding: '12px', textAlign: 'center', fontWeight: 'bold' }}>{index + 1}</td>
-                    <td style={{ padding: '12px', fontWeight: 'bold' }}>{sp.spareparts?.name || sp.item_name || '-'}</td>
+                    <td style={{ padding: '12px', fontWeight: 'bold' }}>
+                      {sp.spareparts?.name || sp.item_name || '-'}
+                      {sp.value_only ? ' (N/A)' : ''}
+                    </td>
                     <td style={{ padding: '12px', textAlign: 'center', fontWeight: 'bold' }}>{sp.qty || 0}</td>
                     <td style={{ padding: '12px', textAlign: 'center', textTransform: 'uppercase', color: '#6b7280' }}>{sp.spareparts?.unit || '-'}</td>
                   </tr>

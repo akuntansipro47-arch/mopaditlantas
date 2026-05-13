@@ -685,7 +685,7 @@ const WorkOrderDetailReport = () => {
                 'Grup Kendaraan': getVehicleGroupLabel(entry.vehicle_type, entry.service_group),
                 'Tipe Item': item.item_type === 'JOB' ? 'Jasa' : 'Sparepart',
                 'Nama Item': item.item_name,
-                        'Nilai Saja': item.value_only ? 'Ya' : 'Tidak',
+                'N/A': item.value_only ? 'N/A' : '-',
                 'Qty': item.qty,
                 'Harga Satuan': item.unit_price,
                 'Total Pagu': item.total_price,
@@ -825,7 +825,7 @@ const WorkOrderDetailReport = () => {
                                         <TableHead>Grup</TableHead>
                                         <TableHead>Tipe Item</TableHead>
                                         <TableHead>Nama Item</TableHead>
-                                        <TableHead>Nilai Saja</TableHead>
+                                        <TableHead>N/A</TableHead>
                                         <TableHead className="text-right">Qty</TableHead>
                                         <TableHead className="text-right">Harga Satuan</TableHead>
                                         <TableHead className="text-right">Total Pagu</TableHead>
@@ -860,7 +860,7 @@ const WorkOrderDetailReport = () => {
                                                     
                                                     <TableCell>{item.item_type === 'JOB' ? 'Jasa' : 'Sparepart'}</TableCell>
                                                     <TableCell>{item.item_name}</TableCell>
-                                                    <TableCell>{item.value_only ? 'Ya' : 'Tidak'}</TableCell>
+                                                    <TableCell>{item.value_only ? 'N/A' : '-'}</TableCell>
                                                     <TableCell className="text-right">{item.qty}</TableCell>
                                                     <TableCell className="text-right">{item.unit_price.toLocaleString('id-ID')}</TableCell>
                                                     <TableCell className="text-right">{item.total_price.toLocaleString('id-ID')}</TableCell>
