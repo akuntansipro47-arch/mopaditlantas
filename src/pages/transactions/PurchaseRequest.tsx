@@ -93,6 +93,26 @@ export default function PurchaseRequest() {
 
   async function fetchMasterData() {
     try {
+      const supportsColumn = async (table: string, column: string) => {
+        const { error } = await supabase.from(table as any).select(column as any).limit(1);
+        return !error;
+      };
+
+      const [supportsJobValueOnly, supportsPartGoodsId, supportsPartItemCode, supportsPartValueOnly] = await Promise.all([
+        supportsColumn('vehicle_entry_jobs', 'value_only'),
+        supportsColumn('vehicle_entry_spareparts', 'goods_id'),
+        supportsColumn('vehicle_entry_spareparts', 'item_code'),
+        supportsColumn('vehicle_entry_spareparts', 'value_only'),
+      ]);
+
+      const jobCols = ['job_type_id', 'notes', 'job_types (job_name, job_group)'];
+      if (supportsJobValueOnly) jobCols.push('value_only');
+
+      const partCols = ['item_name', 'qty'];
+      if (supportsPartGoodsId) partCols.push('goods_id');
+      if (supportsPartItemCode) partCols.push('item_code');
+      if (supportsPartValueOnly) partCols.push('value_only');
+
       const [{ data: g, error: gErr }, { data: w, error: wErr }] = await Promise.all([
         supabase.from('goods').select('id, name, unit, item_code'),
         supabase
@@ -106,8 +126,8 @@ export default function PurchaseRequest() {
               id,
               entry_number,
               vehicles (license_plate, brand_type),
-              vehicle_entry_jobs (job_type_id, notes, value_only, job_types (job_name, job_group)),
-              vehicle_entry_spareparts (goods_id, item_code, item_name, qty, value_only)
+              vehicle_entry_jobs (${jobCols.join(', ')}),
+              vehicle_entry_spareparts (${partCols.join(', ')})
             )
           `
           )
