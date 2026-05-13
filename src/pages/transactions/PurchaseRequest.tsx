@@ -596,14 +596,14 @@ export default function PurchaseRequest() {
             </div>
           </div>
 
-          <div className="space-y-2 border rounded-md p-4 bg-slate-50">
-            <div className="flex justify-between items-center">
+          <div className="space-y-2 border rounded-md p-4 bg-slate-50 max-h-[60vh] overflow-y-auto">
+            <div className="flex justify-between items-center sticky top-0 bg-slate-50 z-10 pb-2">
               <Label className="text-base font-semibold">Daftar Barang / Jasa</Label>
               <div className="text-xs text-slate-500">{items.length.toLocaleString('id-ID')} item</div>
             </div>
 
             <Table>
-              <TableHeader>
+              <TableHeader className="sticky top-[32px] bg-slate-50 z-10">
                 <TableRow>
                   <TableHead className="w-[120px]">Tipe</TableHead>
                   <TableHead>Item</TableHead>
