@@ -10,7 +10,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { toast } from 'sonner';
 import { generateTransactionNumber } from '@/lib/utils';
 import { logActivity } from '@/lib/activityLog';
-import { Check, Eye, Pencil, Plus, Printer, Search, Trash2, XCircle } from 'lucide-react';
+import { Check, Eye, Pencil, Plus, Printer, RefreshCw, Search, Trash2, XCircle } from 'lucide-react';
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
 
 type PurchaseRequestStatus = 'OPEN' | 'PO_CREATED' | 'CLOSED' | 'CANCELLED';
@@ -647,19 +647,20 @@ export default function PurchaseRequest() {
                   <TableHead>Unit</TableHead>
                   <TableHead className="w-[140px]">Status</TableHead>
                   <TableHead className="w-[160px]">No. PO</TableHead>
+                  <TableHead className="w-[90px]">Refresh</TableHead>
                   <TableHead className="w-[140px]"></TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {loading ? (
                   <TableRow>
-                    <TableCell colSpan={7} className="h-20 text-center text-sm text-slate-500">
+                    <TableCell colSpan={8} className="h-20 text-center text-sm text-slate-500">
                       Memuat...
                     </TableCell>
                   </TableRow>
                 ) : filtered.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={7} className="h-20 text-center text-sm text-slate-500">
+                    <TableCell colSpan={8} className="h-20 text-center text-sm text-slate-500">
                       Belum ada data.
                     </TableCell>
                   </TableRow>
@@ -682,6 +683,11 @@ export default function PurchaseRequest() {
                           {overdue && <span className="ml-2 text-[10px] px-2 py-0.5 rounded bg-amber-100 text-amber-800">REMINDER</span>}
                         </TableCell>
                         <TableCell className="text-sm">{r.po_number || '-'}</TableCell>
+                        <TableCell className="text-sm">
+                          <Button variant="outline" size="sm" onClick={fetchPRs} disabled={loading}>
+                            <RefreshCw className="h-4 w-4" />
+                          </Button>
+                        </TableCell>
                         <TableCell className="text-right">
                           <div className="flex justify-end gap-2">
                             <Button variant="outline" size="sm" className="text-blue-600 border-blue-200 hover:bg-blue-50" onClick={() => handlePrintDotMatrix(r.id)}>

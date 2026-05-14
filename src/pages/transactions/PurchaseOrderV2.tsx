@@ -74,6 +74,10 @@ export default function PurchaseOrderV2() {
   const [purchaseRequest, setPurchaseRequest] = useState<any | null>(null);
   const [purchaseRequestMessage, setPurchaseRequestMessage] = useState<string>('');
 
+  const isWoMode = poType === 'WO' && String(formData.work_order_id || '') !== 'NONE';
+  const isPrReady = !isWoMode || (purchaseRequest && String(purchaseRequest.status || '') === 'OPEN');
+  const prBlockEditing = !isReadOnly && isWoMode && !isPrReady;
+
   // Items State (Dynamic Form)
   const [poItems, setPoItems] = useState<{
     line_type?: 'PART' | 'JASA';
@@ -432,6 +436,10 @@ export default function PurchaseOrderV2() {
   };
 
   const handleOpenSearch = (index: number) => {
+    if (prBlockEditing) {
+      toast.error('Tidak bisa input item: Purchase Request untuk WO ini belum dibuat / belum OPEN.');
+      return;
+    }
     const it = poItems[index];
     const lt = (it as any)?.line_type || 'PART';
     if (lt === 'JASA') {
@@ -446,10 +454,12 @@ export default function PurchaseOrderV2() {
   };
 
   const handleRemoveItem = (index: number) => {
+    if (prBlockEditing) return;
     setPoItems(poItems.filter((_, i) => i !== index));
   };
 
   const handleItemChange = (index: number, field: string, value: any) => {
+    if (prBlockEditing) return;
     const newItems = [...poItems];
     (newItems[index] as any)[field] = value;
     setPoItems(newItems);
@@ -741,6 +751,18 @@ export default function PurchaseOrderV2() {
       toast.error('Silakan pilih supplier');
       return;
     }
+
+    if (poType === 'WO' && formData.work_order_id !== 'NONE') {
+      if (!purchaseRequest) {
+        toast.error('Purchase Request untuk WO ini belum dibuat. Buat dulu di menu Purchase Request / Request Item.');
+        return;
+      }
+      if (String(purchaseRequest.status || '') !== 'OPEN') {
+        toast.error('Purchase Request untuk WO ini sudah diproses / ditutup.');
+        return;
+      }
+    }
+
     if (
       poItems.length === 0 ||
       poItems.some((i: any) => {
@@ -757,17 +779,6 @@ export default function PurchaseOrderV2() {
       const blockedIdx = poItems.findIndex((it: any) => isValueOnlyItem(it));
       if (blockedIdx >= 0) {
         toast.error(`Item N/A tidak boleh dibuat PO. Cek baris: ${blockedIdx + 1}`);
-        return;
-      }
-    }
-
-    if (poType === 'WO' && formData.work_order_id !== 'NONE') {
-      if (!purchaseRequest) {
-        toast.error('Purchase Request untuk WO ini belum dibuat. Buat dulu di menu Purchase Request / Request Item.');
-        return;
-      }
-      if (String(purchaseRequest.status || '') !== 'OPEN') {
-        toast.error('Purchase Request untuk WO ini sudah diproses / ditutup.');
         return;
       }
     }
@@ -1326,7 +1337,7 @@ export default function PurchaseOrderV2() {
                                 }
                                 setPoItems(next as any);
                               }}
-                              disabled={isReadOnly || isReturnEditMode || disabledRow}
+                              disabled={isReadOnly || isReturnEditMode || disabledRow || prBlockEditing}
                             >
                               <SelectTrigger className="h-9">
                                 <SelectValue placeholder="Pilih..." />
@@ -1349,7 +1360,7 @@ export default function PurchaseOrderV2() {
                                 hardLock && "bg-red-50 text-red-800 border-red-200 hover:bg-red-50"
                               )}
                               onClick={() => handleOpenSearch(index)}
-                              disabled={isReadOnly || disabledRow}
+                              disabled={isReadOnly || disabledRow || prBlockEditing}
                             >
                               <span>
                                 {((item as any).line_type || 'PART') === 'JASA'
@@ -1382,7 +1393,7 @@ export default function PurchaseOrderV2() {
                               className="h-9" placeholder="Merk/Tipe..."
                               value={item.brand} 
                               onChange={(e) => handleItemChange(index, 'brand', e.target.value)} 
-                              disabled={isReadOnly || disabledRow}
+                              disabled={isReadOnly || disabledRow || prBlockEditing}
                             />
                           </TableCell>
                           <TableCell>
@@ -1395,7 +1406,7 @@ export default function PurchaseOrderV2() {
                                 const val = e.target.value.replace(/[^0-9]/g, '');
                                 handleItemChange(index, 'quantity', val ? parseInt(val) : 0);
                               }}
-                              disabled={isReadOnly || disabledRow}
+                              disabled={isReadOnly || disabledRow || prBlockEditing}
                             />
                           </TableCell>
                           <TableCell>
@@ -1408,14 +1419,14 @@ export default function PurchaseOrderV2() {
                                 const val = e.target.value.replace(/[^0-9]/g, '');
                                 handleItemChange(index, 'unit_price', val ? parseInt(val) : '');
                               }} 
-                              disabled={isReadOnly || disabledRow || Boolean((item as any).locked_unit_price)}
+                              disabled={isReadOnly || disabledRow || prBlockEditing || Boolean((item as any).locked_unit_price)}
                             />
                           </TableCell>
                           <TableCell className="text-right font-semibold">
                             {formatCurrency((Number(item.quantity) || 0) * (Number(item.unit_price) || 0))}
                           </TableCell>
                           <TableCell>
-                            {!isReadOnly && returnedGoodsIds.length === 0 && poItems.length > 1 && (
+                            {!isReadOnly && !prBlockEditing && returnedGoodsIds.length === 0 && poItems.length > 1 && (
                               <Button type="button" variant="ghost" size="icon" className="h-8 w-8 text-red-500" onClick={() => handleRemoveItem(index)}>
                                 <Trash2 className="h-4 w-4" />
                               </Button>
@@ -1479,10 +1490,10 @@ export default function PurchaseOrderV2() {
                 <div className="flex gap-2">
                   {!isReadOnly && (
                     <>
-                      <Button type="submit" disabled={loading} className="bg-green-600 hover:bg-green-700">
+                      <Button type="submit" disabled={loading || prBlockEditing} className="bg-green-600 hover:bg-green-700">
                         <Save className="mr-2 h-4 w-4" /> Simpan
                       </Button>
-                      <Button type="button" variant="outline" disabled={loading} onClick={async () => {
+                      <Button type="button" variant="outline" disabled={loading || prBlockEditing} onClick={async () => {
                         const poId = await handleSubmit();
                         if (poId) {
                           handlePrint(poId);
