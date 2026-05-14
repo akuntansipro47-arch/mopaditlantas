@@ -27,6 +27,7 @@ type PurchaseRequestRow = {
   created_at: string;
   updated_at: string;
   work_orders?: any;
+  purchase_orders?: any;
 };
 
 type PurchaseRequestItemRow = {
@@ -107,6 +108,24 @@ export default function PurchaseRequest() {
     const d = new Date(`${s}T00:00:00`);
     if (Number.isNaN(d.getTime())) return s;
     return d.toLocaleDateString('id-ID');
+  };
+
+  const getPoInfoLabel = (r: PurchaseRequestRow) => {
+    const poNo = String(r.po_number || '').trim();
+    const poId = String(r.po_id || '').trim();
+    if (!poNo && !poId) return '';
+    if (!poId && poNo) return 'PO TERHAPUS';
+    const po = r.purchase_orders;
+    const st = String(po?.status || '').toUpperCase();
+    const hasReturn = Array.isArray(po?.purchase_returns) ? po.purchase_returns.length > 0 : Boolean(po?.purchase_returns?.id);
+    if (st === 'RETURNED_FULL') return 'PO RETUR FULL';
+    if (hasReturn) return 'ADA RETUR';
+    if (st === 'RECEIVED_FULL') return 'SUDAH DITERIMA (FULL)';
+    if (st === 'RECEIVED_PART') return 'SUDAH DITERIMA (SEBAGIAN)';
+    if (st === 'CANCELLED') return 'PO DIBATALKAN';
+    if (st === 'ISSUED') return 'BELUM DITERIMA';
+    if (!st) return '';
+    return `STATUS PO: ${st}`;
   };
 
   const makePrItemKey = (it: Pick<PurchaseRequestItemRow, 'line_type' | 'goods_id' | 'job_type_id' | 'service_name'>) => {
@@ -286,6 +305,13 @@ export default function PurchaseRequest() {
             vehicle_entries (
               vehicles (license_plate, brand_type)
             )
+          )
+          ,
+          purchase_orders (
+            id,
+            po_number,
+            status,
+            purchase_returns (id)
           )
         `
         )
@@ -758,6 +784,7 @@ export default function PurchaseRequest() {
                     const v = ve?.vehicles;
                     const unit = v?.license_plate ? `${v.license_plate} • ${v.brand_type || '-'}` : '-';
                     const statusLabel = r.status === 'OPEN' ? 'OPEN' : r.status === 'PO_CREATED' ? 'PROSES PO' : r.status;
+                    const poInfo = getPoInfoLabel(r);
                     return (
                       <TableRow key={r.id} className={overdue ? 'bg-amber-50' : undefined}>
                         <TableCell className="font-medium text-sm">{r.pr_number}</TableCell>
@@ -768,7 +795,12 @@ export default function PurchaseRequest() {
                           {statusLabel}
                           {overdue && <span className="ml-2 text-[10px] px-2 py-0.5 rounded bg-amber-100 text-amber-800">REMINDER</span>}
                         </TableCell>
-                        <TableCell className="text-sm">{r.po_number || '-'}</TableCell>
+                        <TableCell className="text-sm">
+                          <div className="flex flex-col">
+                            <div>{r.po_number || '-'}</div>
+                            {poInfo && <div className="text-[11px] text-slate-500">{poInfo}</div>}
+                          </div>
+                        </TableCell>
                         <TableCell className="text-sm">
                           <Button variant="outline" size="sm" onClick={fetchPRs} disabled={loading}>
                             <RefreshCw className="h-4 w-4" />
