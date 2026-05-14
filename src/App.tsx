@@ -47,6 +47,7 @@ import PrintGoodsReceipt from "@/pages/print/PrintGoodsReceipt";
 import PrintPO from "@/pages/print/PrintPO";
 import PrintPODotMatrix from "@/pages/print/PrintPODotMatrix";
 import PrintPurchaseRequestDotMatrix from "@/pages/print/PrintPurchaseRequestDotMatrix";
+import PrintSPKDotMatrix from "@/pages/print/PrintSPKDotMatrix";
 
 export default function App() {
   return (
@@ -98,6 +99,7 @@ export default function App() {
             {/* Print Routes (Outside DashboardLayout for clean printing) */}
             <Route path="/print/surat-jalan/:id" element={<PrintSuratJalan />} />
             <Route path="/print/spk/:id" element={<PrintSPK />} />
+            <Route path="/print/spk-dot/:id" element={<PrintSPKDotMatrix />} />
             <Route path="/print/entry/:id" element={<PrintVehicleEntry />} />
             <Route path="/print/issue/:id" element={<PrintGoodsIssue />} />
             <Route path="/print/receive/:id" element={<PrintGoodsReceipt />} />

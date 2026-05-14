@@ -219,6 +219,14 @@ export default function WorkOrder() {
     }
   };
 
+  const handlePrintSPKDotMatrix = (wo: WOWithDetails) => {
+    if (wo.status !== 'IN_PROGRESS') {
+      toast.warning('Cetak SPK Dot Matrix hanya tersedia untuk WO dengan status IN_PROGRESS.');
+      return;
+    }
+    window.open(`/print/spk-dot/${wo.id}`, '_blank');
+  };
+
   const checkSparepartsIssued = async (wo: WOWithDetails): Promise<{ valid: boolean; message: string; unissued: string[] }> => {
     if (!wo.vehicle_entry_id) {
       return { valid: true, message: 'Tidak ada sparepart', unissued: [] };
@@ -733,7 +741,10 @@ export default function WorkOrder() {
                             </Button>
                           )}
                           <Button variant="outline" size="sm" className="h-8" onClick={() => handlePrintSPK(item)} disabled={item.status !== 'IN_PROGRESS' || printingSPKId === item.id}>
-                             <Printer className="h-4 w-4 mr-1" /> SPK
+                            <Printer className="h-4 w-4 mr-1" /> SPK
+                          </Button>
+                          <Button variant="outline" size="sm" className="h-8" onClick={() => handlePrintSPKDotMatrix(item)} disabled={item.status !== 'IN_PROGRESS'}>
+                            <Printer className="h-4 w-4 mr-1" /> Dot
                           </Button>
                           <Button variant="outline" size="sm" className="h-8" onClick={() => handleEdit(item)} disabled={item.status !== 'IN_PROGRESS'}>
                             <Eye className="h-4 w-4 mr-1" /> Edit
