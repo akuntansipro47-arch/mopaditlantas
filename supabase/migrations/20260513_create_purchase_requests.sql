@@ -14,10 +14,6 @@ create table if not exists public.purchase_requests (
   updated_at timestamptz not null default now()
 );
 
-create unique index if not exists purchase_requests_one_active_per_wo
-  on public.purchase_requests(work_order_id)
-  where status <> 'CANCELLED';
-
 create table if not exists public.purchase_request_items (
   id uuid primary key default gen_random_uuid(),
   purchase_request_id uuid not null references public.purchase_requests(id) on delete cascade,

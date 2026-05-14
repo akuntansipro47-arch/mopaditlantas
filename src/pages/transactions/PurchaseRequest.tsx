@@ -74,6 +74,7 @@ export default function PurchaseRequest() {
   }));
 
   const [items, setItems] = useState<PurchaseRequestItemRow[]>([]);
+  const [existingItemMap, setExistingItemMap] = useState<Record<string, string[]>>({});
   const missingTableWarnedRef = useRef(false);
   const overdueWarnedRef = useRef(false);
   const dateFilterFirstRunRef = useRef(true);
@@ -108,6 +109,78 @@ export default function PurchaseRequest() {
     return d.toLocaleDateString('id-ID');
   };
 
+  const makePrItemKey = (it: Pick<PurchaseRequestItemRow, 'line_type' | 'goods_id' | 'job_type_id' | 'service_name'>) => {
+    const lt = String(it?.line_type || 'PART').toUpperCase();
+    if (lt === 'JASA') {
+      const jid = String(it?.job_type_id || '').trim();
+      if (jid) return `JASA|JOB|${jid}`;
+      const nameKey = normalizeText(String(it?.service_name || ''));
+      if (nameKey) return `JASA|NAME|${nameKey}`;
+      return '';
+    }
+    const gid = String(it?.goods_id || '').trim();
+    if (gid) return `PART|${gid}`;
+    return '';
+  };
+
+  const fetchExistingRequestsForWo = async (woId: string, excludePrId?: string | null) => {
+    if (!woId) {
+      setExistingItemMap({});
+      return;
+    }
+    try {
+      const { data: prsData, error: prErr } = await supabase
+        .from('purchase_requests' as any)
+        .select('id, pr_number, status')
+        .eq('work_order_id', woId)
+        .neq('status', 'CANCELLED')
+        .order('created_at', { ascending: false });
+      if (prErr) throw prErr;
+
+      const list = (prsData as any[]) || [];
+      const ids = list
+        .filter((x: any) => !excludePrId || String(x.id) !== String(excludePrId))
+        .map((x: any) => String(x.id))
+        .filter(Boolean);
+
+      if (ids.length === 0) {
+        setExistingItemMap({});
+        return;
+      }
+
+      const prNumberById = new Map<string, string>();
+      list.forEach((x: any) => {
+        prNumberById.set(String(x.id), String(x.pr_number || ''));
+      });
+
+      const { data: lines, error: lineErr } = await supabase
+        .from('purchase_request_items' as any)
+        .select('purchase_request_id, line_type, goods_id, job_type_id, service_name')
+        .in('purchase_request_id', ids);
+      if (lineErr) throw lineErr;
+
+      const next: Record<string, string[]> = {};
+      ((lines as any[]) || []).forEach((ln: any) => {
+        const key = makePrItemKey({
+          line_type: ln.line_type,
+          goods_id: ln.goods_id,
+          job_type_id: ln.job_type_id,
+          service_name: ln.service_name,
+        } as any);
+        if (!key) return;
+        const prNo = prNumberById.get(String(ln.purchase_request_id)) || '';
+        if (!prNo) return;
+        const arr = next[key] || [];
+        if (!arr.includes(prNo)) arr.push(prNo);
+        next[key] = arr;
+      });
+      setExistingItemMap(next);
+    } catch (e: any) {
+      setExistingItemMap({});
+      toast.error('Gagal cek riwayat Purchase Request: ' + String(e?.message || e));
+    }
+  };
+
   useEffect(() => {
     void fetchAll();
   }, []);
@@ -119,6 +192,16 @@ export default function PurchaseRequest() {
     }
     void fetchPRs();
   }, [dateFilter.endDate, dateFilter.startDate]);
+
+  useEffect(() => {
+    if (!isDialogOpen) return;
+    const woId = String(formData.work_order_id || '').trim();
+    if (!woId) {
+      setExistingItemMap({});
+      return;
+    }
+    void fetchExistingRequestsForWo(woId, editingId);
+  }, [editingId, formData.work_order_id, isDialogOpen]);
 
   async function fetchAll() {
     setLoading(true);
@@ -291,6 +374,7 @@ export default function PurchaseRequest() {
     setIsReadOnly(false);
     setFormData({ work_order_id: '', pr_date: new Date().toISOString().split('T')[0], notes: '' });
     setItems([]);
+    setExistingItemMap({});
   };
 
   const openCreate = () => {
@@ -306,6 +390,7 @@ export default function PurchaseRequest() {
   const handleSelectWo = (wo: any) => {
     setFormData((p) => ({ ...p, work_order_id: wo.id }));
     setWoSearchOpen(false);
+    void fetchExistingRequestsForWo(String(wo.id || ''), editingId);
     const next = buildItemsFromWo(wo);
     if (next.length === 0) {
       toast.error('Item WO kosong / semua item N/A, tidak bisa buat Purchase Request.');
@@ -333,6 +418,7 @@ export default function PurchaseRequest() {
         notes: String(row.notes || ''),
       });
       setItems(((lines as any) || []) as PurchaseRequestItemRow[]);
+      void fetchExistingRequestsForWo(String(row.work_order_id || ''), row.id);
       setIsDialogOpen(true);
     } catch (e: any) {
       toast.error('Gagal memuat detail Purchase Request: ' + String(e?.message || e));
@@ -799,6 +885,8 @@ export default function PurchaseRequest() {
                     </TableRow>
                   ) : (
                     items.map((it, idx) => {
+                      const itemKey = makePrItemKey(it);
+                      const existsIn = itemKey ? existingItemMap[itemKey] || [] : [];
                       const goodsName =
                         it.line_type === 'PART'
                           ? goodsList.find((g: any) => String(g.id) === String(it.goods_id))?.name || '-'
@@ -812,7 +900,15 @@ export default function PurchaseRequest() {
                           <TableRow>
                             <TableCell className="text-xs font-semibold">{it.line_type}</TableCell>
                             <TableCell className="text-sm">
-                              {it.line_type === 'PART' ? goodsName : serviceLabel}
+                              <div className="flex flex-col">
+                                <div>{it.line_type === 'PART' ? goodsName : serviceLabel}</div>
+                                {existsIn.length > 0 && (
+                                  <div className="text-[11px] text-amber-700">
+                                    Sudah ada Purchase Request: {existsIn.slice(0, 3).join(', ')}
+                                    {existsIn.length > 3 ? ` (+${existsIn.length - 3})` : ''}
+                                  </div>
+                                )}
+                              </div>
                             </TableCell>
                             <TableCell className="text-right">
                               <Input
