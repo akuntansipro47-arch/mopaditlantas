@@ -88,6 +88,7 @@ export default function AdminBackup() {
   const [done, setDone] = useState(0);
   const [total, setTotal] = useState(0);
   const [counts, setCounts] = useState<Record<string, number>>({});
+  const [skipped, setSkipped] = useState<Record<string, string>>({});
 
   const pickedTables = useMemo(
     () => TABLE_OPTIONS.filter((t) => selected[t.table]).map((t) => t.table),
@@ -120,19 +121,28 @@ export default function AdminBackup() {
     setDone(0);
     setTotal(pickedTables.length);
     setCounts({});
+    setSkipped({});
 
     const output: Record<string, any[]> = {};
     const localCounts: Record<string, number> = {};
+    const localSkipped: Record<string, string> = {};
 
     try {
       for (let i = 0; i < pickedTables.length; i++) {
         const table = pickedTables[i];
         setCurrentTable(table);
-        const rows = await fetchAllRows(table);
-        output[table] = rows;
-        localCounts[table] = rows.length;
-        setCounts((prev) => ({ ...prev, [table]: rows.length }));
-        setDone(i + 1);
+        try {
+          const rows = await fetchAllRows(table);
+          output[table] = rows;
+          localCounts[table] = rows.length;
+          setCounts((prev) => ({ ...prev, [table]: rows.length }));
+        } catch (e: any) {
+          const msg = String(e?.message || e);
+          localSkipped[table] = msg;
+          setSkipped((prev) => ({ ...prev, [table]: msg }));
+        } finally {
+          setDone(i + 1);
+        }
       }
 
       const exportedAt = new Date().toISOString();
@@ -142,6 +152,7 @@ export default function AdminBackup() {
         exported_by: { id: user.id, username: user.username, role: user.role },
         tables: output,
         counts: localCounts,
+        skipped: localSkipped,
       };
 
       const safeTime = exportedAt.replace(/[:.]/g, '-');
@@ -151,10 +162,14 @@ export default function AdminBackup() {
         action: 'backup_export',
         module: 'admin',
         details: `Export JSON (${pickedTables.length} tabel)`,
-        meta: { counts: localCounts },
+        meta: { counts: localCounts, skipped: localSkipped },
       });
 
-      toast.success('Backup berhasil diunduh.');
+      if (Object.keys(localSkipped).length > 0) {
+        toast.success(`Backup terunduh, ${Object.keys(localSkipped).length} tabel dilewati.`);
+      } else {
+        toast.success('Backup berhasil diunduh.');
+      }
     } catch (e: any) {
       toast.error('Backup gagal: ' + String(e?.message || e));
     } finally {
@@ -204,7 +219,11 @@ export default function AdminBackup() {
                     <div className="grid gap-0.5 leading-none">
                       <Label className="text-sm">{t.label}</Label>
                       <div className="text-xs text-muted-foreground">
-                        {typeof counts[t.table] === 'number' ? `${counts[t.table]} baris` : ''}
+                        {typeof counts[t.table] === 'number'
+                          ? `${counts[t.table]} baris`
+                          : skipped[t.table]
+                            ? 'Dilewati'
+                            : ''}
                       </div>
                     </div>
                   </div>
@@ -239,4 +258,3 @@ export default function AdminBackup() {
     </div>
   );
 }
-
