@@ -7,6 +7,8 @@ if (!supabaseUrl || !supabaseAnonKey) {
   throw new Error('Missing Supabase environment variables');
 }
 
+export const SUPABASE_URL = supabaseUrl;
+
 const fetchWithRetry: typeof fetch = async (input, init) => {
   const method = String(init?.method || 'GET').toUpperCase();
   const canRetry = method === 'GET' || method === 'HEAD';

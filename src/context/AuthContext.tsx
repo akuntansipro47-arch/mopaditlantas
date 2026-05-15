@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useState } from 'react';
-import { supabase } from '@/lib/supabase';
+import { SUPABASE_URL, supabase } from '@/lib/supabase';
 import { toast } from 'sonner';
 import { logActivity } from '@/lib/activityLog';
 
@@ -59,10 +59,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const login = async (username: string, password: string): Promise<boolean> => {
     try {
-      const { data, error } = await supabase.rpc('login_user', {
-        p_username: username,
-        p_password: password
-      });
+      const isNetworkMsg = (msg: string) => {
+        const m = String(msg || '').toLowerCase();
+        return m.includes('failed to fetch') || m.includes('networkerror') || m.includes('load failed');
+      };
+
+      let result: { data: any; error: any } | null = null;
+      for (let attempt = 0; attempt < 2; attempt++) {
+        // eslint-disable-next-line no-await-in-loop
+        result = await supabase.rpc('login_user', {
+          p_username: username,
+          p_password: password,
+        });
+        if (!result?.error) break;
+        if (!isNetworkMsg(result.error?.message)) break;
+        // eslint-disable-next-line no-await-in-loop
+        await new Promise((r) => setTimeout(r, 400 * (attempt + 1)));
+      }
+
+      const { data, error } = result || { data: null, error: null };
 
       if (error) {
         void logActivity({
@@ -73,7 +88,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           module: 'AUTH',
           details: error.message,
         });
-        toast.error('Login failed: ' + error.message);
+        if (isNetworkMsg(error.message)) {
+          console.error('Login network error:', error);
+          toast.error(`Login gagal: tidak bisa terhubung ke server. Cek koneksi internet / URL Supabase (${SUPABASE_URL}).`);
+        } else {
+          toast.error('Login failed: ' + error.message);
+        }
         return false;
       }
 
@@ -133,7 +153,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         module: 'AUTH',
         details: String(err?.message || err),
       });
-      toast.error('Login error: ' + err.message);
+      const msg = String(err?.message || err);
+      if (msg.toLowerCase().includes('failed to fetch') || msg.toLowerCase().includes('networkerror') || msg.toLowerCase().includes('load failed')) {
+        console.error('Login network error:', err);
+        toast.error(`Login gagal: tidak bisa terhubung ke server. Cek koneksi internet / URL Supabase (${SUPABASE_URL}).`);
+      } else {
+        toast.error('Login error: ' + msg);
+      }
       return false;
     }
   };

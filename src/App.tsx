@@ -38,6 +38,7 @@ import EmployeeData from "@/pages/hr/EmployeeData";
 // Admin
 import UserManagement from "@/pages/admin/UserManagement";
 import AgencyProfile from "@/pages/admin/AgencyProfile";
+import AdminBackup from "@/pages/admin/AdminBackup";
 import DebugSync from "@/pages/DebugSync";
 import PrintSuratJalan from "@/pages/print/PrintSuratJalan";
 import PrintSPK from "@/pages/print/PrintSPK";
@@ -92,6 +93,7 @@ export default function App() {
               {/* Admin */}
               <Route path="/admin/users" element={<UserManagement />} />
               <Route path="/admin/agency" element={<AgencyProfile />} />
+              <Route path="/admin/backup" element={<AdminBackup />} />
               <Route path="/debug-sync" element={<DebugSync />} />
 
             </Route>
