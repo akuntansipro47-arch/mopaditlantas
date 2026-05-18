@@ -24,6 +24,7 @@ import VehicleExitReport from './reports/VehicleExitReport';
 import EstimationVsRealizationReport from './reports/EstimationVsRealizationReport';
 import UnorderedSparepartEstimationReport from './reports/UnorderedSparepartEstimationReport';
 import BudgetMonitoringReport from './reports/BudgetMonitoringReport';
+import BudgetForecastReport from './reports/BudgetForecastReport';
 import ActivityLogReport from './reports/ActivityLogReport';
 import { Card } from '@/components/ui/card';
 import { Activity } from 'lucide-react';
@@ -50,6 +51,7 @@ type ReportKey =
   | 'payment_history_ap'
   | 'cash_bank_book'
   | 'budget'
+  | 'forecast_budget'
   | 'estimation'
   | 'estimation_unpo'
   | 'activity_log';
@@ -101,6 +103,7 @@ export default function Reports() {
       if (canAccess('report_estimation')) return 'estimation';
       if (canAccess('report_unordered_parts')) return 'estimation_unpo';
       if (canAccess('report_budget')) return 'budget';
+      if (canAccess('report_forecast_budget')) return 'forecast_budget';
       if (canAccess('report_activity_log')) return 'activity_log';
       return '';
   };
@@ -147,6 +150,7 @@ export default function Reports() {
     canAccess('report_estimation') ? 'estimation' : null,
     canAccess('report_unordered_parts') ? 'estimation_unpo' : null,
     canAccess('report_budget') ? 'budget' : null,
+    canAccess('report_forecast_budget') ? 'forecast_budget' : null,
     canAccess('report_activity_log') ? 'activity_log' : null,
   ].filter(Boolean) as ReportKey[];
 
@@ -176,6 +180,7 @@ export default function Reports() {
     if (key === 'estimation') return <EstimationVsRealizationReport />;
     if (key === 'estimation_unpo') return <UnorderedSparepartEstimationReport />;
     if (key === 'budget') return <BudgetMonitoringReport />;
+    if (key === 'forecast_budget') return <BudgetForecastReport />;
     if (key === 'activity_log') return <ActivityLogReport />;
     return null;
   };

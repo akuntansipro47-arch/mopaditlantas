@@ -122,6 +122,7 @@ const navigation: NavItem[] = [
       { name: 'Arus Kas (Tidak Langsung)', href: '/reports?tab=cash_flow&method=indirect', icon: Wallet, key: 'report_cash_flow' },
       { name: 'Buku Bank/Kas', href: '/reports?tab=cash_bank_book', icon: Wallet, key: 'report_cash_bank_book' },
       { name: 'Monitoring Pagu', href: '/reports?tab=budget', icon: Wallet, key: 'report_budget' },
+      { name: 'Forecasting Anggaran', href: '/reports?tab=forecast_budget', icon: Wallet, key: 'report_forecast_budget' },
       { name: 'Log Aktivitas', href: '/reports?tab=activity_log', icon: Activity, key: 'report_activity_log' },
     ]
   },
@@ -299,7 +300,7 @@ export function Sidebar() {
                                         const active = currentPath === link.href;
                                         return (
                                           <NavLink
-                                            key={link.key}
+                                            key={`${link.key}-${link.href}`}
                                             to={link.href}
                                             className={() =>
                                               cn(
