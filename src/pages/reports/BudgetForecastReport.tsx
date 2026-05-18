@@ -335,6 +335,7 @@ export default function BudgetForecastReport() {
   const [saving, setSaving] = useState(false);
   const [editMode, setEditMode] = useState(false);
   const [storageMode, setStorageMode] = useState<'supabase' | 'local'>('supabase');
+  const [dbReady, setDbReady] = useState(true);
   const [estimateTotals, setEstimateTotals] = useState<{ R2: number[]; R4: number[] }>({ R2: emptyMonths(), R4: emptyMonths() });
   const [loadingEstimates, setLoadingEstimates] = useState(false);
 
@@ -463,6 +464,17 @@ export default function BudgetForecastReport() {
     }
   }
 
+  function isAutoPemakaianLine(groupKey: 'R2' | 'R4', line: ForecastLine) {
+    if (!line || line.kind !== 'subtraction') return false;
+    if (line.id === `${groupKey.toLowerCase()}-sub-1`) return true;
+    const label = String(line.label || '').toUpperCase();
+    return label.startsWith('PEMAKAIAN');
+  }
+
+  function getAutoPemakaianValues(groupKey: 'R2' | 'R4') {
+    return (groupKey === 'R2' ? estimateTotals.R2 : estimateTotals.R4).map((v) => -Number(v || 0));
+  }
+
   async function loadSheet() {
     const p = String(project || '').trim().toUpperCase() || 'HARWAT';
     const y = Number(year) || new Date().getFullYear();
@@ -475,6 +487,7 @@ export default function BudgetForecastReport() {
         .eq('year', y)
         .maybeSingle();
       if (headerErr) throw headerErr;
+      setDbReady(true);
 
       if (header?.id) {
         try {
@@ -501,28 +514,21 @@ export default function BudgetForecastReport() {
         return;
       }
 
-      const raw = localStorage.getItem(storageKey(p, y));
-      if (raw) {
-        setSheet(JSON.parse(raw));
-        setStorageMode('local');
-        return;
-      }
       setSheet(buildDefaultSheet(p, y));
-      setStorageMode('local');
+      setStorageMode('supabase');
     } catch (e: any) {
       const msg = String(e?.message || e);
       if (msg.toLowerCase().includes('could not find the table')) {
-        const raw = localStorage.getItem(storageKey(p, y));
-        if (raw) setSheet(JSON.parse(raw));
-        else setSheet(buildDefaultSheet(p, y));
-        setStorageMode('local');
+        setDbReady(false);
+        toast.error('Tabel forecasting belum ada di database. Jalankan migrasi Supabase terlebih dulu.');
+        setSheet(buildDefaultSheet(p, y));
+        setStorageMode('supabase');
         return;
       }
+      setDbReady(false);
       toast.error('Gagal memuat forecasting: ' + msg);
-      const raw = localStorage.getItem(storageKey(p, y));
-      if (raw) setSheet(JSON.parse(raw));
-      else setSheet(buildDefaultSheet(p, y));
-      setStorageMode('local');
+      setSheet(buildDefaultSheet(p, y));
+      setStorageMode('supabase');
     } finally {
       setLoading(false);
     }
@@ -571,6 +577,8 @@ export default function BudgetForecastReport() {
       });
 
       g.subtractions.lines.forEach((l, idx) => {
+        const isAuto = isAutoPemakaianLine(groupKey, l);
+        const v = isAuto ? getAutoPemakaianValues(groupKey) : normalizeMonthValues(l.values);
         rows.push({
           id: l.id,
           sheet_id: sheetId,
@@ -578,7 +586,7 @@ export default function BudgetForecastReport() {
           section: 'SUBTRACTION',
           label: l.label,
           sort_order: idx,
-          values: normalizeMonthValues(l.values),
+          values: v,
         });
       });
     }
@@ -588,6 +596,10 @@ export default function BudgetForecastReport() {
   async function saveSheet() {
     if (!canEdit) {
       toast.error('Hanya Super Admin yang bisa menyimpan forecasting.');
+      return;
+    }
+    if (!dbReady) {
+      toast.error('Database belum siap (tabel forecasting belum ada / error akses).');
       return;
     }
     if (saving) return;
@@ -616,14 +628,11 @@ export default function BudgetForecastReport() {
       } catch {
       }
 
-      localStorage.setItem(storageKey(p, y), JSON.stringify(payload));
       setStorageMode('supabase');
       toast.success('Forecasting tersimpan.');
     } catch (e: any) {
       const msg = String(e?.message || e);
-      localStorage.setItem(storageKey(p, y), JSON.stringify({ ...sheet, project: p, year: y }));
-      setStorageMode('local');
-      toast.success(msg.toLowerCase().includes('could not find the table') ? 'Tabel belum ada, tersimpan lokal.' : 'Tersimpan lokal.');
+      toast.error('Gagal simpan ke database: ' + msg);
     } finally {
       setSaving(false);
     }
@@ -635,10 +644,12 @@ export default function BudgetForecastReport() {
       const rawBase = g.deductions.lines.find((x) => x.kind === 'base') || g.deductions.lines[0];
       const base = rawBase || { id: `${g.key.toLowerCase()}-base`, label: g.baseLabel, kind: 'base', values: emptyMonths() };
       const deductions = g.deductions.lines.filter((x) => x.kind === 'deduction');
-      const baseOverride = g.key === 'R2' ? estimateTotals.R2 : estimateTotals.R4;
-      const nett = computeNett({ ...base, values: baseOverride }, deductions);
-      const balance = computeBalance(nett, g.additions.lines, g.subtractions.lines);
-      out[g.key] = { nett, balance, base: { ...base, values: baseOverride }, sections: [g.deductions, g.additions, g.subtractions] };
+      const subtractionsComputed = g.subtractions.lines.map((l) =>
+        isAutoPemakaianLine(g.key, l) ? { ...l, values: getAutoPemakaianValues(g.key) } : l
+      );
+      const nett = computeNett(base, deductions);
+      const balance = computeBalance(nett, g.additions.lines, subtractionsComputed);
+      out[g.key] = { nett, balance, base, sections: [g.deductions, g.additions, g.subtractions] };
     }
     return out;
   }, [sheet, estimateTotals]);
@@ -688,9 +699,10 @@ export default function BudgetForecastReport() {
       const next = deepClone(prev);
       const g = next.groups.find((x) => x.key === groupKey);
       if (!g) return prev;
+      const autoIds = new Set([`${groupKey.toLowerCase()}-sub-1`]);
       g.deductions.lines = g.deductions.lines.filter((x) => x.kind === 'base' || x.id !== lineId);
       g.additions.lines = g.additions.lines.filter((x) => x.id !== lineId);
-      g.subtractions.lines = g.subtractions.lines.filter((x) => x.id !== lineId);
+      g.subtractions.lines = g.subtractions.lines.filter((x) => !autoIds.has(x.id) && x.id !== lineId);
       return next;
     });
   }
@@ -703,7 +715,9 @@ export default function BudgetForecastReport() {
       const baseValues = base?.values || emptyMonths();
       const deductions = g.deductions.lines.filter((x) => x.kind === 'deduction');
       const additions = g.additions.lines;
-      const subtractions = g.subtractions.lines;
+      const subtractions = g.subtractions.lines.map((l) =>
+        isAutoPemakaianLine(g.key, l) ? { ...l, values: getAutoPemakaianValues(g.key) } : l
+      );
       const nett = computed?.nett || emptyMonths();
       const balance = computed?.balance || emptyMonths();
 
@@ -760,14 +774,14 @@ export default function BudgetForecastReport() {
           className="w-24"
         />
       </div>
-      <Button variant="outline" onClick={() => setEditMode((v) => !v)} disabled={!canEdit}>
+      <Button variant="outline" onClick={() => setEditMode((v) => !v)} disabled={!canEdit || !dbReady}>
         {editMode ? 'Selesai Edit' : 'Edit'}
       </Button>
       <Button variant="outline" onClick={exportExcel}>
         <Download className="h-4 w-4 mr-2" />
         Export Excel
       </Button>
-      <Button onClick={saveSheet} disabled={!canEdit || saving}>
+      <Button onClick={saveSheet} disabled={!canEdit || saving || !dbReady}>
         {saving ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Save className="h-4 w-4 mr-2" />}
         Simpan
       </Button>
@@ -785,7 +799,7 @@ export default function BudgetForecastReport() {
     const renderLineRow = (line: ForecastLine, showZero = false) => (
       <tr key={line.id} className="border-t">
         <td className="px-3 py-2 font-medium text-slate-700 whitespace-nowrap sticky left-0 z-10 bg-white border-r">
-          {editMode && canEdit && line.kind !== 'base' ? (
+          {editMode && canEdit && !isAutoPemakaianLine(g.key, line) && line.kind !== 'base' ? (
             <div className="flex items-center gap-2">
               <Input value={line.label} onChange={(e) => setLabel(g.key, line.id, e.target.value)} className="h-8 w-80" />
               <Button variant="ghost" size="icon" onClick={() => removeLine(g.key, line.id)}>
@@ -797,9 +811,13 @@ export default function BudgetForecastReport() {
           )}
         </td>
         {MONTHS.map((_, idx) => {
-          const computedValue = line.kind === 'base' ? Number(baseValues[idx] || 0) : Number(line.values?.[idx] || 0);
+          const computedValue = isAutoPemakaianLine(g.key, line)
+            ? Number(getAutoPemakaianValues(g.key)[idx] || 0)
+            : line.kind === 'base'
+              ? Number(baseValues[idx] || 0)
+              : Number(line.values?.[idx] || 0);
           const val = computedValue;
-          const canEditCell = editMode && canEdit && line.kind !== 'base';
+          const canEditCell = editMode && canEdit && line.kind !== 'base' && !isAutoPemakaianLine(g.key, line);
           return (
             <td key={`${line.id}-${idx}`} className="px-2 py-1 text-right whitespace-nowrap">
               {canEditCell ? (
@@ -837,15 +855,16 @@ export default function BudgetForecastReport() {
     );
 
     const allAddition = sumMonths(g.additions.lines);
-    const allSubtraction = sumMonths(g.subtractions.lines);
+    const allSubtraction = sumMonths(
+      g.subtractions.lines.map((l) => (isAutoPemakaianLine(g.key, l) ? { ...l, values: getAutoPemakaianValues(g.key) } : l))
+    );
 
     return (
       <Card className="border-slate-200">
         <CardHeader className="pb-3">
           <CardTitle className="text-xl">{g.title}</CardTitle>
           <div className="text-xs text-muted-foreground">
-            Mode simpan: {storageMode === 'supabase' ? 'Supabase' : 'Lokal'} {loading ? '• memuat...' : ''}{' '}
-            {loadingEstimates ? '• hitung estimasi...' : ''}
+            Mode simpan: Supabase {loading ? '• memuat...' : ''} {loadingEstimates ? '• hitung pemakaian...' : ''}
           </div>
         </CardHeader>
         <CardContent>
