@@ -335,6 +335,8 @@ export default function BudgetForecastReport() {
   const [saving, setSaving] = useState(false);
   const [editMode, setEditMode] = useState(false);
   const [storageMode, setStorageMode] = useState<'supabase' | 'local'>('supabase');
+  const [estimateTotals, setEstimateTotals] = useState<{ R2: number[]; R4: number[] }>({ R2: emptyMonths(), R4: emptyMonths() });
+  const [loadingEstimates, setLoadingEstimates] = useState(false);
 
   useEffect(() => {
     const p = String(project || '').trim().toUpperCase() || 'HARWAT';
@@ -344,6 +346,122 @@ export default function BudgetForecastReport() {
   useEffect(() => {
     void loadSheet();
   }, [project, year]);
+
+  useEffect(() => {
+    void loadEstimateTotals();
+  }, [project, year]);
+
+  async function loadEstimateTotals() {
+    const p = String(project || '').trim().toUpperCase() || 'HARWAT';
+    const y = Number(year) || new Date().getFullYear();
+    const startDate = `${y}-01-01`;
+    const endDate = `${y}-12-31`;
+    const nextYearStart = `${y + 1}-01-01`;
+
+    const sums = { R2: emptyMonths(), R4: emptyMonths() };
+    setLoadingEstimates(true);
+    try {
+      const pageSize = 500;
+      let from = 0;
+      while (true) {
+        const { data, error } = await supabase
+          .from('work_orders')
+          .select(
+            `
+            id,
+            vehicle_entry_id,
+            work_date,
+            created_at,
+            vehicle_entries (
+              vehicles (vehicle_type)
+            ),
+            work_order_billings (total_price)
+          `
+          )
+          .not('vehicle_entry_id', 'is', null)
+          .gte('work_date', startDate)
+          .lte('work_date', endDate)
+          .range(from, from + pageSize - 1)
+          .order('work_date', { ascending: true });
+        if (error) throw error;
+        const rows = Array.isArray(data) ? data : [];
+
+        for (const wo of rows as any[]) {
+          const vt = String(wo?.vehicle_entries?.vehicles?.vehicle_type || '').toUpperCase();
+          const groupKey = vt.includes('R4') ? 'R4' : vt.includes('R2') || vt.includes('KECIL') ? 'R2' : '';
+          if (!groupKey) continue;
+
+          const dateStr = String(wo?.work_date || wo?.created_at || '').slice(0, 10);
+          const d = dateStr ? new Date(dateStr) : null;
+          const m = d && Number.isFinite(d.getTime()) ? d.getMonth() : -1;
+          if (m < 0 || m > 11) continue;
+
+          const total = (wo?.work_order_billings || []).reduce((acc: number, b: any) => acc + Number(b?.total_price || 0), 0);
+          if (!Number.isFinite(total) || total === 0) continue;
+          (sums as any)[groupKey][m] += total;
+        }
+
+        if (rows.length < pageSize) break;
+        from += pageSize;
+      }
+
+      from = 0;
+      while (true) {
+        const { data, error } = await supabase
+          .from('work_orders')
+          .select(
+            `
+            id,
+            vehicle_entry_id,
+            work_date,
+            created_at,
+            vehicle_entries (
+              vehicles (vehicle_type)
+            ),
+            work_order_billings (total_price)
+          `
+          )
+          .not('vehicle_entry_id', 'is', null)
+          .is('work_date', null)
+          .gte('created_at', startDate)
+          .lt('created_at', nextYearStart)
+          .range(from, from + pageSize - 1)
+          .order('created_at', { ascending: true });
+        if (error) throw error;
+        const rows = Array.isArray(data) ? data : [];
+
+        for (const wo of rows as any[]) {
+          const vt = String(wo?.vehicle_entries?.vehicles?.vehicle_type || '').toUpperCase();
+          const groupKey = vt.includes('R4') ? 'R4' : vt.includes('R2') || vt.includes('KECIL') ? 'R2' : '';
+          if (!groupKey) continue;
+
+          const dateStr = String(wo?.created_at || '').slice(0, 10);
+          const d = dateStr ? new Date(dateStr) : null;
+          const m = d && Number.isFinite(d.getTime()) ? d.getMonth() : -1;
+          if (m < 0 || m > 11) continue;
+
+          const total = (wo?.work_order_billings || []).reduce((acc: number, b: any) => acc + Number(b?.total_price || 0), 0);
+          if (!Number.isFinite(total) || total === 0) continue;
+          (sums as any)[groupKey][m] += total;
+        }
+
+        if (rows.length < pageSize) break;
+        from += pageSize;
+      }
+
+      setEstimateTotals(sums);
+    } catch (e: any) {
+      const msg = String(e?.message || e);
+      if (msg.toLowerCase().includes('could not find the table')) {
+        setEstimateTotals({ R2: emptyMonths(), R4: emptyMonths() });
+        return;
+      }
+      toast.error('Gagal memuat total estimasi WO: ' + msg);
+      setEstimateTotals({ R2: emptyMonths(), R4: emptyMonths() });
+    } finally {
+      setLoadingEstimates(false);
+    }
+  }
 
   async function loadSheet() {
     const p = String(project || '').trim().toUpperCase() || 'HARWAT';
@@ -514,14 +632,16 @@ export default function BudgetForecastReport() {
   const computedByGroup = useMemo(() => {
     const out: Record<string, { nett: number[]; balance: number[]; base: ForecastLine; sections: ForecastSection[] }> = {};
     for (const g of sheet.groups || []) {
-      const base = g.deductions.lines.find((x) => x.kind === 'base') || g.deductions.lines[0];
+      const rawBase = g.deductions.lines.find((x) => x.kind === 'base') || g.deductions.lines[0];
+      const base = rawBase || { id: `${g.key.toLowerCase()}-base`, label: g.baseLabel, kind: 'base', values: emptyMonths() };
       const deductions = g.deductions.lines.filter((x) => x.kind === 'deduction');
-      const nett = computeNett(base, deductions);
+      const baseOverride = g.key === 'R2' ? estimateTotals.R2 : estimateTotals.R4;
+      const nett = computeNett({ ...base, values: baseOverride }, deductions);
       const balance = computeBalance(nett, g.additions.lines, g.subtractions.lines);
-      out[g.key] = { nett, balance, base, sections: [g.deductions, g.additions, g.subtractions] };
+      out[g.key] = { nett, balance, base: { ...base, values: baseOverride }, sections: [g.deductions, g.additions, g.subtractions] };
     }
     return out;
-  }, [sheet]);
+  }, [sheet, estimateTotals]);
 
   function setCell(groupKey: 'R2' | 'R4', lineId: string, monthIndex: number, value: number) {
     setSheet((prev) => {
@@ -580,6 +700,7 @@ export default function BudgetForecastReport() {
     for (const g of sheet.groups || []) {
       const computed = computedByGroup[g.key];
       const base = computed?.base;
+      const baseValues = base?.values || emptyMonths();
       const deductions = g.deductions.lines.filter((x) => x.kind === 'deduction');
       const additions = g.additions.lines;
       const subtractions = g.subtractions.lines;
@@ -595,7 +716,7 @@ export default function BudgetForecastReport() {
         aoa.push([label, ...values.map((v) => (showZero ? Number(v || 0) : (v ? Number(v) : '')))]);
       };
 
-      pushLine(base?.label || g.baseLabel, base?.values || emptyMonths(), true);
+      pushLine(base?.label || g.baseLabel, baseValues, true);
       if (deductions.length > 0) {
         aoa.push([g.deductions.title]);
         for (const l of deductions) pushLine(l.label, l.values, false);
@@ -656,13 +777,14 @@ export default function BudgetForecastReport() {
   const renderGroup = (g: ForecastGroup) => {
     const computed = computedByGroup[g.key];
     const base = computed?.base;
+    const baseValues = base?.values || emptyMonths();
     const deductions = g.deductions.lines.filter((x) => x.kind === 'deduction');
     const nett = computed?.nett || emptyMonths();
     const balance = computed?.balance || emptyMonths();
 
     const renderLineRow = (line: ForecastLine, showZero = false) => (
       <tr key={line.id} className="border-t">
-        <td className="px-3 py-2 font-medium text-slate-700 whitespace-nowrap">
+        <td className="px-3 py-2 font-medium text-slate-700 whitespace-nowrap sticky left-0 z-10 bg-white border-r">
           {editMode && canEdit && line.kind !== 'base' ? (
             <div className="flex items-center gap-2">
               <Input value={line.label} onChange={(e) => setLabel(g.key, line.id, e.target.value)} className="h-8 w-80" />
@@ -675,8 +797,9 @@ export default function BudgetForecastReport() {
           )}
         </td>
         {MONTHS.map((_, idx) => {
-          const val = Number(line.values?.[idx] || 0);
-          const canEditCell = editMode && canEdit;
+          const computedValue = line.kind === 'base' ? Number(baseValues[idx] || 0) : Number(line.values?.[idx] || 0);
+          const val = computedValue;
+          const canEditCell = editMode && canEdit && line.kind !== 'base';
           return (
             <td key={`${line.id}-${idx}`} className="px-2 py-1 text-right whitespace-nowrap">
               {canEditCell ? (
@@ -696,7 +819,7 @@ export default function BudgetForecastReport() {
 
     const renderComputedRow = (label: string, values: number[]) => (
       <tr className="border-t bg-slate-50">
-        <td className="px-3 py-2 font-semibold text-slate-900 whitespace-nowrap">{label}</td>
+        <td className="px-3 py-2 font-semibold text-slate-900 whitespace-nowrap sticky left-0 z-10 bg-slate-50 border-r">{label}</td>
         {values.map((v, idx) => (
           <td key={`${label}-${idx}`} className="px-2 py-1 text-right whitespace-nowrap font-semibold">
             <span className="tabular-nums">{formatNumber(v, true)}</span>
@@ -721,7 +844,8 @@ export default function BudgetForecastReport() {
         <CardHeader className="pb-3">
           <CardTitle className="text-xl">{g.title}</CardTitle>
           <div className="text-xs text-muted-foreground">
-            Mode simpan: {storageMode === 'supabase' ? 'Supabase' : 'Lokal'} {loading ? '• memuat...' : ''}
+            Mode simpan: {storageMode === 'supabase' ? 'Supabase' : 'Lokal'} {loading ? '• memuat...' : ''}{' '}
+            {loadingEstimates ? '• hitung estimasi...' : ''}
           </div>
         </CardHeader>
         <CardContent>
@@ -729,7 +853,9 @@ export default function BudgetForecastReport() {
             <table className="min-w-[1400px] w-full text-sm">
               <thead className="bg-slate-50">
                 <tr>
-                  <th className="px-3 py-2 text-left font-semibold text-slate-700">PAGU Anggaran</th>
+                  <th className="px-3 py-2 text-left font-semibold text-slate-700 sticky left-0 z-20 bg-slate-50 border-r">
+                    PAGU Anggaran
+                  </th>
                   {MONTHS.map((m) => (
                     <th key={m} className="px-2 py-2 text-right font-semibold text-slate-700 whitespace-nowrap">
                       {m}
