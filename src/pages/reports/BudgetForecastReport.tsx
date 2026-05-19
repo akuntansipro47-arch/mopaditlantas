@@ -189,7 +189,7 @@ function buildDefaultSheet(project: string, year: number): ForecastSheet {
     subtractions: {
       title: 'Pengurang (Kredit)',
       lines: [
-        { id: 'r2-sub-1', label: 'Pemakaian (oli + Part)', kind: 'subtraction', values: emptyMonths() },
+        { id: 'r2-sub-1', label: 'Pemakaian (oli + Part + Jasa)', kind: 'subtraction', values: emptyMonths() },
         { id: 'r2-sub-2', label: 'Subsidi untuk mencover pagu Mei R2 dan Juni R4', kind: 'subtraction', values: emptyMonths() },
         { id: 'r2-sub-3', label: 'Subsidi untuk mencover pagu Juni R4', kind: 'subtraction', values: emptyMonths() },
         { id: 'r2-sub-4', label: 'Subsidi ke R4 Mei 26', kind: 'subtraction', values: emptyMonths() },
@@ -235,7 +235,7 @@ function buildDefaultSheet(project: string, year: number): ForecastSheet {
     subtractions: {
       title: 'Pengurang (Kredit)',
       lines: [
-        { id: 'r4-sub-1', label: 'Pemakaian (oli + Part)', kind: 'subtraction', values: emptyMonths() },
+        { id: 'r4-sub-1', label: 'Pemakaian (oli + Part + Jasa)', kind: 'subtraction', values: emptyMonths() },
         { id: 'r4-sub-2', label: 'Subsidi untuk mencover pagu Mei R2 dan Juni R4', kind: 'subtraction', values: emptyMonths() },
         { id: 'r4-sub-3', label: 'Subsidi untuk R4 Juli 26', kind: 'subtraction', values: emptyMonths() },
         { id: 'r4-sub-4', label: 'Subsitusi ke R2 Mei', kind: 'subtraction', values: emptyMonths() },
@@ -345,7 +345,18 @@ export default function BudgetForecastReport() {
   const [detail, setDetail] = useState<{
     groupKey: 'R2' | 'R4';
     monthIndex: number;
-    rows: Array<{ entry_id: string; entry_date: string; wo_number: string; status: string; license_plate: string; total_real: number }>;
+    rows: Array<{
+      entry_id: string;
+      entry_date: string;
+      wo_number: string;
+      status: string;
+      license_plate: string;
+      real_job: number;
+      real_part: number;
+      total_real: number;
+    }>;
+    total_job: number;
+    total_part: number;
     total: number;
   } | null>(null);
   const [woCheck, setWoCheck] = useState('');
@@ -355,6 +366,8 @@ export default function BudgetForecastReport() {
     entry_date: string;
     groupKey: 'R2' | 'R4' | '';
     monthIndex: number;
+    real_job: number;
+    real_part: number;
     total_real: number;
     status: string;
     license_plate: string;
@@ -484,15 +497,21 @@ export default function BudgetForecastReport() {
           const bills = Array.isArray(woInfo?.work_order_billings) ? woInfo.work_order_billings : [];
           const entryParts = Array.isArray(entry?.vehicle_entry_spareparts) ? entry.vehicle_entry_spareparts : [];
 
+          let realJob = 0;
           let realPart = 0;
 
           bills.forEach((b: any) => {
+            const total = Number(b.total_price || 0);
             const qty = Number(b.qty || 0);
             const unit = Number(b.unit_price || 0);
             const type = String(b.item_type || '').toUpperCase();
 
+            if (type === 'JOB') {
+              realJob += total;
+              return;
+            }
+
             if (type === 'PART') {
-              const total = Number(b.total_price || 0);
               if (total > 0) {
                 realPart += total;
                 return;
@@ -514,9 +533,9 @@ export default function BudgetForecastReport() {
             }
           });
 
-          const totalPart = realPart;
-          if (!Number.isFinite(totalPart) || totalPart === 0) continue;
-          (sums as any)[groupKey][m] += totalPart;
+          const totalReal = realJob + realPart;
+          if (!Number.isFinite(totalReal) || totalReal === 0) continue;
+          (sums as any)[groupKey][m] += totalReal;
         }
 
         if (rows.length < pageSize) break;
@@ -591,7 +610,18 @@ export default function BudgetForecastReport() {
         from += pageSize;
       }
 
-      const outRows: Array<{ entry_id: string; entry_date: string; wo_number: string; status: string; license_plate: string; total_real: number }> = [];
+      const outRows: Array<{
+        entry_id: string;
+        entry_date: string;
+        wo_number: string;
+        status: string;
+        license_plate: string;
+        real_job: number;
+        real_part: number;
+        total_real: number;
+      }> = [];
+      let totalJob = 0;
+      let totalPart = 0;
       let total = 0;
 
       for (const entry of all) {
@@ -601,15 +631,16 @@ export default function BudgetForecastReport() {
         const bills = Array.isArray(woInfo?.work_order_billings) ? woInfo.work_order_billings : [];
         const entryParts = Array.isArray(entry?.vehicle_entry_spareparts) ? entry.vehicle_entry_spareparts : [];
 
+        let realJob = 0;
         let realPart = 0;
 
         bills.forEach((b: any) => {
+          const t = Number(b.total_price || 0);
           const qty = Number(b.qty || 0);
           const unit = Number(b.unit_price || 0);
           const type = String(b.item_type || '').toUpperCase();
 
           if (type === 'PART') {
-            const t = Number(b.total_price || 0);
             if (t > 0) {
               realPart += t;
               return;
@@ -624,22 +655,30 @@ export default function BudgetForecastReport() {
             const q = Number(matched?.qty || qty || 0);
             if (ep > 0 && q > 0) realPart += ep * q;
           }
+
+          if (type === 'JOB') {
+            realJob += t;
+          }
         });
 
-        const totalPart = realPart;
-        if (!Number.isFinite(totalPart) || totalPart === 0) continue;
-        total += totalPart;
+        const totalReal = realJob + realPart;
+        if (!Number.isFinite(totalReal) || totalReal === 0) continue;
+        totalJob += realJob;
+        totalPart += realPart;
+        total += totalReal;
         outRows.push({
           entry_id: String(entry.id),
           entry_date: String(entry.entry_date || ''),
           wo_number: String(woInfo?.wo_number || '-'),
           status: String(woInfo?.status || ''),
           license_plate: String(entry?.vehicles?.license_plate || '-'),
-          total_real: totalPart,
+          real_job: realJob,
+          real_part: realPart,
+          total_real: totalReal,
         });
       }
 
-      setDetail({ groupKey, monthIndex, rows: outRows, total });
+      setDetail({ groupKey, monthIndex, rows: outRows, total_job: totalJob, total_part: totalPart, total });
     } catch (e: any) {
       toast.error('Gagal memuat rincian pemakaian: ' + String(e?.message || e));
       setDetail(null);
@@ -689,15 +728,21 @@ export default function BudgetForecastReport() {
       const bills = Array.isArray((data as any).work_order_billings) ? (data as any).work_order_billings : [];
       const entryParts = Array.isArray(entry?.vehicle_entry_spareparts) ? entry.vehicle_entry_spareparts : [];
 
+      let realJob = 0;
       let realPart = 0;
 
       bills.forEach((b: any) => {
+        const total = Number(b.total_price || 0);
         const qty = Number(b.qty || 0);
         const unit = Number(b.unit_price || 0);
         const type = String(b.item_type || '').toUpperCase();
 
+        if (type === 'JOB') {
+          realJob += total;
+          return;
+        }
+
         if (type === 'PART') {
-          const total = Number(b.total_price || 0);
           if (total > 0) {
             realPart += total;
             return;
@@ -716,12 +761,14 @@ export default function BudgetForecastReport() {
         }
       });
 
-      const totalReal = realPart;
+      const totalReal = realJob + realPart;
       setWoCheckResult({
         wo_number: String((data as any).wo_number || q),
         entry_date: dateStr,
         groupKey,
         monthIndex,
+        real_job: realJob,
+        real_part: realPart,
         total_real: totalReal,
         status: String((data as any).status || ''),
         license_plate: String(entry?.vehicles?.license_plate || '-'),
@@ -745,6 +792,8 @@ export default function BudgetForecastReport() {
       'No. WO': r.wo_number,
       Status: r.status,
       Nopol: r.license_plate,
+      'Real. Jasa': r.real_job,
+      'Real. Part': r.real_part,
       'Total Realisasi': r.total_real,
     }));
     const ws = XLSX.utils.json_to_sheet(rows);
@@ -1050,6 +1099,23 @@ export default function BudgetForecastReport() {
     XLSX.writeFile(wb, `Forecasting_Anggaran_${safeProject}_${sheet.year}.xlsx`);
   }
 
+  function exportRealisasiRingkasExcel() {
+    const aoa: any[][] = [];
+    aoa.push([`Rekap Realisasi WO (Oli + Part + Jasa) • ${project} • ${year}`]);
+    aoa.push([]);
+    aoa.push(['Group', ...MONTHS, 'TOTAL']);
+    (['R2', 'R4'] as const).forEach((gk) => {
+      const vals = (gk === 'R2' ? realizationTotals.R2 : realizationTotals.R4).map((v) => Number(v || 0));
+      const total = vals.reduce((a, b) => a + b, 0);
+      aoa.push([gk, ...vals, total]);
+    });
+    const ws = XLSX.utils.aoa_to_sheet(aoa);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Rekap Realisasi');
+    const safeProject = String(project || 'HARWAT').replace(/[^a-z0-9_-]+/gi, '_');
+    XLSX.writeFile(wb, `Rekap_Realisasi_WO_${safeProject}_${year}.xlsx`);
+  }
+
   const headerRight = (
     <div className="flex flex-wrap items-center gap-2">
       <div className="flex items-center gap-2">
@@ -1256,6 +1322,62 @@ export default function BudgetForecastReport() {
         </CardContent>
       </Card>
 
+      <Card className="border-slate-200">
+        <CardHeader className="pb-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <CardTitle className="text-lg">Rekap Realisasi WO (Ringkas)</CardTitle>
+              <div className="text-xs text-muted-foreground mt-1">
+                Angka ini mengikuti rule Laporan Estimasi vs Realisasi dan direkap per bulan berdasarkan entry_date (R2/R4).
+                {loadingRealizations ? ' • Memuat...' : ''}
+              </div>
+            </div>
+            <Button variant="outline" onClick={exportRealisasiRingkasExcel}>
+              <Download className="h-4 w-4 mr-2" />
+              Export Rekap Excel
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <div className="border rounded-lg overflow-x-auto">
+            <table className="min-w-[1200px] w-full text-sm">
+              <thead className="bg-slate-50">
+                <tr>
+                  <th className="px-3 py-2 text-left font-semibold text-slate-700 sticky left-0 z-20 bg-slate-50 border-r">
+                    Group
+                  </th>
+                  {MONTHS.map((m) => (
+                    <th key={m} className="px-2 py-2 text-right font-semibold text-slate-700 whitespace-nowrap">
+                      {m}
+                    </th>
+                  ))}
+                  <th className="px-2 py-2 text-right font-semibold text-slate-700 whitespace-nowrap">Total</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(['R2', 'R4'] as const).map((gk) => {
+                  const vals = (gk === 'R2' ? realizationTotals.R2 : realizationTotals.R4).map((v) => Number(v || 0));
+                  const total = vals.reduce((a, b) => a + b, 0);
+                  return (
+                    <tr key={gk} className="border-t">
+                      <td className="px-3 py-2 font-medium text-slate-700 whitespace-nowrap sticky left-0 z-10 bg-white border-r">
+                        {gk}
+                      </td>
+                      {vals.map((v, idx) => (
+                        <td key={`${gk}-${idx}`} className="px-2 py-1 text-right whitespace-nowrap tabular-nums">
+                          {formatNumber(v, true)}
+                        </td>
+                      ))}
+                      <td className="px-2 py-1 text-right whitespace-nowrap tabular-nums font-semibold">{formatNumber(total, true)}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </CardContent>
+      </Card>
+
       {sheet.groups.map((g) => (
         <div key={g.key}>{renderGroup(g)}</div>
       ))}
@@ -1263,7 +1385,7 @@ export default function BudgetForecastReport() {
       <Dialog open={detailOpen} onOpenChange={setDetailOpen}>
         <DialogContent className="sm:max-w-[1000px] max-h-[85vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Rincian Pemakaian (oli + Part)</DialogTitle>
+            <DialogTitle>Rincian Pemakaian (oli + Part + Jasa)</DialogTitle>
             <DialogDescription>
               {detail ? `${detail.groupKey} • ${MONTHS[detail.monthIndex]} ${year}` : ''}
             </DialogDescription>
@@ -1292,7 +1414,9 @@ export default function BudgetForecastReport() {
                 {woCheckResult ? (
                   <div className="text-xs text-muted-foreground">
                     WO: {woCheckResult.wo_number} • Tgl entry: {woCheckResult.entry_date} • Group: {woCheckResult.groupKey || '-'} • Bulan:{' '}
-                    {woCheckResult.monthIndex >= 0 ? MONTHS[woCheckResult.monthIndex] : '-'} • Realisasi:{' '}
+                    {woCheckResult.monthIndex >= 0 ? MONTHS[woCheckResult.monthIndex] : '-'} • Real. Jasa:{' '}
+                    {new Intl.NumberFormat('id-ID', { maximumFractionDigits: 0 }).format(Number(woCheckResult.real_job || 0))} • Real. Part:{' '}
+                    {new Intl.NumberFormat('id-ID', { maximumFractionDigits: 0 }).format(Number(woCheckResult.real_part || 0))} • Total:{' '}
                     {new Intl.NumberFormat('id-ID', { maximumFractionDigits: 0 }).format(Number(woCheckResult.total_real || 0))}
                     {woCheckResult.monthIndex === detail.monthIndex && woCheckResult.groupKey === detail.groupKey ? (
                       detail.rows.some((r) => r.wo_number === woCheckResult.wo_number) ? (
@@ -1308,7 +1432,9 @@ export default function BudgetForecastReport() {
               </div>
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div className="text-sm font-semibold">
-                  Total: {new Intl.NumberFormat('id-ID', { maximumFractionDigits: 0 }).format(detail.total)}
+                  Total: {new Intl.NumberFormat('id-ID', { maximumFractionDigits: 0 }).format(detail.total)} (Jasa{' '}
+                  {new Intl.NumberFormat('id-ID', { maximumFractionDigits: 0 }).format(detail.total_job)} + Part{' '}
+                  {new Intl.NumberFormat('id-ID', { maximumFractionDigits: 0 }).format(detail.total_part)})
                 </div>
                 <Button variant="outline" size="sm" onClick={exportPemakaianDetailExcel}>
                   <Download className="h-4 w-4 mr-2" />
@@ -1323,7 +1449,9 @@ export default function BudgetForecastReport() {
                       <th className="text-left px-3 py-2">WO</th>
                       <th className="text-left px-3 py-2">Status</th>
                       <th className="text-left px-3 py-2">Nopol</th>
-                      <th className="text-right px-3 py-2">Total Realisasi</th>
+                      <th className="text-right px-3 py-2">Real. Jasa</th>
+                      <th className="text-right px-3 py-2">Real. Part</th>
+                      <th className="text-right px-3 py-2">Total</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1334,6 +1462,12 @@ export default function BudgetForecastReport() {
                         <td className="px-3 py-2 whitespace-nowrap">{r.status}</td>
                         <td className="px-3 py-2 whitespace-nowrap">{r.license_plate}</td>
                         <td className="px-3 py-2 text-right tabular-nums">
+                          {new Intl.NumberFormat('id-ID', { maximumFractionDigits: 0 }).format(Number(r.real_job || 0))}
+                        </td>
+                        <td className="px-3 py-2 text-right tabular-nums">
+                          {new Intl.NumberFormat('id-ID', { maximumFractionDigits: 0 }).format(Number(r.real_part || 0))}
+                        </td>
+                        <td className="px-3 py-2 text-right tabular-nums">
                           {new Intl.NumberFormat('id-ID', { maximumFractionDigits: 0 }).format(Number(r.total_real || 0))}
                         </td>
                       </tr>
@@ -1341,6 +1475,12 @@ export default function BudgetForecastReport() {
                     <tr className="border-t bg-slate-100 font-semibold">
                       <td className="px-3 py-2 text-right" colSpan={4}>
                         TOTAL
+                      </td>
+                      <td className="px-3 py-2 text-right tabular-nums">
+                        {new Intl.NumberFormat('id-ID', { maximumFractionDigits: 0 }).format(Number(detail.total_job || 0))}
+                      </td>
+                      <td className="px-3 py-2 text-right tabular-nums">
+                        {new Intl.NumberFormat('id-ID', { maximumFractionDigits: 0 }).format(Number(detail.total_part || 0))}
                       </td>
                       <td className="px-3 py-2 text-right tabular-nums">
                         {new Intl.NumberFormat('id-ID', { maximumFractionDigits: 0 }).format(Number(detail.total || 0))}
