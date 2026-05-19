@@ -374,9 +374,10 @@ export default function BudgetForecastReport() {
             work_date,
             created_at,
             vehicle_entries (
-              vehicles (vehicle_type)
-            ),
-            work_order_billings (total_price)
+              vehicles (vehicle_type),
+              vehicle_entry_jobs (estimated_price, value_only),
+              vehicle_entry_spareparts (qty, estimated_price, value_only)
+            )
           `
           )
           .not('vehicle_entry_id', 'is', null)
@@ -397,7 +398,16 @@ export default function BudgetForecastReport() {
           const m = d && Number.isFinite(d.getTime()) ? d.getMonth() : -1;
           if (m < 0 || m > 11) continue;
 
-          const total = (wo?.work_order_billings || []).reduce((acc: number, b: any) => acc + Number(b?.total_price || 0), 0);
+          const ve = Array.isArray(wo?.vehicle_entries) ? wo.vehicle_entries[0] : wo?.vehicle_entries;
+          const jobs = Array.isArray(ve?.vehicle_entry_jobs) ? ve.vehicle_entry_jobs : [];
+          const parts = Array.isArray(ve?.vehicle_entry_spareparts) ? ve.vehicle_entry_spareparts : [];
+          const totalJobs = jobs.reduce((acc: number, j: any) => acc + (Boolean(j?.value_only) ? 0 : Number(j?.estimated_price || 0)), 0);
+          const totalParts = parts.reduce(
+            (acc: number, p: any) =>
+              acc + (Boolean(p?.value_only) ? 0 : Number(p?.estimated_price || 0) * (Number(p?.qty || 0) || 0)),
+            0
+          );
+          const total = totalJobs + totalParts;
           if (!Number.isFinite(total) || total === 0) continue;
           (sums as any)[groupKey][m] += total;
         }
@@ -417,9 +427,10 @@ export default function BudgetForecastReport() {
             work_date,
             created_at,
             vehicle_entries (
-              vehicles (vehicle_type)
-            ),
-            work_order_billings (total_price)
+              vehicles (vehicle_type),
+              vehicle_entry_jobs (estimated_price, value_only),
+              vehicle_entry_spareparts (qty, estimated_price, value_only)
+            )
           `
           )
           .not('vehicle_entry_id', 'is', null)
@@ -441,7 +452,16 @@ export default function BudgetForecastReport() {
           const m = d && Number.isFinite(d.getTime()) ? d.getMonth() : -1;
           if (m < 0 || m > 11) continue;
 
-          const total = (wo?.work_order_billings || []).reduce((acc: number, b: any) => acc + Number(b?.total_price || 0), 0);
+          const ve = Array.isArray(wo?.vehicle_entries) ? wo.vehicle_entries[0] : wo?.vehicle_entries;
+          const jobs = Array.isArray(ve?.vehicle_entry_jobs) ? ve.vehicle_entry_jobs : [];
+          const parts = Array.isArray(ve?.vehicle_entry_spareparts) ? ve.vehicle_entry_spareparts : [];
+          const totalJobs = jobs.reduce((acc: number, j: any) => acc + (Boolean(j?.value_only) ? 0 : Number(j?.estimated_price || 0)), 0);
+          const totalParts = parts.reduce(
+            (acc: number, p: any) =>
+              acc + (Boolean(p?.value_only) ? 0 : Number(p?.estimated_price || 0) * (Number(p?.qty || 0) || 0)),
+            0
+          );
+          const total = totalJobs + totalParts;
           if (!Number.isFinite(total) || total === 0) continue;
           (sums as any)[groupKey][m] += total;
         }
