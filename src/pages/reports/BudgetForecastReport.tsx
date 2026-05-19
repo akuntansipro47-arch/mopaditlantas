@@ -189,7 +189,7 @@ function buildDefaultSheet(project: string, year: number): ForecastSheet {
     subtractions: {
       title: 'Pengurang (Kredit)',
       lines: [
-        { id: 'r2-sub-1', label: 'Pemakaian (oli + Part + Jasa)', kind: 'subtraction', values: emptyMonths() },
+        { id: 'r2-sub-1', label: 'Pemakaian (oli + Part)', kind: 'subtraction', values: emptyMonths() },
         { id: 'r2-sub-2', label: 'Subsidi untuk mencover pagu Mei R2 dan Juni R4', kind: 'subtraction', values: emptyMonths() },
         { id: 'r2-sub-3', label: 'Subsidi untuk mencover pagu Juni R4', kind: 'subtraction', values: emptyMonths() },
         { id: 'r2-sub-4', label: 'Subsidi ke R4 Mei 26', kind: 'subtraction', values: emptyMonths() },
@@ -235,7 +235,7 @@ function buildDefaultSheet(project: string, year: number): ForecastSheet {
     subtractions: {
       title: 'Pengurang (Kredit)',
       lines: [
-        { id: 'r4-sub-1', label: 'Pemakaian (oli + Part + Jasa)', kind: 'subtraction', values: emptyMonths() },
+        { id: 'r4-sub-1', label: 'Pemakaian (oli + Part)', kind: 'subtraction', values: emptyMonths() },
         { id: 'r4-sub-2', label: 'Subsidi untuk mencover pagu Mei R2 dan Juni R4', kind: 'subtraction', values: emptyMonths() },
         { id: 'r4-sub-3', label: 'Subsidi untuk R4 Juli 26', kind: 'subtraction', values: emptyMonths() },
         { id: 'r4-sub-4', label: 'Subsitusi ke R2 Mei', kind: 'subtraction', values: emptyMonths() },
@@ -337,8 +337,8 @@ export default function BudgetForecastReport() {
   const [editMode, setEditMode] = useState(false);
   const [storageMode, setStorageMode] = useState<'supabase' | 'local'>('supabase');
   const [dbReady, setDbReady] = useState(true);
-  const [realizationTotals, setRealizationTotals] = useState<{ R2: number[]; R4: number[] }>({ R2: emptyMonths(), R4: emptyMonths() });
-  const [loadingRealizations, setLoadingRealizations] = useState(false);
+  const [estimationTotals, setEstimationTotals] = useState<{ R2: number[]; R4: number[] }>({ R2: emptyMonths(), R4: emptyMonths() });
+  const [loadingEstimations, setLoadingEstimations] = useState(false);
 
   const [detailOpen, setDetailOpen] = useState(false);
   const [detailLoading, setDetailLoading] = useState(false);
@@ -351,9 +351,9 @@ export default function BudgetForecastReport() {
       wo_number: string;
       status: string;
       license_plate: string;
-      real_job: number;
-      real_part: number;
-      total_real: number;
+      est_job: number;
+      est_part: number;
+      total_est: number;
     }>;
     total_job: number;
     total_part: number;
@@ -366,9 +366,9 @@ export default function BudgetForecastReport() {
     entry_date: string;
     groupKey: 'R2' | 'R4' | '';
     monthIndex: number;
-    real_job: number;
-    real_part: number;
-    total_real: number;
+    est_job: number;
+    est_part: number;
+    total_est: number;
     status: string;
     license_plate: string;
   } | null>(null);
@@ -385,23 +385,8 @@ export default function BudgetForecastReport() {
   }, [project, year]);
 
   useEffect(() => {
-    void loadRealizationTotals();
+    void loadEstimationTotals();
   }, [project, year]);
-
-  const normalizeText = (v: string) =>
-    String(v || '')
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, ' ')
-      .trim()
-      .replace(/\s+/g, ' ');
-
-  const isNameMatch = (a: string, b: string) => {
-    const aa = normalizeText(a);
-    const bb = normalizeText(b);
-    if (!aa || !bb) return false;
-    if (aa === bb) return true;
-    return aa.includes(bb) || bb.includes(aa);
-  };
 
   const pickWorkOrder = (workOrders: any[] | null | undefined) => {
     const arr = Array.isArray(workOrders) ? workOrders : [];
@@ -437,14 +422,23 @@ export default function BudgetForecastReport() {
     return '';
   };
 
-  async function loadRealizationTotals() {
-    const p = String(project || '').trim().toUpperCase() || 'HARWAT';
+  const getJobEstimation = (j: any) => {
+    const epRaw = (j as any)?.estimated_price;
+    const ep = Number(epRaw);
+    const sp = Number(j?.job_types?.selling_price || 0);
+    if (Number.isFinite(ep) && ep > 0) return ep;
+    if ((!Number.isFinite(ep) || epRaw === null || epRaw === undefined) && sp > 0) return sp;
+    if (Number.isFinite(ep) && ep === 0 && sp > 0) return sp;
+    return Number.isFinite(ep) ? ep : 0;
+  };
+
+  async function loadEstimationTotals() {
     const y = Number(year) || new Date().getFullYear();
     const startDate = `${y}-01-01`;
     const endDate = `${y}-12-31`;
 
     const sums = { R2: emptyMonths(), R4: emptyMonths() };
-    setLoadingRealizations(true);
+    setLoadingEstimations(true);
     try {
       const pageSize = 500;
       let from = 0;
@@ -457,21 +451,11 @@ export default function BudgetForecastReport() {
             entry_date,
             service_group,
             vehicles (vehicle_type),
-            work_orders (
-              id,
-              status,
-              work_date,
-              created_at,
-              work_order_billings (
-                item_type,
-                item_name,
-                qty,
-                unit_price,
-                total_price
-              )
+            vehicle_entry_jobs (
+              estimated_price,
+              job_types (selling_price)
             ),
             vehicle_entry_spareparts (
-              item_name,
               qty,
               estimated_price
             )
@@ -493,65 +477,39 @@ export default function BudgetForecastReport() {
           const m = Number.isFinite(mm) && mm >= 1 && mm <= 12 ? mm - 1 : -1;
           if (m < 0 || m > 11) continue;
 
-          const woInfo = pickWorkOrder(entry?.work_orders);
-          const bills = Array.isArray(woInfo?.work_order_billings) ? woInfo.work_order_billings : [];
-          const entryParts = Array.isArray(entry?.vehicle_entry_spareparts) ? entry.vehicle_entry_spareparts : [];
+          let estJob = 0;
+          let estPart = 0;
 
-          let realJob = 0;
-          let realPart = 0;
+          const jobs = Array.isArray(entry?.vehicle_entry_jobs) ? entry.vehicle_entry_jobs : [];
+          const parts = Array.isArray(entry?.vehicle_entry_spareparts) ? entry.vehicle_entry_spareparts : [];
 
-          bills.forEach((b: any) => {
-            const total = Number(b.total_price || 0);
-            const qty = Number(b.qty || 0);
-            const unit = Number(b.unit_price || 0);
-            const type = String(b.item_type || '').toUpperCase();
-
-            if (type === 'JOB') {
-              realJob += total;
-              return;
-            }
-
-            if (type === 'PART') {
-              if (total > 0) {
-                realPart += total;
-                return;
-              }
-
-              if (unit > 0 && qty > 0) {
-                realPart += unit * qty;
-                return;
-              }
-
-              const billName = String(b.item_name || '').replace(/^Penggantian\s+/i, '').trim();
-              const matched = entryParts.find((p: any) => isNameMatch(String(p.item_name || ''), billName));
-              const ep = Number(matched?.estimated_price || 0);
-              const q = Number(matched?.qty || qty || 0);
-              if (ep > 0 && q > 0) {
-                realPart += ep * q;
-                return;
-              }
-            }
+          jobs.forEach((j: any) => {
+            estJob += getJobEstimation(j);
           });
 
-          const totalReal = realJob + realPart;
-          if (!Number.isFinite(totalReal) || totalReal === 0) continue;
-          (sums as any)[groupKey][m] += totalReal;
+          parts.forEach((pt: any) => {
+            estPart += Number(pt?.estimated_price || 0) * Number(pt?.qty || 0);
+          });
+
+          const totalEst = estJob + estPart;
+          if (!Number.isFinite(totalEst) || totalEst === 0) continue;
+          (sums as any)[groupKey][m] += totalEst;
         }
 
         if (rows.length < pageSize) break;
         from += pageSize;
       }
-      setRealizationTotals(sums);
+      setEstimationTotals(sums);
     } catch (e: any) {
       const msg = String(e?.message || e);
       if (msg.toLowerCase().includes('could not find the table')) {
-        setRealizationTotals({ R2: emptyMonths(), R4: emptyMonths() });
+        setEstimationTotals({ R2: emptyMonths(), R4: emptyMonths() });
         return;
       }
-      toast.error('Gagal memuat total realisasi: ' + msg);
-      setRealizationTotals({ R2: emptyMonths(), R4: emptyMonths() });
+      toast.error('Gagal memuat total estimasi: ' + msg);
+      setEstimationTotals({ R2: emptyMonths(), R4: emptyMonths() });
     } finally {
-      setLoadingRealizations(false);
+      setLoadingEstimations(false);
     }
   }
 
@@ -582,17 +540,13 @@ export default function BudgetForecastReport() {
               wo_number,
               status,
               work_date,
-              created_at,
-              work_order_billings (
-                item_type,
-                item_name,
-                qty,
-                unit_price,
-                total_price
-              )
+              created_at
+            ),
+            vehicle_entry_jobs (
+              estimated_price,
+              job_types (selling_price)
             ),
             vehicle_entry_spareparts (
-              item_name,
               qty,
               estimated_price
             )
@@ -616,9 +570,9 @@ export default function BudgetForecastReport() {
         wo_number: string;
         status: string;
         license_plate: string;
-        real_job: number;
-        real_part: number;
-        total_real: number;
+        est_job: number;
+        est_part: number;
+        total_est: number;
       }> = [];
       let totalJob = 0;
       let totalPart = 0;
@@ -628,53 +582,35 @@ export default function BudgetForecastReport() {
         const gk = getGroupKey(entry);
         if (gk !== groupKey) continue;
         const woInfo = pickWorkOrder(entry?.work_orders);
-        const bills = Array.isArray(woInfo?.work_order_billings) ? woInfo.work_order_billings : [];
-        const entryParts = Array.isArray(entry?.vehicle_entry_spareparts) ? entry.vehicle_entry_spareparts : [];
 
-        let realJob = 0;
-        let realPart = 0;
+        let estJob = 0;
+        let estPart = 0;
 
-        bills.forEach((b: any) => {
-          const t = Number(b.total_price || 0);
-          const qty = Number(b.qty || 0);
-          const unit = Number(b.unit_price || 0);
-          const type = String(b.item_type || '').toUpperCase();
+        const jobs = Array.isArray(entry?.vehicle_entry_jobs) ? entry.vehicle_entry_jobs : [];
+        const parts = Array.isArray(entry?.vehicle_entry_spareparts) ? entry.vehicle_entry_spareparts : [];
 
-          if (type === 'PART') {
-            if (t > 0) {
-              realPart += t;
-              return;
-            }
-            if (unit > 0 && qty > 0) {
-              realPart += unit * qty;
-              return;
-            }
-            const billName = String(b.item_name || '').replace(/^Penggantian\s+/i, '').trim();
-            const matched = entryParts.find((p: any) => isNameMatch(String(p.item_name || ''), billName));
-            const ep = Number(matched?.estimated_price || 0);
-            const q = Number(matched?.qty || qty || 0);
-            if (ep > 0 && q > 0) realPart += ep * q;
-          }
-
-          if (type === 'JOB') {
-            realJob += t;
-          }
+        jobs.forEach((j: any) => {
+          estJob += getJobEstimation(j);
         });
 
-        const totalReal = realJob + realPart;
-        if (!Number.isFinite(totalReal) || totalReal === 0) continue;
-        totalJob += realJob;
-        totalPart += realPart;
-        total += totalReal;
+        parts.forEach((pt: any) => {
+          estPart += Number(pt?.estimated_price || 0) * Number(pt?.qty || 0);
+        });
+
+        const totalEst = estJob + estPart;
+        if (!Number.isFinite(totalEst) || totalEst === 0) continue;
+        totalJob += estJob;
+        totalPart += estPart;
+        total += totalEst;
         outRows.push({
           entry_id: String(entry.id),
           entry_date: String(entry.entry_date || ''),
           wo_number: String(woInfo?.wo_number || '-'),
           status: String(woInfo?.status || ''),
           license_plate: String(entry?.vehicles?.license_plate || '-'),
-          real_job: realJob,
-          real_part: realPart,
-          total_real: totalReal,
+          est_job: estJob,
+          est_part: estPart,
+          total_est: totalEst,
         });
       }
 
@@ -705,9 +641,12 @@ export default function BudgetForecastReport() {
             entry_date,
             service_group,
             vehicles (license_plate, vehicle_type),
-            vehicle_entry_spareparts (item_name, qty, estimated_price)
-          ),
-          work_order_billings (item_type, item_name, qty, unit_price, total_price)
+            vehicle_entry_jobs (
+              estimated_price,
+              job_types (selling_price)
+            ),
+            vehicle_entry_spareparts (qty, estimated_price)
+          )
         `
         )
         .eq('wo_number', q)
@@ -725,51 +664,25 @@ export default function BudgetForecastReport() {
       const mm = Number(dateStr.slice(5, 7));
       const monthIndex = Number.isFinite(mm) && mm >= 1 && mm <= 12 ? mm - 1 : -1;
 
-      const bills = Array.isArray((data as any).work_order_billings) ? (data as any).work_order_billings : [];
-      const entryParts = Array.isArray(entry?.vehicle_entry_spareparts) ? entry.vehicle_entry_spareparts : [];
-
-      let realJob = 0;
-      let realPart = 0;
-
-      bills.forEach((b: any) => {
-        const total = Number(b.total_price || 0);
-        const qty = Number(b.qty || 0);
-        const unit = Number(b.unit_price || 0);
-        const type = String(b.item_type || '').toUpperCase();
-
-        if (type === 'JOB') {
-          realJob += total;
-          return;
-        }
-
-        if (type === 'PART') {
-          if (total > 0) {
-            realPart += total;
-            return;
-          }
-
-          if (unit > 0 && qty > 0) {
-            realPart += unit * qty;
-            return;
-          }
-
-          const billName = String(b.item_name || '').replace(/^Penggantian\s+/i, '').trim();
-          const matched = entryParts.find((p: any) => isNameMatch(String(p.item_name || ''), billName));
-          const ep = Number(matched?.estimated_price || 0);
-          const qn = Number(matched?.qty || qty || 0);
-          if (ep > 0 && qn > 0) realPart += ep * qn;
-        }
+      let estJob = 0;
+      let estPart = 0;
+      const jobs = Array.isArray(entry?.vehicle_entry_jobs) ? entry.vehicle_entry_jobs : [];
+      const parts = Array.isArray(entry?.vehicle_entry_spareparts) ? entry.vehicle_entry_spareparts : [];
+      jobs.forEach((j: any) => {
+        estJob += getJobEstimation(j);
       });
-
-      const totalReal = realJob + realPart;
+      parts.forEach((pt: any) => {
+        estPart += Number(pt?.estimated_price || 0) * Number(pt?.qty || 0);
+      });
+      const totalEst = estJob + estPart;
       setWoCheckResult({
         wo_number: String((data as any).wo_number || q),
         entry_date: dateStr,
         groupKey,
         monthIndex,
-        real_job: realJob,
-        real_part: realPart,
-        total_real: totalReal,
+        est_job: estJob,
+        est_part: estPart,
+        total_est: totalEst,
         status: String((data as any).status || ''),
         license_plate: String(entry?.vehicles?.license_plate || '-'),
       });
@@ -792,9 +705,9 @@ export default function BudgetForecastReport() {
       'No. WO': r.wo_number,
       Status: r.status,
       Nopol: r.license_plate,
-      'Real. Jasa': r.real_job,
-      'Real. Part': r.real_part,
-      'Total Realisasi': r.total_real,
+      'Est. Jasa': r.est_job,
+      'Est. Part': r.est_part,
+      'Total Estimasi': r.total_est,
     }));
     const ws = XLSX.utils.json_to_sheet(rows);
     const wb = XLSX.utils.book_new();
@@ -811,7 +724,7 @@ export default function BudgetForecastReport() {
   }
 
   function getAutoPemakaianValues(groupKey: 'R2' | 'R4') {
-    return (groupKey === 'R2' ? realizationTotals.R2 : realizationTotals.R4).map((v) => -Number(v || 0));
+    return (groupKey === 'R2' ? estimationTotals.R2 : estimationTotals.R4).map((v) => -Number(v || 0));
   }
 
   async function loadSheet() {
@@ -991,7 +904,7 @@ export default function BudgetForecastReport() {
       out[g.key] = { nett, balance, base, sections: [g.deductions, g.additions, g.subtractions] };
     }
     return out;
-  }, [sheet, realizationTotals]);
+  }, [sheet, estimationTotals]);
 
   function setCell(groupKey: 'R2' | 'R4', lineId: string, monthIndex: number, value: number) {
     setSheet((prev) => {
@@ -1099,21 +1012,21 @@ export default function BudgetForecastReport() {
     XLSX.writeFile(wb, `Forecasting_Anggaran_${safeProject}_${sheet.year}.xlsx`);
   }
 
-  function exportRealisasiRingkasExcel() {
+  function exportEstimasiRingkasExcel() {
     const aoa: any[][] = [];
-    aoa.push([`Rekap Realisasi WO (Oli + Part + Jasa) • ${project} • ${year}`]);
+    aoa.push([`Rekap Estimasi (Jasa + Part) • ${project} • ${year}`]);
     aoa.push([]);
     aoa.push(['Group', ...MONTHS, 'TOTAL']);
     (['R2', 'R4'] as const).forEach((gk) => {
-      const vals = (gk === 'R2' ? realizationTotals.R2 : realizationTotals.R4).map((v) => Number(v || 0));
+      const vals = (gk === 'R2' ? estimationTotals.R2 : estimationTotals.R4).map((v) => Number(v || 0));
       const total = vals.reduce((a, b) => a + b, 0);
       aoa.push([gk, ...vals, total]);
     });
     const ws = XLSX.utils.aoa_to_sheet(aoa);
     const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'Rekap Realisasi');
+    XLSX.utils.book_append_sheet(wb, ws, 'Rekap Estimasi');
     const safeProject = String(project || 'HARWAT').replace(/[^a-z0-9_-]+/gi, '_');
-    XLSX.writeFile(wb, `Rekap_Realisasi_WO_${safeProject}_${year}.xlsx`);
+    XLSX.writeFile(wb, `Rekap_Estimasi_${safeProject}_${year}.xlsx`);
   }
 
   const headerRight = (
@@ -1232,7 +1145,7 @@ export default function BudgetForecastReport() {
         <CardHeader className="pb-3">
           <CardTitle className="text-xl">{g.title}</CardTitle>
           <div className="text-xs text-muted-foreground">
-            Mode simpan: Supabase {loading ? '• memuat...' : ''} {loadingRealizations ? '• hitung pemakaian...' : ''}
+            Mode simpan: Supabase {loading ? '• memuat...' : ''} {loadingEstimations ? '• hitung pemakaian...' : ''}
           </div>
         </CardHeader>
         <CardContent>
@@ -1326,13 +1239,13 @@ export default function BudgetForecastReport() {
         <CardHeader className="pb-3">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div>
-              <CardTitle className="text-lg">Rekap Realisasi WO (Ringkas)</CardTitle>
+              <CardTitle className="text-lg">Rekap Estimasi (Ringkas)</CardTitle>
               <div className="text-xs text-muted-foreground mt-1">
-                Angka ini mengikuti rule Laporan Estimasi vs Realisasi dan direkap per bulan berdasarkan entry_date (R2/R4).
-                {loadingRealizations ? ' • Memuat...' : ''}
+                Angka ini merekap total estimasi (jasa + part) per bulan berdasarkan entry_date (R2/R4).
+                {loadingEstimations ? ' • Memuat...' : ''}
               </div>
             </div>
-            <Button variant="outline" onClick={exportRealisasiRingkasExcel}>
+            <Button variant="outline" onClick={exportEstimasiRingkasExcel}>
               <Download className="h-4 w-4 mr-2" />
               Export Rekap Excel
             </Button>
@@ -1356,7 +1269,7 @@ export default function BudgetForecastReport() {
               </thead>
               <tbody>
                 {(['R2', 'R4'] as const).map((gk) => {
-                  const vals = (gk === 'R2' ? realizationTotals.R2 : realizationTotals.R4).map((v) => Number(v || 0));
+                  const vals = (gk === 'R2' ? estimationTotals.R2 : estimationTotals.R4).map((v) => Number(v || 0));
                   const total = vals.reduce((a, b) => a + b, 0);
                   return (
                     <tr key={gk} className="border-t">
@@ -1385,7 +1298,7 @@ export default function BudgetForecastReport() {
       <Dialog open={detailOpen} onOpenChange={setDetailOpen}>
         <DialogContent className="sm:max-w-[1000px] max-h-[85vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Rincian Pemakaian (oli + Part + Jasa)</DialogTitle>
+            <DialogTitle>Rincian Pemakaian (oli + Part)</DialogTitle>
             <DialogDescription>
               {detail ? `${detail.groupKey} • ${MONTHS[detail.monthIndex]} ${year}` : ''}
             </DialogDescription>
@@ -1414,10 +1327,10 @@ export default function BudgetForecastReport() {
                 {woCheckResult ? (
                   <div className="text-xs text-muted-foreground">
                     WO: {woCheckResult.wo_number} • Tgl entry: {woCheckResult.entry_date} • Group: {woCheckResult.groupKey || '-'} • Bulan:{' '}
-                    {woCheckResult.monthIndex >= 0 ? MONTHS[woCheckResult.monthIndex] : '-'} • Real. Jasa:{' '}
-                    {new Intl.NumberFormat('id-ID', { maximumFractionDigits: 0 }).format(Number(woCheckResult.real_job || 0))} • Real. Part:{' '}
-                    {new Intl.NumberFormat('id-ID', { maximumFractionDigits: 0 }).format(Number(woCheckResult.real_part || 0))} • Total:{' '}
-                    {new Intl.NumberFormat('id-ID', { maximumFractionDigits: 0 }).format(Number(woCheckResult.total_real || 0))}
+                    {woCheckResult.monthIndex >= 0 ? MONTHS[woCheckResult.monthIndex] : '-'} • Est. Jasa:{' '}
+                    {new Intl.NumberFormat('id-ID', { maximumFractionDigits: 0 }).format(Number(woCheckResult.est_job || 0))} • Est. Part:{' '}
+                    {new Intl.NumberFormat('id-ID', { maximumFractionDigits: 0 }).format(Number(woCheckResult.est_part || 0))} • Total:{' '}
+                    {new Intl.NumberFormat('id-ID', { maximumFractionDigits: 0 }).format(Number(woCheckResult.total_est || 0))}
                     {woCheckResult.monthIndex === detail.monthIndex && woCheckResult.groupKey === detail.groupKey ? (
                       detail.rows.some((r) => r.wo_number === woCheckResult.wo_number) ? (
                         ' • Status: ADA di rincian'
@@ -1449,8 +1362,8 @@ export default function BudgetForecastReport() {
                       <th className="text-left px-3 py-2">WO</th>
                       <th className="text-left px-3 py-2">Status</th>
                       <th className="text-left px-3 py-2">Nopol</th>
-                      <th className="text-right px-3 py-2">Real. Jasa</th>
-                      <th className="text-right px-3 py-2">Real. Part</th>
+                      <th className="text-right px-3 py-2">Est. Jasa</th>
+                      <th className="text-right px-3 py-2">Est. Part</th>
                       <th className="text-right px-3 py-2">Total</th>
                     </tr>
                   </thead>
@@ -1462,13 +1375,13 @@ export default function BudgetForecastReport() {
                         <td className="px-3 py-2 whitespace-nowrap">{r.status}</td>
                         <td className="px-3 py-2 whitespace-nowrap">{r.license_plate}</td>
                         <td className="px-3 py-2 text-right tabular-nums">
-                          {new Intl.NumberFormat('id-ID', { maximumFractionDigits: 0 }).format(Number(r.real_job || 0))}
+                          {new Intl.NumberFormat('id-ID', { maximumFractionDigits: 0 }).format(Number(r.est_job || 0))}
                         </td>
                         <td className="px-3 py-2 text-right tabular-nums">
-                          {new Intl.NumberFormat('id-ID', { maximumFractionDigits: 0 }).format(Number(r.real_part || 0))}
+                          {new Intl.NumberFormat('id-ID', { maximumFractionDigits: 0 }).format(Number(r.est_part || 0))}
                         </td>
                         <td className="px-3 py-2 text-right tabular-nums">
-                          {new Intl.NumberFormat('id-ID', { maximumFractionDigits: 0 }).format(Number(r.total_real || 0))}
+                          {new Intl.NumberFormat('id-ID', { maximumFractionDigits: 0 }).format(Number(r.total_est || 0))}
                         </td>
                       </tr>
                     ))}
@@ -1490,7 +1403,7 @@ export default function BudgetForecastReport() {
                 </table>
               </div>
               <div className="text-xs text-muted-foreground">
-                Catatan: rincian ini dihitung dengan rule yang sama seperti Laporan Estimasi vs Realisasi (WO dipilih berdasarkan prioritas status).
+                Catatan: rincian ini menjumlahkan total estimasi (jasa + part) dari entry (berdasarkan entry_date), dipisah sesuai group R2/R4.
               </div>
             </div>
           )}
