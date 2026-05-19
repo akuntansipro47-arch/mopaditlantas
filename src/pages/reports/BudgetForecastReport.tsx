@@ -484,21 +484,15 @@ export default function BudgetForecastReport() {
           const bills = Array.isArray(woInfo?.work_order_billings) ? woInfo.work_order_billings : [];
           const entryParts = Array.isArray(entry?.vehicle_entry_spareparts) ? entry.vehicle_entry_spareparts : [];
 
-          let realJob = 0;
           let realPart = 0;
 
           bills.forEach((b: any) => {
-            const total = Number(b.total_price || 0);
             const qty = Number(b.qty || 0);
             const unit = Number(b.unit_price || 0);
             const type = String(b.item_type || '').toUpperCase();
 
-            if (type === 'JOB') {
-              realJob += total;
-              return;
-            }
-
             if (type === 'PART') {
+              const total = Number(b.total_price || 0);
               if (total > 0) {
                 realPart += total;
                 return;
@@ -520,9 +514,9 @@ export default function BudgetForecastReport() {
             }
           });
 
-          const totalReal = realJob + realPart;
-          if (!Number.isFinite(totalReal) || totalReal === 0) continue;
-          (sums as any)[groupKey][m] += totalReal;
+          const totalPart = realPart;
+          if (!Number.isFinite(totalPart) || totalPart === 0) continue;
+          (sums as any)[groupKey][m] += totalPart;
         }
 
         if (rows.length < pageSize) break;
@@ -607,20 +601,15 @@ export default function BudgetForecastReport() {
         const bills = Array.isArray(woInfo?.work_order_billings) ? woInfo.work_order_billings : [];
         const entryParts = Array.isArray(entry?.vehicle_entry_spareparts) ? entry.vehicle_entry_spareparts : [];
 
-        let realJob = 0;
         let realPart = 0;
 
         bills.forEach((b: any) => {
-          const t = Number(b.total_price || 0);
           const qty = Number(b.qty || 0);
           const unit = Number(b.unit_price || 0);
           const type = String(b.item_type || '').toUpperCase();
 
-          if (type === 'JOB') {
-            realJob += t;
-            return;
-          }
           if (type === 'PART') {
+            const t = Number(b.total_price || 0);
             if (t > 0) {
               realPart += t;
               return;
@@ -637,16 +626,16 @@ export default function BudgetForecastReport() {
           }
         });
 
-        const totalReal = realJob + realPart;
-        if (!Number.isFinite(totalReal) || totalReal === 0) continue;
-        total += totalReal;
+        const totalPart = realPart;
+        if (!Number.isFinite(totalPart) || totalPart === 0) continue;
+        total += totalPart;
         outRows.push({
           entry_id: String(entry.id),
           entry_date: String(entry.entry_date || ''),
           wo_number: String(woInfo?.wo_number || '-'),
           status: String(woInfo?.status || ''),
           license_plate: String(entry?.vehicles?.license_plate || '-'),
-          total_real: totalReal,
+          total_real: totalPart,
         });
       }
 
@@ -700,21 +689,15 @@ export default function BudgetForecastReport() {
       const bills = Array.isArray((data as any).work_order_billings) ? (data as any).work_order_billings : [];
       const entryParts = Array.isArray(entry?.vehicle_entry_spareparts) ? entry.vehicle_entry_spareparts : [];
 
-      let realJob = 0;
       let realPart = 0;
 
       bills.forEach((b: any) => {
-        const total = Number(b.total_price || 0);
         const qty = Number(b.qty || 0);
         const unit = Number(b.unit_price || 0);
         const type = String(b.item_type || '').toUpperCase();
 
-        if (type === 'JOB') {
-          realJob += total;
-          return;
-        }
-
         if (type === 'PART') {
+          const total = Number(b.total_price || 0);
           if (total > 0) {
             realPart += total;
             return;
@@ -733,7 +716,7 @@ export default function BudgetForecastReport() {
         }
       });
 
-      const totalReal = realJob + realPart;
+      const totalReal = realPart;
       setWoCheckResult({
         wo_number: String((data as any).wo_number || q),
         entry_date: dateStr,
