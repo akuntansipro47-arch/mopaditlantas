@@ -336,8 +336,8 @@ export default function BudgetForecastReport() {
   const [editMode, setEditMode] = useState(false);
   const [storageMode, setStorageMode] = useState<'supabase' | 'local'>('supabase');
   const [dbReady, setDbReady] = useState(true);
-  const [estimateTotals, setEstimateTotals] = useState<{ R2: number[]; R4: number[] }>({ R2: emptyMonths(), R4: emptyMonths() });
-  const [loadingEstimates, setLoadingEstimates] = useState(false);
+  const [realizationTotals, setRealizationTotals] = useState<{ R2: number[]; R4: number[] }>({ R2: emptyMonths(), R4: emptyMonths() });
+  const [loadingRealizations, setLoadingRealizations] = useState(false);
 
   useEffect(() => {
     const p = String(project || '').trim().toUpperCase() || 'HARWAT';
@@ -349,138 +349,172 @@ export default function BudgetForecastReport() {
   }, [project, year]);
 
   useEffect(() => {
-    void loadEstimateTotals();
+    void loadRealizationTotals();
   }, [project, year]);
 
-  async function loadEstimateTotals() {
+  const normalizeText = (v: string) =>
+    String(v || '')
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, ' ')
+      .trim()
+      .replace(/\s+/g, ' ');
+
+  const isNameMatch = (a: string, b: string) => {
+    const aa = normalizeText(a);
+    const bb = normalizeText(b);
+    if (!aa || !bb) return false;
+    if (aa === bb) return true;
+    return aa.includes(bb) || bb.includes(aa);
+  };
+
+  const pickWorkOrder = (workOrders: any[] | null | undefined) => {
+    const arr = Array.isArray(workOrders) ? workOrders : [];
+    if (arr.length === 0) return null;
+    const statusRank = (s: any) => {
+      const v = String(s || '').toUpperCase();
+      if (v === 'CLOSED') return 3;
+      if (v === 'COMPLETED') return 2;
+      if (v === 'IN_PROGRESS') return 1;
+      if (v === 'OPEN') return 0;
+      return -1;
+    };
+    return [...arr].sort((a, b) => {
+      const sr = statusRank(b.status) - statusRank(a.status);
+      if (sr !== 0) return sr;
+      const ta = new Date(a.work_date || a.created_at || 0).getTime();
+      const tb = new Date(b.work_date || b.created_at || 0).getTime();
+      return tb - ta;
+    })[0];
+  };
+
+  const getGroupKey = (entry: any): 'R2' | 'R4' | '' => {
+    const sg = String(entry?.service_group || '').toUpperCase();
+    if (sg.includes('R4')) return 'R4';
+    if (sg.includes('R2_KECIL') || sg.includes('R2 KECIL') || sg.includes('KECIL')) return 'R2';
+    if (sg.includes('R2')) return 'R2';
+    const vt = String(entry?.vehicles?.vehicle_type || '').toUpperCase();
+    if (vt.includes('R4')) return 'R4';
+    if (vt.includes('MOBIL')) return 'R4';
+    if (vt.includes('R2_KECIL') || vt.includes('R2 KECIL') || vt.includes('KECIL')) return 'R2';
+    if (vt.includes('R2')) return 'R2';
+    if (vt.includes('MOTOR')) return 'R2';
+    return '';
+  };
+
+  async function loadRealizationTotals() {
     const p = String(project || '').trim().toUpperCase() || 'HARWAT';
     const y = Number(year) || new Date().getFullYear();
     const startDate = `${y}-01-01`;
     const endDate = `${y}-12-31`;
-    const nextYearStart = `${y + 1}-01-01`;
 
     const sums = { R2: emptyMonths(), R4: emptyMonths() };
-    setLoadingEstimates(true);
+    setLoadingRealizations(true);
     try {
       const pageSize = 500;
       let from = 0;
       while (true) {
         const { data, error } = await supabase
-          .from('work_orders')
+          .from('vehicle_entries')
           .select(
             `
             id,
-            vehicle_entry_id,
-            work_date,
-            created_at,
-            vehicle_entries (
-              vehicles (vehicle_type),
-              vehicle_entry_jobs (estimated_price, value_only),
-              vehicle_entry_spareparts (qty, estimated_price, value_only)
+            entry_date,
+            service_group,
+            vehicles (vehicle_type),
+            work_orders (
+              id,
+              status,
+              work_date,
+              created_at,
+              work_order_billings (
+                item_type,
+                item_name,
+                qty,
+                unit_price,
+                total_price
+              )
+            ),
+            vehicle_entry_spareparts (
+              item_name,
+              qty,
+              estimated_price
             )
           `
           )
-          .not('vehicle_entry_id', 'is', null)
-          .gte('work_date', startDate)
-          .lte('work_date', endDate)
+          .gte('entry_date', startDate)
+          .lte('entry_date', endDate)
           .range(from, from + pageSize - 1)
-          .order('work_date', { ascending: true });
+          .order('entry_date', { ascending: true });
         if (error) throw error;
         const rows = Array.isArray(data) ? data : [];
 
-        for (const wo of rows as any[]) {
-          const vt = String(wo?.vehicle_entries?.vehicles?.vehicle_type || '').toUpperCase();
-          const groupKey = vt.includes('R4') ? 'R4' : vt.includes('R2') || vt.includes('KECIL') ? 'R2' : '';
+        for (const entry of rows as any[]) {
+          const groupKey = getGroupKey(entry);
           if (!groupKey) continue;
-
-          const dateStr = String(wo?.work_date || wo?.created_at || '').slice(0, 10);
+          const dateStr = String(entry?.entry_date || '').slice(0, 10);
           const d = dateStr ? new Date(dateStr) : null;
           const m = d && Number.isFinite(d.getTime()) ? d.getMonth() : -1;
           if (m < 0 || m > 11) continue;
 
-          const ve = Array.isArray(wo?.vehicle_entries) ? wo.vehicle_entries[0] : wo?.vehicle_entries;
-          const jobs = Array.isArray(ve?.vehicle_entry_jobs) ? ve.vehicle_entry_jobs : [];
-          const parts = Array.isArray(ve?.vehicle_entry_spareparts) ? ve.vehicle_entry_spareparts : [];
-          const totalJobs = jobs.reduce((acc: number, j: any) => acc + (Boolean(j?.value_only) ? 0 : Number(j?.estimated_price || 0)), 0);
-          const totalParts = parts.reduce(
-            (acc: number, p: any) =>
-              acc + (Boolean(p?.value_only) ? 0 : Number(p?.estimated_price || 0) * (Number(p?.qty || 0) || 0)),
-            0
-          );
-          const total = totalJobs + totalParts;
-          if (!Number.isFinite(total) || total === 0) continue;
-          (sums as any)[groupKey][m] += total;
+          const woInfo = pickWorkOrder(entry?.work_orders);
+          const bills = Array.isArray(woInfo?.work_order_billings) ? woInfo.work_order_billings : [];
+          const entryParts = Array.isArray(entry?.vehicle_entry_spareparts) ? entry.vehicle_entry_spareparts : [];
+
+          let realJob = 0;
+          let realPart = 0;
+
+          bills.forEach((b: any) => {
+            const total = Number(b.total_price || 0);
+            const qty = Number(b.qty || 0);
+            const unit = Number(b.unit_price || 0);
+            const type = String(b.item_type || '').toUpperCase();
+
+            if (type === 'JOB') {
+              realJob += total;
+              return;
+            }
+
+            if (type === 'PART') {
+              if (total > 0) {
+                realPart += total;
+                return;
+              }
+
+              if (unit > 0 && qty > 0) {
+                realPart += unit * qty;
+                return;
+              }
+
+              const billName = String(b.item_name || '').replace(/^Penggantian\s+/i, '').trim();
+              const matched = entryParts.find((p: any) => isNameMatch(String(p.item_name || ''), billName));
+              const ep = Number(matched?.estimated_price || 0);
+              const q = Number(matched?.qty || qty || 0);
+              if (ep > 0 && q > 0) {
+                realPart += ep * q;
+                return;
+              }
+            }
+          });
+
+          const totalReal = realJob + realPart;
+          if (!Number.isFinite(totalReal) || totalReal === 0) continue;
+          (sums as any)[groupKey][m] += totalReal;
         }
 
         if (rows.length < pageSize) break;
         from += pageSize;
       }
-
-      from = 0;
-      while (true) {
-        const { data, error } = await supabase
-          .from('work_orders')
-          .select(
-            `
-            id,
-            vehicle_entry_id,
-            work_date,
-            created_at,
-            vehicle_entries (
-              vehicles (vehicle_type),
-              vehicle_entry_jobs (estimated_price, value_only),
-              vehicle_entry_spareparts (qty, estimated_price, value_only)
-            )
-          `
-          )
-          .not('vehicle_entry_id', 'is', null)
-          .is('work_date', null)
-          .gte('created_at', startDate)
-          .lt('created_at', nextYearStart)
-          .range(from, from + pageSize - 1)
-          .order('created_at', { ascending: true });
-        if (error) throw error;
-        const rows = Array.isArray(data) ? data : [];
-
-        for (const wo of rows as any[]) {
-          const vt = String(wo?.vehicle_entries?.vehicles?.vehicle_type || '').toUpperCase();
-          const groupKey = vt.includes('R4') ? 'R4' : vt.includes('R2') || vt.includes('KECIL') ? 'R2' : '';
-          if (!groupKey) continue;
-
-          const dateStr = String(wo?.created_at || '').slice(0, 10);
-          const d = dateStr ? new Date(dateStr) : null;
-          const m = d && Number.isFinite(d.getTime()) ? d.getMonth() : -1;
-          if (m < 0 || m > 11) continue;
-
-          const ve = Array.isArray(wo?.vehicle_entries) ? wo.vehicle_entries[0] : wo?.vehicle_entries;
-          const jobs = Array.isArray(ve?.vehicle_entry_jobs) ? ve.vehicle_entry_jobs : [];
-          const parts = Array.isArray(ve?.vehicle_entry_spareparts) ? ve.vehicle_entry_spareparts : [];
-          const totalJobs = jobs.reduce((acc: number, j: any) => acc + (Boolean(j?.value_only) ? 0 : Number(j?.estimated_price || 0)), 0);
-          const totalParts = parts.reduce(
-            (acc: number, p: any) =>
-              acc + (Boolean(p?.value_only) ? 0 : Number(p?.estimated_price || 0) * (Number(p?.qty || 0) || 0)),
-            0
-          );
-          const total = totalJobs + totalParts;
-          if (!Number.isFinite(total) || total === 0) continue;
-          (sums as any)[groupKey][m] += total;
-        }
-
-        if (rows.length < pageSize) break;
-        from += pageSize;
-      }
-
-      setEstimateTotals(sums);
+      setRealizationTotals(sums);
     } catch (e: any) {
       const msg = String(e?.message || e);
       if (msg.toLowerCase().includes('could not find the table')) {
-        setEstimateTotals({ R2: emptyMonths(), R4: emptyMonths() });
+        setRealizationTotals({ R2: emptyMonths(), R4: emptyMonths() });
         return;
       }
-      toast.error('Gagal memuat total estimasi WO: ' + msg);
-      setEstimateTotals({ R2: emptyMonths(), R4: emptyMonths() });
+      toast.error('Gagal memuat total realisasi: ' + msg);
+      setRealizationTotals({ R2: emptyMonths(), R4: emptyMonths() });
     } finally {
-      setLoadingEstimates(false);
+      setLoadingRealizations(false);
     }
   }
 
@@ -492,7 +526,7 @@ export default function BudgetForecastReport() {
   }
 
   function getAutoPemakaianValues(groupKey: 'R2' | 'R4') {
-    return (groupKey === 'R2' ? estimateTotals.R2 : estimateTotals.R4).map((v) => -Number(v || 0));
+    return (groupKey === 'R2' ? realizationTotals.R2 : realizationTotals.R4).map((v) => -Number(v || 0));
   }
 
   async function loadSheet() {
@@ -672,7 +706,7 @@ export default function BudgetForecastReport() {
       out[g.key] = { nett, balance, base, sections: [g.deductions, g.additions, g.subtractions] };
     }
     return out;
-  }, [sheet, estimateTotals]);
+  }, [sheet, realizationTotals]);
 
   function setCell(groupKey: 'R2' | 'R4', lineId: string, monthIndex: number, value: number) {
     setSheet((prev) => {
@@ -884,7 +918,7 @@ export default function BudgetForecastReport() {
         <CardHeader className="pb-3">
           <CardTitle className="text-xl">{g.title}</CardTitle>
           <div className="text-xs text-muted-foreground">
-            Mode simpan: Supabase {loading ? '• memuat...' : ''} {loadingEstimates ? '• hitung pemakaian...' : ''}
+            Mode simpan: Supabase {loading ? '• memuat...' : ''} {loadingRealizations ? '• hitung pemakaian...' : ''}
           </div>
         </CardHeader>
         <CardContent>
