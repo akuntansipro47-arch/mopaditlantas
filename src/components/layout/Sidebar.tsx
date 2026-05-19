@@ -50,7 +50,6 @@ const navigation: NavItem[] = [
     children: [
       { name: 'Entry Estimasi Kendaraan', href: '/transactions/entry', icon: FileInput, key: 'trans_entry' },
       { name: 'Work Order', href: '/transactions/wo', icon: ClipboardCheck, key: 'trans_wo' },
-      { name: 'Purchase Request / Request Item', href: '/transactions/purchase-request', icon: ClipboardList, key: 'trans_purchase_request' },
       { name: 'Purchase Order', href: '/transactions/po', icon: ShoppingCart, key: 'trans_po' },
       { name: 'Penerimaan Barang', href: '/transactions/receive', icon: PackageCheck, key: 'trans_receive' },
       { name: 'Barang Keluar', href: '/transactions/issue', icon: PackageMinus, key: 'trans_issue' },

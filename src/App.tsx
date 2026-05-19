@@ -20,7 +20,6 @@ import ChartOfAccounts from "@/pages/master/ChartOfAccounts";
 import VehicleEntry from "@/pages/transactions/VehicleEntry";
 import WorkOrder from "@/pages/transactions/WorkOrder";
 import PurchaseOrderV2 from "@/pages/transactions/PurchaseOrderV2";
-import PurchaseRequest from "@/pages/transactions/PurchaseRequest";
 import GoodsReceipt from "@/pages/transactions/GoodsReceipt";
 import GoodsIssue from "@/pages/transactions/GoodsIssue";
 import PurchaseOrderReturn from "@/pages/transactions/PurchaseOrderReturn";
@@ -47,7 +46,6 @@ import PrintGoodsIssue from "@/pages/print/PrintGoodsIssue";
 import PrintGoodsReceipt from "@/pages/print/PrintGoodsReceipt";
 import PrintPO from "@/pages/print/PrintPO";
 import PrintPODotMatrix from "@/pages/print/PrintPODotMatrix";
-import PrintPurchaseRequestDotMatrix from "@/pages/print/PrintPurchaseRequestDotMatrix";
 import PrintSPKDotMatrix from "@/pages/print/PrintSPKDotMatrix";
 
 export default function App() {
@@ -74,7 +72,6 @@ export default function App() {
               {/* Transaksi */}
               <Route path="/transactions/entry" element={<VehicleEntry />} />
               <Route path="/transactions/wo" element={<WorkOrder />} />
-              <Route path="/transactions/purchase-request" element={<PurchaseRequest />} />
               <Route path="/transactions/po" element={<PurchaseOrderV2 />} />
               <Route path="/transactions/receive" element={<GoodsReceipt />} />
               <Route path="/transactions/issue" element={<GoodsIssue />} />
@@ -107,7 +104,6 @@ export default function App() {
             <Route path="/print/receive/:id" element={<PrintGoodsReceipt />} />
             <Route path="/print/po/:id" element={<PrintPO />} />
             <Route path="/print/po-dot/:id" element={<PrintPODotMatrix />} />
-            <Route path="/print/pr-dot/:id" element={<PrintPurchaseRequestDotMatrix />} />
           </Route>
         </Routes>
       </Router>

@@ -71,12 +71,8 @@ export default function PurchaseOrderV2() {
     po_date: new Date().toISOString().split('T')[0],
   });
 
-  const [purchaseRequest, setPurchaseRequest] = useState<any | null>(null);
-  const [purchaseRequestMessage, setPurchaseRequestMessage] = useState<string>('');
-
   const isWoMode = poType === 'WO' && String(formData.work_order_id || '') !== 'NONE';
-  const isPrReady = !isWoMode || (purchaseRequest && String(purchaseRequest.status || '') === 'OPEN');
-  const prBlockEditing = !isReadOnly && isWoMode && !isPrReady;
+  const prBlockEditing = false;
 
   // Items State (Dynamic Form)
   const [poItems, setPoItems] = useState<{
@@ -369,7 +365,7 @@ export default function PurchaseOrderV2() {
           )
         `
         )
-        .in('status', ['OPEN', 'IN_PROGRESS']);
+        .in('status', ['OPEN', 'IN_PROGRESS', 'PROCESSED']);
       if (wErr) {
         toast.error('Gagal memuat Work Order: ' + wErr.message);
         setWorkOrders([]);
@@ -473,106 +469,58 @@ export default function PurchaseOrderV2() {
     setPoType(type);
     if (type === 'STOCK') {
       setFormData(prev => ({ ...prev, work_order_id: 'NONE' }));
-      setPurchaseRequest(null);
-      setPurchaseRequestMessage('');
     }
   };
 
-  const isMissingPurchaseRequestTables = (msg: string) => {
-    const m = String(msg || '').toLowerCase();
-    return (
-      (m.includes('relation') && m.includes('purchase_requests') && m.includes('does not exist')) ||
-      (m.includes('relation') && m.includes('purchase_request_items') && m.includes('does not exist')) ||
-      (m.includes('could not find the table') && m.includes('purchase_requests')) ||
-      (m.includes('schema cache') && m.includes('purchase_requests'))
-    );
-  };
+  const buildItemsFromWo = (wo: any) => {
+    const ve = Array.isArray(wo?.vehicle_entries) ? wo.vehicle_entries[0] : wo.vehicle_entries;
+    const jobs = Array.isArray(ve?.vehicle_entry_jobs) ? ve.vehicle_entry_jobs : [];
+    const parts = Array.isArray(ve?.vehicle_entry_spareparts) ? ve.vehicle_entry_spareparts : [];
 
-  const loadPurchaseRequestForWo = async (wo: any) => {
-    setPurchaseRequest(null);
-    setPurchaseRequestMessage('');
-    try {
-      const { data: prs, error: prErr } = await supabase
-        .from('purchase_requests' as any)
-        .select('id, pr_number, status, po_number')
-        .eq('work_order_id', wo.id)
-        .neq('status', 'CANCELLED')
-        .order('created_at', { ascending: false })
-        .limit(1);
-      if (prErr) throw prErr;
-      const pr = Array.isArray(prs) ? prs[0] : null;
-      if (!pr) {
-        setPurchaseRequestMessage('Purchase Request belum dibuat untuk WO ini.');
-        toast.error('Purchase Request untuk WO ini belum dibuat. Buat dulu di menu Purchase Request / Request Item.');
-        setPoItems([{ line_type: 'PART', goods_id: '', job_type_id: '', service_name: '', brand: '', quantity: 1, unit_price: 0 }]);
-        return;
-      }
+    const jobItems = jobs
+      .filter((j: any) => !Boolean(j?.value_only))
+      .map((j: any) => ({
+        line_type: 'JASA' as const,
+        goods_id: '',
+        job_type_id: String(j.job_type_id || ''),
+        service_name: String(j.job_types?.job_name || j.notes || '').trim() || '',
+        brand: '',
+        quantity: 1,
+        unit_price: '',
+        from_work_order: true,
+        locked_unit_price: false,
+      }))
+      .filter((x: any) => Boolean(x.job_type_id) || Boolean(x.service_name));
 
-      setPurchaseRequest(pr);
-      const status = String(pr.status || '');
-      const statusLabel = status === 'PO_CREATED' ? `PROSES PO${pr.po_number ? ` (${pr.po_number})` : ''}` : status;
-      if (status !== 'OPEN') {
-        setPurchaseRequestMessage(`Purchase Request ${pr.pr_number} status ${statusLabel}.`);
-        toast.error(`Purchase Request ${pr.pr_number} sudah diproses (${statusLabel}).`);
-        setPoItems([{ line_type: 'PART', goods_id: '', job_type_id: '', service_name: '', brand: '', quantity: 1, unit_price: 0 }]);
-        return;
-      }
-
-      const { data: lines, error: lineErr } = await supabase
-        .from('purchase_request_items' as any)
-        .select('line_type, goods_id, job_type_id, service_name, brand, quantity, notes')
-        .eq('purchase_request_id', pr.id)
-        .order('created_at', { ascending: true });
-      if (lineErr) throw lineErr;
-
-      const mapped = ((lines as any) || []).map((it: any) => {
-        const lt = String(it.line_type || 'PART').toUpperCase();
-        if (lt === 'JASA') {
-          return {
-            line_type: 'JASA' as const,
-            goods_id: '',
-            job_type_id: String(it.job_type_id || ''),
-            service_name: String(it.service_name || '').trim() || '',
-            brand: String(it.brand || ''),
-            quantity: Number(it.quantity || 1) || 1,
-            unit_price: '',
-            from_work_order: true,
-            locked_unit_price: false,
-          };
-        }
+    const partItems = parts
+      .filter((p: any) => !Boolean(p?.value_only))
+      .map((p: any) => {
+        const codeNorm = String(p?.item_code || '')
+          .toLowerCase()
+          .replace(/\s+/g, '')
+          .trim();
+        const byCode = codeNorm
+          ? goodsList.find((g: any) => String(g.item_code || '').toLowerCase().replace(/\s+/g, '').trim() === codeNorm)
+          : null;
+        const byNameExact = goodsList.find((g: any) => normalizeText(String(g.name || '')) === normalizeText(String(p.item_name || '')));
+        const gid = String(p?.goods_id || '') || String(byCode?.id || '');
+        const finalGid = gid || String(byNameExact?.id || '');
         return {
           line_type: 'PART' as const,
-          goods_id: String(it.goods_id || ''),
+          goods_id: finalGid || '',
           job_type_id: '',
           service_name: '',
-          brand: String(it.brand || ''),
-          quantity: Number(it.quantity || 1) || 1,
+          brand: '',
+          quantity: Number(p.qty || 1) || 1,
           unit_price: '',
-          estimated_name: String(it.notes || ''),
+          estimated_name: p.item_name ? String(p.item_name) : '',
           from_work_order: true,
           locked_unit_price: false,
         };
-      });
+      })
+      .filter((x: any) => Boolean(x.goods_id));
 
-      if (mapped.length === 0) {
-        setPurchaseRequestMessage(`Purchase Request ${pr.pr_number} tidak memiliki item.`);
-        toast.error(`Purchase Request ${pr.pr_number} tidak memiliki item.`);
-        setPoItems([{ line_type: 'PART', goods_id: '', job_type_id: '', service_name: '', brand: '', quantity: 1, unit_price: 0 }]);
-        return;
-      }
-
-      setPurchaseRequestMessage(`Sumber: ${pr.pr_number} (OPEN)`);
-      setPoItems(mapped);
-    } catch (e: any) {
-      const msg = String(e?.message || e);
-      if (isMissingPurchaseRequestTables(msg)) {
-        toast.error("Purchase Request belum aktif: jalankan migration 20260513_create_purchase_requests.sql lalu refresh schema cache Supabase.");
-      } else {
-        toast.error('Gagal memuat Purchase Request: ' + msg);
-      }
-      setPurchaseRequestMessage('Gagal memuat Purchase Request.');
-      setPoItems([{ line_type: 'PART', goods_id: '', job_type_id: '', service_name: '', brand: '', quantity: 1, unit_price: 0 }]);
-    }
+    return [...jobItems, ...partItems];
   };
 
   const resetForm = () => {
@@ -588,8 +536,6 @@ export default function PurchaseOrderV2() {
     setReturnedGoodsIds([]);
     setOriginalEditItems([]);
     setEditableReturnIndexes([]);
-    setPurchaseRequest(null);
-    setPurchaseRequestMessage('');
   };
 
   const handleDateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -616,8 +562,6 @@ export default function PurchaseOrderV2() {
     setReturnedGoodsIds([]);
     setOriginalEditItems([]);
     setEditableReturnIndexes([]);
-    setPurchaseRequest(null);
-    setPurchaseRequestMessage('');
 
     try {
       let returnedSetForEdit: Set<string> | null = null;
@@ -753,12 +697,11 @@ export default function PurchaseOrderV2() {
     }
 
     if (poType === 'WO' && formData.work_order_id !== 'NONE') {
-      if (!purchaseRequest) {
-        toast.error('Purchase Request untuk WO ini belum dibuat. Buat dulu di menu Purchase Request / Request Item.');
-        return;
-      }
-      if (String(purchaseRequest.status || '') !== 'OPEN') {
-        toast.error('Purchase Request untuk WO ini sudah diproses / ditutup.');
+      const woId = String(formData.work_order_id || '');
+      const wo = workOrders.find((w: any) => String(w.id) === woId);
+      const built = wo ? buildItemsFromWo(wo) : [];
+      if (!wo || built.length === 0) {
+        toast.error('Item estimasi WO kosong / semua item N/A. Tidak bisa buat PO dari WO ini.');
         return;
       }
     }
@@ -880,19 +823,6 @@ export default function PurchaseOrderV2() {
           .insert(itemsPayload);
 
         if (itemsError) throw itemsError;
-      }
-
-      if (!editingId && createdPO && poType === 'WO' && formData.work_order_id !== 'NONE' && purchaseRequest?.id) {
-        const { error: prUpErr } = await supabase
-          .from('purchase_requests' as any)
-          .update({
-            status: 'PO_CREATED',
-            po_id: targetPoId,
-            po_number: createdPO?.po_number || null,
-            updated_at: new Date().toISOString(),
-          })
-          .eq('id', purchaseRequest.id);
-        if (prUpErr) console.error('Failed to update purchase request status:', prUpErr);
       }
 
       toast.success(editingId ? 'PO berhasil diperbarui' : 'Purchase Order berhasil dibuat');
@@ -1187,7 +1117,13 @@ export default function PurchaseOrderV2() {
                             onSelect={() => {
                               setFormData({ ...formData, work_order_id: wo.id });
                               setWoSearchOpen(false);
-                              void loadPurchaseRequestForWo(wo);
+                              const next = buildItemsFromWo(wo);
+                              if (next.length === 0) {
+                                toast.error('Item estimasi WO kosong / semua item N/A. Tidak bisa buat PO dari WO ini.');
+                                setPoItems([{ line_type: 'PART', goods_id: '', job_type_id: '', service_name: '', brand: '', quantity: 1, unit_price: 0 }]);
+                                return;
+                              }
+                              setPoItems(next);
                             }}
                             className="cursor-pointer p-3 hover:bg-slate-100 border-b last:border-0 aria-selected:bg-slate-100"
                           >
@@ -1257,9 +1193,7 @@ export default function PurchaseOrderV2() {
                     <div>
                       <Label className="text-base font-semibold">Daftar Barang / Jasa</Label>
                       {poType === 'WO' && formData.work_order_id !== 'NONE' && (
-                        <div className={cn("text-xs mt-0.5", purchaseRequest && String(purchaseRequest.status || '') === 'OPEN' ? "text-slate-500" : "text-red-600")}>
-                          {purchaseRequestMessage || (purchaseRequest ? `Sumber: ${purchaseRequest.pr_number}` : 'Purchase Request belum dibuat untuk WO ini.')}
-                        </div>
+                        <div className={cn("text-xs mt-0.5", "text-slate-500")}>Sumber: Estimasi Work Order</div>
                       )}
                     </div>
                     {!isReadOnly && returnedGoodsIds.length === 0 && (
