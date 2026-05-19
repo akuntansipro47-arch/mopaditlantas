@@ -23,6 +23,17 @@ import { useRealtimeRefetch } from '@/hooks/useRealtimeRefetch';
 import { useAuth } from '@/context/AuthContext';
 import { logActivity } from '@/lib/activityLog';
 
+type EstimationChangeRow = {
+  id: string;
+  vehicle_entry_id: string;
+  revision_no: number;
+  changed_at: string;
+  changed_by_username?: string | null;
+  changed_by_role?: string | null;
+  summary?: string | null;
+  changes?: any;
+};
+
 type VehicleEntry = Database['public']['Tables']['vehicle_entries']['Row'];
 type Vehicle = Database['public']['Tables']['vehicles']['Row'];
 type Job = Database['public']['Tables']['job_types']['Row'];
@@ -118,6 +129,112 @@ export default function VehicleEntryPage() {
   const [attachmentCounts, setAttachmentCounts] = useState<Record<string, number>>({});
 
   const attachmentDialogFileInputRef = useRef<HTMLInputElement | null>(null);
+
+  const [changeOpen, setChangeOpen] = useState(false);
+  const [changeLoading, setChangeLoading] = useState(false);
+  const [changeTarget, setChangeTarget] = useState<EntryWithDetails | null>(null);
+  const [changeRows, setChangeRows] = useState<EstimationChangeRow[]>([]);
+
+  const normalizeKey = (v: any) =>
+    String(v ?? '')
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, ' ')
+      .trim()
+      .replace(/\s+/g, ' ');
+
+  const summarizeDiff = (diff: any) => {
+    const a = Array.isArray(diff?.added) ? diff.added.length : 0;
+    const r = Array.isArray(diff?.removed) ? diff.removed.length : 0;
+    const u = Array.isArray(diff?.updated) ? diff.updated.length : 0;
+    const parts: string[] = [];
+    if (a > 0) parts.push(`+${a}`);
+    if (r > 0) parts.push(`-${r}`);
+    if (u > 0) parts.push(`~${u}`);
+    return parts.length > 0 ? parts.join(' ') : 'Tidak ada perubahan';
+  };
+
+  const computeDiff = (oldRows: any[], newRows: any[]) => {
+    const toMap = (rows: any[]) => {
+      const m = new Map<string, any>();
+      (rows || []).forEach((it) => {
+        const type = String(it.type || '').toUpperCase();
+        const jobId = String(it.job_type_id || '');
+        const goodsId = String(it.goods_id || '');
+        const itemCode = String(it.item_code || '');
+        const name = String(it.name || it.item_name || it.service_name || it.job_name || '').trim();
+        const notes = String(it.notes || '').trim();
+        const key = [
+          type,
+          jobId,
+          goodsId,
+          normalizeKey(itemCode),
+          normalizeKey(name),
+          normalizeKey(notes),
+        ].join('|');
+        const qty = Number(it.qty ?? it.quantity ?? 1) || 1;
+        const unitPrice = Number(it.estimated_price ?? it.price ?? 0) || 0;
+        const valueOnly = Boolean(it.value_only);
+        const prev = m.get(key);
+        if (!prev) {
+          m.set(key, { type, job_type_id: jobId || null, goods_id: goodsId || null, item_code: itemCode || null, name, notes, qty, unit_price: unitPrice, value_only: valueOnly });
+          return;
+        }
+        prev.qty += qty;
+        prev.unit_price = unitPrice;
+        prev.value_only = valueOnly;
+      });
+      return m;
+    };
+
+    const oldMap = toMap(oldRows);
+    const newMap = toMap(newRows);
+
+    const added: any[] = [];
+    const removed: any[] = [];
+    const updated: any[] = [];
+
+    for (const [k, v] of newMap.entries()) {
+      const prev = oldMap.get(k);
+      if (!prev) {
+        added.push(v);
+        continue;
+      }
+      if (
+        Number(prev.qty || 0) !== Number(v.qty || 0) ||
+        Number(prev.unit_price || 0) !== Number(v.unit_price || 0) ||
+        Boolean(prev.value_only) !== Boolean(v.value_only)
+      ) {
+        updated.push({ before: prev, after: v });
+      }
+    }
+
+    for (const [k, v] of oldMap.entries()) {
+      if (!newMap.has(k)) removed.push(v);
+    }
+
+    return { added, removed, updated };
+  };
+
+  const openChangeDialog = async (item: EntryWithDetails) => {
+    setChangeTarget(item);
+    setChangeOpen(true);
+    setChangeLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from('vehicle_entry_estimation_changes' as any)
+        .select('id, vehicle_entry_id, revision_no, changed_at, changed_by_username, changed_by_role, summary, changes')
+        .eq('vehicle_entry_id', item.id)
+        .order('revision_no', { ascending: false })
+        .limit(20);
+      if (error) throw error;
+      setChangeRows(((data as any) || []) as EstimationChangeRow[]);
+    } catch (e: any) {
+      toast.error('Gagal memuat riwayat perubahan estimasi: ' + String(e?.message || e));
+      setChangeRows([]);
+    } finally {
+      setChangeLoading(false);
+    }
+  };
   const [isAttachmentDialogOpen, setIsAttachmentDialogOpen] = useState(false);
   const [attachmentDialogEntry, setAttachmentDialogEntry] = useState<{ id: string; entry_number?: string | null } | null>(null);
   const [attachmentDialogAttachments, setAttachmentDialogAttachments] = useState<EntryAttachment[]>([]);
@@ -1227,6 +1344,39 @@ export default function VehicleEntryPage() {
     setLoading(true);
 
     try {
+      const oldSnapshot = { jobs: [] as any[], parts: [] as any[] };
+      if (isEditing && currentId) {
+        const [oldJobsRes, oldPartsRes] = await Promise.all([
+          supabase
+            .from('vehicle_entry_jobs' as any)
+            .select('job_type_id, notes, estimated_price, value_only, job_types (job_name)')
+            .eq('vehicle_entry_id', currentId),
+          supabase
+            .from('vehicle_entry_spareparts' as any)
+            .select('goods_id, item_code, item_name, qty, estimated_price, value_only, job_type_id')
+            .eq('vehicle_entry_id', currentId),
+        ]);
+        oldSnapshot.jobs = ((oldJobsRes as any)?.data || []).map((j: any) => ({
+          type: 'JASA',
+          job_type_id: j.job_type_id,
+          name: j?.job_types?.job_name || '',
+          notes: j.notes || '',
+          qty: 1,
+          estimated_price: Number(j.estimated_price || 0),
+          value_only: Boolean(j.value_only),
+        }));
+        oldSnapshot.parts = ((oldPartsRes as any)?.data || []).map((p: any) => ({
+          type: 'PART',
+          goods_id: p.goods_id || null,
+          item_code: p.item_code || null,
+          name: p.item_name || '',
+          qty: Number(p.qty || 0),
+          estimated_price: Number(p.estimated_price || 0),
+          value_only: Boolean(p.value_only),
+          job_type_id: p.job_type_id || null,
+        }));
+      }
+
       const entryPayload = {
         entry_date: formData.entry_date,
         estimated_finish_date: formData.estimated_finish_date ? formData.estimated_finish_date : null,
@@ -1343,6 +1493,107 @@ export default function VehicleEntryPage() {
             const { error: spError } = await supabase.from('vehicle_entry_spareparts').insert(payload);
             if (spError) throw spError;
           }
+      }
+
+      try {
+        const newSnapshot = {
+          jobs: entryJobs
+            .map((j) => ({
+              type: 'JASA',
+              job_type_id: j.job_id,
+              name: String(j.job_name || jobs.find((x: any) => String(x.id) === String(j.job_id))?.job_name || '').trim(),
+              notes: j.notes || '',
+              qty: 1,
+              estimated_price: Number(j.estimated_price || 0),
+              value_only: Boolean(j.value_only),
+            }))
+            .filter((x) => Boolean(x.job_type_id)),
+          parts: (() => {
+            const out: any[] = [];
+            entryJobs.forEach((job) => {
+              (job.spareparts || []).forEach((p) => {
+                out.push({
+                  type: 'PART',
+                  goods_id: p.goods_id || null,
+                  item_code: p.item_code || null,
+                  name: p.name || '',
+                  qty: Number(p.qty || 0),
+                  estimated_price: Number(p.price || 0),
+                  value_only: Boolean(p.value_only),
+                  job_type_id: job.job_id || null,
+                });
+              });
+            });
+            return out;
+          })(),
+        };
+
+        const oldAll = [...oldSnapshot.jobs, ...oldSnapshot.parts].filter((x) => !Boolean(x.value_only));
+        const newAll = [...newSnapshot.jobs, ...newSnapshot.parts].filter((x) => !Boolean(x.value_only));
+        const diff = computeDiff(oldAll, newAll);
+        const hasChange =
+          (diff.added && diff.added.length > 0) || (diff.removed && diff.removed.length > 0) || (diff.updated && diff.updated.length > 0);
+
+        if (targetId && (hasChange || !isEditing)) {
+          const nowIso = new Date().toISOString();
+          const metaUser = user || (JSON.parse(localStorage.getItem('app_user') || 'null') as any);
+
+          const { data: entryRow, error: revErr } = await supabase
+            .from('vehicle_entries' as any)
+            .select('estimation_revision')
+            .eq('id', targetId)
+            .single();
+          if (revErr) throw revErr;
+
+          const currentRev = Number((entryRow as any)?.estimation_revision || 0) || 0;
+          const nextRev = currentRev + 1;
+          const summary = hasChange ? summarizeDiff(diff) : 'Inisialisasi estimasi';
+
+          const payloadChange = {
+            vehicle_entry_id: targetId,
+            revision_no: nextRev,
+            changed_at: nowIso,
+            changed_by_username: metaUser?.username || null,
+            changed_by_role: metaUser?.role || null,
+            summary,
+            changes: diff,
+          };
+
+          const { error: insErr } = await supabase.from('vehicle_entry_estimation_changes' as any).insert([payloadChange] as any);
+          if (insErr) throw insErr;
+
+          const { error: upErr } = await supabase
+            .from('vehicle_entries' as any)
+            .update({
+              estimation_revision: nextRev,
+              last_estimation_changed_at: nowIso,
+              last_estimation_change_summary: summary,
+              last_estimation_changed_by_username: metaUser?.username || null,
+              last_estimation_changed_by_role: metaUser?.role || null,
+            } as any)
+            .eq('id', targetId);
+          if (upErr) throw upErr;
+
+          void logActivity({
+            action: 'ESTIMATION_CHANGE',
+            module: 'VEHICLE_ENTRY',
+            entity_type: 'vehicle_entries',
+            entity_id: String(targetId),
+            details: `Perubahan estimasi ke-${nextRev} (${summary})`,
+            meta: { revision_no: nextRev, diff },
+          });
+
+          if (hasChange) {
+            toast.success(`Estimasi berubah ke-${nextRev} (${summary})`);
+          }
+        }
+      } catch (e: any) {
+        const msg = String(e?.message || e);
+        if (String(msg).toLowerCase().includes('could not find the table')) {
+          toast.error("Riwayat perubahan estimasi belum aktif: jalankan migration 20260516_vehicle_entry_estimation_change_log.sql lalu refresh schema cache Supabase.");
+        } else {
+          toast.error('Gagal menyimpan riwayat perubahan estimasi: ' + msg);
+        }
       }
 
       toast.success(isEditing ? 'Entry diperbarui' : 'Entry kendaraan berhasil');
@@ -2164,7 +2415,29 @@ export default function VehicleEntryPage() {
                         </div>
                       </TableCell>
                       <TableCell className="text-right font-medium">
-                        {calculateEstimation(item as any).toLocaleString('id-ID', { style: 'currency', currency: 'IDR' }).replace(',00', '')}
+                        <div className="flex flex-col items-end gap-1">
+                          <div>
+                            {calculateEstimation(item as any)
+                              .toLocaleString('id-ID', { style: 'currency', currency: 'IDR' })
+                              .replace(',00', '')}
+                          </div>
+                          {Number((item as any).estimation_revision || 0) > 0 && (
+                            <Button
+                              variant="link"
+                              size="sm"
+                              className="h-6 px-0 text-xs"
+                              onClick={() => openChangeDialog(item as any)}
+                              type="button"
+                            >
+                              Perubahan ke-{Number((item as any).estimation_revision || 0)}
+                            </Button>
+                          )}
+                          {String((item as any).last_estimation_changed_at || '') && (
+                            <div className="text-[11px] text-muted-foreground">
+                              {formatDate((item as any).last_estimation_changed_at)}
+                            </div>
+                          )}
+                        </div>
                       </TableCell>
                       <TableCell>
                         <div className="flex flex-col gap-1">
@@ -2274,6 +2547,85 @@ export default function VehicleEntryPage() {
           </div>
         </CardContent>
       </Card>
+
+      <Dialog open={changeOpen} onOpenChange={setChangeOpen}>
+        <DialogContent className="sm:max-w-[900px] max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Riwayat Perubahan Estimasi</DialogTitle>
+            <DialogDescription>
+              {changeTarget ? `${changeTarget.entry_number} • ${changeTarget.vehicles?.license_plate || '-'}` : ''}
+            </DialogDescription>
+          </DialogHeader>
+          {changeLoading ? (
+            <div className="text-sm text-muted-foreground py-6">Memuat...</div>
+          ) : changeRows.length === 0 ? (
+            <div className="text-sm text-muted-foreground py-6">Belum ada riwayat perubahan.</div>
+          ) : (
+            <div className="space-y-4">
+              {changeRows.map((r) => {
+                const diff = (r as any).changes || {};
+                const added = Array.isArray(diff.added) ? diff.added : [];
+                const removed = Array.isArray(diff.removed) ? diff.removed : [];
+                const updated = Array.isArray(diff.updated) ? diff.updated : [];
+                return (
+                  <div key={r.id} className="rounded-md border p-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="font-semibold text-sm">Perubahan ke-{r.revision_no}</div>
+                      <div className="text-xs text-muted-foreground">{formatDate(r.changed_at)}</div>
+                    </div>
+                    <div className="text-xs text-muted-foreground mt-1">
+                      {r.summary || summarizeDiff(diff)} {r.changed_by_username ? `• ${r.changed_by_username}` : ''}
+                    </div>
+
+                    {(added.length > 0 || removed.length > 0 || updated.length > 0) && (
+                      <div className="mt-3 space-y-3">
+                        {added.length > 0 && (
+                          <div>
+                            <div className="text-xs font-semibold">Ditambahkan</div>
+                            <div className="text-xs text-muted-foreground mt-1 space-y-1">
+                              {added.map((a: any, idx: number) => (
+                                <div key={idx}>
+                                  + {a.type} • {a.name || '-'} • qty {Number(a.qty || 0)} • est {Number(a.unit_price || 0).toLocaleString('id-ID')}
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                        {removed.length > 0 && (
+                          <div>
+                            <div className="text-xs font-semibold">Dikurangi</div>
+                            <div className="text-xs text-muted-foreground mt-1 space-y-1">
+                              {removed.map((a: any, idx: number) => (
+                                <div key={idx}>
+                                  - {a.type} • {a.name || '-'} • qty {Number(a.qty || 0)} • est {Number(a.unit_price || 0).toLocaleString('id-ID')}
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                        {updated.length > 0 && (
+                          <div>
+                            <div className="text-xs font-semibold">Diubah</div>
+                            <div className="text-xs text-muted-foreground mt-1 space-y-1">
+                              {updated.map((u: any, idx: number) => (
+                                <div key={idx}>
+                                  ~ {u?.after?.type} • {u?.after?.name || u?.before?.name || '-'} • qty {Number(u?.before?.qty || 0)} →{' '}
+                                  {Number(u?.after?.qty || 0)} • est {Number(u?.before?.unit_price || 0).toLocaleString('id-ID')} →{' '}
+                                  {Number(u?.after?.unit_price || 0).toLocaleString('id-ID')}
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

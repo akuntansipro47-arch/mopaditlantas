@@ -7,7 +7,7 @@ import {
 } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Plus, Search, Eye, Trash2, ClipboardCheck, Play, CheckCircle, RefreshCw, Printer } from 'lucide-react';
+import { Plus, Search, Eye, Trash2, ClipboardCheck, Play, CheckCircle, RefreshCw, Printer, Unlock } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { toast } from 'sonner';
 import {
@@ -48,6 +48,7 @@ export default function WorkOrder() {
   const [printingSPKId, setPrintingSPKId] = useState<string | null>(null);
   const [spkPrintCount, setSpkPrintCount] = useState<number>(1);
   const printComponentRef = useRef<HTMLDivElement>(null);
+  const printingIdRef = useRef<string | null>(null);
 
   const [entries, setEntries] = useState<(VehicleEntry & { vehicles: Vehicle | null })[]>([]);
   const [mechanics, setMechanics] = useState<Mechanic[]>([]);
@@ -67,7 +68,13 @@ export default function WorkOrder() {
     contentRef: printComponentRef,
     documentTitle: printData?.wo?.wo_number ? `SPK-${printData.wo.wo_number}` : 'SPK',
     onAfterPrint: () => {
+      const id = printingIdRef.current;
+      if (id) {
+        void lockWorkOrderAfterPrint(id);
+      }
       setPrintData(null);
+      setPrintingSPKId(null);
+      printingIdRef.current = null;
     },
   });
 
@@ -141,7 +148,78 @@ export default function WorkOrder() {
     setCurrentId(null);
   };
 
+  const isLocked = (wo: any) => Boolean((wo as any)?.is_locked);
+
+  const lockWorkOrderAfterPrint = async (id: string) => {
+    try {
+      const metaUser = user || (JSON.parse(localStorage.getItem('app_user') || 'null') as any);
+      const { error } = await supabase
+        .from('work_orders')
+        .update({
+          is_locked: true,
+          locked_at: new Date().toISOString(),
+          locked_by_username: metaUser?.username || null,
+          locked_by_role: metaUser?.role || null,
+          lock_reason: 'PRINT_SPK',
+        } as any)
+        .eq('id', id);
+      if (error) throw error;
+      void logActivity({
+        user_id: metaUser?.id || null,
+        username: metaUser?.username || null,
+        role: metaUser?.role || null,
+        action: 'WO_LOCK',
+        module: 'WORK_ORDER',
+        entity_type: 'work_orders',
+        entity_id: String(id),
+        details: 'Lock WO setelah cetak SPK',
+        meta: { lock_reason: 'PRINT_SPK' },
+      });
+      await fetchWOs();
+    } catch (e: any) {
+      toast.error('Gagal lock WO setelah cetak: ' + String(e?.message || e));
+    }
+  };
+
+  const handleUnlock = async (wo: WOWithDetails) => {
+    if (!user || user.role !== 'SUPER_ADMIN') {
+      toast.error('Hanya Super Admin yang bisa unlock WO.');
+      return;
+    }
+    if (!window.confirm(`Unlock WO "${wo.wo_number}"? Setelah unlock, WO bisa diedit/dihapus lagi.`)) return;
+    try {
+      const { error } = await supabase
+        .from('work_orders')
+        .update({
+          is_locked: false,
+          unlocked_at: new Date().toISOString(),
+          unlocked_by_username: user.username,
+          unlocked_by_role: user.role,
+        } as any)
+        .eq('id', wo.id);
+      if (error) throw error;
+      void logActivity({
+        user_id: user.id,
+        username: user.username,
+        role: user.role,
+        action: 'WO_UNLOCK',
+        module: 'WORK_ORDER',
+        entity_type: 'work_orders',
+        entity_id: String(wo.id),
+        details: 'Unlock WO',
+      });
+      toast.success('WO berhasil di-unlock.');
+      await fetchWOs();
+    } catch (e: any) {
+      toast.error('Gagal unlock WO: ' + String(e?.message || e));
+    }
+  };
+
   const handleEdit = (item: WOWithDetails) => {
+    if (isLocked(item)) {
+      toast.error(user?.role === 'SUPER_ADMIN' ? 'WO terkunci. Unlock dulu untuk edit.' : 'WO terkunci setelah dicetak.');
+      return;
+    }
     if (item.status !== 'IN_PROGRESS') {
       toast.warning('Hanya Work Order dengan status IN_PROGRESS yang dapat diedit.');
       return;
@@ -163,6 +241,7 @@ export default function WorkOrder() {
     }
 
     setPrintingSPKId(wo.id);
+    printingIdRef.current = wo.id;
     try {
       const cnt = await incrementDocumentPrintCounter('SPK', String(wo.id));
       setSpkPrintCount(cnt);
@@ -208,14 +287,22 @@ export default function WorkOrder() {
       });
       requestAnimationFrame(() => {
         requestAnimationFrame(() => {
-          triggerSPKPrint();
+          try {
+            triggerSPKPrint();
+          } catch (e: any) {
+            toast.error('Gagal memulai proses cetak: ' + String(e?.message || e));
+            setPrintData(null);
+            setPrintingSPKId(null);
+            printingIdRef.current = null;
+          }
         });
       });
     } catch (error: any) {
       toast.error('Gagal mempersiapkan data cetak SPK: ' + (error?.message || 'Unknown error'));
       setPrintData(null);
-    } finally {
       setPrintingSPKId(null);
+      printingIdRef.current = null;
+    } finally {
     }
   };
 
@@ -367,6 +454,11 @@ export default function WorkOrder() {
   };
 
   const handleDelete = async (id: string, vehicleEntryId: string | null) => {
+    const wo = wos.find((x) => String((x as any).id) === String(id)) as any;
+    if (wo && isLocked(wo)) {
+      toast.error(user?.role === 'SUPER_ADMIN' ? 'WO terkunci. Unlock dulu untuk hapus.' : 'WO terkunci setelah dicetak.');
+      return;
+    }
     if (window.confirm('Apakah Anda yakin ingin menghapus Work Order ini? Tindakan ini tidak dapat dibatalkan.')) {
       try {
         const { error: deleteError } = await supabase.from('work_orders').delete().eq('id', id);
@@ -413,6 +505,13 @@ export default function WorkOrder() {
     setLoading(true);
 
     try {
+      if (isEditing && currentId) {
+        const current = wos.find((x) => String((x as any).id) === String(currentId)) as any;
+        if (current && isLocked(current)) {
+          toast.error(user?.role === 'SUPER_ADMIN' ? 'WO terkunci. Unlock dulu untuk edit.' : 'WO terkunci setelah dicetak.');
+          return;
+        }
+      }
       const payload = {
         work_date: formData.work_date,
         vehicle_entry_id: formData.vehicle_entry_id || null,
@@ -706,10 +805,30 @@ export default function WorkOrder() {
                         <div className="flex flex-col">
                           <span className="font-medium">{item.vehicle_entries?.vehicles?.license_plate}</span>
                           <span className="text-xs text-muted-foreground">{item.vehicle_entries?.nota_dinas_number}</span>
+                          {(() => {
+                            const ve: any = item.vehicle_entries as any;
+                            const rev = Number(ve?.estimation_revision || 0) || 0;
+                            if (rev <= 0) return null;
+                            const at = ve?.last_estimation_changed_at || null;
+                            const summary = String(ve?.last_estimation_change_summary || '').trim();
+                            const title = [at ? `Tanggal: ${formatDate(at)}` : '', summary ? `Detail: ${summary}` : '']
+                              .filter(Boolean)
+                              .join('\n');
+                            return (
+                              <Badge
+                                variant="secondary"
+                                className="mt-1 w-fit bg-purple-100 text-purple-800 border-transparent"
+                                title={title || undefined}
+                              >
+                                Estimasi berubah ke-{rev}
+                              </Badge>
+                            );
+                          })()}
                         </div>
                       </TableCell>
                       <TableCell>{item.mechanics?.name || '-'}</TableCell>
                       <TableCell>
+                        <div className="flex items-center gap-2">
                         <Badge variant={
                           item.status === 'OPEN' ? 'secondary' : 
                           item.status === 'IN_PROGRESS' ? 'default' : 
@@ -717,6 +836,12 @@ export default function WorkOrder() {
                         } className={(item.status === 'COMPLETED' || item.status === 'CLOSED') ? 'bg-green-100 text-green-800 border-transparent' : ''}>
                           {item.status.replace('_', ' ')}
                         </Badge>
+                        {isLocked(item) && (
+                          <Badge variant="destructive" className="bg-amber-100 text-amber-800 border-transparent">
+                            LOCK
+                          </Badge>
+                        )}
+                        </div>
                       </TableCell>
                       <TableCell className="text-right">
                         <div className="flex justify-end gap-2">
@@ -746,11 +871,28 @@ export default function WorkOrder() {
                           <Button variant="outline" size="sm" className="h-8" onClick={() => handlePrintSPKDotMatrix(item)} disabled={item.status !== 'IN_PROGRESS'}>
                             <Printer className="h-4 w-4 mr-1" /> Dot
                           </Button>
-                          <Button variant="outline" size="sm" className="h-8" onClick={() => handleEdit(item)} disabled={item.status !== 'IN_PROGRESS'}>
+                          {isLocked(item) && user?.role === 'SUPER_ADMIN' && (
+                            <Button variant="outline" size="sm" className="h-8" onClick={() => handleUnlock(item)}>
+                              <Unlock className="h-4 w-4 mr-1" /> Unlock
+                            </Button>
+                          )}
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="h-8"
+                            onClick={() => handleEdit(item)}
+                            disabled={item.status !== 'IN_PROGRESS' || isLocked(item)}
+                          >
                             <Eye className="h-4 w-4 mr-1" /> Edit
                           </Button>
                           {item.status !== 'COMPLETED' && item.status !== 'CLOSED' && (
-                            <Button variant="destructive" size="icon" className="h-8 w-8" onClick={() => handleDelete(item.id, item.vehicle_entry_id)}>
+                            <Button
+                              variant="destructive"
+                              size="icon"
+                              className="h-8 w-8"
+                              onClick={() => handleDelete(item.id, item.vehicle_entry_id)}
+                              disabled={isLocked(item)}
+                            >
                               <Trash2 className="h-4 w-4" />
                             </Button>
                           )}

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { Loader2 } from 'lucide-react';
 import { incrementDocumentPrintCounter } from '@/lib/printCounter';
@@ -41,9 +41,40 @@ export default function SPKPrintDotMatrix({ id }: SPKDotProps) {
   const [wo, setWo] = useState<any>(null);
   const [entry, setEntry] = useState<any>(null);
   const [printCount, setPrintCount] = useState<number>(1);
+  const lockedRef = useRef(false);
 
   useEffect(() => {
     fetchData();
+  }, [id]);
+
+  useEffect(() => {
+    const handler = async () => {
+      if (lockedRef.current) return;
+      lockedRef.current = true;
+      try {
+        let metaUser: any = null;
+        try {
+          metaUser = JSON.parse(localStorage.getItem('app_user') || 'null');
+        } catch {
+          metaUser = null;
+        }
+        const { error } = await supabase
+          .from('work_orders')
+          .update({
+            is_locked: true,
+            locked_at: new Date().toISOString(),
+            locked_by_username: metaUser?.username || null,
+            locked_by_role: metaUser?.role || null,
+            lock_reason: 'PRINT_SPK',
+          } as any)
+          .eq('id', id);
+        if (error) return;
+      } catch {
+        return;
+      }
+    };
+    window.addEventListener('afterprint', handler);
+    return () => window.removeEventListener('afterprint', handler);
   }, [id]);
 
   async function fetchData() {

@@ -17,6 +17,36 @@ export default function PrintSPK({ id }: { id: string }) {
     fetchData();
   }, [id]);
 
+  useEffect(() => {
+    let locked = false;
+    const handler = async () => {
+      if (locked) return;
+      locked = true;
+      try {
+        let metaUser: any = null;
+        try {
+          metaUser = JSON.parse(localStorage.getItem('app_user') || 'null');
+        } catch {
+          metaUser = null;
+        }
+        await supabase
+          .from('work_orders')
+          .update({
+            is_locked: true,
+            locked_at: new Date().toISOString(),
+            locked_by_username: metaUser?.username || null,
+            locked_by_role: metaUser?.role || null,
+            lock_reason: 'PRINT_SPK',
+          } as any)
+          .eq('id', id);
+      } catch {
+        return;
+      }
+    };
+    window.addEventListener('afterprint', handler);
+    return () => window.removeEventListener('afterprint', handler);
+  }, [id]);
+
   async function fetchData() {
     try {
       setPhase('fetching-agency');
