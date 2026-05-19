@@ -7,6 +7,7 @@ import { useAuth } from '@/context/AuthContext';
 import { supabase } from '@/lib/supabase';
 import { Download, Loader2, Plus, Save, Trash2 } from 'lucide-react';
 import * as XLSX from 'xlsx';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 
 const MONTHS = [
   'Januari',
@@ -339,6 +340,28 @@ export default function BudgetForecastReport() {
   const [realizationTotals, setRealizationTotals] = useState<{ R2: number[]; R4: number[] }>({ R2: emptyMonths(), R4: emptyMonths() });
   const [loadingRealizations, setLoadingRealizations] = useState(false);
 
+  const [detailOpen, setDetailOpen] = useState(false);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [detail, setDetail] = useState<{
+    groupKey: 'R2' | 'R4';
+    monthIndex: number;
+    rows: Array<{ entry_id: string; entry_date: string; wo_number: string; status: string; license_plate: string; total_real: number }>;
+    total: number;
+  } | null>(null);
+  const [woCheck, setWoCheck] = useState('');
+  const [woCheckLoading, setWoCheckLoading] = useState(false);
+  const [woCheckResult, setWoCheckResult] = useState<{
+    wo_number: string;
+    entry_date: string;
+    groupKey: 'R2' | 'R4' | '';
+    monthIndex: number;
+    total_real: number;
+    status: string;
+    license_plate: string;
+  } | null>(null);
+
+  const pad2 = (n: number) => String(n).padStart(2, '0');
+
   useEffect(() => {
     const p = String(project || '').trim().toUpperCase() || 'HARWAT';
     setProject(p);
@@ -444,7 +467,8 @@ export default function BudgetForecastReport() {
           .gte('entry_date', startDate)
           .lte('entry_date', endDate)
           .range(from, from + pageSize - 1)
-          .order('entry_date', { ascending: true });
+          .order('entry_date', { ascending: true })
+          .order('id', { ascending: true });
         if (error) throw error;
         const rows = Array.isArray(data) ? data : [];
 
@@ -452,8 +476,8 @@ export default function BudgetForecastReport() {
           const groupKey = getGroupKey(entry);
           if (!groupKey) continue;
           const dateStr = String(entry?.entry_date || '').slice(0, 10);
-          const d = dateStr ? new Date(dateStr) : null;
-          const m = d && Number.isFinite(d.getTime()) ? d.getMonth() : -1;
+          const mm = Number(dateStr.slice(5, 7));
+          const m = Number.isFinite(mm) && mm >= 1 && mm <= 12 ? mm - 1 : -1;
           if (m < 0 || m > 11) continue;
 
           const woInfo = pickWorkOrder(entry?.work_orders);
@@ -516,6 +540,235 @@ export default function BudgetForecastReport() {
     } finally {
       setLoadingRealizations(false);
     }
+  }
+
+  async function openPemakaianDetail(groupKey: 'R2' | 'R4', monthIndex: number) {
+    const y = Number(year) || new Date().getFullYear();
+    const lastDay = new Date(y, monthIndex + 1, 0).getDate();
+    const startDate = `${y}-${pad2(monthIndex + 1)}-01`;
+    const endDate = `${y}-${pad2(monthIndex + 1)}-${pad2(lastDay)}`;
+
+    setDetailOpen(true);
+    setDetailLoading(true);
+    setWoCheckResult(null);
+    try {
+      const all: any[] = [];
+      const pageSize = 500;
+      let from = 0;
+      while (true) {
+        const { data, error } = await supabase
+          .from('vehicle_entries')
+          .select(
+            `
+            id,
+            entry_date,
+            service_group,
+            vehicles (license_plate, vehicle_type),
+            work_orders (
+              id,
+              wo_number,
+              status,
+              work_date,
+              created_at,
+              work_order_billings (
+                item_type,
+                item_name,
+                qty,
+                unit_price,
+                total_price
+              )
+            ),
+            vehicle_entry_spareparts (
+              item_name,
+              qty,
+              estimated_price
+            )
+          `
+          )
+          .gte('entry_date', startDate)
+          .lte('entry_date', endDate)
+          .range(from, from + pageSize - 1)
+          .order('entry_date', { ascending: true })
+          .order('id', { ascending: true });
+        if (error) throw error;
+        const rows = Array.isArray(data) ? data : [];
+        all.push(...rows);
+        if (rows.length < pageSize) break;
+        from += pageSize;
+      }
+
+      const outRows: Array<{ entry_id: string; entry_date: string; wo_number: string; status: string; license_plate: string; total_real: number }> = [];
+      let total = 0;
+
+      for (const entry of all) {
+        const gk = getGroupKey(entry);
+        if (gk !== groupKey) continue;
+        const woInfo = pickWorkOrder(entry?.work_orders);
+        const bills = Array.isArray(woInfo?.work_order_billings) ? woInfo.work_order_billings : [];
+        const entryParts = Array.isArray(entry?.vehicle_entry_spareparts) ? entry.vehicle_entry_spareparts : [];
+
+        let realJob = 0;
+        let realPart = 0;
+
+        bills.forEach((b: any) => {
+          const t = Number(b.total_price || 0);
+          const qty = Number(b.qty || 0);
+          const unit = Number(b.unit_price || 0);
+          const type = String(b.item_type || '').toUpperCase();
+
+          if (type === 'JOB') {
+            realJob += t;
+            return;
+          }
+          if (type === 'PART') {
+            if (t > 0) {
+              realPart += t;
+              return;
+            }
+            if (unit > 0 && qty > 0) {
+              realPart += unit * qty;
+              return;
+            }
+            const billName = String(b.item_name || '').replace(/^Penggantian\s+/i, '').trim();
+            const matched = entryParts.find((p: any) => isNameMatch(String(p.item_name || ''), billName));
+            const ep = Number(matched?.estimated_price || 0);
+            const q = Number(matched?.qty || qty || 0);
+            if (ep > 0 && q > 0) realPart += ep * q;
+          }
+        });
+
+        const totalReal = realJob + realPart;
+        if (!Number.isFinite(totalReal) || totalReal === 0) continue;
+        total += totalReal;
+        outRows.push({
+          entry_id: String(entry.id),
+          entry_date: String(entry.entry_date || ''),
+          wo_number: String(woInfo?.wo_number || '-'),
+          status: String(woInfo?.status || ''),
+          license_plate: String(entry?.vehicles?.license_plate || '-'),
+          total_real: totalReal,
+        });
+      }
+
+      setDetail({ groupKey, monthIndex, rows: outRows, total });
+    } catch (e: any) {
+      toast.error('Gagal memuat rincian pemakaian: ' + String(e?.message || e));
+      setDetail(null);
+    } finally {
+      setDetailLoading(false);
+    }
+  }
+
+  async function checkWo() {
+    const q = String(woCheck || '').trim();
+    if (!q) return;
+    setWoCheckLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from('work_orders')
+        .select(
+          `
+          id,
+          wo_number,
+          status,
+          vehicle_entry_id,
+          vehicle_entries (
+            id,
+            entry_date,
+            service_group,
+            vehicles (license_plate, vehicle_type),
+            vehicle_entry_spareparts (item_name, qty, estimated_price)
+          ),
+          work_order_billings (item_type, item_name, qty, unit_price, total_price)
+        `
+        )
+        .eq('wo_number', q)
+        .maybeSingle();
+      if (error) throw error;
+      if (!data) {
+        setWoCheckResult(null);
+        toast.error('WO tidak ditemukan.');
+        return;
+      }
+
+      const entry = Array.isArray((data as any).vehicle_entries) ? (data as any).vehicle_entries[0] : (data as any).vehicle_entries;
+      const groupKey = getGroupKey(entry);
+      const dateStr = String(entry?.entry_date || '').slice(0, 10);
+      const mm = Number(dateStr.slice(5, 7));
+      const monthIndex = Number.isFinite(mm) && mm >= 1 && mm <= 12 ? mm - 1 : -1;
+
+      const bills = Array.isArray((data as any).work_order_billings) ? (data as any).work_order_billings : [];
+      const entryParts = Array.isArray(entry?.vehicle_entry_spareparts) ? entry.vehicle_entry_spareparts : [];
+
+      let realJob = 0;
+      let realPart = 0;
+
+      bills.forEach((b: any) => {
+        const total = Number(b.total_price || 0);
+        const qty = Number(b.qty || 0);
+        const unit = Number(b.unit_price || 0);
+        const type = String(b.item_type || '').toUpperCase();
+
+        if (type === 'JOB') {
+          realJob += total;
+          return;
+        }
+
+        if (type === 'PART') {
+          if (total > 0) {
+            realPart += total;
+            return;
+          }
+
+          if (unit > 0 && qty > 0) {
+            realPart += unit * qty;
+            return;
+          }
+
+          const billName = String(b.item_name || '').replace(/^Penggantian\s+/i, '').trim();
+          const matched = entryParts.find((p: any) => isNameMatch(String(p.item_name || ''), billName));
+          const ep = Number(matched?.estimated_price || 0);
+          const qn = Number(matched?.qty || qty || 0);
+          if (ep > 0 && qn > 0) realPart += ep * qn;
+        }
+      });
+
+      const totalReal = realJob + realPart;
+      setWoCheckResult({
+        wo_number: String((data as any).wo_number || q),
+        entry_date: dateStr,
+        groupKey,
+        monthIndex,
+        total_real: totalReal,
+        status: String((data as any).status || ''),
+        license_plate: String(entry?.vehicles?.license_plate || '-'),
+      });
+    } catch (e: any) {
+      toast.error('Gagal cek WO: ' + String(e?.message || e));
+      setWoCheckResult(null);
+    } finally {
+      setWoCheckLoading(false);
+    }
+  }
+
+  function exportPemakaianDetailExcel() {
+    if (!detail) {
+      toast.error('Rincian belum tersedia.');
+      return;
+    }
+    const rows = detail.rows.map((r, idx) => ({
+      No: idx + 1,
+      Tanggal: r.entry_date,
+      'No. WO': r.wo_number,
+      Status: r.status,
+      Nopol: r.license_plate,
+      'Total Realisasi': r.total_real,
+    }));
+    const ws = XLSX.utils.json_to_sheet(rows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Rincian Pemakaian');
+    const monthLabel = MONTHS[detail.monthIndex] || `Bulan-${detail.monthIndex + 1}`;
+    XLSX.writeFile(wb, `Rincian_Pemakaian_${detail.groupKey}_${monthLabel}_${year}.xlsx`);
   }
 
   function isAutoPemakaianLine(groupKey: 'R2' | 'R4', line: ForecastLine) {
@@ -881,7 +1134,19 @@ export default function BudgetForecastReport() {
                   className="h-8 w-28 text-right"
                 />
               ) : (
-                <span className="tabular-nums">{formatNumber(val, showZero)}</span>
+                isAutoPemakaianLine(g.key, line) ? (
+                  <Button
+                    variant="link"
+                    size="sm"
+                    className="h-7 px-0 tabular-nums justify-end"
+                    onClick={() => openPemakaianDetail(g.key, idx)}
+                    type="button"
+                  >
+                    {formatNumber(val, showZero)}
+                  </Button>
+                ) : (
+                  <span className="tabular-nums">{formatNumber(val, showZero)}</span>
+                )
               )}
             </td>
           );
@@ -1011,6 +1276,103 @@ export default function BudgetForecastReport() {
       {sheet.groups.map((g) => (
         <div key={g.key}>{renderGroup(g)}</div>
       ))}
+
+      <Dialog open={detailOpen} onOpenChange={setDetailOpen}>
+        <DialogContent className="sm:max-w-[1000px] max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Rincian Pemakaian (oli + Part)</DialogTitle>
+            <DialogDescription>
+              {detail ? `${detail.groupKey} • ${MONTHS[detail.monthIndex]} ${year}` : ''}
+            </DialogDescription>
+          </DialogHeader>
+
+          {detailLoading ? (
+            <div className="text-sm text-muted-foreground py-6">Memuat...</div>
+          ) : !detail ? (
+            <div className="text-sm text-muted-foreground py-6">Tidak ada data.</div>
+          ) : (
+            <div className="space-y-3">
+              <div className="border rounded-md p-3 space-y-2">
+                <div className="text-sm font-semibold">Cek WO (pembanding cepat)</div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <Input
+                    value={woCheck}
+                    onChange={(e) => setWoCheck(e.target.value)}
+                    placeholder="Contoh: WO-20260318-3984"
+                    className="w-72"
+                  />
+                  <Button variant="outline" size="sm" onClick={checkWo} disabled={woCheckLoading}>
+                    {woCheckLoading ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
+                    Cek
+                  </Button>
+                </div>
+                {woCheckResult ? (
+                  <div className="text-xs text-muted-foreground">
+                    WO: {woCheckResult.wo_number} • Tgl entry: {woCheckResult.entry_date} • Group: {woCheckResult.groupKey || '-'} • Bulan:{' '}
+                    {woCheckResult.monthIndex >= 0 ? MONTHS[woCheckResult.monthIndex] : '-'} • Realisasi:{' '}
+                    {new Intl.NumberFormat('id-ID', { maximumFractionDigits: 0 }).format(Number(woCheckResult.total_real || 0))}
+                    {woCheckResult.monthIndex === detail.monthIndex && woCheckResult.groupKey === detail.groupKey ? (
+                      detail.rows.some((r) => r.wo_number === woCheckResult.wo_number) ? (
+                        ' • Status: ADA di rincian'
+                      ) : (
+                        ' • Status: TIDAK ADA di rincian'
+                      )
+                    ) : (
+                      ''
+                    )}
+                  </div>
+                ) : null}
+              </div>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="text-sm font-semibold">
+                  Total: {new Intl.NumberFormat('id-ID', { maximumFractionDigits: 0 }).format(detail.total)}
+                </div>
+                <Button variant="outline" size="sm" onClick={exportPemakaianDetailExcel}>
+                  <Download className="h-4 w-4 mr-2" />
+                  Download Excel
+                </Button>
+              </div>
+              <div className="border rounded-md overflow-hidden">
+                <table className="w-full text-sm">
+                  <thead className="bg-slate-50">
+                    <tr>
+                      <th className="text-left px-3 py-2">Tanggal</th>
+                      <th className="text-left px-3 py-2">WO</th>
+                      <th className="text-left px-3 py-2">Status</th>
+                      <th className="text-left px-3 py-2">Nopol</th>
+                      <th className="text-right px-3 py-2">Total Realisasi</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {detail.rows.map((r) => (
+                      <tr key={r.entry_id} className="border-t">
+                        <td className="px-3 py-2 whitespace-nowrap">{String(r.entry_date || '')}</td>
+                        <td className="px-3 py-2 whitespace-nowrap">{r.wo_number}</td>
+                        <td className="px-3 py-2 whitespace-nowrap">{r.status}</td>
+                        <td className="px-3 py-2 whitespace-nowrap">{r.license_plate}</td>
+                        <td className="px-3 py-2 text-right tabular-nums">
+                          {new Intl.NumberFormat('id-ID', { maximumFractionDigits: 0 }).format(Number(r.total_real || 0))}
+                        </td>
+                      </tr>
+                    ))}
+                    <tr className="border-t bg-slate-100 font-semibold">
+                      <td className="px-3 py-2 text-right" colSpan={4}>
+                        TOTAL
+                      </td>
+                      <td className="px-3 py-2 text-right tabular-nums">
+                        {new Intl.NumberFormat('id-ID', { maximumFractionDigits: 0 }).format(Number(detail.total || 0))}
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+              <div className="text-xs text-muted-foreground">
+                Catatan: rincian ini dihitung dengan rule yang sama seperti Laporan Estimasi vs Realisasi (WO dipilih berdasarkan prioritas status).
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
