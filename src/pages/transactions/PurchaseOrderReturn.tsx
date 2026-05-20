@@ -155,19 +155,26 @@ export default function PurchaseOrderReturn() {
     setLoading(true);
     try {
       // Fetch POs that are fully received or partially received within date range
+      const startDate = String(dateFilter.startDate || '');
+      const endDate = String(dateFilter.endDate || '');
+      const startTs = startDate ? `${startDate}T00:00:00` : '';
+      const endTs = endDate ? `${endDate}T23:59:59.999` : '';
+
       const { data, error } = await supabase
         .from('purchase_orders')
         .select(`
           id,
           po_number,
           po_date,
+          created_at,
           status,
           suppliers (name),
           purchase_invoices (id, status, total_amount, paid_amount)
         `)
         .in('status', ['RECEIVED_FULL', 'RECEIVED_PART', 'RETURNED_FULL'])
-        .gte('po_date', dateFilter.startDate)
-        .lte('po_date', dateFilter.endDate)
+        .or(
+          `and(po_date.gte.${startDate},po_date.lte.${endDate}),and(po_date.is.null,created_at.gte.${startTs},created_at.lte.${endTs})`
+        )
         .order('po_date', { ascending: false });
 
       if (error) throw error;
@@ -1109,7 +1116,7 @@ export default function PurchaseOrderReturn() {
                   const paymentInfo = getPoPaymentInfo(po);
                   return (
                     <TableRow key={po.id}>
-                      <TableCell>{formatDate(po.po_date)}</TableCell>
+                      <TableCell>{formatDate(po.po_date || po.created_at)}</TableCell>
                       <TableCell>{po.po_number}</TableCell>
                       <TableCell>{po.suppliers?.name || 'N/A'}</TableCell>
                       <TableCell>

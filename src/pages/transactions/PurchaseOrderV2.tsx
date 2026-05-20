@@ -383,7 +383,7 @@ export default function PurchaseOrderV2() {
         .select(`
           *,
           suppliers (*),
-          purchase_returns (id),
+          purchase_returns (id, items:purchase_return_items(quantity_returned)),
           work_orders (
             wo_number,
             vehicle_entries (
@@ -544,8 +544,14 @@ export default function PurchaseOrderV2() {
   };
 
   const handleEdit = async (po: POWithDetails, readOnly: boolean = false) => {
+    const returns = Array.isArray((po as any).purchase_returns) ? (po as any).purchase_returns : [];
     const hasReturn =
-      Array.isArray((po as any).purchase_returns) && (po as any).purchase_returns.length > 0;
+      returns.length > 0 &&
+      returns.some((r: any) => {
+        const items = Array.isArray(r?.items) ? r.items : null;
+        if (!items) return true;
+        return items.some((it: any) => Number(it?.quantity_returned || 0) > 0);
+      });
     const canEdit =
       po.status === 'ISSUED' ||
       po.status === 'DRAFT' ||
@@ -1497,7 +1503,14 @@ export default function PurchaseOrderV2() {
                       const nopol = v?.license_plate || '-';
                       const vGroup = v?.vehicle_type || '';
                       const vText = item.work_order_id ? (vGroup ? `${nopol} (${vGroup})` : nopol) : '-';
-                      const hasReturn = Array.isArray((item as any).purchase_returns) && (item as any).purchase_returns.length > 0;
+                      const returns = Array.isArray((item as any).purchase_returns) ? (item as any).purchase_returns : [];
+                      const hasReturn =
+                        returns.length > 0 &&
+                        returns.some((r: any) => {
+                          const items = Array.isArray(r?.items) ? r.items : null;
+                          if (!items) return true;
+                          return items.some((it: any) => Number(it?.quantity_returned || 0) > 0);
+                        });
                       const canEdit =
                         item.status === 'ISSUED' ||
                         item.status === 'DRAFT' ||

@@ -46,6 +46,11 @@ export default function PurchaseDetailReport() {
   async function fetchData() {
     setLoading(true);
     try {
+      const startDate = String(dateRange.start || '');
+      const endDate = String(dateRange.end || '');
+      const startTs = startDate ? `${startDate}T00:00:00` : '';
+      const endTs = endDate ? `${endDate}T23:59:59.999` : '';
+
       let query = supabase
         .from('purchase_order_items')
         .select(
@@ -62,6 +67,7 @@ export default function PurchaseDetailReport() {
               id,
               po_number,
               po_date,
+              created_at,
               status,
               supplier_id,
               suppliers (name, id),
@@ -78,12 +84,21 @@ export default function PurchaseDetailReport() {
           { count: 'exact' }
         )
         .order('po_date', { ascending: false, foreignTable: 'purchase_orders' })
+        .order('created_at', { ascending: false, foreignTable: 'purchase_orders' })
         .range((page - 1) * pageSize, page * pageSize - 1);
 
-      if (dateRange.start) query = query.gte('purchase_orders.po_date', dateRange.start);
-      if (dateRange.end) query = query.lte('purchase_orders.po_date', dateRange.end);
+      if (startDate && endDate) {
+        query = query.or(
+          `and(po_date.gte.${startDate},po_date.lte.${endDate}),and(po_date.is.null,created_at.gte.${startTs},created_at.lte.${endTs})`,
+          { foreignTable: 'purchase_orders' }
+        );
+      } else if (startDate) {
+        query = query.or(`po_date.gte.${startDate},and(po_date.is.null,created_at.gte.${startTs})`, { foreignTable: 'purchase_orders' });
+      } else if (endDate) {
+        query = query.or(`po_date.lte.${endDate},and(po_date.is.null,created_at.lte.${endTs})`, { foreignTable: 'purchase_orders' });
+      }
       if (supplierFilter !== 'ALL') query = query.eq('purchase_orders.supplier_id', supplierFilter);
-      query = query.not('purchase_orders.status', 'in', '(DRAFT,CANCELLED,RETURNED_FULL)');
+      query = query.not('purchase_orders.status', 'in', '(DRAFT,CANCELLED)');
 
       const { data: result, error, count } = await query;
       if (error) throw error;
@@ -271,7 +286,7 @@ export default function PurchaseDetailReport() {
   const exportToExcel = () => {
     const flattenData = filteredData.map(item => ({
       'No. PO': item.purchase_orders?.po_number,
-      'Tanggal': formatDate(item.purchase_orders?.po_date),
+      'Tanggal': formatDate(item.purchase_orders?.po_date || item.purchase_orders?.created_at),
       'Supplier': item.purchase_orders?.suppliers?.name,
       'No. WO': item.purchase_orders?.work_orders?.wo_number || '-',
       'Group': getVehicleGroupLabel(item),
