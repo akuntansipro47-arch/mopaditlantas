@@ -322,7 +322,36 @@ function buildSheetFromDb(project: string, year: number, rows: any[]): ForecastS
     if (!hasBase) g.deductions.lines.unshift({ id: `${k.toLowerCase()}-base`, label: k, kind: 'base', values: emptyMonths() });
   });
 
-  return { version: 1, project: p, year: y, groups: [groups.R2, groups.R4] };
+  return ensureAutoPemakaianLines({ version: 1, project: p, year: y, groups: [groups.R2, groups.R4] });
+}
+
+function ensureAutoPemakaianLines(input: ForecastSheet): ForecastSheet {
+  const next = deepClone(input);
+  const LABEL = 'Pemakaian (oli + Part)';
+  (['R2', 'R4'] as const).forEach((groupKey) => {
+    const g = next.groups.find((x) => x.key === groupKey);
+    if (!g) return;
+    const autoId = `${groupKey.toLowerCase()}-sub-1`;
+    g.subtractions.lines = Array.isArray(g.subtractions.lines) ? g.subtractions.lines : [];
+    const existingById = g.subtractions.lines.find((x) => String(x?.id || '') === autoId);
+    const existingByLabel = g.subtractions.lines.find((x) => String(x?.kind || '') === 'subtraction' && String(x?.label || '').toUpperCase().startsWith('PEMAKAIAN'));
+    const target = existingById || existingByLabel;
+
+    if (!target) {
+      g.subtractions.lines.unshift({ id: autoId, label: LABEL, kind: 'subtraction', values: emptyMonths() });
+      return;
+    }
+
+    if (String(target.id || '') !== autoId) {
+      const idUsed = g.subtractions.lines.some((x) => String(x?.id || '') === autoId);
+      if (!idUsed) target.id = autoId;
+    }
+    target.kind = 'subtraction';
+    target.label = LABEL;
+    target.values = Array.isArray(target.values) ? normalizeMonthValues(target.values) : emptyMonths();
+  });
+
+  return next;
 }
 
 export default function BudgetForecastReport() {
@@ -718,9 +747,7 @@ export default function BudgetForecastReport() {
 
   function isAutoPemakaianLine(groupKey: 'R2' | 'R4', line: ForecastLine) {
     if (!line || line.kind !== 'subtraction') return false;
-    if (line.id === `${groupKey.toLowerCase()}-sub-1`) return true;
-    const label = String(line.label || '').toUpperCase();
-    return label.startsWith('PEMAKAIAN');
+    return line.id === `${groupKey.toLowerCase()}-sub-1`;
   }
 
   function getAutoPemakaianValues(groupKey: 'R2' | 'R4') {
@@ -752,7 +779,7 @@ export default function BudgetForecastReport() {
             .order('sort_order', { ascending: true });
           if (linesErr) throw linesErr;
           if ((rows || []).length > 0) {
-            setSheet(buildSheetFromDb(p, y, rows || []));
+            setSheet(ensureAutoPemakaianLines(buildSheetFromDb(p, y, rows || [])));
             setStorageMode('supabase');
             return;
           }
@@ -761,25 +788,25 @@ export default function BudgetForecastReport() {
       }
 
       if (header?.data) {
-        setSheet(header.data as any);
+        setSheet(ensureAutoPemakaianLines(header.data as any));
         setStorageMode('supabase');
         return;
       }
 
-      setSheet(buildDefaultSheet(p, y));
+      setSheet(ensureAutoPemakaianLines(buildDefaultSheet(p, y)));
       setStorageMode('supabase');
     } catch (e: any) {
       const msg = String(e?.message || e);
       if (msg.toLowerCase().includes('could not find the table')) {
         setDbReady(false);
         toast.error('Tabel forecasting belum ada di database. Jalankan migrasi Supabase terlebih dulu.');
-        setSheet(buildDefaultSheet(p, y));
+        setSheet(ensureAutoPemakaianLines(buildDefaultSheet(p, y)));
         setStorageMode('supabase');
         return;
       }
       setDbReady(false);
       toast.error('Gagal memuat forecasting: ' + msg);
-      setSheet(buildDefaultSheet(p, y));
+      setSheet(ensureAutoPemakaianLines(buildDefaultSheet(p, y)));
       setStorageMode('supabase');
     } finally {
       setLoading(false);
@@ -830,13 +857,14 @@ export default function BudgetForecastReport() {
 
       g.subtractions.lines.forEach((l, idx) => {
         const isAuto = isAutoPemakaianLine(groupKey, l);
+        const autoId = `${groupKey.toLowerCase()}-sub-1`;
         const v = isAuto ? getAutoPemakaianValues(groupKey) : normalizeMonthValues(l.values);
         rows.push({
-          id: l.id,
+          id: isAuto ? autoId : l.id,
           sheet_id: sheetId,
           group_key: groupKey,
           section: 'SUBTRACTION',
-          label: l.label,
+          label: isAuto ? 'Pemakaian (oli + Part)' : l.label,
           sort_order: idx,
           values: v,
         });
@@ -859,7 +887,7 @@ export default function BudgetForecastReport() {
     const y = Number(year) || new Date().getFullYear();
     setSaving(true);
     try {
-      const payload = { ...sheet, project: p, year: y };
+      const payload = ensureAutoPemakaianLines({ ...sheet, project: p, year: y });
       const { data: saved, error } = await supabase
         .from('budget_forecast_sheets' as any)
         .upsert([{ project: p, year: y, data: payload }] as any, { onConflict: 'project,year' } as any)
@@ -907,6 +935,7 @@ export default function BudgetForecastReport() {
   }, [sheet, estimationTotals]);
 
   function setCell(groupKey: 'R2' | 'R4', lineId: string, monthIndex: number, value: number) {
+    if (lineId === `${groupKey.toLowerCase()}-sub-1`) return;
     setSheet((prev) => {
       const next = deepClone(prev);
       const g = next.groups.find((x) => x.key === groupKey);
@@ -921,6 +950,7 @@ export default function BudgetForecastReport() {
   }
 
   function setLabel(groupKey: 'R2' | 'R4', lineId: string, value: string) {
+    if (lineId === `${groupKey.toLowerCase()}-sub-1`) return;
     setSheet((prev) => {
       const next = deepClone(prev);
       const g = next.groups.find((x) => x.key === groupKey);
@@ -1076,7 +1106,7 @@ export default function BudgetForecastReport() {
               </Button>
             </div>
           ) : (
-            <span>{line.label}</span>
+            <span>{isAutoPemakaianLine(g.key, line) ? 'Pemakaian (oli + Part)' : line.label}</span>
           )}
         </td>
         {MONTHS.map((_, idx) => {
