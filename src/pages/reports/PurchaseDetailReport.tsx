@@ -169,6 +169,7 @@ export default function PurchaseDetailReport() {
                 line_type,
                 job_type_id,
                 service_name,
+                brand,
                 quantity,
                 unit_price,
                 total_price,
@@ -474,6 +475,7 @@ export default function PurchaseDetailReport() {
       'Tipe': getItemTypeLabel(item),
       'Kode Barang': getItemCode(item),
       'Nama Barang': getItemName(item),
+      'Merk/Tipe Barang': String(item.brand || '').trim(),
       'Qty': item.quantity,
       'Qty Diterima': getReceivedQty(item),
       'Qty Retur': getReturnedQty(item),
@@ -589,7 +591,7 @@ export default function PurchaseDetailReport() {
                       <div className="text-xs text-gray-500">
                         {(() => {
                           const code = String(getItemCode(item) || '').trim();
-                          const merk = String(item.purchase_orders?.work_orders?.vehicle_entries?.vehicles?.brand_type || '').trim();
+                          const merk = String(item.brand || '').trim();
                           if (code && merk) return `${code} • ${merk}`;
                           if (merk) return merk;
                           return code;
