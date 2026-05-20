@@ -1,6 +1,5 @@
-import { useState, useEffect } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { supabase } from '@/lib/supabase';
-import { addDays, format, parseISO } from 'date-fns';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -11,23 +10,54 @@ import { formatCurrency, formatDate } from '@/lib/utils';
 import * as XLSX from 'xlsx';
 import { toast } from 'sonner';
 
+type PurchaseDetailRow = {
+  total_count: number | null;
+  po_id: string | null;
+  po_number: string | null;
+  po_date: string | null;
+  po_created_at: string | null;
+  po_status: string | null;
+  supplier_id: string | null;
+  supplier_name: string | null;
+  work_order_id: string | null;
+  wo_number: string | null;
+  license_plate: string | null;
+  vehicle_brand_type: string | null;
+  vehicle_type: string | null;
+  service_group: string | null;
+  line_type: string | null;
+  item_type: string | null;
+  item_code: string | null;
+  item_name: string | null;
+  item_brand: string | null;
+  unit: string | null;
+  qty: number | null;
+  unit_price: number | null;
+  total_price: number | null;
+  received_qty: number | null;
+  returned_qty: number | null;
+  payment_status_label: string | null;
+};
+
 export default function PurchaseDetailReport() {
-  const [data, setData] = useState<any[]>([]);
-  const [jobTypesMap, setJobTypesMap] = useState<Record<string, { job_name: string; job_group: string | null; job_code?: string | null }>>({});
+  const [data, setData] = useState<PurchaseDetailRow[]>([]);
   const [loading, setLoading] = useState(true);
+  const [exporting, setExporting] = useState(false);
   const [search, setSearch] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
   const [supplierFilter, setSupplierFilter] = useState('ALL');
   const [suppliers, setSuppliers] = useState<any[]>([]);
-  const [receivedQtyMap, setReceivedQtyMap] = useState<Record<string, number>>({});
-  const [returnedQtyMap, setReturnedQtyMap] = useState<Record<string, number>>({});
-  const [paymentStatusLabelMap, setPaymentStatusLabelMap] = useState<Record<string, string>>({});
   const pageSize = 200;
   const [page, setPage] = useState(1);
   const [totalRows, setTotalRows] = useState(0);
+  const [totalAmount, setTotalAmount] = useState(0);
+  const [totalReceivedValue, setTotalReceivedValue] = useState(0);
+  const [totalItems, setTotalItems] = useState(0);
   const [dateRange, setDateRange] = useState({
     start: new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0],
     end: new Date().toISOString().split('T')[0]
   });
+  const fetchSeq = useRef(0);
 
   useEffect(() => {
     fetchSuppliers();
@@ -35,17 +65,10 @@ export default function PurchaseDetailReport() {
 
   useEffect(() => {
     setPage(1);
-  }, [dateRange, supplierFilter]);
+  }, [dateRange, supplierFilter, debouncedSearch]);
 
   useEffect(() => {
-    fetchData();
-  }, [dateRange, supplierFilter, page]);
-
-  useEffect(() => {
-    const t = setTimeout(() => {
-      setPage(1);
-      fetchData();
-    }, 300);
+    const t = setTimeout(() => setDebouncedSearch(search), 250);
     return () => clearTimeout(t);
   }, [search]);
 
@@ -54,441 +77,146 @@ export default function PurchaseDetailReport() {
     setSuppliers(data || []);
   }
 
+  useEffect(() => {
+    fetchData();
+  }, [dateRange, supplierFilter, debouncedSearch, page]);
+
   async function fetchData() {
     setLoading(true);
     try {
-      const startDate = String(dateRange.start || '');
-      const endDate = String(dateRange.end || '');
-      const endExclusive = endDate ? format(addDays(parseISO(endDate), 1), 'yyyy-MM-dd') : '';
-      const hasSearch = String(search || '').trim().length > 0;
-      const from = hasSearch ? 0 : (page - 1) * pageSize;
-      const to = hasSearch ? 4999 : page * pageSize - 1;
-      const searchTrim = String(search || '').trim();
-      const isPoSearch = /[0-9]/.test(searchTrim) || searchTrim.toUpperCase().includes('PO');
-      const isNopolSearch = hasSearch && !isPoSearch;
-      const chunk = <T,>(arr: T[], size: number) => {
-        const out: T[][] = [];
-        for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
-        return out;
-      };
+      const current = ++fetchSeq.current;
 
-      let query = supabase
-        .from('purchase_orders')
-        .select(
-          `
-            id,
-            po_number,
-            po_date,
-            created_at,
-            status,
-            supplier_id,
-            suppliers (name, id),
-            work_order_id,
-            work_orders (
-              id,
-              wo_number,
-              vehicle_entries (
-                service_group,
-                vehicles (license_plate, brand_type, vehicle_type)
-              )
-            )
-          `,
-          { count: 'exact' }
-        )
-        .order('po_date', { ascending: false })
-        .order('created_at', { ascending: false })
-        .range(from, to);
+      const p_start_date = dateRange.start || null;
+      const p_end_date = dateRange.end || null;
+      const p_supplier_id = supplierFilter === 'ALL' ? null : supplierFilter;
+      const p_query = String(debouncedSearch || '').trim() || null;
+      const p_limit = pageSize;
+      const p_offset = (page - 1) * pageSize;
 
-      const startTs = startDate;
-      const endExclusiveTs = endExclusive;
-      if (!hasSearch) {
-        if (startDate && endDate) {
-          query = query.or(`and(po_date.gte.${startDate},po_date.lte.${endDate}),and(po_date.is.null,created_at.gte.${startTs},created_at.lt.${endExclusiveTs})`);
-        } else if (startDate) {
-          query = query.or(`po_date.gte.${startDate},and(po_date.is.null,created_at.gte.${startTs})`);
-        } else if (endDate) {
-          query = query.or(`po_date.lte.${endDate},and(po_date.is.null,created_at.lt.${endExclusiveTs})`);
-        }
-      }
-      if (supplierFilter !== 'ALL') query = query.eq('supplier_id', supplierFilter);
-      query = query.neq('status', 'CANCELLED');
-      if (hasSearch) {
-        if (isPoSearch) {
-          query = query.ilike('po_number', `%${searchTrim}%`);
-        } else if (isNopolSearch) {
-          const q = searchTrim.replace(/\s+/g, '%');
-          const { data: wos, error: woErr } = await supabase
-            .from('work_orders')
-            .select('id, vehicle_entries!inner(vehicles!inner(license_plate))')
-            .ilike('vehicle_entries.vehicles.license_plate', `%${q}%`)
-            .limit(5000);
-          if (woErr) throw woErr;
-          const woIds = Array.from(new Set(((wos as any[]) || []).map((x: any) => String(x?.id || '')).filter(Boolean)));
-          if (woIds.length === 0) {
-            setData([]);
-            setReceivedQtyMap({});
-            setReturnedQtyMap({});
-            setPaymentStatusLabelMap({});
-            setTotalRows(0);
-            return;
-          }
-          query = query.in('work_order_id', woIds);
-        }
-      }
+      const [{ data: summaryRows, error: summaryErr }, { data: rows, error: rowsErr }] = await Promise.all([
+        supabase.rpc('purchase_detail_report_summary', {
+          p_start_date,
+          p_end_date,
+          p_supplier_id,
+          p_query,
+        }),
+        supabase.rpc('purchase_detail_report_rows', {
+          p_start_date,
+          p_end_date,
+          p_supplier_id,
+          p_query,
+          p_limit,
+          p_offset,
+        }),
+      ]);
 
-      const { data: pos, error, count } = await query;
-      if (error) throw error;
+      if (summaryErr) throw summaryErr;
+      if (rowsErr) throw rowsErr;
 
-      setTotalRows(Number(count || 0));
+      if (current !== fetchSeq.current) return;
 
-      const poRows = (pos as any[]) || [];
-      const flatten: any[] = [];
-      const poIds: string[] = [];
-      const nextPaymentLabelMap: Record<string, string> = {};
-      const nextReturnedMap: Record<string, number> = {};
-
-      poRows.forEach((po: any) => {
-        const poId = String(po?.id || '');
-        if (!poId) return;
-        poIds.push(poId);
-      });
-
-      const itemsAll: any[] = [];
-      const invoicesAll: any[] = [];
-      const returnsAll: any[] = [];
-
-      if (poIds.length > 0) {
-        const poChunks = chunk(poIds, 200);
-        for (const ids of poChunks) {
-          const [{ data: items, error: itemsErr }, { data: invs, error: invErr }, { data: rets, error: retErr }] = await Promise.all([
-            supabase
-              .from('purchase_order_items')
-              .select(
-                `
-                po_id,
-                line_type,
-                job_type_id,
-                service_name,
-                brand,
-                quantity,
-                unit_price,
-                total_price,
-                goods (id, name, item_code, unit, item_type)
-              `
-              )
-              .in('po_id', ids),
-            supabase.from('purchase_invoices').select('po_id, status').in('po_id', ids),
-            supabase.from('purchase_returns').select('id, po_id').in('po_id', ids),
-          ]);
-          if (itemsErr) throw itemsErr;
-          if (invErr) throw invErr;
-          if (retErr) throw retErr;
-          itemsAll.push(...((items as any[]) || []));
-          invoicesAll.push(...((invs as any[]) || []));
-          returnsAll.push(...((rets as any[]) || []));
-        }
-      }
-
-      const itemsByPo = new Map<string, any[]>();
-      (itemsAll || []).forEach((it: any) => {
-        const poId = String(it?.po_id || '');
-        if (!poId) return;
-        const arr = itemsByPo.get(poId) || [];
-        arr.push(it);
-        itemsByPo.set(poId, arr);
-      });
-
-      const invoicesByPo = new Map<string, string[]>();
-      (invoicesAll || []).forEach((inv: any) => {
-        const poId = String(inv?.po_id || '');
-        const st = String(inv?.status || '').toUpperCase();
-        if (!poId) return;
-        const arr = invoicesByPo.get(poId) || [];
-        if (st) arr.push(st);
-        invoicesByPo.set(poId, arr);
-      });
-
-      const returns = returnsAll || [];
-      const returnIdToPoId = new Map<string, string>();
-      const returnIds: string[] = [];
-      returns.forEach((r: any) => {
-        const rid = String(r?.id || '');
-        const poId = String(r?.po_id || '');
-        if (!rid || !poId) return;
-        returnIdToPoId.set(rid, poId);
-        returnIds.push(rid);
-      });
-
-      if (returnIds.length > 0) {
-        const retChunks = chunk(returnIds, 200);
-        for (const ids of retChunks) {
-          const { data: retItems, error: retItemErr } = await supabase
-            .from('purchase_return_items')
-            .select('return_id, goods_id, quantity_returned')
-            .in('return_id', ids);
-          if (retItemErr) throw retItemErr;
-          (retItems || []).forEach((it: any) => {
-            const rid = String(it?.return_id || '');
-            const poId = String(returnIdToPoId.get(rid) || '');
-            const gid = String(it?.goods_id || '');
-            const qty = Number(it?.quantity_returned || 0);
-            if (!poId || !gid || !Number.isFinite(qty) || qty === 0) return;
-            const key = `${poId}:${gid}`;
-            nextReturnedMap[key] = (nextReturnedMap[key] || 0) + qty;
-          });
-        }
-      }
-
-      poRows.forEach((po: any) => {
-        const poId = String(po?.id || '');
-        if (!poId) return;
-
-        const invStatuses = invoicesByPo.get(poId) || [];
-        let statusBayar = 'Belum Ditagih';
-        if (invStatuses.includes('PAID')) statusBayar = 'Lunas';
-        else if (invStatuses.includes('PARTIAL')) statusBayar = 'Bayar Sebagian';
-        else if (invStatuses.length > 0) statusBayar = 'Belum Lunas';
-        nextPaymentLabelMap[poId] = statusBayar;
-
-        const items = itemsByPo.get(poId) || [];
-        if (items.length === 0) {
-          flatten.push({
-            po_id: poId,
-            line_type: '',
-            job_type_id: '',
-            service_name: '',
-            quantity: 0,
-            unit_price: 0,
-            total_price: 0,
-            goods: null,
-            purchase_orders: po,
-          });
-          return;
-        }
-
-        items.forEach((it: any) => {
-          flatten.push({ ...it, purchase_orders: po });
-        });
-      });
-
-      setPaymentStatusLabelMap(nextPaymentLabelMap);
-      setReturnedQtyMap(nextReturnedMap);
-
-      const jobTypeIds = Array.from(new Set(flatten.map((it: any) => String(it.job_type_id || '').trim()).filter(Boolean)));
-      if (jobTypeIds.length > 0) {
-        let jobTypes: any[] = [];
-        const attempt1 = await supabase
-          .from('job_types')
-          .select('id, job_name, job_group, job_code')
-          .in('id', jobTypeIds);
-        if (!attempt1.error) {
-          jobTypes = (attempt1.data as any[]) || [];
-        } else {
-          const attempt2 = await supabase
-            .from('job_types')
-            .select('id, job_name, job_group')
-            .in('id', jobTypeIds);
-          if (attempt2.error) throw attempt2.error;
-          jobTypes = (attempt2.data as any[]) || [];
-        }
-
-        const next: Record<string, { job_name: string; job_group: string | null; job_code?: string | null }> = {};
-        (jobTypes || []).forEach((jt: any) => {
-          next[String(jt.id)] = {
-            job_name: String(jt.job_name || '').trim(),
-            job_group: jt.job_group ?? null,
-            job_code: jt.job_code ?? null,
-          };
-        });
-        setJobTypesMap(next);
-      } else {
-        setJobTypesMap({});
-      }
-
-      const nextReceivedMap: Record<string, number> = {};
-      if (poIds.length > 0) {
-        const chunkSize = 200;
-        for (let i = 0; i < poIds.length; i += chunkSize) {
-          const chunk = poIds.slice(i, i + chunkSize);
-          const { data: receipts, error: receiptErr } = await supabase
-            .from('goods_receipts')
-            .select(`
-              id,
-              po_id,
-              items:goods_receipt_items (
-                goods_id,
-                quantity_received
-              )
-            `)
-            .in('po_id', chunk);
-          if (receiptErr) throw receiptErr;
-
-          (receipts || []).forEach((r: any) => {
-            const poId = String(r.po_id || '');
-            const its = Array.isArray(r.items) ? r.items : [];
-            its.forEach((it: any) => {
-              const gid = String(it.goods_id || '');
-              const qty = Number(it.quantity_received || 0);
-              if (!poId || !gid || qty <= 0) return;
-              const key = `${poId}:${gid}`;
-              nextReceivedMap[key] = (nextReceivedMap[key] || 0) + qty;
-            });
-          });
-        }
-      }
-
-      setReceivedQtyMap(nextReceivedMap);
-      setData(flatten);
+      const summary = Array.isArray(summaryRows) ? (summaryRows[0] as any) : null;
+      setTotalRows(Number(summary?.total_count || 0));
+      setTotalAmount(Number(summary?.total_amount || 0));
+      setTotalReceivedValue(Number(summary?.total_received_value || 0));
+      setTotalItems(Number(summary?.item_rows || 0));
+      setData((rows as PurchaseDetailRow[]) || []);
     } catch (error) {
       console.error('Error fetching Purchase Details:', error);
       toast.error('Gagal memuat rincian pembelian: ' + String((error as any)?.message || error));
       setData([]);
-      setReceivedQtyMap({});
-      setReturnedQtyMap({});
-      setPaymentStatusLabelMap({});
       setTotalRows(0);
+      setTotalAmount(0);
+      setTotalReceivedValue(0);
+      setTotalItems(0);
     } finally {
       setLoading(false);
     }
   }
-
-  const isJasa = (item: any) => {
-    const lt = String(item?.line_type || '').toUpperCase();
-    if (lt === 'JASA') return true;
-    const hasJobType = Boolean(String(item?.job_type_id || '').trim());
-    if (hasJobType) return true;
-    const hasServiceName = Boolean(String(item?.service_name || '').trim());
-    return hasServiceName;
+  const getVehicleGroupLabel = (row: PurchaseDetailRow) => {
+    const sg = String(row.service_group || '').toUpperCase();
+    if (sg.includes('R4')) return 'R4';
+    if (sg.includes('R2')) return 'R2';
+    const vt = String(row.vehicle_type || '').toUpperCase();
+    if (vt.includes('R4') || vt.includes('MOBIL') || vt.includes('CAR') || vt.includes('PICKUP') || vt.includes('TRUCK')) return 'R4';
+    if (vt.includes('R2') || vt.includes('MOTOR') || vt.includes('BIKE')) return 'R2';
+    return '-';
   };
 
-  const getItemTypeLabel = (item: any) => {
-    if (isJasa(item)) return 'JASA';
-    return item.goods?.item_type || '-';
-  };
-
-  const getItemName = (item: any) => {
-    if (isJasa(item)) {
-      const jt = jobTypesMap[String(item.job_type_id || '')];
-      return jt?.job_name || String(item.service_name || '').trim() || 'Jasa';
-    }
-    if (item.goods?.name) return item.goods.name;
-    if (Number(item.quantity || 0) === 0 && Number(item.unit_price || 0) === 0 && Number(item.total_price || 0) === 0) return '(Tidak ada item)';
-    return '';
-  };
-
-  const getItemCode = (item: any) => {
-    if (isJasa(item)) {
-      const jt = jobTypesMap[String(item.job_type_id || '')];
-      return jt?.job_code || '-';
-    }
-    return item.goods?.item_code || '';
-  };
-
-  const getUnitLabel = (item: any) => {
-    if (isJasa(item)) return '';
-    return item.goods?.unit || '';
-  };
-
-  const receivedKey = (item: any) => {
-    if (isJasa(item)) return '';
-    const poId = String(item.purchase_orders?.id || item.po_id || '');
-    const gid = String(item.goods?.id || '');
-    return poId && gid ? `${poId}:${gid}` : '';
-  };
-
-  const getReceivedQty = (item: any) => {
-    if (isJasa(item)) return Number(item.quantity || 0);
-    const key = receivedKey(item);
-    return key ? Number(receivedQtyMap[key] || 0) : 0;
-  };
-
-  const getReturnedQty = (item: any) => {
-    if (isJasa(item)) return 0;
-    const poId = String(item.purchase_orders?.id || item.po_id || '');
-    const gid = String(item.goods?.id || '');
-    if (!poId || !gid) return 0;
-    const key = `${poId}:${gid}`;
-    return Number(returnedQtyMap[key] || 0);
-  };
-
-  const getPaymentStatusLabel = (item: any) => {
-    const poId = String(item.purchase_orders?.id || item.po_id || '');
-    return poId ? String(paymentStatusLabelMap[poId] || 'Belum Ditagih') : 'Belum Ditagih';
-  };
-
-  const getReceiveStatus = (item: any) => {
-    if (isJasa(item)) return 'Sudah';
-    const ordered = Number(item.quantity || 0);
-    const received = getReceivedQty(item);
+  const getReceiveStatus = (row: PurchaseDetailRow) => {
+    const ordered = Number(row.qty || 0);
+    const received = Number(row.received_qty || 0);
     if (ordered <= 0) return 'N/A';
     if (received <= 0) return 'Belum';
     if (received + 1e-9 < ordered) return 'Parsial';
     return 'Sudah';
   };
 
-  const getVehicleGroupLabel = (item: any) => {
-    const vt = String(item.purchase_orders?.work_orders?.vehicle_entries?.vehicles?.vehicle_type || '').toUpperCase();
-    if (vt.includes('R4') || vt.includes('MOBIL') || vt.includes('CAR') || vt.includes('PICKUP') || vt.includes('TRUCK')) return 'R4';
-    if (vt.includes('R2') || vt.includes('MOTOR') || vt.includes('BIKE')) return 'R2';
-    return '-';
-  };
-
-  const filteredData = data.filter(item => 
-    getItemName(item).toLowerCase().includes(search.toLowerCase()) ||
-    String(item.purchase_orders?.po_number || '').toLowerCase().includes(search.toLowerCase()) ||
-    String(item.purchase_orders?.suppliers?.name || '').toLowerCase().includes(search.toLowerCase()) ||
-    (item.purchase_orders?.work_orders?.wo_number || '').toLowerCase().includes(search.toLowerCase()) ||
-    getVehicleGroupLabel(item).toLowerCase().includes(search.toLowerCase()) ||
-    (item.purchase_orders?.work_orders?.vehicle_entries?.vehicles?.license_plate || '').toLowerCase().includes(search.toLowerCase()) ||
-    (item.purchase_orders?.work_orders?.vehicle_entries?.vehicles?.brand_type || '').toLowerCase().includes(search.toLowerCase())
-  );
-
-  const getTotalPrice = (item: any) => {
-    const tp = Number(item.total_price || 0);
-    if (tp) return tp;
-    return Number(item.quantity || 0) * Number(item.unit_price || 0);
-  };
-
-  const totalAmount = filteredData.reduce((sum, item) => sum + getTotalPrice(item), 0);
-  const totalReceivedValue = filteredData.reduce((sum, item) => {
-    const ordered = Number(item.quantity || 0);
-    const received = getReceivedQty(item);
-    const unit = Number(item.unit_price || 0);
-    const qty = Math.min(ordered, received);
-    return sum + qty * unit;
-  }, 0);
   const totalDiff = totalAmount - totalReceivedValue;
-  const hasSearch = String(search || '').trim().length > 0;
-  const totalPages = hasSearch ? 1 : Math.max(1, Math.ceil(totalRows / pageSize));
+  const totalPages = Math.max(1, Math.ceil(totalRows / pageSize));
 
-  const exportToExcel = () => {
-    const flattenData = filteredData.map(item => ({
-      'No. PO': item.purchase_orders?.po_number,
-      'Tanggal': formatDate(item.purchase_orders?.po_date || item.purchase_orders?.created_at),
-      'Supplier': item.purchase_orders?.suppliers?.name,
-      'Status PO': item.purchase_orders?.status,
-      'Status Bayar': getPaymentStatusLabel(item),
-      'No. WO': item.purchase_orders?.work_orders?.wo_number || '-',
-      'Group': getVehicleGroupLabel(item),
-      'Nopol': item.purchase_orders?.work_orders?.vehicle_entries?.vehicles?.license_plate || '-',
-      'Nama Kendaraan': item.purchase_orders?.work_orders?.vehicle_entries?.vehicles?.brand_type || '-',
-      'Tipe': getItemTypeLabel(item),
-      'Kode Barang': getItemCode(item),
-      'Nama Barang': getItemName(item),
-      'Merk/Tipe Barang': String(item.brand || '').trim(),
-      'Qty': item.quantity,
-      'Qty Diterima': getReceivedQty(item),
-      'Qty Retur': getReturnedQty(item),
-      'Status Terima': getReceiveStatus(item),
-      'Satuan': getUnitLabel(item),
-      'Harga Satuan': item.unit_price,
-      'Total Harga': getTotalPrice(item)
-    }));
+  const exportToExcel = async () => {
+    if (exporting) return;
+    setExporting(true);
+    try {
+      const p_start_date = dateRange.start || null;
+      const p_end_date = dateRange.end || null;
+      const p_supplier_id = supplierFilter === 'ALL' ? null : supplierFilter;
+      const p_query = String(debouncedSearch || '').trim() || null;
 
-    const ws = XLSX.utils.json_to_sheet(flattenData);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Rincian Pembelian");
-    XLSX.writeFile(wb, `Rincian_Pembelian_${dateRange.start}_${dateRange.end}.xlsx`);
+      const exportLimit = 2000;
+      const rowsAll: PurchaseDetailRow[] = [];
+      let offset = 0;
+      const maxRows = 50000;
+
+      while (offset < totalRows && offset < maxRows) {
+        const { data: rows, error } = await supabase.rpc('purchase_detail_report_rows', {
+          p_start_date,
+          p_end_date,
+          p_supplier_id,
+          p_query,
+          p_limit: exportLimit,
+          p_offset: offset,
+        });
+        if (error) throw error;
+        const batch = (rows as PurchaseDetailRow[]) || [];
+        rowsAll.push(...batch);
+        if (batch.length < exportLimit) break;
+        offset += exportLimit;
+      }
+
+      const flattenData = rowsAll.map((r) => ({
+        'No. PO': r.po_number,
+        'Tanggal': formatDate(r.po_date || r.po_created_at),
+        'Supplier': r.supplier_name,
+        'Status PO': r.po_status,
+        'Status Bayar': r.payment_status_label,
+        'No. WO': r.wo_number || '-',
+        'Group': getVehicleGroupLabel(r),
+        'Nopol': r.license_plate || '-',
+        'Nama Kendaraan': r.vehicle_brand_type || '-',
+        'Tipe': r.item_type || '-',
+        'Kode Barang': r.item_code || '',
+        'Nama Barang': r.item_name || '',
+        'Merk/Tipe Barang': String(r.item_brand || '').trim(),
+        'Qty': Number(r.qty || 0),
+        'Qty Diterima': Number(r.received_qty || 0),
+        'Qty Retur': Number(r.returned_qty || 0),
+        'Status Terima': getReceiveStatus(r),
+        'Satuan': r.unit || '',
+        'Harga Satuan': Number(r.unit_price || 0),
+        'Total Harga': Number(r.total_price || 0),
+      }));
+
+      const ws = XLSX.utils.json_to_sheet(flattenData);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'Rincian Pembelian');
+      XLSX.writeFile(wb, `Rincian_Pembelian_${dateRange.start}_${dateRange.end}.xlsx`);
+    } catch (error) {
+      toast.error('Gagal export: ' + String((error as any)?.message || error));
+    } finally {
+      setExporting(false);
+    }
   };
 
   return (
@@ -513,7 +241,9 @@ export default function PurchaseDetailReport() {
               ))}
             </SelectContent>
           </Select>
-           <Button variant="outline" onClick={exportToExcel}><Download className="mr-2 h-4 w-4" /> Export</Button>
+           <Button variant="outline" disabled={loading || exporting || totalRows === 0} onClick={exportToExcel}>
+             <Download className="mr-2 h-4 w-4" /> Export
+           </Button>
         </div>
       </div>
 
@@ -528,7 +258,7 @@ export default function PurchaseDetailReport() {
         </Card>
         <Card>
           <CardHeader className="pb-2"><CardTitle className="text-sm font-medium">Jumlah Item Barang</CardTitle></CardHeader>
-          <CardContent><div className="text-2xl font-bold">{filteredData.length}</div></CardContent>
+          <CardContent><div className="text-2xl font-bold">{totalItems}</div></CardContent>
         </Card>
         <Card>
           <CardHeader className="pb-2"><CardTitle className="text-sm font-medium">Selisih (PO - Terima)</CardTitle></CardHeader>
@@ -542,7 +272,7 @@ export default function PurchaseDetailReport() {
             <CardTitle>Daftar Barang Dibeli</CardTitle>
             <div className="relative w-64">
               <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
-              <Input placeholder="Cari No. PO / Nopol / Barang / Supplier..." className="pl-8" value={search} onChange={e => setSearch(e.target.value)} />
+              <Input placeholder="Cari bebas berdasarkan kolom laporan..." className="pl-8" value={search} onChange={e => setSearch(e.target.value)} />
             </div>
           </div>
         </CardHeader>
@@ -569,29 +299,29 @@ export default function PurchaseDetailReport() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filteredData.length === 0 ? (
+              {data.length === 0 ? (
                 <TableRow><TableCell colSpan={16} className="text-center py-8">Tidak ada data.</TableCell></TableRow>
               ) : (
-                filteredData.map((item, idx) => (
+                data.map((item, idx) => (
                   <TableRow key={idx}>
-                    <TableCell>{formatDate(item.purchase_orders?.po_date || item.purchase_orders?.created_at)}</TableCell>
-                    <TableCell className="font-medium">{item.purchase_orders?.po_number}</TableCell>
-                    <TableCell>{item.purchase_orders?.suppliers?.name}</TableCell>
-                    <TableCell>{String(item.purchase_orders?.status || '-')}</TableCell>
-                    <TableCell>{getPaymentStatusLabel(item)}</TableCell>
-                    <TableCell>{item.purchase_orders?.work_orders?.wo_number || '-'}</TableCell>
+                    <TableCell>{formatDate(item.po_date || item.po_created_at)}</TableCell>
+                    <TableCell className="font-medium">{item.po_number}</TableCell>
+                    <TableCell>{item.supplier_name}</TableCell>
+                    <TableCell>{String(item.po_status || '-')}</TableCell>
+                    <TableCell>{String(item.payment_status_label || 'Belum Ditagih')}</TableCell>
+                    <TableCell>{item.wo_number || '-'}</TableCell>
                     <TableCell>{getVehicleGroupLabel(item)}</TableCell>
                     <TableCell>
-                      <div className="font-medium">{item.purchase_orders?.work_orders?.vehicle_entries?.vehicles?.license_plate || '-'}</div>
-                      <div className="text-xs text-gray-500">{item.purchase_orders?.work_orders?.vehicle_entries?.vehicles?.brand_type || '-'}</div>
+                      <div className="font-medium">{item.license_plate || '-'}</div>
+                      <div className="text-xs text-gray-500">{item.vehicle_brand_type || '-'}</div>
                     </TableCell>
-                    <TableCell>{getItemTypeLabel(item)}</TableCell>
+                    <TableCell>{item.item_type || '-'}</TableCell>
                     <TableCell>
-                      <div className="font-medium">{getItemName(item)}</div>
+                      <div className="font-medium">{item.item_name || ''}</div>
                       <div className="text-xs text-gray-500">
                         {(() => {
-                          const code = String(getItemCode(item) || '').trim();
-                          const merk = String(item.brand || '').trim();
+                          const code = String(item.item_code || '').trim();
+                          const merk = String(item.item_brand || '').trim();
                           if (code && merk) return `${code} • ${merk}`;
                           if (merk) return merk;
                           return code;
@@ -599,13 +329,13 @@ export default function PurchaseDetailReport() {
                       </div>
                     </TableCell>
                     <TableCell className="text-center">
-                      {item.quantity} <span className="text-xs text-gray-500">{getUnitLabel(item)}</span>
+                      {Number(item.qty || 0)} <span className="text-xs text-gray-500">{item.unit || ''}</span>
                     </TableCell>
                     <TableCell className="text-center">
-                      {getReceivedQty(item)} <span className="text-xs text-gray-500">{getUnitLabel(item)}</span>
+                      {Number(item.received_qty || 0)} <span className="text-xs text-gray-500">{item.unit || ''}</span>
                     </TableCell>
                     <TableCell className="text-center">
-                      {getReturnedQty(item)} <span className="text-xs text-gray-500">{getUnitLabel(item)}</span>
+                      {Number(item.returned_qty || 0)} <span className="text-xs text-gray-500">{item.unit || ''}</span>
                     </TableCell>
                     <TableCell>
                       {(() => {
@@ -621,8 +351,8 @@ export default function PurchaseDetailReport() {
                         return <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${cls}`}>{s}</span>;
                       })()}
                     </TableCell>
-                    <TableCell className="text-right">{formatCurrency(item.unit_price)}</TableCell>
-                    <TableCell className="text-right font-bold">{formatCurrency(getTotalPrice(item))}</TableCell>
+                    <TableCell className="text-right">{formatCurrency(Number(item.unit_price || 0))}</TableCell>
+                    <TableCell className="text-right font-bold">{formatCurrency(Number(item.total_price || 0))}</TableCell>
                   </TableRow>
                 ))
               )}
@@ -631,14 +361,14 @@ export default function PurchaseDetailReport() {
 
           <div className="flex flex-wrap items-center justify-between gap-3 mt-4">
             <div className="text-sm text-muted-foreground">
-              {String(search || '').trim()
-                ? `Mode pencarian: menampilkan ${filteredData.length} baris (ambil max 5000 PO)`
-                : `Menampilkan ${(page - 1) * pageSize + 1}-${Math.min(page * pageSize, totalRows)} dari ${totalRows} PO`}
+              {totalRows === 0
+                ? 'Tidak ada data'
+                : `Menampilkan ${(page - 1) * pageSize + 1}-${Math.min((page - 1) * pageSize + data.length, totalRows)} dari ${totalRows} baris`}
             </div>
             <div className="flex items-center gap-2">
               <Button
                 variant="outline"
-                disabled={loading || hasSearch || page <= 1}
+                disabled={loading || page <= 1}
                 onClick={() => setPage((p) => Math.max(1, p - 1))}
               >
                 Sebelumnya
@@ -648,7 +378,7 @@ export default function PurchaseDetailReport() {
               </div>
               <Button
                 variant="outline"
-                disabled={loading || hasSearch || page >= totalPages}
+                disabled={loading || page >= totalPages}
                 onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
               >
                 Berikutnya
