@@ -624,8 +624,11 @@ export default function PurchasePayment() {
   };
 
   const filteredInvoices = invoices.filter(inv => {
-    const matchSearch = inv.invoice_number.toLowerCase().includes(search.toLowerCase()) ||
-                        inv.suppliers?.name.toLowerCase().includes(search.toLowerCase());
+    const q = String(search || '').toLowerCase();
+    const matchSearch =
+      String(inv.invoice_number || '').toLowerCase().includes(q) ||
+      String(inv.purchase_orders?.po_number || '').toLowerCase().includes(q) ||
+      String(inv.suppliers?.name || '').toLowerCase().includes(q);
     const matchStatus = statusFilter === 'ALL' ? true : inv.status === statusFilter;
     
     const invDate = new Date(inv.invoice_date);
@@ -654,7 +657,7 @@ export default function PurchasePayment() {
         <CardContent>
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
             <Input 
-              placeholder="Cari No. Tagihan / Supplier..."
+              placeholder="Cari No. Tagihan / No. PO / Supplier..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               className="md:col-span-2"
@@ -758,7 +761,7 @@ export default function PurchasePayment() {
             <TabsContent value="history">
               <div className="mt-4">
                 <Input 
-                  placeholder="Cari di riwayat..."
+                  placeholder="Cari No. Tagihan / No. PO / Supplier..."
                   value={historySearch}
                   onChange={(e) => setHistorySearch(e.target.value)}
                   className="mb-4"
