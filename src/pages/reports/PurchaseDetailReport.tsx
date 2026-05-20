@@ -45,7 +45,7 @@ export default function PurchaseDetailReport() {
     const t = setTimeout(() => {
       setPage(1);
       fetchData();
-    }, 400);
+    }, 300);
     return () => clearTimeout(t);
   }, [search]);
 
@@ -64,6 +64,8 @@ export default function PurchaseDetailReport() {
       const from = hasSearch ? 0 : (page - 1) * pageSize;
       const to = hasSearch ? 4999 : page * pageSize - 1;
       const searchTrim = String(search || '').trim();
+      const isPoSearch = /[0-9]/.test(searchTrim) || searchTrim.toUpperCase().includes('PO');
+      const isNopolSearch = hasSearch && !isPoSearch;
       const chunk = <T,>(arr: T[], size: number) => {
         const out: T[][] = [];
         for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
@@ -81,6 +83,7 @@ export default function PurchaseDetailReport() {
             status,
             supplier_id,
             suppliers (name, id),
+            work_order_id,
             work_orders (
               id,
               wo_number,
@@ -98,17 +101,39 @@ export default function PurchaseDetailReport() {
 
       const startTs = startDate;
       const endExclusiveTs = endExclusive;
-      if (startDate && endDate) {
-        query = query.or(`and(po_date.gte.${startDate},po_date.lte.${endDate}),and(po_date.is.null,created_at.gte.${startTs},created_at.lt.${endExclusiveTs})`);
-      } else if (startDate) {
-        query = query.or(`po_date.gte.${startDate},and(po_date.is.null,created_at.gte.${startTs})`);
-      } else if (endDate) {
-        query = query.or(`po_date.lte.${endDate},and(po_date.is.null,created_at.lt.${endExclusiveTs})`);
+      if (!hasSearch) {
+        if (startDate && endDate) {
+          query = query.or(`and(po_date.gte.${startDate},po_date.lte.${endDate}),and(po_date.is.null,created_at.gte.${startTs},created_at.lt.${endExclusiveTs})`);
+        } else if (startDate) {
+          query = query.or(`po_date.gte.${startDate},and(po_date.is.null,created_at.gte.${startTs})`);
+        } else if (endDate) {
+          query = query.or(`po_date.lte.${endDate},and(po_date.is.null,created_at.lt.${endExclusiveTs})`);
+        }
       }
       if (supplierFilter !== 'ALL') query = query.eq('supplier_id', supplierFilter);
       query = query.neq('status', 'CANCELLED');
       if (hasSearch) {
-        query = query.ilike('po_number', `%${searchTrim}%`);
+        if (isPoSearch) {
+          query = query.ilike('po_number', `%${searchTrim}%`);
+        } else if (isNopolSearch) {
+          const q = searchTrim.replace(/\s+/g, '%');
+          const { data: wos, error: woErr } = await supabase
+            .from('work_orders')
+            .select('id, vehicle_entries!inner(vehicles!inner(license_plate))')
+            .ilike('vehicle_entries.vehicles.license_plate', `%${q}%`)
+            .limit(5000);
+          if (woErr) throw woErr;
+          const woIds = Array.from(new Set(((wos as any[]) || []).map((x: any) => String(x?.id || '')).filter(Boolean)));
+          if (woIds.length === 0) {
+            setData([]);
+            setReceivedQtyMap({});
+            setReturnedQtyMap({});
+            setPaymentStatusLabelMap({});
+            setTotalRows(0);
+            return;
+          }
+          query = query.in('work_order_id', woIds);
+        }
       }
 
       const { data: pos, error, count } = await query;
@@ -515,7 +540,7 @@ export default function PurchaseDetailReport() {
             <CardTitle>Daftar Barang Dibeli</CardTitle>
             <div className="relative w-64">
               <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
-              <Input placeholder="Cari Barang / PO / Supplier..." className="pl-8" value={search} onChange={e => setSearch(e.target.value)} />
+              <Input placeholder="Cari No. PO / Nopol / Barang / Supplier..." className="pl-8" value={search} onChange={e => setSearch(e.target.value)} />
             </div>
           </div>
         </CardHeader>
@@ -561,7 +586,15 @@ export default function PurchaseDetailReport() {
                     <TableCell>{getItemTypeLabel(item)}</TableCell>
                     <TableCell>
                       <div className="font-medium">{getItemName(item)}</div>
-                      <div className="text-xs text-gray-500">{getItemCode(item)}</div>
+                      <div className="text-xs text-gray-500">
+                        {(() => {
+                          const code = String(getItemCode(item) || '').trim();
+                          const merk = String(item.purchase_orders?.work_orders?.vehicle_entries?.vehicles?.brand_type || '').trim();
+                          if (code && merk) return `${code} • ${merk}`;
+                          if (merk) return merk;
+                          return code;
+                        })()}
+                      </div>
                     </TableCell>
                     <TableCell className="text-center">
                       {item.quantity} <span className="text-xs text-gray-500">{getUnitLabel(item)}</span>
