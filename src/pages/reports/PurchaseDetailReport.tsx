@@ -90,14 +90,11 @@ export default function PurchaseDetailReport() {
         .order('created_at', { ascending: false })
         .range(from, to);
 
-      if (startDate && endDate) {
-        query = query.or(
-          `and(po_date.gte.${startDate},po_date.lte.${endDate}),and(po_date.is.null,created_at.gte.${startDate},created_at.lt.${endExclusive})`
-        );
-      } else if (startDate) {
-        query = query.or(`po_date.gte.${startDate},and(po_date.is.null,created_at.gte.${startDate})`);
-      } else if (endDate) {
-        query = query.or(`po_date.lte.${endDate},and(po_date.is.null,created_at.lt.${endExclusive})`);
+      if (startDate) {
+        query = query.gte('created_at', `${startDate}T00:00:00`);
+      }
+      if (endExclusive) {
+        query = query.lt('created_at', `${endExclusive}T00:00:00`);
       }
       if (supplierFilter !== 'ALL') query = query.eq('supplier_id', supplierFilter);
       query = query.neq('status', 'CANCELLED');
