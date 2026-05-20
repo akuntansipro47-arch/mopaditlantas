@@ -100,6 +100,8 @@ export default function PurchaseOrderDetailReport() {
     try {
       const startDate = dateRange.start;
       const endDate = dateRange.end;
+      const startTs = `${startDate}T00:00:00`;
+      const endTs = `${endDate}T23:59:59.999`;
 
       const from = hasSearch ? 0 : (page - 1) * ITEMS_PER_PAGE;
       const to = hasSearch ? 4999 : from + ITEMS_PER_PAGE - 1;
@@ -112,9 +114,12 @@ export default function PurchaseOrderDetailReport() {
           purchase_orders!inner(*, suppliers:supplier_id(name)),
           goods(name)
         `, { count: 'exact' })
-        .gte('purchase_orders.po_date', startDate)
-        .lte('purchase_orders.po_date', endDate)
+        .or(
+          `and(po_date.gte.${startDate},po_date.lte.${endDate}),and(po_date.is.null,created_at.gte.${startTs},created_at.lte.${endTs})`,
+          { foreignTable: 'purchase_orders' }
+        )
         .order('po_date', { foreignTable: 'purchase_orders', ascending: false })
+        .order('created_at', { foreignTable: 'purchase_orders', ascending: false })
         .range(from, to);
 
       const { data: poItems, error: poError, count: totalCount } = await poQuery;
@@ -231,9 +236,12 @@ export default function PurchaseOrderDetailReport() {
           purchase_orders!inner(*, suppliers:supplier_id(name)),
           goods(name)
         `)
-        .gte('purchase_orders.po_date', dateRange.start)
-        .lte('purchase_orders.po_date', dateRange.end)
-        .order('po_date', { foreignTable: 'purchase_orders', ascending: false });
+        .or(
+          `and(po_date.gte.${dateRange.start},po_date.lte.${dateRange.end}),and(po_date.is.null,created_at.gte.${dateRange.start}T00:00:00,created_at.lte.${dateRange.end}T23:59:59.999)`,
+          { foreignTable: 'purchase_orders' }
+        )
+        .order('po_date', { foreignTable: 'purchase_orders', ascending: false })
+        .order('created_at', { foreignTable: 'purchase_orders', ascending: false });
 
       const { data: poItems, error: poError } = await poQuery;
   
