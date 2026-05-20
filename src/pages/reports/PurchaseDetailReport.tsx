@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
+import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -40,28 +41,16 @@ type PurchaseDetailRow = {
 };
 
 export default function PurchaseDetailReport() {
-  const [data, setData] = useState<PurchaseDetailRow[]>([]);
-  const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState(false);
   const [search, setSearch] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [supplierFilter, setSupplierFilter] = useState('ALL');
-  const [suppliers, setSuppliers] = useState<any[]>([]);
   const pageSize = 200;
   const [page, setPage] = useState(1);
-  const [totalRows, setTotalRows] = useState(0);
-  const [totalAmount, setTotalAmount] = useState(0);
-  const [totalReceivedValue, setTotalReceivedValue] = useState(0);
-  const [totalItems, setTotalItems] = useState(0);
   const [dateRange, setDateRange] = useState({
     start: new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0],
     end: new Date().toISOString().split('T')[0]
   });
-  const fetchSeq = useRef(0);
-
-  useEffect(() => {
-    fetchSuppliers();
-  }, []);
 
   useEffect(() => {
     setPage(1);
@@ -72,20 +61,20 @@ export default function PurchaseDetailReport() {
     return () => clearTimeout(t);
   }, [search]);
 
-  async function fetchSuppliers() {
-    const { data } = await supabase.from('suppliers').select('*').order('name');
-    setSuppliers(data || []);
-  }
+  const suppliersQuery = useQuery({
+    queryKey: ['suppliers'],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('suppliers').select('*').order('name');
+      if (error) throw error;
+      return data || [];
+    },
+    staleTime: 1000 * 60 * 60,
+    gcTime: 1000 * 60 * 60 * 6,
+  });
 
-  useEffect(() => {
-    fetchData();
-  }, [dateRange, supplierFilter, debouncedSearch, page]);
-
-  async function fetchData() {
-    setLoading(true);
-    try {
-      const current = ++fetchSeq.current;
-
+  const detailQuery = useQuery({
+    queryKey: ['purchaseDetailReport', dateRange.start, dateRange.end, supplierFilter, debouncedSearch, page],
+    queryFn: async () => {
       const p_start_date = dateRange.start || null;
       const p_end_date = dateRange.end || null;
       const p_supplier_id = supplierFilter === 'ALL' ? null : supplierFilter;
@@ -113,26 +102,36 @@ export default function PurchaseDetailReport() {
       if (summaryErr) throw summaryErr;
       if (rowsErr) throw rowsErr;
 
-      if (current !== fetchSeq.current) return;
-
       const summary = Array.isArray(summaryRows) ? (summaryRows[0] as any) : null;
-      setTotalRows(Number(summary?.total_count || 0));
-      setTotalAmount(Number(summary?.total_amount || 0));
-      setTotalReceivedValue(Number(summary?.total_received_value || 0));
-      setTotalItems(Number(summary?.item_rows || 0));
-      setData((rows as PurchaseDetailRow[]) || []);
-    } catch (error) {
-      console.error('Error fetching Purchase Details:', error);
-      toast.error('Gagal memuat rincian pembelian: ' + String((error as any)?.message || error));
-      setData([]);
-      setTotalRows(0);
-      setTotalAmount(0);
-      setTotalReceivedValue(0);
-      setTotalItems(0);
-    } finally {
-      setLoading(false);
-    }
-  }
+      return {
+        summary: {
+          total_count: Number(summary?.total_count || 0),
+          total_amount: Number(summary?.total_amount || 0),
+          total_received_value: Number(summary?.total_received_value || 0),
+          item_rows: Number(summary?.item_rows || 0),
+        },
+        rows: (rows as PurchaseDetailRow[]) || [],
+      };
+    },
+    placeholderData: keepPreviousData,
+    staleTime: 1000 * 30,
+  });
+
+  useEffect(() => {
+    if (suppliersQuery.error) toast.error('Gagal memuat supplier: ' + String((suppliersQuery.error as any)?.message || suppliersQuery.error));
+  }, [suppliersQuery.error]);
+
+  useEffect(() => {
+    if (detailQuery.error) toast.error('Gagal memuat rincian pembelian: ' + String((detailQuery.error as any)?.message || detailQuery.error));
+  }, [detailQuery.error]);
+
+  const suppliers = suppliersQuery.data || [];
+  const data = detailQuery.data?.rows || [];
+  const totalRows = Number(detailQuery.data?.summary?.total_count || 0);
+  const totalAmount = Number(detailQuery.data?.summary?.total_amount || 0);
+  const totalReceivedValue = Number(detailQuery.data?.summary?.total_received_value || 0);
+  const totalItems = Number(detailQuery.data?.summary?.item_rows || 0);
+  const loading = suppliersQuery.isLoading || detailQuery.isLoading;
   const getVehicleGroupLabel = (row: PurchaseDetailRow) => {
     const sg = String(row.service_group || '').toUpperCase();
     if (sg.includes('R4')) return 'R4';
