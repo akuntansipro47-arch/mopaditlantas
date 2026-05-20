@@ -18,6 +18,8 @@ export default function PurchaseDetailReport() {
   const [supplierFilter, setSupplierFilter] = useState('ALL');
   const [suppliers, setSuppliers] = useState<any[]>([]);
   const [receivedQtyMap, setReceivedQtyMap] = useState<Record<string, number>>({});
+  const [returnedQtyMap, setReturnedQtyMap] = useState<Record<string, number>>({});
+  const [paymentStatusLabelMap, setPaymentStatusLabelMap] = useState<Record<string, string>>({});
   const pageSize = 200;
   const [page, setPage] = useState(1);
   const [totalRows, setTotalRows] = useState(0);
@@ -38,6 +40,14 @@ export default function PurchaseDetailReport() {
     fetchData();
   }, [dateRange, supplierFilter, page]);
 
+  useEffect(() => {
+    const t = setTimeout(() => {
+      setPage(1);
+      fetchData();
+    }, 400);
+    return () => clearTimeout(t);
+  }, [search]);
+
   async function fetchSuppliers() {
     const { data } = await supabase.from('suppliers').select('*').order('name');
     setSuppliers(data || []);
@@ -50,71 +60,122 @@ export default function PurchaseDetailReport() {
       const endDate = String(dateRange.end || '');
       const startTs = startDate ? `${startDate}T00:00:00` : '';
       const endTs = endDate ? `${endDate}T23:59:59.999` : '';
+      const hasSearch = String(search || '').trim().length > 0;
+      const from = hasSearch ? 0 : (page - 1) * pageSize;
+      const to = hasSearch ? 4999 : page * pageSize - 1;
 
       let query = supabase
-        .from('purchase_order_items')
+        .from('purchase_orders')
         .select(
           `
-            po_id,
-            line_type,
-            job_type_id,
-            service_name,
-            quantity,
-            unit_price,
-            total_price,
-            goods (id, name, item_code, unit, item_type),
-            purchase_orders!inner (
+            id,
+            po_number,
+            po_date,
+            created_at,
+            status,
+            supplier_id,
+            suppliers (name, id),
+            work_orders (
               id,
-              po_number,
-              po_date,
-              created_at,
-              status,
-              supplier_id,
-              suppliers (name, id),
-              work_orders (
-                id,
-                wo_number,
-                vehicle_entries (
-                  service_group,
-                  vehicles (license_plate, brand_type, vehicle_type)
-                )
+              wo_number,
+              vehicle_entries (
+                service_group,
+                vehicles (license_plate, brand_type, vehicle_type)
               )
+            ),
+            purchase_invoices (status),
+            purchase_returns (
+              id,
+              items:purchase_return_items(goods_id, quantity_returned)
+            ),
+            items:purchase_order_items (
+              po_id,
+              line_type,
+              job_type_id,
+              service_name,
+              quantity,
+              unit_price,
+              total_price,
+              goods (id, name, item_code, unit, item_type)
             )
           `,
           { count: 'exact' }
         )
-        .order('po_date', { ascending: false, foreignTable: 'purchase_orders' })
-        .order('created_at', { ascending: false, foreignTable: 'purchase_orders' })
-        .range((page - 1) * pageSize, page * pageSize - 1);
+        .order('po_date', { ascending: false })
+        .order('created_at', { ascending: false })
+        .range(from, to);
 
       if (startDate && endDate) {
-        query = query.or(
-          `and(po_date.gte.${startDate},po_date.lte.${endDate}),and(po_date.is.null,created_at.gte.${startTs},created_at.lte.${endTs})`,
-          { foreignTable: 'purchase_orders' }
-        );
+        query = query.or(`and(po_date.gte.${startDate},po_date.lte.${endDate}),and(po_date.is.null,created_at.gte.${startTs},created_at.lte.${endTs})`);
       } else if (startDate) {
-        query = query.or(`po_date.gte.${startDate},and(po_date.is.null,created_at.gte.${startTs})`, { foreignTable: 'purchase_orders' });
+        query = query.or(`po_date.gte.${startDate},and(po_date.is.null,created_at.gte.${startTs})`);
       } else if (endDate) {
-        query = query.or(`po_date.lte.${endDate},and(po_date.is.null,created_at.lte.${endTs})`, { foreignTable: 'purchase_orders' });
+        query = query.or(`po_date.lte.${endDate},and(po_date.is.null,created_at.lte.${endTs})`);
       }
-      if (supplierFilter !== 'ALL') query = query.eq('purchase_orders.supplier_id', supplierFilter);
-      query = query.not('purchase_orders.status', 'in', '(DRAFT,CANCELLED)');
+      if (supplierFilter !== 'ALL') query = query.eq('supplier_id', supplierFilter);
+      query = query.neq('status', 'CANCELLED');
 
-      const { data: result, error, count } = await query;
+      const { data: pos, error, count } = await query;
       if (error) throw error;
 
       setTotalRows(Number(count || 0));
 
-      let items = (result as any[]) || [];
-      items = items.filter((it: any) => it.purchase_orders);
+      const poRows = (pos as any[]) || [];
+      const flatten: any[] = [];
+      const poIds: string[] = [];
+      const nextPaymentLabelMap: Record<string, string> = {};
+      const nextReturnedMap: Record<string, number> = {};
 
-      const jobTypeIds = Array.from(
-        new Set(
-          (items || [])
-            .map((it: any) => String(it.job_type_id || '').trim())
-            .filter(Boolean)
-        )
-      );
+      poRows.forEach((po: any) => {
+        const poId = String(po?.id || '');
+        if (!poId) return;
+        poIds.push(poId);
+
+        const inv = Array.isArray(po?.purchase_invoices) ? po.purchase_invoices : [];
+        const invStatuses = inv.map((x: any) => String(x?.status || '').toUpperCase()).filter(Boolean);
+        let statusBayar = 'Belum Ditagih';
+        if (invStatuses.includes('PAID')) statusBayar = 'Lunas';
+        else if (invStatuses.includes('PARTIAL')) statusBayar = 'Bayar Sebagian';
+        else if (invStatuses.length > 0) statusBayar = 'Belum Lunas';
+        nextPaymentLabelMap[poId] = statusBayar;
+
+        const rets = Array.isArray(po?.purchase_returns) ? po.purchase_returns : [];
+        rets.forEach((r: any) => {
+          const items = Array.isArray(r?.items) ? r.items : [];
+          items.forEach((it: any) => {
+            const gid = String(it?.goods_id || '');
+            const qty = Number(it?.quantity_returned || 0);
+            if (!gid || !Number.isFinite(qty) || qty === 0) return;
+            const key = `${poId}:${gid}`;
+            nextReturnedMap[key] = (nextReturnedMap[key] || 0) + qty;
+          });
+        });
+
+        const items = Array.isArray(po?.items) ? po.items : [];
+        if (items.length === 0) {
+          flatten.push({
+            po_id: poId,
+            line_type: '',
+            job_type_id: '',
+            service_name: '',
+            quantity: 0,
+            unit_price: 0,
+            total_price: 0,
+            goods: null,
+            purchase_orders: po,
+          });
+          return;
+        }
+
+        items.forEach((it: any) => {
+          flatten.push({ ...it, purchase_orders: po });
+        });
+      });
+
+      setPaymentStatusLabelMap(nextPaymentLabelMap);
+      setReturnedQtyMap(nextReturnedMap);
+
+      const jobTypeIds = Array.from(new Set(flatten.map((it: any) => String(it.job_type_id || '').trim()).filter(Boolean)));
       if (jobTypeIds.length > 0) {
         let jobTypes: any[] = [];
         const attempt1 = await supabase
@@ -145,7 +206,6 @@ export default function PurchaseDetailReport() {
         setJobTypesMap({});
       }
 
-      const poIds = Array.from(new Set(items.map((it: any) => String(it.purchase_orders?.id || '')).filter(Boolean)));
       const nextReceivedMap: Record<string, number> = {};
       if (poIds.length > 0) {
         const chunkSize = 500;
@@ -179,12 +239,14 @@ export default function PurchaseDetailReport() {
       }
 
       setReceivedQtyMap(nextReceivedMap);
-      setData(items);
+      setData(flatten);
     } catch (error) {
       console.error('Error fetching Purchase Details:', error);
       toast.error('Gagal memuat rincian pembelian: ' + String((error as any)?.message || error));
       setData([]);
       setReceivedQtyMap({});
+      setReturnedQtyMap({});
+      setPaymentStatusLabelMap({});
       setTotalRows(0);
     } finally {
       setLoading(false);
@@ -210,7 +272,9 @@ export default function PurchaseDetailReport() {
       const jt = jobTypesMap[String(item.job_type_id || '')];
       return jt?.job_name || String(item.service_name || '').trim() || 'Jasa';
     }
-    return item.goods?.name || '';
+    if (item.goods?.name) return item.goods.name;
+    if (Number(item.quantity || 0) === 0 && Number(item.unit_price || 0) === 0 && Number(item.total_price || 0) === 0) return '(Tidak ada item)';
+    return '';
   };
 
   const getItemCode = (item: any) => {
@@ -237,6 +301,20 @@ export default function PurchaseDetailReport() {
     if (isJasa(item)) return Number(item.quantity || 0);
     const key = receivedKey(item);
     return key ? Number(receivedQtyMap[key] || 0) : 0;
+  };
+
+  const getReturnedQty = (item: any) => {
+    if (isJasa(item)) return 0;
+    const poId = String(item.purchase_orders?.id || item.po_id || '');
+    const gid = String(item.goods?.id || '');
+    if (!poId || !gid) return 0;
+    const key = `${poId}:${gid}`;
+    return Number(returnedQtyMap[key] || 0);
+  };
+
+  const getPaymentStatusLabel = (item: any) => {
+    const poId = String(item.purchase_orders?.id || item.po_id || '');
+    return poId ? String(paymentStatusLabelMap[poId] || 'Belum Ditagih') : 'Belum Ditagih';
   };
 
   const getReceiveStatus = (item: any) => {
@@ -281,13 +359,16 @@ export default function PurchaseDetailReport() {
     return sum + qty * unit;
   }, 0);
   const totalDiff = totalAmount - totalReceivedValue;
-  const totalPages = Math.max(1, Math.ceil(totalRows / pageSize));
+  const hasSearch = String(search || '').trim().length > 0;
+  const totalPages = hasSearch ? 1 : Math.max(1, Math.ceil(totalRows / pageSize));
 
   const exportToExcel = () => {
     const flattenData = filteredData.map(item => ({
       'No. PO': item.purchase_orders?.po_number,
       'Tanggal': formatDate(item.purchase_orders?.po_date || item.purchase_orders?.created_at),
       'Supplier': item.purchase_orders?.suppliers?.name,
+      'Status PO': item.purchase_orders?.status,
+      'Status Bayar': getPaymentStatusLabel(item),
       'No. WO': item.purchase_orders?.work_orders?.wo_number || '-',
       'Group': getVehicleGroupLabel(item),
       'Nopol': item.purchase_orders?.work_orders?.vehicle_entries?.vehicles?.license_plate || '-',
@@ -297,6 +378,7 @@ export default function PurchaseDetailReport() {
       'Nama Barang': getItemName(item),
       'Qty': item.quantity,
       'Qty Diterima': getReceivedQty(item),
+      'Qty Retur': getReturnedQty(item),
       'Status Terima': getReceiveStatus(item),
       'Satuan': getUnitLabel(item),
       'Harga Satuan': item.unit_price,
@@ -371,6 +453,8 @@ export default function PurchaseDetailReport() {
                 <TableHead>Tanggal</TableHead>
                 <TableHead>No. PO</TableHead>
                 <TableHead>Supplier</TableHead>
+                <TableHead>Status PO</TableHead>
+                <TableHead>Pembayaran</TableHead>
                 <TableHead>No. WO</TableHead>
                 <TableHead>Group</TableHead>
                 <TableHead>Kendaraan</TableHead>
@@ -378,6 +462,7 @@ export default function PurchaseDetailReport() {
                 <TableHead>Nama Barang</TableHead>
                 <TableHead className="text-center">Qty</TableHead>
                 <TableHead className="text-center">Diterima</TableHead>
+                <TableHead className="text-center">Retur</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead className="text-right">Harga Satuan</TableHead>
                 <TableHead className="text-right">Total</TableHead>
@@ -385,13 +470,15 @@ export default function PurchaseDetailReport() {
             </TableHeader>
             <TableBody>
               {filteredData.length === 0 ? (
-                <TableRow><TableCell colSpan={13} className="text-center py-8">Tidak ada data.</TableCell></TableRow>
+                <TableRow><TableCell colSpan={16} className="text-center py-8">Tidak ada data.</TableCell></TableRow>
               ) : (
                 filteredData.map((item, idx) => (
                   <TableRow key={idx}>
-                    <TableCell>{formatDate(item.purchase_orders?.po_date)}</TableCell>
+                    <TableCell>{formatDate(item.purchase_orders?.po_date || item.purchase_orders?.created_at)}</TableCell>
                     <TableCell className="font-medium">{item.purchase_orders?.po_number}</TableCell>
                     <TableCell>{item.purchase_orders?.suppliers?.name}</TableCell>
+                    <TableCell>{String(item.purchase_orders?.status || '-')}</TableCell>
+                    <TableCell>{getPaymentStatusLabel(item)}</TableCell>
                     <TableCell>{item.purchase_orders?.work_orders?.wo_number || '-'}</TableCell>
                     <TableCell>{getVehicleGroupLabel(item)}</TableCell>
                     <TableCell>
@@ -408,6 +495,9 @@ export default function PurchaseDetailReport() {
                     </TableCell>
                     <TableCell className="text-center">
                       {getReceivedQty(item)} <span className="text-xs text-gray-500">{getUnitLabel(item)}</span>
+                    </TableCell>
+                    <TableCell className="text-center">
+                      {getReturnedQty(item)} <span className="text-xs text-gray-500">{getUnitLabel(item)}</span>
                     </TableCell>
                     <TableCell>
                       {(() => {
@@ -433,12 +523,14 @@ export default function PurchaseDetailReport() {
 
           <div className="flex flex-wrap items-center justify-between gap-3 mt-4">
             <div className="text-sm text-muted-foreground">
-              Menampilkan {(page - 1) * pageSize + 1}-{Math.min(page * pageSize, totalRows)} dari {totalRows} baris
+              {String(search || '').trim()
+                ? `Mode pencarian: menampilkan ${filteredData.length} baris (ambil max 5000 PO)`
+                : `Menampilkan ${(page - 1) * pageSize + 1}-${Math.min(page * pageSize, totalRows)} dari ${totalRows} PO`}
             </div>
             <div className="flex items-center gap-2">
               <Button
                 variant="outline"
-                disabled={loading || page <= 1}
+                disabled={loading || hasSearch || page <= 1}
                 onClick={() => setPage((p) => Math.max(1, p - 1))}
               >
                 Sebelumnya
@@ -448,7 +540,7 @@ export default function PurchaseDetailReport() {
               </div>
               <Button
                 variant="outline"
-                disabled={loading || page >= totalPages}
+                disabled={loading || hasSearch || page >= totalPages}
                 onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
               >
                 Berikutnya
