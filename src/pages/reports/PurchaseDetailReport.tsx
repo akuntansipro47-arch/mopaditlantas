@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
+import { addDays, format, parseISO } from 'date-fns';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -58,8 +59,7 @@ export default function PurchaseDetailReport() {
     try {
       const startDate = String(dateRange.start || '');
       const endDate = String(dateRange.end || '');
-      const startTs = startDate ? `${startDate}T00:00:00` : '';
-      const endTs = endDate ? `${endDate}T23:59:59.999` : '';
+      const endExclusive = endDate ? format(addDays(parseISO(endDate), 1), 'yyyy-MM-dd') : '';
       const hasSearch = String(search || '').trim().length > 0;
       const from = hasSearch ? 0 : (page - 1) * pageSize;
       const to = hasSearch ? 4999 : page * pageSize - 1;
@@ -82,21 +82,6 @@ export default function PurchaseDetailReport() {
                 service_group,
                 vehicles (license_plate, brand_type, vehicle_type)
               )
-            ),
-            purchase_invoices (status),
-            purchase_returns (
-              id,
-              items:purchase_return_items(goods_id, quantity_returned)
-            ),
-            items:purchase_order_items (
-              po_id,
-              line_type,
-              job_type_id,
-              service_name,
-              quantity,
-              unit_price,
-              total_price,
-              goods (id, name, item_code, unit, item_type)
             )
           `,
           { count: 'exact' }
@@ -106,11 +91,13 @@ export default function PurchaseDetailReport() {
         .range(from, to);
 
       if (startDate && endDate) {
-        query = query.or(`and(po_date.gte.${startDate},po_date.lte.${endDate}),and(po_date.is.null,created_at.gte.${startTs},created_at.lte.${endTs})`);
+        query = query.or(
+          `and(po_date.gte.${startDate},po_date.lte.${endDate}),and(po_date.is.null,created_at.gte.${startDate},created_at.lt.${endExclusive})`
+        );
       } else if (startDate) {
-        query = query.or(`po_date.gte.${startDate},and(po_date.is.null,created_at.gte.${startTs})`);
+        query = query.or(`po_date.gte.${startDate},and(po_date.is.null,created_at.gte.${startDate})`);
       } else if (endDate) {
-        query = query.or(`po_date.lte.${endDate},and(po_date.is.null,created_at.lte.${endTs})`);
+        query = query.or(`po_date.lte.${endDate},and(po_date.is.null,created_at.lt.${endExclusive})`);
       }
       if (supplierFilter !== 'ALL') query = query.eq('supplier_id', supplierFilter);
       query = query.neq('status', 'CANCELLED');
@@ -130,28 +117,93 @@ export default function PurchaseDetailReport() {
         const poId = String(po?.id || '');
         if (!poId) return;
         poIds.push(poId);
+      });
 
-        const inv = Array.isArray(po?.purchase_invoices) ? po.purchase_invoices : [];
-        const invStatuses = inv.map((x: any) => String(x?.status || '').toUpperCase()).filter(Boolean);
+      const [itemsRes, invoicesRes, returnsRes] = await Promise.all([
+        poIds.length
+          ? supabase
+              .from('purchase_order_items')
+              .select(
+                `
+                po_id,
+                line_type,
+                job_type_id,
+                service_name,
+                quantity,
+                unit_price,
+                total_price,
+                goods (id, name, item_code, unit, item_type)
+              `
+              )
+              .in('po_id', poIds)
+          : Promise.resolve({ data: [], error: null } as any),
+        poIds.length ? supabase.from('purchase_invoices').select('po_id, status').in('po_id', poIds) : Promise.resolve({ data: [], error: null } as any),
+        poIds.length ? supabase.from('purchase_returns').select('id, po_id').in('po_id', poIds) : Promise.resolve({ data: [], error: null } as any),
+      ]);
+
+      if (itemsRes.error) throw itemsRes.error;
+      if (invoicesRes.error) throw invoicesRes.error;
+      if (returnsRes.error) throw returnsRes.error;
+
+      const itemsByPo = new Map<string, any[]>();
+      ((itemsRes.data as any[]) || []).forEach((it: any) => {
+        const poId = String(it?.po_id || '');
+        if (!poId) return;
+        const arr = itemsByPo.get(poId) || [];
+        arr.push(it);
+        itemsByPo.set(poId, arr);
+      });
+
+      const invoicesByPo = new Map<string, string[]>();
+      ((invoicesRes.data as any[]) || []).forEach((inv: any) => {
+        const poId = String(inv?.po_id || '');
+        const st = String(inv?.status || '').toUpperCase();
+        if (!poId) return;
+        const arr = invoicesByPo.get(poId) || [];
+        if (st) arr.push(st);
+        invoicesByPo.set(poId, arr);
+      });
+
+      const returns = (returnsRes.data as any[]) || [];
+      const returnIdToPoId = new Map<string, string>();
+      const returnIds: string[] = [];
+      returns.forEach((r: any) => {
+        const rid = String(r?.id || '');
+        const poId = String(r?.po_id || '');
+        if (!rid || !poId) return;
+        returnIdToPoId.set(rid, poId);
+        returnIds.push(rid);
+      });
+
+      if (returnIds.length > 0) {
+        const { data: retItems, error: retItemErr } = await supabase
+          .from('purchase_return_items')
+          .select('return_id, goods_id, quantity_returned')
+          .in('return_id', returnIds);
+        if (retItemErr) throw retItemErr;
+        (retItems || []).forEach((it: any) => {
+          const rid = String(it?.return_id || '');
+          const poId = String(returnIdToPoId.get(rid) || '');
+          const gid = String(it?.goods_id || '');
+          const qty = Number(it?.quantity_returned || 0);
+          if (!poId || !gid || !Number.isFinite(qty) || qty === 0) return;
+          const key = `${poId}:${gid}`;
+          nextReturnedMap[key] = (nextReturnedMap[key] || 0) + qty;
+        });
+      }
+
+      poRows.forEach((po: any) => {
+        const poId = String(po?.id || '');
+        if (!poId) return;
+
+        const invStatuses = invoicesByPo.get(poId) || [];
         let statusBayar = 'Belum Ditagih';
         if (invStatuses.includes('PAID')) statusBayar = 'Lunas';
         else if (invStatuses.includes('PARTIAL')) statusBayar = 'Bayar Sebagian';
         else if (invStatuses.length > 0) statusBayar = 'Belum Lunas';
         nextPaymentLabelMap[poId] = statusBayar;
 
-        const rets = Array.isArray(po?.purchase_returns) ? po.purchase_returns : [];
-        rets.forEach((r: any) => {
-          const items = Array.isArray(r?.items) ? r.items : [];
-          items.forEach((it: any) => {
-            const gid = String(it?.goods_id || '');
-            const qty = Number(it?.quantity_returned || 0);
-            if (!gid || !Number.isFinite(qty) || qty === 0) return;
-            const key = `${poId}:${gid}`;
-            nextReturnedMap[key] = (nextReturnedMap[key] || 0) + qty;
-          });
-        });
-
-        const items = Array.isArray(po?.items) ? po.items : [];
+        const items = itemsByPo.get(poId) || [];
         if (items.length === 0) {
           flatten.push({
             po_id: poId,
