@@ -63,6 +63,12 @@ export default function PurchaseDetailReport() {
       const hasSearch = String(search || '').trim().length > 0;
       const from = hasSearch ? 0 : (page - 1) * pageSize;
       const to = hasSearch ? 4999 : page * pageSize - 1;
+      const searchTrim = String(search || '').trim();
+      const chunk = <T,>(arr: T[], size: number) => {
+        const out: T[][] = [];
+        for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
+        return out;
+      };
 
       let query = supabase
         .from('purchase_orders')
@@ -90,14 +96,20 @@ export default function PurchaseDetailReport() {
         .order('created_at', { ascending: false })
         .range(from, to);
 
-      if (startDate) {
-        query = query.gte('created_at', `${startDate}T00:00:00`);
-      }
-      if (endExclusive) {
-        query = query.lt('created_at', `${endExclusive}T00:00:00`);
+      const startTs = startDate;
+      const endExclusiveTs = endExclusive;
+      if (startDate && endDate) {
+        query = query.or(`and(po_date.gte.${startDate},po_date.lte.${endDate}),and(po_date.is.null,created_at.gte.${startTs},created_at.lt.${endExclusiveTs})`);
+      } else if (startDate) {
+        query = query.or(`po_date.gte.${startDate},and(po_date.is.null,created_at.gte.${startTs})`);
+      } else if (endDate) {
+        query = query.or(`po_date.lte.${endDate},and(po_date.is.null,created_at.lt.${endExclusiveTs})`);
       }
       if (supplierFilter !== 'ALL') query = query.eq('supplier_id', supplierFilter);
       query = query.neq('status', 'CANCELLED');
+      if (hasSearch) {
+        query = query.ilike('po_number', `%${searchTrim}%`);
+      }
 
       const { data: pos, error, count } = await query;
       if (error) throw error;
@@ -116,9 +128,15 @@ export default function PurchaseDetailReport() {
         poIds.push(poId);
       });
 
-      const [itemsRes, invoicesRes, returnsRes] = await Promise.all([
-        poIds.length
-          ? supabase
+      const itemsAll: any[] = [];
+      const invoicesAll: any[] = [];
+      const returnsAll: any[] = [];
+
+      if (poIds.length > 0) {
+        const poChunks = chunk(poIds, 200);
+        for (const ids of poChunks) {
+          const [{ data: items, error: itemsErr }, { data: invs, error: invErr }, { data: rets, error: retErr }] = await Promise.all([
+            supabase
               .from('purchase_order_items')
               .select(
                 `
@@ -132,18 +150,21 @@ export default function PurchaseDetailReport() {
                 goods (id, name, item_code, unit, item_type)
               `
               )
-              .in('po_id', poIds)
-          : Promise.resolve({ data: [], error: null } as any),
-        poIds.length ? supabase.from('purchase_invoices').select('po_id, status').in('po_id', poIds) : Promise.resolve({ data: [], error: null } as any),
-        poIds.length ? supabase.from('purchase_returns').select('id, po_id').in('po_id', poIds) : Promise.resolve({ data: [], error: null } as any),
-      ]);
-
-      if (itemsRes.error) throw itemsRes.error;
-      if (invoicesRes.error) throw invoicesRes.error;
-      if (returnsRes.error) throw returnsRes.error;
+              .in('po_id', ids),
+            supabase.from('purchase_invoices').select('po_id, status').in('po_id', ids),
+            supabase.from('purchase_returns').select('id, po_id').in('po_id', ids),
+          ]);
+          if (itemsErr) throw itemsErr;
+          if (invErr) throw invErr;
+          if (retErr) throw retErr;
+          itemsAll.push(...((items as any[]) || []));
+          invoicesAll.push(...((invs as any[]) || []));
+          returnsAll.push(...((rets as any[]) || []));
+        }
+      }
 
       const itemsByPo = new Map<string, any[]>();
-      ((itemsRes.data as any[]) || []).forEach((it: any) => {
+      (itemsAll || []).forEach((it: any) => {
         const poId = String(it?.po_id || '');
         if (!poId) return;
         const arr = itemsByPo.get(poId) || [];
@@ -152,7 +173,7 @@ export default function PurchaseDetailReport() {
       });
 
       const invoicesByPo = new Map<string, string[]>();
-      ((invoicesRes.data as any[]) || []).forEach((inv: any) => {
+      (invoicesAll || []).forEach((inv: any) => {
         const poId = String(inv?.po_id || '');
         const st = String(inv?.status || '').toUpperCase();
         if (!poId) return;
@@ -161,7 +182,7 @@ export default function PurchaseDetailReport() {
         invoicesByPo.set(poId, arr);
       });
 
-      const returns = (returnsRes.data as any[]) || [];
+      const returns = returnsAll || [];
       const returnIdToPoId = new Map<string, string>();
       const returnIds: string[] = [];
       returns.forEach((r: any) => {
@@ -173,20 +194,23 @@ export default function PurchaseDetailReport() {
       });
 
       if (returnIds.length > 0) {
-        const { data: retItems, error: retItemErr } = await supabase
-          .from('purchase_return_items')
-          .select('return_id, goods_id, quantity_returned')
-          .in('return_id', returnIds);
-        if (retItemErr) throw retItemErr;
-        (retItems || []).forEach((it: any) => {
-          const rid = String(it?.return_id || '');
-          const poId = String(returnIdToPoId.get(rid) || '');
-          const gid = String(it?.goods_id || '');
-          const qty = Number(it?.quantity_returned || 0);
-          if (!poId || !gid || !Number.isFinite(qty) || qty === 0) return;
-          const key = `${poId}:${gid}`;
-          nextReturnedMap[key] = (nextReturnedMap[key] || 0) + qty;
-        });
+        const retChunks = chunk(returnIds, 200);
+        for (const ids of retChunks) {
+          const { data: retItems, error: retItemErr } = await supabase
+            .from('purchase_return_items')
+            .select('return_id, goods_id, quantity_returned')
+            .in('return_id', ids);
+          if (retItemErr) throw retItemErr;
+          (retItems || []).forEach((it: any) => {
+            const rid = String(it?.return_id || '');
+            const poId = String(returnIdToPoId.get(rid) || '');
+            const gid = String(it?.goods_id || '');
+            const qty = Number(it?.quantity_returned || 0);
+            if (!poId || !gid || !Number.isFinite(qty) || qty === 0) return;
+            const key = `${poId}:${gid}`;
+            nextReturnedMap[key] = (nextReturnedMap[key] || 0) + qty;
+          });
+        }
       }
 
       poRows.forEach((po: any) => {
@@ -257,7 +281,7 @@ export default function PurchaseDetailReport() {
 
       const nextReceivedMap: Record<string, number> = {};
       if (poIds.length > 0) {
-        const chunkSize = 500;
+        const chunkSize = 200;
         for (let i = 0; i < poIds.length; i += chunkSize) {
           const chunk = poIds.slice(i, i + chunkSize);
           const { data: receipts, error: receiptErr } = await supabase
