@@ -274,7 +274,13 @@ export default function PurchasePayment() {
           suppliers (name),
           purchase_orders!inner (
             po_number,
-            status
+            status,
+            work_orders (
+              wo_number,
+              vehicle_entries (
+                vehicles (license_plate, brand_type)
+              )
+            )
           )
         `)
         .in('purchase_orders.status', ['RECEIVED_FULL', 'RECEIVED_PART', 'RETUR'])
@@ -302,7 +308,16 @@ export default function PurchasePayment() {
                     total_amount,
                     paid_amount,
                     status,
-                    purchase_orders (po_number, status),
+                    purchase_orders (
+                      po_number,
+                      status,
+                      work_orders (
+                        wo_number,
+                        vehicle_entries (
+                          vehicles (license_plate, brand_type)
+                        )
+                      )
+                    ),
                     suppliers (name)
                 ),
                 payment_account:chart_of_accounts!purchase_payments_payment_account_id_fkey (account_name),
@@ -625,10 +640,14 @@ export default function PurchasePayment() {
 
   const filteredInvoices = invoices.filter(inv => {
     const q = String(search || '').toLowerCase();
+    const invPlate = String(inv.purchase_orders?.work_orders?.vehicle_entries?.vehicles?.license_plate || '').toLowerCase();
+    const invVehicleName = String(inv.purchase_orders?.work_orders?.vehicle_entries?.vehicles?.brand_type || '').toLowerCase();
     const matchSearch =
       String(inv.invoice_number || '').toLowerCase().includes(q) ||
       String(inv.purchase_orders?.po_number || '').toLowerCase().includes(q) ||
-      String(inv.suppliers?.name || '').toLowerCase().includes(q);
+      String(inv.suppliers?.name || '').toLowerCase().includes(q) ||
+      invPlate.includes(q) ||
+      invVehicleName.includes(q);
     const matchStatus = statusFilter === 'ALL' ? true : inv.status === statusFilter;
     
     const invDate = new Date(inv.invoice_date);
@@ -645,7 +664,9 @@ export default function PurchasePayment() {
     const invoiceNo = String(pay.purchase_invoices?.invoice_number || '').toLowerCase();
     const supplierName = String(pay.purchase_invoices?.suppliers?.name || '').toLowerCase();
     const poNo = String(pay.purchase_invoices?.purchase_orders?.po_number || '').toLowerCase();
-    return invoiceNo.includes(q) || supplierName.includes(q) || poNo.includes(q);
+    const plate = String(pay.purchase_invoices?.purchase_orders?.work_orders?.vehicle_entries?.vehicles?.license_plate || '').toLowerCase();
+    const vehicleName = String(pay.purchase_invoices?.purchase_orders?.work_orders?.vehicle_entries?.vehicles?.brand_type || '').toLowerCase();
+    return invoiceNo.includes(q) || supplierName.includes(q) || poNo.includes(q) || plate.includes(q) || vehicleName.includes(q);
   });
 
   return (
@@ -657,7 +678,7 @@ export default function PurchasePayment() {
         <CardContent>
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
             <Input 
-              placeholder="Cari No. Tagihan / No. PO / Supplier..."
+              placeholder="Cari No. Tagihan / No. PO / Supplier / Nopol / Nama Kendaraan..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               className="md:col-span-2"
@@ -708,6 +729,7 @@ export default function PurchasePayment() {
                     <TableRow>
                       <TableHead>Nomor Tagihan</TableHead>
                       <TableHead>No. PO</TableHead>
+                      <TableHead>Kendaraan</TableHead>
                       <TableHead>Supplier</TableHead>
                       <TableHead>Tgl. Tagihan</TableHead>
                       <TableHead>Jatuh Tempo</TableHead>
@@ -721,12 +743,16 @@ export default function PurchasePayment() {
                   <TableBody>
                     {loading ? (
                       <TableRow>
-                        <TableCell colSpan={10} className="text-center">Memuat data...</TableCell>
+                        <TableCell colSpan={11} className="text-center">Memuat data...</TableCell>
                       </TableRow>
                     ) : filteredInvoices.map(invoice => (
                       <TableRow key={invoice.id}>
                         <TableCell>{invoice.invoice_number}</TableCell>
                         <TableCell>{invoice.purchase_orders?.po_number}</TableCell>
+                        <TableCell>
+                          <div className="font-medium">{invoice.purchase_orders?.work_orders?.vehicle_entries?.vehicles?.license_plate || '-'}</div>
+                          <div className="text-xs text-gray-500">{invoice.purchase_orders?.work_orders?.vehicle_entries?.vehicles?.brand_type || '-'}</div>
+                        </TableCell>
                         <TableCell>{invoice.suppliers?.name}</TableCell>
                         <TableCell>{formatDate(invoice.invoice_date)}</TableCell>
                         <TableCell>{formatDate(invoice.due_date)}</TableCell>
@@ -761,7 +787,7 @@ export default function PurchasePayment() {
             <TabsContent value="history">
               <div className="mt-4">
                 <Input 
-                  placeholder="Cari No. Tagihan / No. PO / Supplier..."
+                  placeholder="Cari No. Tagihan / No. PO / Supplier / Nopol / Nama Kendaraan..."
                   value={historySearch}
                   onChange={(e) => setHistorySearch(e.target.value)}
                   className="mb-4"
@@ -772,6 +798,7 @@ export default function PurchasePayment() {
                       <TableHead>Tgl. Bayar</TableHead>
                       <TableHead>No. Tagihan</TableHead>
                       <TableHead>No. PO</TableHead>
+                      <TableHead>Kendaraan</TableHead>
                       <TableHead>Supplier</TableHead>
                       <TableHead>Akun Pembayar</TableHead>
                       <TableHead className="text-right">Jumlah</TableHead>
@@ -781,13 +808,17 @@ export default function PurchasePayment() {
                   <TableBody>
                     {loading ? (
                       <TableRow>
-                        <TableCell colSpan={7} className="text-center">Memuat data...</TableCell>
+                        <TableCell colSpan={8} className="text-center">Memuat data...</TableCell>
                       </TableRow>
                     ) : filteredPaymentHistory.map(payment => (
                       <TableRow key={payment.id}>
                         <TableCell>{formatDate(payment.payment_date)}</TableCell>
                         <TableCell>{payment.purchase_invoices?.invoice_number}</TableCell>
                         <TableCell>{payment.purchase_invoices?.purchase_orders?.po_number}</TableCell>
+                        <TableCell>
+                          <div className="font-medium">{payment.purchase_invoices?.purchase_orders?.work_orders?.vehicle_entries?.vehicles?.license_plate || '-'}</div>
+                          <div className="text-xs text-gray-500">{payment.purchase_invoices?.purchase_orders?.work_orders?.vehicle_entries?.vehicles?.brand_type || '-'}</div>
+                        </TableCell>
                         <TableCell>{payment.purchase_invoices?.suppliers?.name}</TableCell>
                         <TableCell>{payment.payment_account?.account_name}</TableCell>
                         <TableCell className="text-right">{formatCurrency(payment.amount)}</TableCell>
