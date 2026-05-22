@@ -428,7 +428,8 @@ export default function VehicleEntryPage() {
     const cleaned = normalized.map((p) => {
       const goodsId = String((p as any).goods_id || '').trim();
       const itemCode = String((p as any).item_code || '').trim();
-      if (!goodsId && !itemCode) return { ...p, value_only: true };
+      const name = String((p as any).name || '').trim();
+      if (!goodsId && !itemCode && !name) return { ...p, value_only: true };
       return p;
     });
 
