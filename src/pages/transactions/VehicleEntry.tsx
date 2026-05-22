@@ -1146,7 +1146,7 @@ export default function VehicleEntryPage() {
           name: p.item_name,
           qty: p.qty,
           price: p.estimated_price,
-          value_only: Boolean((p as any).value_only),
+          value_only: (p as any).value_only === true,
         }));
 
       return {
@@ -1170,7 +1170,7 @@ export default function VehicleEntryPage() {
         name: p.item_name,
         qty: p.qty,
         price: p.estimated_price,
-        value_only: Boolean((p as any).value_only),
+        value_only: (p as any).value_only === true,
       }));
 
       const gantiJobIdx = mappedJobs.findIndex(j => needsSparepartDetail(j));
@@ -1218,7 +1218,7 @@ export default function VehicleEntryPage() {
               name: p.item_name,
               qty: p.qty,
               price: p.estimated_price,
-              value_only: Boolean((p as any).value_only),
+              value_only: (p as any).value_only === true,
             })),
             sparepart_enabled: true,
           },
@@ -1440,7 +1440,7 @@ export default function VehicleEntryPage() {
             vehicle_entry_id: targetId,
             job_type_id: j.job_id,
             notes: j.notes,
-            value_only: Boolean(j.value_only),
+            value_only: j.value_only === true,
             estimated_price: Number(j.estimated_price || 0),
           }));
           const { error: jobsError } = await supabase.from('vehicle_entry_jobs').insert(jobsPayload);
@@ -1459,7 +1459,7 @@ export default function VehicleEntryPage() {
                           estimated_price: part.price,
                           goods_id: part.goods_id ? part.goods_id : null,
                           item_code: part.item_code ? part.item_code : null,
-                          value_only: Boolean(part.value_only),
+                          value_only: part.value_only === true,
                       });
                   });
               }
@@ -1487,7 +1487,7 @@ export default function VehicleEntryPage() {
               };
               if (supportsGoodsId) base.goods_id = p.goods_id;
               if (supportsItemCode) base.item_code = p.item_code;
-              if (supportsValueOnly) base.value_only = Boolean(p.value_only);
+              if (supportsValueOnly) base.value_only = p.value_only === true;
               return base;
             });
 
@@ -1506,7 +1506,7 @@ export default function VehicleEntryPage() {
               notes: j.notes || '',
               qty: 1,
               estimated_price: Number(j.estimated_price || 0),
-              value_only: Boolean(j.value_only),
+              value_only: j.value_only === true,
             }))
             .filter((x) => Boolean(x.job_type_id)),
           parts: (() => {
@@ -1520,7 +1520,7 @@ export default function VehicleEntryPage() {
                   name: p.name || '',
                   qty: Number(p.qty || 0),
                   estimated_price: Number(p.price || 0),
-                  value_only: Boolean(p.value_only),
+                  value_only: p.value_only === true,
                   job_type_id: job.job_id || null,
                 });
               });
