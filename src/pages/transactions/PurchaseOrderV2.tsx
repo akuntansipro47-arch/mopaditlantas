@@ -207,25 +207,12 @@ export default function PurchaseOrderV2() {
     const lt = String(it?.line_type || 'PART').toUpperCase();
     if (lt === 'JASA') {
       const jid = String(it?.job_type_id || '').trim();
-      if (jid && valueOnlyBlock.jobTypeIds.has(jid)) return true;
-      const key = normalizeText(String(it?.service_name || ''));
-      if (!key) return false;
-      for (const k of valueOnlyBlock.jobNameKeys) {
-        if (!k) continue;
-        if (key.includes(k) || k.includes(key)) return true;
-      }
-      return false;
+      if (!jid) return false;
+      return valueOnlyBlock.jobTypeIds.has(jid);
     }
     const gid = String(it?.goods_id || '').trim();
-    if (gid && valueOnlyBlock.partGoodsIds.has(gid)) return true;
-    const g = gid ? goodsList.find((x: any) => String(x.id) === gid) : null;
-    const key = normalizeText(String(g?.name || it?.estimated_name || ''));
-    if (!key) return false;
-    for (const k of valueOnlyBlock.partNameKeys) {
-      if (!k) continue;
-      if (key.includes(k) || k.includes(key)) return true;
-    }
-    return false;
+    if (!gid) return false;
+    return valueOnlyBlock.partGoodsIds.has(gid);
   };
 
   useEffect(() => {
@@ -518,7 +505,7 @@ export default function PurchaseOrderV2() {
           locked_unit_price: false,
         };
       })
-      .filter((x: any) => Boolean(x.goods_id));
+      .filter((x: any) => Boolean(x.goods_id) || Boolean(x.estimated_name));
 
     return [...jobItems, ...partItems];
   };
