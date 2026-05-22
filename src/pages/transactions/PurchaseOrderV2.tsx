@@ -365,7 +365,12 @@ export default function PurchaseOrderV2() {
   async function fetchPOs() {
     setLoading(true);
     try {
-      const { data, error } = await supabase
+      const startDate = String(dateFilter.startDate || '');
+      const endDate = String(dateFilter.endDate || '');
+      const startTs = startDate ? `${startDate}T00:00:00` : '';
+      const endTs = endDate ? `${endDate}T23:59:59.999` : '';
+
+      let query = supabase
         .from('purchase_orders')
         .select(`
           *,
@@ -383,26 +388,21 @@ export default function PurchaseOrderV2() {
         `)
         .order('created_at', { ascending: false });
 
-      if (error) throw error;
-      
-      const allPOs = data as any || [];
-      
-      // Filter Logic: (Date in Range) OR (Status != RECEIVED_FULL)
-      // Assuming RECEIVED_FULL is the "Closed" state.
-      // And show if not cancelled (unless in range)
-      const filtered = allPOs.filter((po: any) => {
-        const poDate = po.po_date || po.created_at.split('T')[0];
-        const isDateInRange = poDate >= dateFilter.startDate && poDate <= dateFilter.endDate;
-        
-        // "po yang belum closing saja"
-        const isNotClosed = po.status !== 'RECEIVED_FULL' && po.status !== 'CANCELLED' && po.status !== 'RETURNED_FULL';
-        
-        // Show if (Not Closed) OR (In Date Range)
-        // If in date range, show even if closed.
-        return isNotClosed || isDateInRange;
-      });
+      if (startDate && endDate) {
+        query = query.or(
+          `and(po_date.gte.${startDate},po_date.lte.${endDate}),and(po_date.is.null,created_at.gte.${startTs},created_at.lte.${endTs})`
+        );
+      } else if (startDate) {
+        query = query.or(`po_date.gte.${startDate},and(po_date.is.null,created_at.gte.${startTs})`);
+      } else if (endDate) {
+        query = query.or(`po_date.lte.${endDate},and(po_date.is.null,created_at.lte.${endTs})`);
+      }
 
-      setPos(filtered);
+      const { data, error } = await query;
+
+      if (error) throw error;
+
+      setPos((data as any) || []);
     } catch (error: any) {
       toast.error('Gagal mengambil data PO: ' + error.message);
     } finally {
