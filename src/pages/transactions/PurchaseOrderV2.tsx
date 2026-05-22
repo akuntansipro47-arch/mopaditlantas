@@ -179,7 +179,7 @@ export default function PurchaseOrderV2() {
     const partGoodsIds = new Set<string>();
     const partNameKeys = new Set<string>();
     parts.forEach((p: any) => {
-      if (!Boolean(p?.value_only)) return;
+      if (p?.value_only !== true) return;
       const gid = String(p?.goods_id || '').trim();
       if (gid) partGoodsIds.add(gid);
       const nameKey = normalizeText(String(p?.item_name || ''));
@@ -192,7 +192,7 @@ export default function PurchaseOrderV2() {
     const jobTypeIds = new Set<string>();
     const jobNameKeys = new Set<string>();
     jobs.forEach((j: any) => {
-      if (!Boolean(j?.value_only)) return;
+      if (j?.value_only !== true) return;
       const jid = String(j?.job_type_id || '').trim();
       if (jid) jobTypeIds.add(jid);
       const nameKey = normalizeText(String(j?.job_types?.job_name || j?.notes || ''));
@@ -478,7 +478,7 @@ export default function PurchaseOrderV2() {
     const parts = Array.isArray(ve?.vehicle_entry_spareparts) ? ve.vehicle_entry_spareparts : [];
 
     const jobItems = jobs
-      .filter((j: any) => !Boolean(j?.value_only))
+      .filter((j: any) => j?.value_only !== true)
       .map((j: any) => ({
         line_type: 'JASA' as const,
         goods_id: '',
@@ -493,7 +493,7 @@ export default function PurchaseOrderV2() {
       .filter((x: any) => Boolean(x.job_type_id) || Boolean(x.service_name));
 
     const partItems = parts
-      .filter((p: any) => !Boolean(p?.value_only))
+      .filter((p: any) => p?.value_only !== true)
       .map((p: any) => {
         const codeNorm = String(p?.item_code || '')
           .toLowerCase()
