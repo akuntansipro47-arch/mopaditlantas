@@ -186,7 +186,7 @@ export default function WorkOrder() {
       toast.error('Hanya Super Admin yang bisa unlock WO.');
       return;
     }
-    if (!window.confirm(`Unlock WO "${wo.wo_number}"? Setelah unlock, WO bisa diedit/dihapus lagi.`)) return;
+    if (!window.confirm(`Unlock WO "${wo.wo_number}"? Setelah unlock, WO bisa dicetak lagi.`)) return;
     try {
       const { error } = await supabase
         .from('work_orders')
@@ -216,10 +216,6 @@ export default function WorkOrder() {
   };
 
   const handleEdit = (item: WOWithDetails) => {
-    if (isLocked(item)) {
-      toast.error(user?.role === 'SUPER_ADMIN' ? 'WO terkunci. Unlock dulu untuk edit.' : 'WO terkunci setelah dicetak.');
-      return;
-    }
     if (item.status !== 'IN_PROGRESS') {
       toast.warning('Hanya Work Order dengan status IN_PROGRESS yang dapat diedit.');
       return;
@@ -237,6 +233,10 @@ export default function WorkOrder() {
   const handlePrintSPK = async (wo: WOWithDetails) => {
     if (wo.status !== 'IN_PROGRESS') {
       toast.warning('Cetak SPK hanya tersedia untuk WO dengan status IN_PROGRESS.');
+      return;
+    }
+    if (isLocked(wo)) {
+      toast.error(user?.role === 'SUPER_ADMIN' ? 'WO terkunci untuk cetak. Unlock dulu untuk cetak ulang.' : 'WO terkunci untuk cetak.');
       return;
     }
 
@@ -309,6 +309,10 @@ export default function WorkOrder() {
   const handlePrintSPKDotMatrix = (wo: WOWithDetails) => {
     if (wo.status !== 'IN_PROGRESS') {
       toast.warning('Cetak SPK Dot Matrix hanya tersedia untuk WO dengan status IN_PROGRESS.');
+      return;
+    }
+    if (isLocked(wo)) {
+      toast.error(user?.role === 'SUPER_ADMIN' ? 'WO terkunci untuk cetak. Unlock dulu untuk cetak ulang.' : 'WO terkunci untuk cetak.');
       return;
     }
     window.open(`/print/spk-dot/${wo.id}`, '_blank');
@@ -454,11 +458,6 @@ export default function WorkOrder() {
   };
 
   const handleDelete = async (id: string, vehicleEntryId: string | null) => {
-    const wo = wos.find((x) => String((x as any).id) === String(id)) as any;
-    if (wo && isLocked(wo)) {
-      toast.error(user?.role === 'SUPER_ADMIN' ? 'WO terkunci. Unlock dulu untuk hapus.' : 'WO terkunci setelah dicetak.');
-      return;
-    }
     if (window.confirm('Apakah Anda yakin ingin menghapus Work Order ini? Tindakan ini tidak dapat dibatalkan.')) {
       try {
         const { error: deleteError } = await supabase.from('work_orders').delete().eq('id', id);
@@ -865,10 +864,10 @@ export default function WorkOrder() {
                               <RefreshCw className="h-4 w-4 mr-1" /> Re-open
                             </Button>
                           )}
-                          <Button variant="outline" size="sm" className="h-8" onClick={() => handlePrintSPK(item)} disabled={item.status !== 'IN_PROGRESS' || printingSPKId === item.id}>
+                          <Button variant="outline" size="sm" className="h-8" onClick={() => handlePrintSPK(item)} disabled={item.status !== 'IN_PROGRESS' || printingSPKId === item.id || isLocked(item)}>
                             <Printer className="h-4 w-4 mr-1" /> SPK
                           </Button>
-                          <Button variant="outline" size="sm" className="h-8" onClick={() => handlePrintSPKDotMatrix(item)} disabled={item.status !== 'IN_PROGRESS'}>
+                          <Button variant="outline" size="sm" className="h-8" onClick={() => handlePrintSPKDotMatrix(item)} disabled={item.status !== 'IN_PROGRESS' || isLocked(item)}>
                             <Printer className="h-4 w-4 mr-1" /> Dot
                           </Button>
                           {isLocked(item) && user?.role === 'SUPER_ADMIN' && (
@@ -881,7 +880,7 @@ export default function WorkOrder() {
                             size="sm"
                             className="h-8"
                             onClick={() => handleEdit(item)}
-                            disabled={item.status !== 'IN_PROGRESS' || isLocked(item)}
+                            disabled={item.status !== 'IN_PROGRESS'}
                           >
                             <Eye className="h-4 w-4 mr-1" /> Edit
                           </Button>
@@ -891,7 +890,6 @@ export default function WorkOrder() {
                               size="icon"
                               className="h-8 w-8"
                               onClick={() => handleDelete(item.id, item.vehicle_entry_id)}
-                              disabled={isLocked(item)}
                             >
                               <Trash2 className="h-4 w-4" />
                             </Button>

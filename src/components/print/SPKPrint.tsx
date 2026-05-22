@@ -11,6 +11,7 @@ export default function PrintSPK({ id }: { id: string }) {
   const [agency, setAgency] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
   const [printCount, setPrintCount] = useState<number>(1);
+  const [printLocked, setPrintLocked] = useState(false);
 
   useEffect(() => {
     console.log('[SPKPrint] useEffect triggered, id:', id);
@@ -69,6 +70,14 @@ export default function PrintSPK({ id }: { id: string }) {
       if (woError) throw new Error(`Gagal mengambil WO: ${woError.message}`);
       if (!wo) throw new Error('Work Order tidak ditemukan');
 
+      const alreadyLocked = Boolean((wo as any)?.is_locked);
+      setPrintLocked(alreadyLocked);
+      if (alreadyLocked) {
+        setPhase('locked');
+        setData({ wo, entry: null });
+        return;
+      }
+
       let entry = null;
       if (wo.vehicle_entry_id) {
         setPhase('fetching-entry');
@@ -101,6 +110,7 @@ export default function PrintSPK({ id }: { id: string }) {
 
   const handlePrint = async () => {
     console.log('[SPKPrint] Print button clicked');
+    if (printLocked) return;
     const cnt = await incrementDocumentPrintCounter('SPK', String(id));
     setPrintCount(cnt);
     window.setTimeout(() => window.print(), 50);
@@ -167,6 +177,35 @@ export default function PrintSPK({ id }: { id: string }) {
             style={{ padding: '10px 20px', background: '#2563eb', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer' }}
           >
             Coba Lagi
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (phase === 'locked') {
+    return (
+      <div className="printable-area" style={{
+        minHeight: '100vh',
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
+        background: 'white',
+        padding: '32px',
+        fontFamily: 'Arial, sans-serif'
+      }}>
+        <div style={{ fontSize: '48px', marginBottom: '16px' }}>🔒</div>
+        <h2 style={{ color: '#b45309', marginBottom: '8px' }}>WO Terkunci Untuk Cetak</h2>
+        <p style={{ color: '#6b7280', textAlign: 'center', maxWidth: '520px' }}>
+          Dokumen SPK untuk WO ini sudah pernah dicetak. Silakan unlock dari menu Work Order (hanya Super Admin) jika perlu cetak ulang.
+        </p>
+        <div style={{ marginTop: '24px', display: 'flex', gap: '12px' }}>
+          <button
+            onClick={() => window.close()}
+            style={{ padding: '10px 20px', border: '2px solid #d1d5db', borderRadius: '8px', cursor: 'pointer' }}
+          >
+            Tutup
           </button>
         </div>
       </div>

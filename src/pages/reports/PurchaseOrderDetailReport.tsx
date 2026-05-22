@@ -182,7 +182,8 @@ export default function PurchaseOrderDetailReport() {
         if (!po) return null;
 
         const workOrder = po.work_order_id ? workOrderMap.get(po.work_order_id) : null;
-        const vehicle = workOrder?.vehicle_entries?.vehicles;
+        const ve = Array.isArray((workOrder as any)?.vehicle_entries) ? (workOrder as any).vehicle_entries[0] : (workOrder as any)?.vehicle_entries;
+        const vehicle = Array.isArray(ve?.vehicles) ? ve.vehicles[0] : ve?.vehicles;
         const paymentStatus = paymentStatusMap.get(po.id);
 
         let statusBayar = 'Belum Ditagih';
@@ -284,7 +285,8 @@ export default function PurchaseOrderDetailReport() {
         if (!po) return null;
 
         const workOrder = po.work_order_id ? workOrderMap.get(po.work_order_id) : null;
-        const vehicle = workOrder?.vehicle_entries?.vehicles;
+        const ve = Array.isArray((workOrder as any)?.vehicle_entries) ? (workOrder as any).vehicle_entries[0] : (workOrder as any)?.vehicle_entries;
+        const vehicle = Array.isArray(ve?.vehicles) ? ve.vehicles[0] : ve?.vehicles;
         const paymentStatus = paymentStatusMap.get(po.id);
 
         let statusBayar = 'Belum Ditagih';

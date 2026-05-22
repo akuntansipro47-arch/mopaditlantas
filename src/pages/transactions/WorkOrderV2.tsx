@@ -12,7 +12,7 @@ import { generateTransactionNumber, formatDate } from '@/lib/utils';
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { incrementDocumentPrintCounter } from '@/lib/printCounter';
 
-import ReactToPrint from 'react-to-print';
+import { useReactToPrint } from 'react-to-print';
 import { Card, CardContent } from '@/components/ui/card';
 
 
@@ -62,6 +62,27 @@ const WorkOrderV2 = () => {
   const [selectedWoForPrint, setSelectedWoForPrint] = useState<WorkOrder | null>(null);
   const [spkPrintCount, setSpkPrintCount] = useState<number>(1);
 
+  const triggerPrint = useReactToPrint({
+    contentRef: printComponentRef,
+    documentTitle: selectedWoForPrint?.wo_number ? `SPK-${selectedWoForPrint.wo_number}` : 'SPK',
+    onAfterPrint: () => setSelectedWoForPrint(null),
+  });
+
+  const handlePrintSpk = async (wo: WorkOrder) => {
+    setSelectedWoForPrint(wo);
+    const cnt = await incrementDocumentPrintCounter('SPK', String(wo.id));
+    setSpkPrintCount(cnt);
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        try {
+          triggerPrint();
+        } catch {
+          setSelectedWoForPrint(null);
+        }
+      });
+    });
+  };
+
   const fetchWOs = useCallback(async () => {
     setLoading(true);
     try {
@@ -100,13 +121,13 @@ const WorkOrderV2 = () => {
       if (vehiclesError) throw new Error(`Vehicles: ${vehiclesError.message}`);
 
       // Step 5: Create lookup maps and combine data, aliasing notes to complaint
-      const mechanicsMap = new Map(mechanicsData?.map(m => [m.id, m]));
-      const vehiclesMap = new Map(vehiclesData?.map(v => [v.id, v]));
-      const entriesMap = new Map(entriesData?.map(e => [e.id, { 
+      const mechanicsMap = new Map((mechanicsData || []).map((m: any) => [m.id, m] as const));
+      const vehiclesMap = new Map((vehiclesData || []).map((v: any) => [v.id, v] as const));
+      const entriesMap = new Map((entriesData || []).map((e: any) => [e.id, { 
         ...e, 
         complaint: (e as any).notes, 
         vehicles: vehiclesMap.get(e.vehicle_id) || null 
-      }]));
+      }] as const));
 
       const combinedData = woData.map(wo => ({
         ...wo,
@@ -436,21 +457,9 @@ const WorkOrderV2 = () => {
                       <TableCell className="max-w-[300px] truncate">{wo.vehicle_entries?.complaint || '-'}</TableCell>
                       <TableCell>{wo.mechanics?.name || '-'}</TableCell>
                       <TableCell className="text-right">
-                        <ReactToPrint
-                          trigger={() => (
-                            <Button variant="ghost" size="icon" title="Cetak SPK">
-                              <Barcode className="h-4 w-4" />
-                            </Button>
-                          )}
-                          content={() => printComponentRef.current}
-                          documentTitle={`SPK-${selectedWoForPrint?.wo_number}`}
-                          onBeforeGetContent={async () => {
-                            setSelectedWoForPrint(wo);
-                            const cnt = await incrementDocumentPrintCounter('SPK', String(wo.id));
-                            setSpkPrintCount(cnt);
-                          }}
-                          onAfterPrint={() => setSelectedWoForPrint(null)}
-                        />
+                        <Button variant="ghost" size="icon" title="Cetak SPK" onClick={() => handlePrintSpk(wo)}>
+                          <Barcode className="h-4 w-4" />
+                        </Button>
                         <Button variant="ghost" size="icon" onClick={() => handleEdit(wo)} title="Edit">
                           <Edit className="h-4 w-4" />
                         </Button>

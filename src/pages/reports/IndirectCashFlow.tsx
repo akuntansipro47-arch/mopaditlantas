@@ -44,13 +44,14 @@ export const IndirectCashFlow: React.FC<IndirectCashFlowProps> = ({ startDate, e
             let totalExpense = 0;
 
             // Menggunakan (data || []) untuk keamanan maksimum
-            (incomeStatementItems || []).forEach(item => {
-                if (!item.chart_of_accounts) return;
-
-                if (item.chart_of_accounts.category === 'PENDAPATAN') {
-                    totalRevenue += item.credit - item.debit;
-                } else if (['HPP', 'BEBAN'].includes(item.chart_of_accounts.category)) {
-                    totalExpense += item.debit - item.credit;
+            (incomeStatementItems || []).forEach((item: any) => {
+                const coa = Array.isArray(item?.chart_of_accounts) ? item.chart_of_accounts[0] : item?.chart_of_accounts;
+                if (!coa) return;
+                const cat = String(coa.category || '').toUpperCase();
+                if (cat === 'PENDAPATAN') {
+                    totalRevenue += Number(item.credit || 0) - Number(item.debit || 0);
+                } else if (['HPP', 'BEBAN'].includes(cat)) {
+                    totalExpense += Number(item.debit || 0) - Number(item.credit || 0);
                 }
             });
 

@@ -387,7 +387,6 @@ export default function CashBank() {
                 {filtered.slice(0, 80).map((a) => (
                   <CommandItem
                     key={a.id}
-                    value={`${a.account_code} ${a.account_name}`}
                     onSelect={() => {
                       onChange(a.id);
                       setOpen(false);

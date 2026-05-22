@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { Loader2 } from 'lucide-react';
 import { incrementDocumentPrintCounter } from '@/lib/printCounter';
@@ -41,6 +41,7 @@ export default function SPKPrintDotMatrix({ id }: SPKDotProps) {
   const [wo, setWo] = useState<any>(null);
   const [entry, setEntry] = useState<any>(null);
   const [printCount, setPrintCount] = useState<number>(1);
+  const [printLocked, setPrintLocked] = useState(false);
   const lockedRef = useRef(false);
 
   useEffect(() => {
@@ -90,6 +91,8 @@ export default function SPKPrintDotMatrix({ id }: SPKDotProps) {
         .single();
       if (woErr) throw woErr;
       setWo(woData);
+      const alreadyLocked = Boolean((woData as any)?.is_locked);
+      setPrintLocked(alreadyLocked);
 
       let entryData: any = null;
       if (woData?.vehicle_entry_id) {
@@ -122,6 +125,10 @@ export default function SPKPrintDotMatrix({ id }: SPKDotProps) {
         entryData = { ...ve, vehicle_entry_spareparts: spareparts };
       }
       setEntry(entryData);
+
+      if (alreadyLocked) {
+        return;
+      }
 
       const cnt = await incrementDocumentPrintCounter('SPK', String(id));
       setPrintCount(cnt);
@@ -280,6 +287,18 @@ export default function SPKPrintDotMatrix({ id }: SPKDotProps) {
   }
 
   if (!wo) return <div>Data WO tidak ditemukan.</div>;
+  if (printLocked) {
+    return (
+      <div className="min-h-screen bg-white flex items-center justify-center p-8">
+        <div className="max-w-xl text-center">
+          <div className="text-xl font-bold">WO terkunci untuk cetak</div>
+          <div className="text-sm text-gray-600 mt-2">
+            Silakan unlock dari menu Work Order (hanya Super Admin) untuk bisa cetak ulang.
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="printable-area min-h-screen bg-white p-0">
