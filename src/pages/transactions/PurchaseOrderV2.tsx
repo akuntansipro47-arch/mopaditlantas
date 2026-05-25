@@ -102,6 +102,7 @@ export default function PurchaseOrderV2() {
     startDate: new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0], // First day of current month
     endDate: new Date().toISOString().split('T')[0] // Today
   });
+  const [statusFilter, setStatusFilter] = useState('ALL');
 
   // --- Auto-refresh using interval ---
   useEffect(() => {
@@ -118,7 +119,7 @@ export default function PurchaseOrderV2() {
     return () => {
       clearInterval(intervalId);
     };
-  }, [dateFilter]); // Re-run if dateFilter changes
+  }, [dateFilter, statusFilter]); // Re-run if dateFilter/statusFilter changes
 
   useEffect(() => {
     if (isDialogOpen) fetchMasterData();
@@ -396,6 +397,10 @@ export default function PurchaseOrderV2() {
         query = query.or(`po_date.gte.${startDate},and(po_date.is.null,created_at.gte.${startTs})`);
       } else if (endDate) {
         query = query.or(`po_date.lte.${endDate},and(po_date.is.null,created_at.lte.${endTs})`);
+      }
+
+      if (statusFilter !== 'ALL') {
+        query = query.eq('status', statusFilter);
       }
 
       const { data, error } = await query;
@@ -953,6 +958,7 @@ export default function PurchaseOrderV2() {
     const searchLower = search.toLowerCase();
     const v = item.work_orders?.vehicle_entries?.vehicles;
     const nopol = v?.license_plate?.toLowerCase() || '';
+    if (statusFilter !== 'ALL' && String(item.status || '') !== statusFilter) return false;
     return (
       item.po_number.toLowerCase().includes(searchLower) ||
       item.suppliers?.name.toLowerCase().includes(searchLower) ||
@@ -963,7 +969,7 @@ export default function PurchaseOrderV2() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h2 className="text-3xl font-bold tracking-tight text-green-700">Purchase Order (PO) - TES REFRESH</h2>
+        <h2 className="text-3xl font-bold tracking-tight text-green-700">Purchase Order (PO)</h2>
         <div className="flex gap-2">
           <Button onClick={() => { resetForm(); setIsDialogOpen(true); }}>
             <Plus className="mr-2 h-4 w-4" /> Buat PO Baru
@@ -1459,6 +1465,20 @@ export default function PurchaseOrderV2() {
                     onChange={(e) => setDateFilter({...dateFilter, endDate: e.target.value})} 
                   />
                 </div>
+                <Select value={statusFilter} onValueChange={setStatusFilter}>
+                  <SelectTrigger className="w-[160px] h-9">
+                    <SelectValue placeholder="Status" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="ALL">Semua Status</SelectItem>
+                    <SelectItem value="DRAFT">DRAFT</SelectItem>
+                    <SelectItem value="ISSUED">ISSUED</SelectItem>
+                    <SelectItem value="RECEIVED_PART">RECEIVED PART</SelectItem>
+                    <SelectItem value="RECEIVED_FULL">RECEIVED FULL</SelectItem>
+                    <SelectItem value="RETURNED_FULL">RETURNED FULL</SelectItem>
+                    <SelectItem value="CANCELLED">CANCELLED</SelectItem>
+                  </SelectContent>
+                </Select>
                 <div className="relative w-64 ml-4">
                   <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground pointer-events-none" />
                   <Input placeholder="Cari No. PO, Nopol..." className="pl-8 h-9" value={search} onChange={e => setSearch(e.target.value)} />
@@ -1473,6 +1493,7 @@ export default function PurchaseOrderV2() {
                 <TableRow>
                   <TableHead>No. PO</TableHead>
                   <TableHead>Tanggal PO</TableHead>
+                  <TableHead>Umur PO</TableHead>
                   <TableHead>Supplier</TableHead>
                   <TableHead>Tipe Pengadaan (Project/Stok)</TableHead>
                   <TableHead>Kendaraan</TableHead>
@@ -1483,13 +1504,20 @@ export default function PurchaseOrderV2() {
               </TableHeader>
               <TableBody>
                 {filteredPOs.length === 0 ? (
-                  <TableRow><TableCell colSpan={8} className="text-center h-24">Tidak ada data PO.</TableCell></TableRow>
+                  <TableRow><TableCell colSpan={9} className="text-center h-24">Tidak ada data PO.</TableCell></TableRow>
                 ) : (
                     filteredPOs.map((item: any) => {
                       const v = item.work_orders?.vehicle_entries?.vehicles;
                       const nopol = v?.license_plate || '-';
                       const vGroup = v?.vehicle_type || '';
                       const vText = item.work_order_id ? (vGroup ? `${nopol} (${vGroup})` : nopol) : '-';
+                      const effectiveDateStr = String(item?.po_date || '').trim() || String(item?.created_at || '').split('T')[0];
+                      const effectiveTs = Date.parse(effectiveDateStr);
+                      const ageDays =
+                        Number.isFinite(effectiveTs) && !Number.isNaN(effectiveTs)
+                          ? Math.max(0, Math.floor((Date.now() - effectiveTs) / 86400000))
+                          : 0;
+                      const isOverdueIssued = String(item?.status || '') === 'ISSUED' && ageDays > 3;
                       const returns = Array.isArray((item as any).purchase_returns) ? (item as any).purchase_returns : [];
                       const hasReturn =
                         returns.length > 0 &&
@@ -1512,9 +1540,10 @@ export default function PurchaseOrderV2() {
                               : String(item.status || '').replace('_', ' ');
 
                     return (
-                      <TableRow key={item.id}>
+                      <TableRow key={item.id} className={isOverdueIssued ? 'bg-red-50' : ''}>
                         <TableCell className="font-medium">{item.po_number}</TableCell>
                         <TableCell>{formatDate(item.po_date || item.created_at)}</TableCell>
+                        <TableCell>{String(item?.status || '') === 'ISSUED' ? `${ageDays} hari` : '-'}</TableCell>
                         <TableCell>{item.suppliers?.name || '-'}</TableCell>
                         <TableCell>
                           <span className={`px-2 py-1 rounded-full text-xs font-semibold ${

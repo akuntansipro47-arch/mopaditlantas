@@ -38,6 +38,11 @@ export default function PurchaseOrderReport() {
   async function fetchData() {
     setLoading(true);
     try {
+      const startDate = String(dateRange.start || '');
+      const endDate = String(dateRange.end || '');
+      const startTs = startDate ? `${startDate}T00:00:00` : '';
+      const endTs = endDate ? `${endDate}T23:59:59.999` : '';
+
       let query = supabase
         .from('purchase_orders')
         .select(`
@@ -51,9 +56,17 @@ export default function PurchaseOrderReport() {
             goods (name, item_code, unit)
           )
         `)
-        .gte('po_date', dateRange.start)
-        .lte('po_date', dateRange.end)
-        .order('po_date', { ascending: false });
+        .order('created_at', { ascending: false });
+
+      if (startDate && endDate) {
+        query = query.or(
+          `and(po_date.gte.${startDate},po_date.lte.${endDate}),and(po_date.is.null,created_at.gte.${startTs},created_at.lte.${endTs})`
+        );
+      } else if (startDate) {
+        query = query.or(`po_date.gte.${startDate},and(po_date.is.null,created_at.gte.${startTs})`);
+      } else if (endDate) {
+        query = query.or(`po_date.lte.${endDate},and(po_date.is.null,created_at.lte.${endTs})`);
+      }
 
       if (statusFilter !== 'ALL') {
         query = query.eq('status', statusFilter);
@@ -132,9 +145,10 @@ export default function PurchaseOrderReport() {
             <SelectContent>
               <SelectItem value="ALL">Semua Status</SelectItem>
               <SelectItem value="DRAFT">Draft</SelectItem>
-              <SelectItem value="SENT">Terkirim</SelectItem>
+              <SelectItem value="ISSUED">Issued</SelectItem>
               <SelectItem value="RECEIVED_PART">Diterima Sebagian</SelectItem>
               <SelectItem value="RECEIVED_FULL">Diterima Penuh</SelectItem>
+              <SelectItem value="RETURNED_FULL">Retur Penuh</SelectItem>
               <SelectItem value="CANCELLED">Dibatalkan</SelectItem>
             </SelectContent>
           </Select>
@@ -170,6 +184,7 @@ export default function PurchaseOrderReport() {
                 <TableHead>No. PO</TableHead>
                 <TableHead>No. WO</TableHead>
                 <TableHead>Tanggal</TableHead>
+                <TableHead>Umur PO</TableHead>
                 <TableHead>Supplier</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead className="text-right">Total Nilai</TableHead>
@@ -177,13 +192,22 @@ export default function PurchaseOrderReport() {
             </TableHeader>
             <TableBody>
               {filteredData.length === 0 ? (
-                <TableRow><TableCell colSpan={6} className="text-center py-8">Tidak ada data.</TableCell></TableRow>
+                <TableRow><TableCell colSpan={7} className="text-center py-8">Tidak ada data.</TableCell></TableRow>
               ) : (
-                filteredData.map((po) => (
-                  <TableRow key={po.id}>
+                filteredData.map((po) => {
+                  const effectiveDateStr = String(po?.po_date || '').trim() || String(po?.created_at || '').split('T')[0];
+                  const effectiveTs = Date.parse(effectiveDateStr);
+                  const ageDays =
+                    Number.isFinite(effectiveTs) && !Number.isNaN(effectiveTs)
+                      ? Math.max(0, Math.floor((Date.now() - effectiveTs) / 86400000))
+                      : 0;
+                  const isOverdueIssued = String(po?.status || '') === 'ISSUED' && ageDays > 3;
+                  return (
+                  <TableRow key={po.id} className={isOverdueIssued ? 'bg-red-50' : ''}>
                     <TableCell className="font-medium">{po.po_number}</TableCell>
                     <TableCell>{po.work_orders?.wo_number}</TableCell>
-                    <TableCell>{formatDate(po.po_date)}</TableCell>
+                    <TableCell>{formatDate(po.po_date || po.created_at)}</TableCell>
+                    <TableCell>{String(po?.status || '') === 'ISSUED' ? `${ageDays} hari` : '-'}</TableCell>
                     <TableCell>{po.suppliers?.name}</TableCell>
                     <TableCell>
                       <span className={`px-2 py-1 rounded text-xs font-semibold 
@@ -194,7 +218,8 @@ export default function PurchaseOrderReport() {
                     </TableCell>
                     <TableCell className="text-right font-bold">{formatCurrency(po.total_amount)}</TableCell>
                   </TableRow>
-                ))
+                  );
+                })
               )}
             </TableBody>
           </Table>
