@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Download, Calendar, Search } from 'lucide-react';
-import { formatCurrency, formatDate } from '@/lib/utils';
+import { formatCurrency, formatDate, matchesFreeSearch } from '@/lib/utils';
 import * as XLSX from 'xlsx';
 
 export default function WorkOrderReport() {
@@ -80,10 +80,18 @@ export default function WorkOrderReport() {
     }
   }
 
-  const filteredData = data.filter(item => 
-    (item.wo_number && item.wo_number.toLowerCase().includes(search.toLowerCase())) ||
-    (item.vehicle_entries?.vehicles?.license_plate && item.vehicle_entries.vehicles.license_plate.toLowerCase().includes(search.toLowerCase())) ||
-    (item.vehicle_entries?.vehicles?.brand_type && item.vehicle_entries.vehicles.brand_type.toLowerCase().includes(search.toLowerCase()))
+  const filteredData = data.filter((item) =>
+    matchesFreeSearch(search, [
+      item.wo_number,
+      item.work_date,
+      item.status,
+      item.mechanics?.name,
+      item.vehicle_entries?.nota_dinas_number,
+      item.vehicle_entries?.service_group,
+      item.vehicle_entries?.vehicles?.license_plate,
+      item.vehicle_entries?.vehicles?.brand_type,
+      getVehicleGroupLabel(item),
+    ])
   );
 
   const calculateTotalEstimate = (wo: any) => {
@@ -187,7 +195,7 @@ export default function WorkOrderReport() {
             <CardTitle>Rincian Work Order</CardTitle>
             <div className="relative w-64">
               <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
-              <Input placeholder="Cari No WO / Nopol / Kendaraan..." className="pl-8" value={search} onChange={e => setSearch(e.target.value)} />
+              <Input placeholder="Cari bebas berdasarkan kolom laporan..." className="pl-8" value={search} onChange={e => setSearch(e.target.value)} />
             </div>
           </div>
         </CardHeader>

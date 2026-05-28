@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Download, Search } from 'lucide-react';
+import { matchesFreeSearch } from '@/lib/utils';
 import * as XLSX from 'xlsx';
 
 export default function StockReport() {
@@ -111,9 +112,17 @@ export default function StockReport() {
     }
   }
 
-  const filteredData = data.filter(item => 
-    item.name.toLowerCase().includes(search.toLowerCase()) ||
-    item.item_code.toLowerCase().includes(search.toLowerCase())
+  const filteredData = data.filter((item) =>
+    matchesFreeSearch(search, [
+      item.item_code,
+      item.name,
+      item.item_type,
+      item.unit,
+      item.initial_stock,
+      item.total_in,
+      item.total_out,
+      item.ending_stock,
+    ])
   );
 
   const exportToExcel = () => {
@@ -164,7 +173,7 @@ export default function StockReport() {
             <CardTitle>Stok Barang</CardTitle>
             <div className="relative w-64">
               <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground pointer-events-none" />
-              <Input placeholder="Cari Barang..." className="pl-8" value={search} onChange={e => setSearch(e.target.value)} />
+              <Input placeholder="Cari bebas berdasarkan kolom laporan..." className="pl-8" value={search} onChange={e => setSearch(e.target.value)} />
             </div>
           </div>
         </CardHeader>

@@ -5,7 +5,7 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Download, Calendar, Search } from 'lucide-react';
-import { formatCurrency, formatDate } from '@/lib/utils';
+import { formatCurrency, formatDate, matchesFreeSearch } from '@/lib/utils';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import * as XLSX from 'xlsx';
 
@@ -118,10 +118,18 @@ export default function GoodsIssueDetailReport() {
   }
 
   const filteredData = data.filter(item => {
-    const matchSearch =
-      (item.nopol && item.nopol.toLowerCase().includes(search.toLowerCase())) ||
-      (item.no_wo && item.no_wo.toLowerCase().includes(search.toLowerCase())) ||
-      (item.item_name && item.item_name.toLowerCase().includes(search.toLowerCase()));
+    const matchSearch = matchesFreeSearch(search, [
+      item.tgl_keluar,
+      item.no_wo,
+      item.nopol,
+      item.merk_tipe,
+      item.group,
+      item.kode_barang,
+      item.item_name,
+      item.qty,
+      item.satuan,
+      item.keterangan,
+    ]);
     const matchGroup = groupFilter === 'ALL' ? true : getGroupKeyFromLabel(item.group) === groupFilter;
     return matchSearch && matchGroup;
   });
@@ -179,7 +187,7 @@ export default function GoodsIssueDetailReport() {
               </div>
               <div className="relative w-64">
                 <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
-                <Input placeholder="Cari WO / Nopol / Item..." className="pl-8" value={search} onChange={e => setSearch(e.target.value)} />
+                <Input placeholder="Cari bebas berdasarkan kolom laporan..." className="pl-8" value={search} onChange={e => setSearch(e.target.value)} />
               </div>
             </div>
           </div>

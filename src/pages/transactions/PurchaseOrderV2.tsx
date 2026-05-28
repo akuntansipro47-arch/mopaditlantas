@@ -21,7 +21,7 @@ import { Label } from "@/components/ui/label";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
-import { formatCurrency, formatDate, generateTransactionNumber } from '@/lib/utils';
+import { formatCurrency, formatDate, generateTransactionNumber, matchesFreeSearch } from '@/lib/utils';
 import { useRealtimeRefetch } from '@/hooks/useRealtimeRefetch';
 import { useAuth } from '@/context/AuthContext';
 import { logActivity } from '@/lib/activityLog';
@@ -955,15 +955,26 @@ export default function PurchaseOrderV2() {
   };
 
   const filteredPOs = pos.filter((item: any) => {
-    const searchLower = search.toLowerCase();
     const v = item.work_orders?.vehicle_entries?.vehicles;
-    const nopol = v?.license_plate?.toLowerCase() || '';
     if (statusFilter !== 'ALL' && String(item.status || '') !== statusFilter) return false;
-    return (
-      item.po_number.toLowerCase().includes(searchLower) ||
-      item.suppliers?.name.toLowerCase().includes(searchLower) ||
-      nopol.includes(searchLower)
-    );
+    const statusLabel =
+      item.status === 'RETURNED_FULL'
+        ? 'RETUR PENUH'
+        : item.status === 'CANCELLED'
+          ? 'DIBATALKAN'
+          : String(item.status || '').replace('_', ' ');
+    return matchesFreeSearch(search, [
+      item.po_number,
+      item.po_date,
+      item.created_at,
+      item.suppliers?.name,
+      item.work_orders?.wo_number,
+      v?.license_plate,
+      v?.vehicle_type,
+      statusLabel,
+      item.work_order_id ? 'Project (WO)' : 'Stok Gudang',
+      item.total_amount,
+    ]);
   });
 
   return (
@@ -1481,7 +1492,7 @@ export default function PurchaseOrderV2() {
                 </Select>
                 <div className="relative w-64 ml-4">
                   <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground pointer-events-none" />
-                  <Input placeholder="Cari No. PO, Nopol..." className="pl-8 h-9" value={search} onChange={e => setSearch(e.target.value)} />
+                  <Input placeholder="Cari bebas berdasarkan kolom..." className="pl-8 h-9" value={search} onChange={e => setSearch(e.target.value)} />
                 </div>
              </div>
           </div>

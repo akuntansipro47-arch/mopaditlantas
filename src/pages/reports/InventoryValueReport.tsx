@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Search, Download, TrendingUp, DollarSign, Package } from 'lucide-react';
-import { formatCurrency, formatDate } from '@/lib/utils';
+import { formatCurrency, formatDate, matchesFreeSearch } from '@/lib/utils';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import * as XLSX from 'xlsx';
 import { toast } from 'sonner';
@@ -75,9 +75,17 @@ export default function InventoryValueReport() {
   }
 
   const filteredData = data.filter(item => {
-    const matchSearch =
-      item.name.toLowerCase().includes(search.toLowerCase()) ||
-      item.item_code.toLowerCase().includes(search.toLowerCase());
+    const matchSearch = matchesFreeSearch(search, [
+      item.item_code,
+      item.name,
+      item.item_type,
+      item.group_sparepart,
+      item.unit,
+      item.current_stock,
+      item.cost_price,
+      item.total_value,
+      item.price_source,
+    ]);
     
     let matchGroup = true;
     if (groupFilter !== 'ALL') {
@@ -177,7 +185,7 @@ export default function InventoryValueReport() {
               <div className="relative w-72">
                 <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
                 <Input 
-                  placeholder="Cari Nama / Kode Barang..." 
+                  placeholder="Cari bebas berdasarkan kolom laporan..." 
                   className="pl-8 bg-white" 
                   value={search} 
                   onChange={e => setSearch(e.target.value)} 

@@ -5,7 +5,7 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Search, Printer, FileDown, RefreshCw } from 'lucide-react';
-import { formatCurrency, formatDate } from '@/lib/utils';
+import { formatCurrency, formatDate, matchesFreeSearch } from '@/lib/utils';
 import * as XLSX from 'xlsx';
 
 import { Badge } from '@/components/ui/badge';
@@ -227,10 +227,21 @@ export default function EstimationVsRealizationReport() {
   };
 
   const filteredData = data.filter(item => {
-    const matchSearch =
-      item.wo_number.toLowerCase().includes(search.toLowerCase()) ||
-      item.license_plate.toLowerCase().includes(search.toLowerCase()) ||
-      item.nota_dinas.toLowerCase().includes(search.toLowerCase());
+    const matchSearch = matchesFreeSearch(search, [
+      item.date,
+      item.wo_number,
+      item.status,
+      item.license_plate,
+      item.group,
+      item.nota_dinas,
+      item.est_job,
+      item.est_part,
+      item.total_est,
+      item.real_job,
+      item.real_part,
+      item.total_real,
+      item.diff,
+    ]);
     const matchGroup = groupFilter === 'ALL' ? true : getGroupKey(item.group) === groupFilter;
     return matchSearch && matchGroup;
   });
@@ -321,7 +332,7 @@ export default function EstimationVsRealizationReport() {
                     <div className="relative w-64">
                         <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
                         <Input 
-                            placeholder="Cari WO / Nopol..." 
+                            placeholder="Cari bebas berdasarkan kolom laporan..." 
                             className="pl-8" 
                             value={search}
                             onChange={(e) => setSearch(e.target.value)}

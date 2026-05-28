@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { toast } from 'sonner';
-import { formatCurrency, formatDate } from '@/lib/utils';
+import { formatCurrency, formatDate, matchesFreeSearch } from '@/lib/utils';
 import { Printer, RefreshCw, Download, Search } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import ReportPrintHeader from '@/components/reports/ReportPrintHeader';
@@ -175,24 +175,29 @@ export default function SupplierPayableReport() {
 
   const filteredSuppliers = reportData
     .map((supplier: any) => {
-      const query = search.trim().toLowerCase();
-      if (!query) return supplier;
-      const supplierMatch = String(supplier.name || '').toLowerCase().includes(query);
       const invoices = (supplier.invoices || []).filter((inv: any) => {
-        const invoiceNo = String(inv.invoice_number || '').toLowerCase();
-        const poNo = String(inv.purchase_orders?.po_number || '').toLowerCase();
-        const woNo = String(inv.purchase_orders?.work_orders?.wo_number || '').toLowerCase();
         const v = inv.purchase_orders?.work_orders?.vehicle_entries?.vehicles;
-        const nopol = String(v?.license_plate || '').toLowerCase();
-        const vName = String(v?.brand_type || v?.vehicle_type || '').toLowerCase();
-        return (
-          supplierMatch ||
-          invoiceNo.includes(query) ||
-          poNo.includes(query) ||
-          woNo.includes(query) ||
-          nopol.includes(query) ||
-          vName.includes(query)
-        );
+        const kendaraanText = (() => {
+          const nopol = String(v?.license_plate || '').trim();
+          const name = String(v?.brand_type || v?.vehicle_type || '').trim();
+          if (nopol && name) return `${nopol} (${name})`;
+          return nopol || name || '';
+        })();
+        return matchesFreeSearch(search, [
+          supplier.name,
+          inv.invoice_number,
+          inv.purchase_orders?.po_number,
+          inv.invoice_date,
+          inv.due_date,
+          inv.aging_bucket,
+          inv.days_overdue,
+          inv.last_payment_date,
+          inv.total_amount,
+          inv.paid_as_of_date,
+          inv.remaining_balance,
+          inv.purchase_orders?.work_orders?.wo_number,
+          kendaraanText,
+        ]);
       });
       return { ...supplier, invoices };
     })
@@ -284,7 +289,7 @@ export default function SupplierPayableReport() {
                 <div className="relative w-72 ml-auto">
                     <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
                     <Input
-                        placeholder="Cari supplier / invoice / PO..."
+                        placeholder="Cari bebas berdasarkan kolom laporan..."
                         className="pl-8 bg-white"
                         value={search}
                         onChange={e => setSearch(e.target.value)}

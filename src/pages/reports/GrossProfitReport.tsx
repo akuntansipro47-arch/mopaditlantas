@@ -5,7 +5,7 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Download, Calendar, Search, RefreshCw, AlertTriangle, Info } from 'lucide-react';
-import { formatCurrency, formatDate } from '@/lib/utils';
+import { formatCurrency, formatDate, matchesFreeSearch } from '@/lib/utils';
 import { toast } from 'sonner';
 import * as XLSX from 'xlsx';
 
@@ -753,10 +753,27 @@ export default function GrossProfitReport() {
     }
   }
 
-  const filteredData = data.filter(item => 
-    item.nopol.toLowerCase().includes(search.toLowerCase()) ||
-    item.nota_dinas.toLowerCase().includes(search.toLowerCase()) ||
-    item.item.toLowerCase().includes(search.toLowerCase())
+  const filteredData = data.filter((item) =>
+    matchesFreeSearch(search, [
+      item.tgl,
+      item.nopol,
+      item.group_kendaraan,
+      item.merk_type,
+      item.nota_dinas,
+      item.group,
+      item.klasifikasi,
+      item.sku,
+      item.item,
+      item.qty,
+      item.satuan,
+      item.harga_pagu,
+      item.total_harga,
+      item.hpp_satuan,
+      item.hpp_total,
+      item.hpp_source,
+      item.margin,
+      item.margin_percent,
+    ])
   );
 
   const exportToExcel = () => {
@@ -877,7 +894,7 @@ export default function GrossProfitReport() {
             <CardTitle>Analisis Profit</CardTitle>
             <div className="relative w-64">
               <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground pointer-events-none" />
-              <Input placeholder="Cari Nopol / Item..." className="pl-8" value={search} onChange={e => setSearch(e.target.value)} />
+              <Input placeholder="Cari bebas berdasarkan kolom laporan..." className="pl-8" value={search} onChange={e => setSearch(e.target.value)} />
             </div>
           </div>
         </CardHeader>

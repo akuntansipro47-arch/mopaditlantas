@@ -5,7 +5,7 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Download, Calendar, Search } from 'lucide-react';
-import { formatDate } from '@/lib/utils';
+import { formatDate, matchesFreeSearch } from '@/lib/utils';
 import * as XLSX from 'xlsx';
 
 export default function GoodsIssueReport() {
@@ -53,10 +53,18 @@ export default function GoodsIssueReport() {
     }
   }
 
-  const filteredData = data.filter(item => 
-    item.issue_number.toLowerCase().includes(search.toLowerCase()) ||
-    item.work_orders?.wo_number.toLowerCase().includes(search.toLowerCase()) ||
-    item.work_orders?.vehicle_entries?.vehicles?.license_plate.toLowerCase().includes(search.toLowerCase())
+  const filteredData = data.filter((item) =>
+    matchesFreeSearch(search, [
+      item.issue_number,
+      item.issue_date,
+      item.work_orders?.wo_number,
+      item.work_orders?.vehicle_entries?.vehicles?.license_plate,
+      item.work_orders?.vehicle_entries?.nota_dinas_number,
+      (item.items || []).map((x: any) => x.goods?.item_code).filter(Boolean).join(' '),
+      (item.items || []).map((x: any) => x.goods?.name).filter(Boolean).join(' '),
+      (item.items || []).reduce((sum: number, x: any) => sum + Number(x?.quantity || 0), 0),
+      (item.items || []).length,
+    ])
   );
 
   const exportToExcel = () => {
@@ -100,7 +108,7 @@ export default function GoodsIssueReport() {
             <CardTitle>Rincian Pengeluaran</CardTitle>
             <div className="relative w-64">
               <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
-              <Input placeholder="Cari No Issue / WO / Nopol..." className="pl-8" value={search} onChange={e => setSearch(e.target.value)} />
+              <Input placeholder="Cari bebas berdasarkan kolom laporan..." className="pl-8" value={search} onChange={e => setSearch(e.target.value)} />
             </div>
           </div>
         </CardHeader>

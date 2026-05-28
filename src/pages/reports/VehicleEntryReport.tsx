@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { toast } from 'sonner';
-import { formatDate } from '@/lib/utils';
+import { formatDate, matchesFreeSearch } from '@/lib/utils';
 import { Printer, Search, Download, Calendar } from 'lucide-react';
 import { 
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue 
@@ -151,10 +151,20 @@ export default function VehicleEntryReport() {
   };
 
   const filteredEntries = entries.filter(e => {
-    const matchSearch =
-      e.entry_number.toLowerCase().includes(search.toLowerCase()) ||
-      e.vehicles?.license_plate.toLowerCase().includes(search.toLowerCase()) ||
-      e.nota_dinas_number?.toLowerCase().includes(search.toLowerCase());
+    const matchSearch = matchesFreeSearch(search, [
+      e.entry_number,
+      e.entry_date,
+      e.vehicles?.license_plate,
+      e.vehicles?.brand_type,
+      e.vehicles?.vehicle_type,
+      e.nota_dinas_number,
+      e.status,
+      e.notes,
+      getVehicleGroupLabel(e),
+      (e.vehicle_entry_jobs || []).map((j: any) => j.job_types?.job_name).filter(Boolean).join(' '),
+      (e.work_orders || []).map((w: any) => w.wo_number).filter(Boolean).join(' '),
+      (e.work_orders || []).map((w: any) => w.status).filter(Boolean).join(' '),
+    ]);
     const matchGroup = groupFilter === 'ALL' ? true : getVehicleGroupKey(e) === groupFilter;
     return matchSearch && matchGroup;
   });
@@ -234,7 +244,7 @@ export default function VehicleEntryReport() {
           <div className="relative w-64">
               <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground pointer-events-none" />
               <Input 
-                placeholder="Cari No. Entry, Nopol, Nota Dinas..." 
+                placeholder="Cari bebas berdasarkan kolom laporan..." 
                 className="pl-8" 
                 value={search} 
                 onChange={e => setSearch(e.target.value)} 

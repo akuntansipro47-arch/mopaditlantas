@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Download, Calendar, Search } from 'lucide-react';
-import { formatCurrency, formatDate } from '@/lib/utils';
+import { formatCurrency, formatDate, matchesFreeSearch } from '@/lib/utils';
 import * as XLSX from 'xlsx';
 
 export default function PurchaseOrderReport() {
@@ -86,9 +86,16 @@ export default function PurchaseOrderReport() {
     }
   }
 
-  const filteredData = data.filter(item => 
-    item.po_number.toLowerCase().includes(search.toLowerCase()) ||
-    item.suppliers?.name.toLowerCase().includes(search.toLowerCase())
+  const filteredData = data.filter((item) =>
+    matchesFreeSearch(search, [
+      item.po_number,
+      item.po_date,
+      item.created_at,
+      item.work_orders?.wo_number,
+      item.suppliers?.name,
+      item.status,
+      item.total_amount,
+    ])
   );
 
   const totalAmount = filteredData.reduce((sum, item) => sum + (item.total_amount || 0), 0);
@@ -173,7 +180,7 @@ export default function PurchaseOrderReport() {
             <CardTitle>Rincian Transaksi</CardTitle>
             <div className="relative w-64">
               <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
-              <Input placeholder="Cari No PO / Supplier..." className="pl-8" value={search} onChange={e => setSearch(e.target.value)} />
+              <Input placeholder="Cari bebas berdasarkan kolom laporan..." className="pl-8" value={search} onChange={e => setSearch(e.target.value)} />
             </div>
           </div>
         </CardHeader>

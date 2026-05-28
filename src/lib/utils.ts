@@ -33,3 +33,24 @@ export function generateTransactionNumber(prefix: string) {
   const random = Math.floor(1000 + Math.random() * 9000); // 4 digit random
   return `${prefix}-${year}${month}${day}-${random}`;
 }
+
+export function normalizeSearchText(input: unknown) {
+  return String(input ?? '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim()
+    .replace(/\s+/g, ' ');
+}
+
+export function matchesFreeSearch(rawQuery: unknown, parts: unknown[]) {
+  const q = normalizeSearchText(rawQuery);
+  if (!q) return true;
+  const tokens = q.split(' ').filter(Boolean);
+  const haystack = normalizeSearchText(
+    (parts || [])
+      .filter((v) => v !== null && v !== undefined && String(v).trim() !== '')
+      .map((v) => String(v))
+      .join(' ')
+  );
+  return tokens.every((t) => haystack.includes(t));
+}

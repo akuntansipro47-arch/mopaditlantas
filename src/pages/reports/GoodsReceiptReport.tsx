@@ -5,7 +5,7 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Download, Calendar, Search, RefreshCw } from 'lucide-react';
-import { formatCurrency, formatDate } from '@/lib/utils';
+import { formatCurrency, formatDate, matchesFreeSearch } from '@/lib/utils';
 import * as XLSX from 'xlsx';
 import { toast } from 'sonner';
 
@@ -185,13 +185,26 @@ export default function GoodsReceiptReport() {
     }
   }
 
-  const filteredData = data.filter(item => 
-    (item.receipt_number.toLowerCase().includes(search.toLowerCase()) ||
-    item.po_number?.toLowerCase().includes(search.toLowerCase()) ||
-    item.goods?.name.toLowerCase().includes(search.toLowerCase()) ||
-    item.supplier_name?.toLowerCase().includes(search.toLowerCase())) &&
-    (itemTypeFilter === 'ALL' || item.goods?.item_type === itemTypeFilter)
-  );
+  const filteredData = data.filter((item) => {
+    const matchType = itemTypeFilter === 'ALL' || item.goods?.item_type === itemTypeFilter;
+    if (!matchType) return false;
+    return matchesFreeSearch(search, [
+      item.receipt_number,
+      item.receipt_date,
+      item.po_number,
+      item.po_date,
+      item.supplier_name,
+      item.wo_number,
+      item.goods?.item_code,
+      item.goods?.name,
+      item.goods?.unit,
+      item.goods?.item_type,
+      item.quantity_received,
+      item.unit_price,
+      Number(item.quantity_received || 0) * Number(item.unit_price || 0),
+      item.notes,
+    ]);
+  });
 
   // Calculate Summary per Item Type
   const summaryByType = filteredData.reduce((acc: any, item) => {
@@ -551,7 +564,7 @@ export default function GoodsReceiptReport() {
             <CardTitle>Rincian Barang Masuk</CardTitle>
             <div className="relative w-64">
               <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
-              <Input placeholder="Cari Barang / PO / No. Terima..." className="pl-8" value={search} onChange={e => setSearch(e.target.value)} />
+              <Input placeholder="Cari bebas berdasarkan kolom laporan..." className="pl-8" value={search} onChange={e => setSearch(e.target.value)} />
             </div>
           </div>
         </CardHeader>

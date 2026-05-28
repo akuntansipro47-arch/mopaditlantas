@@ -14,7 +14,7 @@ import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
-import { formatCurrency, formatDate } from '@/lib/utils';
+import { formatCurrency, formatDate, matchesFreeSearch } from '@/lib/utils';
 import { Badge } from "@/components/ui/badge";
 
 type PO = Database['public']['Tables']['purchase_orders']['Row'];
@@ -1495,22 +1495,35 @@ export default function GoodsReceipt() {
     }
   };
 
-  const filteredPOs = pos.filter(p => 
+  const filteredPOs = pos.filter((p) =>
     p.status !== 'RETURNED_FULL' &&
     p.status !== 'CANCELLED' &&
-    (
-      p.po_number.toLowerCase().includes(search.toLowerCase()) ||
-      p.suppliers?.name.toLowerCase().includes(search.toLowerCase())
-    )
+    matchesFreeSearch(search, [
+      p.po_number,
+      p.po_date,
+      p.created_at,
+      p.suppliers?.name,
+      p.status,
+      p.total_amount,
+      p.work_orders?.wo_number,
+      p.work_orders?.vehicle_entries?.vehicles?.license_plate,
+      p.work_orders?.vehicle_entries?.vehicles?.brand_type,
+    ])
   );
 
-  const filteredReceipts = receipts.filter(r => 
-    r.receipt_number.toLowerCase().includes(historySearch.toLowerCase()) ||
-    r.purchase_orders?.po_number.toLowerCase().includes(historySearch.toLowerCase()) ||
-    r.purchase_orders?.suppliers?.name.toLowerCase().includes(historySearch.toLowerCase()) ||
-    (r.purchase_orders?.work_orders?.wo_number || '').toLowerCase().includes(historySearch.toLowerCase()) ||
-    (r.purchase_orders?.work_orders?.vehicle_entries?.vehicles?.license_plate || '').toLowerCase().includes(historySearch.toLowerCase()) ||
-    (r.purchase_orders?.work_orders?.vehicle_entries?.vehicles?.brand_type || '').toLowerCase().includes(historySearch.toLowerCase())
+  const filteredReceipts = receipts.filter((r) =>
+    matchesFreeSearch(historySearch, [
+      r.receipt_number,
+      r.receipt_date,
+      r.created_at,
+      r.purchase_orders?.po_number,
+      r.purchase_orders?.suppliers?.name,
+      r.purchase_orders?.work_orders?.wo_number,
+      r.purchase_orders?.work_orders?.vehicle_entries?.vehicles?.license_plate,
+      r.purchase_orders?.work_orders?.vehicle_entries?.vehicles?.brand_type,
+      r.items?.length,
+      r.notes,
+    ])
   );
 
   return (
@@ -1525,7 +1538,7 @@ export default function GoodsReceipt() {
             <CardTitle>Daftar PO (Menunggu Penerimaan)</CardTitle>
             <div className="relative w-64">
               <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
-              <Input placeholder="Cari No. PO / Supplier..." className="pl-8" value={search} onChange={e => setSearch(e.target.value)} />
+              <Input placeholder="Cari bebas berdasarkan kolom..." className="pl-8" value={search} onChange={e => setSearch(e.target.value)} />
             </div>
           </div>
         </CardHeader>
@@ -1604,7 +1617,7 @@ export default function GoodsReceipt() {
                 </div>
                 <div className="relative w-64 ml-4">
                   <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
-                  <Input placeholder="Cari No. Receipt / PO..." className="pl-8 h-9" value={historySearch} onChange={e => setHistorySearch(e.target.value)} />
+                  <Input placeholder="Cari bebas berdasarkan kolom history..." className="pl-8 h-9" value={historySearch} onChange={e => setHistorySearch(e.target.value)} />
                 </div>
              </div>
           </div>
