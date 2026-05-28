@@ -59,7 +59,16 @@ export default function SupplierPayableReport() {
             .select(`
                 id, invoice_number, invoice_date, due_date, total_amount, status,
                 supplier:suppliers (id, name),
-                purchase_orders!inner (po_number, status)
+                purchase_orders!inner (
+                  po_number,
+                  status,
+                  work_orders (
+                    wo_number,
+                    vehicle_entries (
+                      vehicles (license_plate, brand_type, vehicle_type)
+                    )
+                  )
+                )
             `)
             .lte('invoice_date', reportDate)
             .in('status', ['UNPAID', 'PARTIAL'])
@@ -172,7 +181,18 @@ export default function SupplierPayableReport() {
       const invoices = (supplier.invoices || []).filter((inv: any) => {
         const invoiceNo = String(inv.invoice_number || '').toLowerCase();
         const poNo = String(inv.purchase_orders?.po_number || '').toLowerCase();
-        return supplierMatch || invoiceNo.includes(query) || poNo.includes(query);
+        const woNo = String(inv.purchase_orders?.work_orders?.wo_number || '').toLowerCase();
+        const v = inv.purchase_orders?.work_orders?.vehicle_entries?.vehicles;
+        const nopol = String(v?.license_plate || '').toLowerCase();
+        const vName = String(v?.brand_type || v?.vehicle_type || '').toLowerCase();
+        return (
+          supplierMatch ||
+          invoiceNo.includes(query) ||
+          poNo.includes(query) ||
+          woNo.includes(query) ||
+          nopol.includes(query) ||
+          vName.includes(query)
+        );
       });
       return { ...supplier, invoices };
     })
@@ -195,6 +215,14 @@ export default function SupplierPayableReport() {
                 'Supplier': supplier.name,
                 'No. Invoice': inv.invoice_number,
                 'No. PO': inv.purchase_orders?.po_number || '-',
+                'No. WO': inv.purchase_orders?.work_orders?.wo_number || '-',
+                'Kendaraan': (() => {
+                  const v = inv.purchase_orders?.work_orders?.vehicle_entries?.vehicles;
+                  const nopol = String(v?.license_plate || '').trim();
+                  const name = String(v?.brand_type || v?.vehicle_type || '').trim();
+                  if (nopol && name) return `${nopol} (${name})`;
+                  return nopol || name || '-';
+                })(),
                 'Tanggal Invoice': formatDate(inv.invoice_date),
                 'Jatuh Tempo': formatDate(inv.due_date),
                 'Overdue (Hari)': inv.days_overdue || 0,
@@ -305,6 +333,8 @@ export default function SupplierPayableReport() {
                                     <TableRow className="text-xs uppercase bg-slate-50">
                                         <TableHead>No. Invoice</TableHead>
                                         <TableHead>No. PO</TableHead>
+                                        <TableHead>No. WO</TableHead>
+                                        <TableHead>Kendaraan</TableHead>
                                         <TableHead>Tanggal</TableHead>
                                         <TableHead>Jatuh Tempo</TableHead>
                                         <TableHead>Aging</TableHead>
@@ -319,6 +349,16 @@ export default function SupplierPayableReport() {
                                         <TableRow key={inv.id}>
                                             <TableCell className="font-mono text-xs">{inv.invoice_number}</TableCell>
                                             <TableCell className="font-mono text-xs">{inv.purchase_orders?.po_number || '-'}</TableCell>
+                                            <TableCell className="font-mono text-xs">{inv.purchase_orders?.work_orders?.wo_number || '-'}</TableCell>
+                                            <TableCell className="text-xs">
+                                              {(() => {
+                                                const v = inv.purchase_orders?.work_orders?.vehicle_entries?.vehicles;
+                                                const nopol = String(v?.license_plate || '').trim();
+                                                const name = String(v?.brand_type || v?.vehicle_type || '').trim();
+                                                if (nopol && name) return `${nopol} (${name})`;
+                                                return nopol || name || '-';
+                                              })()}
+                                            </TableCell>
                                             <TableCell className="text-xs">{formatDate(inv.invoice_date)}</TableCell>
                                             <TableCell className={`text-xs ${inv.is_overdue ? 'text-red-600 font-bold' : ''}`}>{formatDate(inv.due_date)}</TableCell>
                                             <TableCell className="text-xs">
