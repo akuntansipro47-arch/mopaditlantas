@@ -738,8 +738,8 @@ export default function PurchaseOrderReturn() {
 
   const handleReturnClick = async (po: any) => {
     const p = getPoPaymentInfo(po);
-    if (p.status === 'NO_INVOICE') {
-      toast.error(`Retur tidak aktif: ${p.reason}.`);
+    if (p.status !== 'PAID') {
+      toast.error(p.status === 'NO_INVOICE' ? `Retur tidak aktif: ${p.reason}.` : 'Retur hanya bisa untuk PO yang sudah lunas (status bayar).');
       return;
     }
     setSelectedPO(po);
@@ -748,13 +748,8 @@ export default function PurchaseOrderReturn() {
     setReturnLines([]);
     setReturnMode('PARTIAL');
     setReturnHistory([]);
-    if (p.status === 'UNPAID' || p.status === 'PARTIAL') {
-      setSettlementType('AP_DEDUCT');
-      setSettlementAccountId(getDefaultApAccountId());
-    } else {
-      setSettlementType('REFUND');
-      setSettlementAccountId('');
-    }
+    setSettlementType('REFUND');
+    setSettlementAccountId('');
     setIsConfirmOpen(true);
     try {
       await loadReturnData(po);
@@ -767,22 +762,17 @@ export default function PurchaseOrderReturn() {
   const processReturn = async () => {
     if (!selectedPO) return;
     const p = getPoPaymentInfo(selectedPO);
-    if (p.status === 'NO_INVOICE') {
-      toast.error(`Retur tidak aktif: ${p.reason}.`);
+    if (p.status !== 'PAID') {
+      toast.error(p.status === 'NO_INVOICE' ? `Retur tidak aktif: ${p.reason}.` : 'Retur hanya bisa untuk PO yang sudah lunas (status bayar).');
       return;
     }
     if (!returnDate) {
       toast.error('Tanggal retur wajib diisi.');
       return;
     }
-    const shouldUseApDeduct = p.status === 'UNPAID' || p.status === 'PARTIAL';
-    const effectiveSettlementAccountId = settlementAccountId || (shouldUseApDeduct ? getDefaultApAccountId() : '');
-    const effectiveSettlementType = shouldUseApDeduct ? 'AP_DEDUCT' : settlementType;
-    if (shouldUseApDeduct && !effectiveSettlementAccountId) {
-      toast.error('Akun Hutang Usaha (AP) belum disetting. Mohon set COA Hutang Usaha untuk penyelesaian retur.');
-      return;
-    }
-    if (p.status === 'PAID' && !effectiveSettlementAccountId) {
+    const effectiveSettlementAccountId = settlementAccountId || '';
+    const effectiveSettlementType = settlementType;
+    if (!effectiveSettlementAccountId) {
       toast.error('Akun penyelesaian wajib dipilih.');
       return;
     }

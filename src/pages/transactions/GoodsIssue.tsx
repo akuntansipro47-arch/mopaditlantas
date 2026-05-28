@@ -401,6 +401,7 @@ export default function GoodsIssuePage() {
         .in('status', ['RECEIVED_PART', 'RECEIVED_FULL']);
       if (poErr) throw poErr;
 
+      const poItemsAggByGoodsId = new Map<string, { goods_id: string; item_code: string; name: string; qty: number }>();
       const poItemsAggByName = new Map<string, { goods_id: string; item_code: string; name: string; qty: number }>();
       (poData || []).forEach((po: any) => {
         const items = Array.isArray(po.purchase_order_items) ? po.purchase_order_items : [];
@@ -412,32 +413,28 @@ export default function GoodsIssuePage() {
           const qty = Number(it.quantity || 0);
           const key = normalizeText(name);
           if (!key || !goods_id) return;
-          const prev = poItemsAggByName.get(key);
-          if (prev) prev.qty += qty;
-          else poItemsAggByName.set(key, { goods_id, item_code, name, qty });
+          {
+            const prev = poItemsAggByGoodsId.get(goods_id);
+            if (prev) prev.qty += qty;
+            else poItemsAggByGoodsId.set(goods_id, { goods_id, item_code, name, qty });
+          }
+          {
+            const prev = poItemsAggByName.get(key);
+            if (prev) prev.qty += qty;
+            else poItemsAggByName.set(key, { goods_id, item_code, name, qty });
+          }
         });
       });
 
       const matchedPoKeys = new Set<string>();
+      const matchedPoGoodsIds = new Set<string>();
 
       Array.from(estItemsAgg.values()).forEach((est) => {
         const estGid = String(est.goods_id || '').trim();
         const estCode = String(est.item_code || '').trim();
         const estNameKey = normalizeText(String(est.name || '').trim());
 
-        const poMatches = Array.from(poItemsAggByName.values()).filter((p) => {
-          if (estGid) return String(p.goods_id || '') === estGid;
-          if (estCode) {
-            return normalizeText(String(p.item_code || '')).replace(/\s+/g, '') === normalizeText(estCode).replace(/\s+/g, '');
-          }
-          if (estNameKey) return normalizeText(String(p.name || '')) === estNameKey;
-          return false;
-        });
-        const poQty = poMatches.reduce((sum, p) => sum + (Number(p.qty) || 0), 0);
-        const match = poMatches[0] || null;
-        if (match) matchedPoKeys.add(normalizeText(match.name));
-
-        let goodsId = estGid || match?.goods_id || '';
+        let goodsId = estGid || '';
         const matchedGood = (() => {
           if (goodsId) return goodsList.find((g) => g.id === goodsId) || null;
           if (estCode) {
@@ -462,6 +459,16 @@ export default function GoodsIssuePage() {
           }
         }
         // --- END FIX ---
+
+        const poRow =
+          goodsId && poItemsAggByGoodsId.has(goodsId)
+            ? poItemsAggByGoodsId.get(goodsId) || null
+            : estNameKey
+              ? poItemsAggByName.get(estNameKey) || null
+              : null;
+        const poQty = Number(poRow?.qty || 0);
+        if (poRow?.name) matchedPoKeys.add(normalizeText(poRow.name));
+        if (poRow?.goods_id) matchedPoGoodsIds.add(String(poRow.goods_id));
 
         const estQty = Number(est.qty || 0);
         const stock = Number(matchedGood?.current_stock || 0);
@@ -489,7 +496,7 @@ export default function GoodsIssuePage() {
         if (!goodsId) {
           mismatch = true;
           hint = `Estimasi belum terhubung ke Kode Barang. Silakan pilih barang sesuai estimasi: ${est.name}`;
-        } else if (poMatches.length === 0) {
+        } else if (!poRow) {
           mismatch = true;
           hint = 'Belum ada PO diterima untuk barang ini';
         } else if (poQty > 0 && estQty !== Number(poQty || 0)) {
@@ -511,7 +518,9 @@ export default function GoodsIssuePage() {
         suggestions.push(goodsId ? applyIssuedInfo(base, goodsId, issuedMap) : base);
       });
 
-      Array.from(poItemsAggByName.values()).forEach((po) => {
+      Array.from(poItemsAggByGoodsId.values()).forEach((po) => {
+        const gid = String(po.goods_id || '').trim();
+        if (gid && matchedPoGoodsIds.has(gid)) return;
         const poKey = normalizeText(String(po.name || '').trim());
         if (poKey && matchedPoKeys.has(poKey)) return;
 

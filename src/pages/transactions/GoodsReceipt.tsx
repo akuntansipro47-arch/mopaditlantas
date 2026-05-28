@@ -6,7 +6,7 @@ import {
 } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Search, PackageCheck, CheckCircle2, Printer, Eye } from 'lucide-react';
+import { Search, PackageCheck, CheckCircle2, Printer, Eye, Pencil, Trash2 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { toast } from 'sonner';
 import { logActivity } from '@/lib/activityLog';
@@ -55,6 +55,8 @@ export default function GoodsReceipt() {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [selectedReceipt, setSelectedReceipt] = useState<GoodsReceiptWithDetails | null>(null);
   const [isDetailOpen, setIsDetailOpen] = useState(false);
+  const [editingReceiptId, setEditingReceiptId] = useState<string | null>(null);
+  const [originalReceiptByGoodsId, setOriginalReceiptByGoodsId] = useState<Record<string, number>>({});
   
   // Receipt State
   const [receiptData, setReceiptData] = useState({
@@ -588,6 +590,71 @@ export default function GoodsReceipt() {
     }
   };
 
+  const handleDeleteReceipt = async (receipt: GoodsReceiptWithDetails) => {
+    if (!receipt?.id || !receipt?.po_id) return;
+    if (!window.confirm(`Hapus penerimaan ${receipt.receipt_number}? Stok & hutang akan dibatalkan.`)) return;
+
+    setLoading(true);
+    try {
+      const invs = await getInvoicesForReceipt(receipt);
+      if ((invs || []).some((x: any) => Number(x?.paid_amount || 0) > 0.0001)) {
+        toast.error('Tidak bisa hapus penerimaan: sudah ada pembayaran. Gunakan retur.');
+        return;
+      }
+
+      const invIds = (invs || []).map((x: any) => x.id).filter(Boolean);
+      if (invIds.length > 0) {
+        const { error: delInvErr } = await supabase.from('purchase_invoices').delete().in('id', invIds as any);
+        if (delInvErr) throw delInvErr;
+      }
+
+      await deleteJournalByReference(String(receipt.id));
+
+      const items = (receipt.items || []) as any[];
+      for (const it of items) {
+        const gid = String(it.goods_id || '').trim();
+        if (!gid) continue;
+        const qty = Number(it.quantity_received || 0);
+        if (!qty) continue;
+        const gType = it.goods?.item_type;
+        if (isServiceItemType(gType)) continue;
+        const { data: currentGood, error: gErr } = await supabase.from('goods').select('current_stock').eq('id', gid).single();
+        if (gErr) throw gErr;
+        const next = Math.max(0, Number(currentGood?.current_stock || 0) - qty);
+        const { error: upErr } = await supabase.from('goods').update({ current_stock: next }).eq('id', gid);
+        if (upErr) throw upErr;
+      }
+
+      const { error: delItemsErr } = await supabase.from('goods_receipt_items').delete().eq('receipt_id', receipt.id);
+      if (delItemsErr) throw delItemsErr;
+      const { error: delHeaderErr } = await supabase.from('goods_receipts').delete().eq('id', receipt.id);
+      if (delHeaderErr) throw delHeaderErr;
+
+      await recomputePoStatus(String(receipt.po_id));
+
+      toast.success('Penerimaan berhasil dihapus.');
+      void logActivity({
+        action: 'GR_DELETE',
+        module: 'GOODS_RECEIPT',
+        entity_type: 'goods_receipts',
+        entity_id: String(receipt.id),
+        details: `Hapus penerimaan ${String(receipt.receipt_number || '').trim()}${receipt.purchase_orders?.po_number ? ` • PO ${receipt.purchase_orders.po_number}` : ''}`.trim(),
+        meta: {
+          receipt_id: receipt.id,
+          receipt_number: receipt.receipt_number,
+          po_id: receipt.po_id,
+          po_number: receipt.purchase_orders?.po_number || null,
+        },
+      });
+      fetchReceiptHistory();
+      fetchOpenPOs();
+    } catch (e: any) {
+      toast.error('Gagal menghapus penerimaan: ' + (e?.message || 'Unknown error'));
+    } finally {
+      setLoading(false);
+    }
+  };
+
   async function fetchReceiptHistory() {
     setLoading(true);
     try {
@@ -645,6 +712,8 @@ export default function GoodsReceipt() {
   }
 
   const handleSelectPO = async (po: POWithDetails) => {
+    setEditingReceiptId(null);
+    setOriginalReceiptByGoodsId({});
     setSelectedPO(po);
     setReceiptData({
       receipt_date: new Date().toISOString().split('T')[0],
@@ -704,11 +773,170 @@ export default function GoodsReceipt() {
     setIsDialogOpen(true);
   };
 
+  const handleEditReceipt = async (receipt: GoodsReceiptWithDetails) => {
+    if (!receipt?.po_id) return;
+    setLoading(true);
+    try {
+      const { data: poRow, error: poErr } = await supabase
+        .from('purchase_orders')
+        .select(`
+          *,
+          suppliers (name),
+          items:purchase_order_items (
+            *,
+            goods (name, unit, item_code),
+            job_types (job_name, job_group, hpp)
+          )
+        `)
+        .eq('id', receipt.po_id)
+        .single();
+      if (poErr) throw poErr;
+
+      setEditingReceiptId(String(receipt.id));
+      setSelectedPO(poRow as any);
+      setReceiptData({
+        receipt_date: String(receipt.receipt_date),
+        notes: String(receipt.notes || ''),
+      });
+
+      const { data: otherReceipts, error: otherErr } = await supabase
+        .from('goods_receipts')
+        .select('id, items:goods_receipt_items(goods_id, quantity_received)')
+        .eq('po_id', receipt.po_id)
+        .neq('id', receipt.id);
+      if (otherErr) throw otherErr;
+
+      const history: Record<string, number> = {};
+      (otherReceipts || []).forEach((r: any) => (r.items || []).forEach((i: any) => {
+        if (!i.goods_id) return;
+        const gid = String(i.goods_id);
+        history[gid] = (history[gid] || 0) + Number(i.quantity_received || 0);
+      }));
+      setReceivedHistory(history);
+
+      const current: Record<string, number> = {};
+      (receipt.items || []).forEach((i: any) => {
+        if (!i.goods_id) return;
+        const gid = String(i.goods_id);
+        current[gid] = (current[gid] || 0) + Number(i.quantity_received || 0);
+      });
+      setReceivingItems(current);
+      setOriginalReceiptByGoodsId(current);
+
+      setIsDialogOpen(true);
+    } catch (e: any) {
+      toast.error('Gagal membuka edit penerimaan: ' + (e?.message || 'Unknown error'));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const isServiceItemType = (itemType: unknown) => {
+    const t = String(itemType || '').toUpperCase();
+    return t === 'JASA' || t === 'SERVICE';
+  };
+
+  const deleteJournalByReference = async (reference: string) => {
+    const { data: entries, error: eErr } = await supabase
+      .from('journal_entries')
+      .select('id')
+      .eq('reference', reference);
+    if (eErr) throw eErr;
+    const ids = (entries || []).map((x: any) => x.id).filter(Boolean);
+    if (ids.length > 0) {
+      const { error: delItemsErr } = await supabase.from('journal_entry_items').delete().in('journal_entry_id', ids as any);
+      if (delItemsErr) throw delItemsErr;
+      const { error: delEntriesErr } = await supabase.from('journal_entries').delete().in('id', ids as any);
+      if (delEntriesErr) throw delEntriesErr;
+    }
+  };
+
+  const getInvoicesForReceipt = async (receipt: GoodsReceiptWithDetails) => {
+    const rid = String(receipt.id);
+    const { data: invs, error } = await supabase
+      .from('purchase_invoices')
+      .select('id, status, paid_amount, total_amount, created_at, goods_receipt_id')
+      .eq('goods_receipt_id', rid);
+    if (error) throw error;
+    if ((invs || []).length > 0) return invs as any[];
+
+    const createdAt = receipt.created_at ? new Date(String(receipt.created_at)) : null;
+    const startTs = createdAt ? new Date(createdAt.getTime() - 10 * 60 * 1000).toISOString() : null;
+    const endTs = createdAt ? new Date(createdAt.getTime() + 10 * 60 * 1000).toISOString() : null;
+
+    let q = supabase
+      .from('purchase_invoices')
+      .select('id, status, paid_amount, total_amount, created_at, goods_receipt_id')
+      .eq('po_id', receipt.po_id)
+      .eq('invoice_date', receipt.receipt_date)
+      .is('goods_receipt_id', null);
+    if (startTs) q = q.gte('created_at', startTs);
+    if (endTs) q = q.lte('created_at', endTs);
+
+    const { data: cand, error: cErr } = await q;
+    if (cErr) throw cErr;
+    const candidates = (cand || []) as any[];
+    if (candidates.length === 1) {
+      const invId = String(candidates[0].id);
+      const { data: updated, error: upErr } = await supabase
+        .from('purchase_invoices')
+        .update({ goods_receipt_id: rid })
+        .eq('id', invId)
+        .select('id, status, paid_amount, total_amount, created_at, goods_receipt_id');
+      if (upErr) throw upErr;
+      return (updated as any[]) || [];
+    }
+    return [];
+  };
+
+  const recomputePoStatus = async (poId: string) => {
+    const [{ data: poItems, error: poErr }, { data: receiptsRows, error: rErr }] = await Promise.all([
+      supabase.from('purchase_order_items').select('goods_id, quantity').eq('po_id', poId),
+      supabase.from('goods_receipts').select('id, items:goods_receipt_items(goods_id, quantity_received)').eq('po_id', poId),
+    ]);
+    if (poErr) throw poErr;
+    if (rErr) throw rErr;
+
+    const items = (poItems || []) as any[];
+    const hasGoods = items.some((x: any) => Boolean(x.goods_id));
+    if (!hasGoods) {
+      const next = (receiptsRows || []).length > 0 ? 'RECEIVED_FULL' : 'ISSUED';
+      const { error: up } = await supabase.from('purchase_orders').update({ status: next as any }).eq('id', poId);
+      if (up) throw up;
+      return;
+    }
+
+    const orderedByGoods: Record<string, number> = {};
+    items.forEach((it: any) => {
+      if (!it.goods_id) return;
+      const gid = String(it.goods_id);
+      orderedByGoods[gid] = (orderedByGoods[gid] || 0) + Number(it.quantity || 0);
+    });
+
+    const receivedByGoods: Record<string, number> = {};
+    (receiptsRows || []).forEach((r: any) => (r.items || []).forEach((i: any) => {
+      if (!i.goods_id) return;
+      const gid = String(i.goods_id);
+      receivedByGoods[gid] = (receivedByGoods[gid] || 0) + Number(i.quantity_received || 0);
+    }));
+
+    const goodsIds = Object.keys(orderedByGoods);
+    const anyReceived = goodsIds.some((gid) => Number(receivedByGoods[gid] || 0) > 0);
+    const isFull = goodsIds.every((gid) => Number(receivedByGoods[gid] || 0) >= Number(orderedByGoods[gid] || 0));
+    const nextStatus = isFull ? 'RECEIVED_FULL' : anyReceived ? 'RECEIVED_PART' : 'ISSUED';
+
+    const { error: up } = await supabase.from('purchase_orders').update({ status: nextStatus as any }).eq('id', poId);
+    if (up) throw up;
+  };
+
   const handleReceive = async () => {
     if (!selectedPO) return;
     setLoading(true);
 
     try {
+      const isEdit = Boolean(editingReceiptId);
+      const receiptIdToEdit = editingReceiptId ? String(editingReceiptId) : '';
+
       const poId = selectedPO.id;
       const [{ data: freshItems, error: freshErr }, { data: existingReceipts, error: histErr }] = await Promise.all([
         supabase
@@ -723,9 +951,17 @@ export default function GoodsReceipt() {
       if (freshErr) throw freshErr;
       if (histErr) throw histErr;
 
+      const receiptHeader = isEdit
+        ? await supabase.from('goods_receipts').select('id, receipt_number, created_at').eq('id', receiptIdToEdit).single()
+        : null;
+      if (isEdit && receiptHeader?.error) throw receiptHeader.error;
+
       const poItems = ((freshItems as any[]) || (selectedPO.items as any[])) as any[];
       const history: Record<string, number> = {};
-      (existingReceipts || []).forEach((r: any) => {
+      const historyReceipts = isEdit
+        ? ((existingReceipts || []).filter((r: any) => String(r.id) !== receiptIdToEdit) as any[])
+        : ((existingReceipts || []) as any[]);
+      historyReceipts.forEach((r: any) => {
         (r.items || []).forEach((i: any) => {
           if (i.goods_id) {
             const gid = String(i.goods_id);
@@ -774,7 +1010,7 @@ export default function GoodsReceipt() {
 
             // Calculate Price for Invoice (FIFO from PO lines)
             let remainingToPrice = qty;
-            let currentHistory = receivedHistory[goodsId] || 0;
+            let currentHistory = history[goodsId] || 0;
             
             // Sort PO items (e.g. by created_at or just array order)
             const lines = poItemsByGoods[goodsId] || [];
@@ -804,6 +1040,11 @@ export default function GoodsReceipt() {
       if (itemsToReceive.length === 0) {
         const hasGoodsLines = (poItems || []).some((it: any) => Boolean(it.goods_id));
         if (hasGoodsLines) {
+          if (isEdit) {
+            toast.error('Edit penerimaan gagal: semua Qty menjadi 0. Gunakan tombol Hapus jika ingin membatalkan penerimaan.');
+            setLoading(false);
+            return;
+          }
           toast.error('Tidak ada barang yang diterima (Qty 0).');
           setLoading(false);
           return;
@@ -813,6 +1054,110 @@ export default function GoodsReceipt() {
         if (!(closeAmount > 0)) {
           toast.error('Tidak ada barang yang diterima (Qty 0).');
           setLoading(false);
+          return;
+        }
+
+        if (isEdit) {
+          const rid = receiptIdToEdit;
+          const receiptNo = String((receiptHeader as any)?.data?.receipt_number || '').trim();
+
+          const invs = await getInvoicesForReceipt({
+            id: rid,
+            po_id: selectedPO.id,
+            receipt_date: receiptData.receipt_date,
+            created_at: (receiptHeader as any)?.data?.created_at || null,
+          } as any);
+          if ((invs || []).some((x: any) => Number(x?.paid_amount || 0) > 0.0001)) {
+            throw new Error('Tidak bisa edit penerimaan: sudah ada pembayaran. Gunakan retur.');
+          }
+
+          const { error: upReceiptErr } = await supabase
+            .from('goods_receipts')
+            .update({ receipt_date: receiptData.receipt_date, notes: receiptData.notes })
+            .eq('id', rid);
+          if (upReceiptErr) throw upReceiptErr;
+
+          await supabase
+            .from('purchase_orders')
+            .update({ status: 'RECEIVED_FULL' as any })
+            .eq('id', selectedPO.id);
+
+          if ((invs || []).length > 0) {
+            const invId = String(invs[0].id);
+            const { error: invUpErr } = await supabase
+              .from('purchase_invoices')
+              .update({
+                invoice_date: receiptData.receipt_date,
+                due_date: new Date(new Date(receiptData.receipt_date).setDate(new Date(receiptData.receipt_date).getDate() + 30)).toISOString().split('T')[0],
+                total_amount: closeAmount,
+                status: 'UNPAID',
+              } as any)
+              .eq('id', invId);
+            if (invUpErr) throw invUpErr;
+          } else {
+            const { error: invInsErr } = await supabase
+              .from('purchase_invoices')
+              .insert([{
+                invoice_number: `INV-${Date.now()}`,
+                po_id: selectedPO.id,
+                goods_receipt_id: rid,
+                supplier_id: selectedPO.supplier_id,
+                invoice_date: receiptData.receipt_date,
+                due_date: new Date(new Date(receiptData.receipt_date).setDate(new Date(receiptData.receipt_date).getDate() + 30)).toISOString().split('T')[0],
+                total_amount: closeAmount,
+                status: 'UNPAID'
+              }]);
+            if (invInsErr) throw invInsErr;
+          }
+
+          await deleteJournalByReference(rid);
+          const apAcc = await fetchApAccount();
+          const svcAcc = await fetchServiceExpenseAccount();
+          if (!apAcc) {
+            toast.error('Jurnal close PO tidak dibuat: Akun Hutang Usaha tidak ditemukan di COA.');
+          } else if (!svcAcc) {
+            toast.error('Jurnal close PO tidak dibuat: Akun Beban/HPP Jasa tidak ditemukan di COA.');
+          } else {
+            const { data: entry, error: entryErr } = await supabase
+              .from('journal_entries')
+              .insert([{
+                entry_date: receiptData.receipt_date,
+                voucher_no: receiptNo,
+                description: `Penerimaan Jasa ${receiptNo}${selectedPO.po_number ? ` (PO ${selectedPO.po_number})` : ''}`,
+                entry_type: 'JOURNAL',
+                total_amount: closeAmount,
+                reference: rid,
+              }])
+              .select()
+              .single();
+            if (entryErr) throw entryErr;
+
+            const itemsPayload: any[] = [
+              {
+                journal_entry_id: entry.id,
+                account_id: svcAcc.id,
+                debit: closeAmount,
+                credit: 0,
+                description: 'Penerimaan Jasa',
+              },
+              {
+                journal_entry_id: entry.id,
+                account_id: apAcc.id,
+                debit: 0,
+                credit: closeAmount,
+                description: 'Hutang Usaha',
+              },
+            ];
+            const { error: itemsErr } = await supabase.from('journal_entry_items').insert(itemsPayload);
+            if (itemsErr) throw itemsErr;
+          }
+
+          toast.success('Penerimaan jasa berhasil diperbarui.');
+          setIsDialogOpen(false);
+          setEditingReceiptId(null);
+          setOriginalReceiptByGoodsId({});
+          fetchOpenPOs();
+          fetchReceiptHistory();
           return;
         }
 
@@ -840,6 +1185,7 @@ export default function GoodsReceipt() {
             .insert([{
               invoice_number: `INV-${Date.now()}`,
               po_id: selectedPO.id,
+              goods_receipt_id: newReceipt.id,
               supplier_id: selectedPO.supplier_id,
               invoice_date: receiptData.receipt_date,
               due_date: new Date(new Date(receiptData.receipt_date).setDate(new Date(receiptData.receipt_date).getDate() + 30)).toISOString().split('T')[0],
@@ -926,24 +1272,51 @@ export default function GoodsReceipt() {
         return;
       }
 
-      // 2. Create Goods Receipt Header
-      const { data: newReceipt, error: receiptError } = await supabase
-        .from('goods_receipts')
-        .insert([{
-          receipt_number: `GR-${Date.now()}`,
+      let receiptId = '';
+      let receiptNumber = '';
+
+      if (isEdit) {
+        receiptId = receiptIdToEdit;
+        receiptNumber = String((receiptHeader as any)?.data?.receipt_number || '').trim();
+        const invs = await getInvoicesForReceipt({
+          id: receiptId,
           po_id: selectedPO.id,
           receipt_date: receiptData.receipt_date,
-          notes: receiptData.notes,
-          received_by: 'Admin'
-        }])
-        .select()
-        .single();
-      
-      if (receiptError) throw receiptError;
+          created_at: (receiptHeader as any)?.data?.created_at || null,
+        } as any);
+        if ((invs || []).some((x: any) => Number(x?.paid_amount || 0) > 0.0001)) {
+          throw new Error('Tidak bisa edit penerimaan: sudah ada pembayaran. Gunakan retur.');
+        }
+
+        const { error: upReceiptErr } = await supabase
+          .from('goods_receipts')
+          .update({ receipt_date: receiptData.receipt_date, notes: receiptData.notes })
+          .eq('id', receiptId);
+        if (upReceiptErr) throw upReceiptErr;
+
+        const { error: delOldErr } = await supabase.from('goods_receipt_items').delete().eq('receipt_id', receiptId);
+        if (delOldErr) throw delOldErr;
+      } else {
+        const { data: newReceipt, error: receiptError } = await supabase
+          .from('goods_receipts')
+          .insert([{
+            receipt_number: `GR-${Date.now()}`,
+            po_id: selectedPO.id,
+            receipt_date: receiptData.receipt_date,
+            notes: receiptData.notes,
+            received_by: 'Admin'
+          }])
+          .select()
+          .single();
+        
+        if (receiptError) throw receiptError;
+        receiptId = String(newReceipt.id);
+        receiptNumber = String(newReceipt.receipt_number || '').trim();
+      }
 
       // 3. Insert Goods Receipt Items & Update Stock
       const receiptItemsPayload = itemsToReceive.map(item => ({
-        receipt_id: newReceipt.id,
+        receipt_id: receiptId,
         goods_id: item.goods_id,
         quantity_received: item.quantity,
         notes: ''
@@ -956,19 +1329,30 @@ export default function GoodsReceipt() {
       if (itemsError) throw itemsError;
 
       // Update Stock
-      for (const item of itemsToReceive) {
-           const { data: currentGood } = await supabase
-             .from('goods')
-             .select('current_stock')
-             .eq('id', item.goods_id)
-             .single();
-            
-           if (currentGood) {
-             await supabase
-               .from('goods')
-               .update({ current_stock: (currentGood.current_stock || 0) + item.quantity })
-               .eq('id', item.goods_id);
-           }
+      const newQtyByGoodsId: Record<string, number> = {};
+      itemsToReceive.forEach((x) => {
+        const gid = String(x.goods_id || '');
+        if (!gid) return;
+        newQtyByGoodsId[gid] = (newQtyByGoodsId[gid] || 0) + Number(x.quantity || 0);
+      });
+
+      const goodsIdsAll = Array.from(new Set([...Object.keys(originalReceiptByGoodsId || {}), ...Object.keys(newQtyByGoodsId)]));
+      for (const goodsId of goodsIdsAll) {
+        const newQty = Number(newQtyByGoodsId[goodsId] || 0);
+        const oldQty = isEdit ? Number(originalReceiptByGoodsId[goodsId] || 0) : 0;
+        const delta = isEdit ? (newQty - oldQty) : newQty;
+        if (!delta) continue;
+        const { data: currentGood } = await supabase
+          .from('goods')
+          .select('current_stock, item_type')
+          .eq('id', goodsId)
+          .single();
+        if (currentGood && !isServiceItemType((currentGood as any).item_type)) {
+          await supabase
+            .from('goods')
+            .update({ current_stock: Math.max(0, Number((currentGood as any).current_stock || 0) + delta) })
+            .eq('id', goodsId);
+        }
       }
 
       // 4. Update PO Status
@@ -981,10 +1365,10 @@ export default function GoodsReceipt() {
             .filter(i => i.goods_id === goodsId)
             .reduce((sum, i) => sum + i.quantity, 0);
           
-          const history = receivedHistory[goodsId] || 0;
+          const historyQty = history[goodsId] || 0;
           const current = receivingItems[goodsId] || 0;
           
-          if ((history + current) < totalOrdered) {
+          if ((historyQty + current) < totalOrdered) {
               isFull = false;
               break;
           }
@@ -1000,11 +1384,50 @@ export default function GoodsReceipt() {
       // 5. Auto-Create Purchase Invoice (Hutang Dagang)
       // Only for the amount received in THIS receipt
       if (totalReceiptAmount > 0) {
+        if (isEdit) {
+          const invs = await getInvoicesForReceipt({
+            id: receiptId,
+            po_id: selectedPO.id,
+            receipt_date: receiptData.receipt_date,
+            created_at: (receiptHeader as any)?.data?.created_at || null,
+          } as any);
+          if ((invs || []).some((x: any) => Number(x?.paid_amount || 0) > 0.0001)) {
+            throw new Error('Tidak bisa edit penerimaan: sudah ada pembayaran. Gunakan retur.');
+          }
+          if ((invs || []).length > 0) {
+            const invId = String(invs[0].id);
+            const { error: invUpErr } = await supabase
+              .from('purchase_invoices')
+              .update({
+                invoice_date: receiptData.receipt_date,
+                due_date: new Date(new Date(receiptData.receipt_date).setDate(new Date(receiptData.receipt_date).getDate() + 30)).toISOString().split('T')[0],
+                total_amount: totalReceiptAmount,
+                status: 'UNPAID',
+              } as any)
+              .eq('id', invId);
+            if (invUpErr) throw invUpErr;
+          } else {
+            const { error: invInsErr } = await supabase
+              .from('purchase_invoices')
+              .insert([{
+                invoice_number: `INV-${Date.now()}`,
+                po_id: selectedPO.id,
+                goods_receipt_id: receiptId,
+                supplier_id: selectedPO.supplier_id,
+                invoice_date: receiptData.receipt_date,
+                due_date: new Date(new Date(receiptData.receipt_date).setDate(new Date(receiptData.receipt_date).getDate() + 30)).toISOString().split('T')[0],
+                total_amount: totalReceiptAmount,
+                status: 'UNPAID'
+              }]);
+            if (invInsErr) throw invInsErr;
+          }
+        } else {
           const { error: invoiceError } = await supabase
             .from('purchase_invoices')
             .insert([{
               invoice_number: `INV-${Date.now()}`,
               po_id: selectedPO.id,
+              goods_receipt_id: receiptId,
               supplier_id: selectedPO.supplier_id,
               invoice_date: receiptData.receipt_date,
               due_date: new Date(new Date(receiptData.receipt_date).setDate(new Date(receiptData.receipt_date).getDate() + 30)).toISOString().split('T')[0],
@@ -1015,18 +1438,18 @@ export default function GoodsReceipt() {
           if (invoiceError) {
             console.error("Failed to create invoice:", invoiceError);
             toast.error("Penerimaan sukses TAPI Gagal membuat Tagihan otomatis: " + invoiceError.message);
-          } else {
-            toast.success(`Penerimaan Partial berhasil! Status PO: ${newStatus}`);
           }
-      } else {
-          toast.success(`Penerimaan Partial berhasil! Status PO: ${newStatus}`);
+        }
       }
 
       if (totalReceiptAmount > 0) {
         try {
+          if (isEdit) {
+            await deleteJournalByReference(receiptId);
+          }
           await postJournalForReceipt({
-            receiptId: newReceipt.id,
-            receiptNumber: String(newReceipt.receipt_number || ''),
+            receiptId,
+            receiptNumber,
             receiptDate: receiptData.receipt_date,
             poNumber: selectedPO.po_number,
             receiptAmountByGoodsId,
@@ -1040,14 +1463,14 @@ export default function GoodsReceipt() {
 
       setIsDialogOpen(false);
       void logActivity({
-        action: 'GR_CREATE',
+        action: isEdit ? 'GR_UPDATE' : 'GR_CREATE',
         module: 'GOODS_RECEIPT',
         entity_type: 'goods_receipts',
-        entity_id: String(newReceipt.id),
-        details: `Terima barang ${String((newReceipt as any).receipt_number || '').trim()} • PO ${String(selectedPO.po_number || '').trim()} • ${newStatus}`.trim(),
+        entity_id: String(receiptId),
+        details: `${isEdit ? 'Edit penerimaan' : 'Terima barang'} ${receiptNumber} • PO ${String(selectedPO.po_number || '').trim()} • ${newStatus}`.trim(),
         meta: {
-          receipt_id: newReceipt.id,
-          receipt_number: (newReceipt as any).receipt_number || null,
+          receipt_id: receiptId,
+          receipt_number: receiptNumber || null,
           po_id: selectedPO.id,
           po_number: selectedPO.po_number || null,
           supplier_id: selectedPO.supplier_id,
@@ -1060,6 +1483,9 @@ export default function GoodsReceipt() {
           receipt_date: receiptData.receipt_date,
         },
       });
+      toast.success(isEdit ? 'Penerimaan berhasil diperbarui.' : `Penerimaan berhasil! Status PO: ${newStatus}`);
+      setEditingReceiptId(null);
+      setOriginalReceiptByGoodsId({});
       fetchOpenPOs();
       fetchReceiptHistory();
     } catch (error: any) {
@@ -1224,8 +1650,11 @@ export default function GoodsReceipt() {
                           <Button variant="outline" size="icon" onClick={() => { setSelectedReceipt(item); setIsDetailOpen(true); }}>
                             <Eye className="h-4 w-4" />
                           </Button>
-                          <Button variant="destructive" size="sm" onClick={() => handleCancelReceipt(item)}>
-                            Batalkan
+                          <Button variant="outline" size="icon" onClick={() => handleEditReceipt(item)}>
+                            <Pencil className="h-4 w-4" />
+                          </Button>
+                          <Button variant="destructive" size="icon" onClick={() => handleDeleteReceipt(item)}>
+                            <Trash2 className="h-4 w-4" />
                           </Button>
                         </div>
                       </TableCell>
@@ -1239,12 +1668,25 @@ export default function GoodsReceipt() {
       </Card>
 
       {/* Dialog Penerimaan */}
-      <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+      <Dialog
+        open={isDialogOpen}
+        onOpenChange={(open) => {
+          setIsDialogOpen(open);
+          if (!open) {
+            setEditingReceiptId(null);
+            setOriginalReceiptByGoodsId({});
+          }
+        }}
+      >
         <DialogContent className="sm:max-w-[700px]">
           <DialogHeader>
-            <DialogTitle>Proses Penerimaan Barang</DialogTitle>
+            <DialogTitle>{editingReceiptId ? 'Edit Penerimaan Barang' : 'Proses Penerimaan Barang'}</DialogTitle>
             <DialogDescription>
-              Konfirmasi penerimaan barang untuk PO: <b>{selectedPO?.po_number}</b>
+              {editingReceiptId ? (
+                <>Perbarui data penerimaan untuk PO: <b>{selectedPO?.po_number}</b></>
+              ) : (
+                <>Konfirmasi penerimaan barang untuk PO: <b>{selectedPO?.po_number}</b></>
+              )}
             </DialogDescription>
           </DialogHeader>
           
@@ -1396,6 +1838,7 @@ export default function GoodsReceipt() {
                 if (loading) return 'Memproses...';
                 const items = (selectedPO?.items || []) as any[];
                 const hasGoods = items.some((i) => Boolean(i?.goods_id));
+                if (editingReceiptId) return 'Simpan Perubahan';
                 return hasGoods ? 'Konfirmasi Terima Barang' : 'Close PO Jasa';
               })()}
             </Button>
