@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { toast } from 'sonner';
 import { formatCurrency, formatDate } from '@/lib/utils';
-import { Calendar as CalendarIcon, Download } from 'lucide-react';
+import { Calendar as CalendarIcon, Download, Trash2 } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import * as XLSX from 'xlsx';
 
@@ -26,6 +26,7 @@ export default function CashBankBookReport() {
   const [endDate, setEndDate] = useState(new Date().toISOString().split('T')[0]);
   const [openingBalance, setOpeningBalance] = useState(0);
   const [transactions, setTransactions] = useState<any[]>([]);
+  const [cleaningEntryId, setCleaningEntryId] = useState<string | null>(null);
 
   const isUuid = (v: string) =>
     /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(v || '').trim());
@@ -177,9 +178,17 @@ export default function CashBankBookReport() {
         const ref = String(item.journal_entries?.reference || '').trim();
         const entryType = String(item.journal_entries?.entry_type || '').toUpperCase();
         const entryDate = String(item.journal_entries?.entry_date || '');
+        const isOrphanPayment =
+          entryType === 'PAYMENT' &&
+          Boolean(entryId) &&
+          Boolean(ref) &&
+          isUuid(ref) &&
+          !paymentsById[ref] &&
+          !((paymentsByInvoiceId[ref] || []).length > 0);
 
         mapped.push({
           id: item.id,
+          entry_id: entryId,
           entry_date: item.journal_entries?.entry_date,
           voucher_no: item.journal_entries?.voucher_no,
           reference: ref,
@@ -188,6 +197,7 @@ export default function CashBankBookReport() {
           debit,
           credit,
           balance: running,
+          is_orphan_payment: isOrphanPayment,
         });
 
         if (entryType === 'PAYMENT' && entryId && ref && !addedFeeForEntry.has(entryId)) {
@@ -230,6 +240,7 @@ export default function CashBankBookReport() {
 
               mapped.push({
                 id: `${item.id}-fee`,
+                entry_id: entryId,
                 entry_date: item.journal_entries?.entry_date,
                 voucher_no: item.journal_entries?.voucher_no,
                 reference: ref,
@@ -238,6 +249,7 @@ export default function CashBankBookReport() {
                 debit: vDebit,
                 credit: vCredit,
                 balance: running,
+                is_orphan_payment: isOrphanPayment,
               });
               addedFeeForEntry.add(entryId);
             }
@@ -252,6 +264,24 @@ export default function CashBankBookReport() {
       setLoading(false);
     }
   }
+
+  const cleanupOrphanPayment = async (entryId: string) => {
+    if (!entryId) return;
+    const ok = window.confirm('Hapus jurnal pembayaran ini? Jurnal ini tidak ditemukan di History Pembayaran/Hutang, jadi akan dibersihkan dari mutasi bank.');
+    if (!ok) return;
+    setCleaningEntryId(entryId);
+    try {
+      await supabase.from('journal_entry_items').delete().eq('journal_entry_id', entryId);
+      const { error: delErr } = await supabase.from('journal_entries').delete().eq('id', entryId);
+      if (delErr) throw delErr;
+      toast.success('Jurnal pembayaran yatim berhasil dibersihkan.');
+      fetchLedger();
+    } catch (e: any) {
+      toast.error('Gagal membersihkan jurnal: ' + (e?.message || 'Unknown error'));
+    } finally {
+      setCleaningEntryId(null);
+    }
+  };
 
   const currentAccount = useMemo(() => accounts.find(a => a.id === selectedAccount), [accounts, selectedAccount]);
   const totalDebit = transactions.reduce((sum: number, t: any) => sum + (Number(t.debit) || 0), 0);
@@ -386,13 +416,14 @@ export default function CashBankBookReport() {
                 <TableHead className="text-right font-semibold text-slate-700">Debit</TableHead>
                 <TableHead className="text-right font-semibold text-slate-700">Kredit</TableHead>
                 <TableHead className="text-right font-semibold text-slate-700">Saldo</TableHead>
+                <TableHead className="text-right font-semibold text-slate-700">Aksi</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {loading ? (
-                <TableRow><TableCell colSpan={8} className="text-center py-12 text-muted-foreground">Memuat data...</TableCell></TableRow>
+                <TableRow><TableCell colSpan={9} className="text-center py-12 text-muted-foreground">Memuat data...</TableCell></TableRow>
               ) : !currentAccount ? (
-                <TableRow><TableCell colSpan={8} className="text-center py-12 text-muted-foreground">Akun Kas/Bank tidak ditemukan.</TableCell></TableRow>
+                <TableRow><TableCell colSpan={9} className="text-center py-12 text-muted-foreground">Akun Kas/Bank tidak ditemukan.</TableCell></TableRow>
               ) : (
                 <>
                   <TableRow className="bg-slate-50/60">
@@ -404,20 +435,46 @@ export default function CashBankBookReport() {
                     <TableCell className="text-right text-slate-600">{formatCurrency(0)}</TableCell>
                     <TableCell className="text-right text-slate-600">{formatCurrency(0)}</TableCell>
                     <TableCell className="text-right font-bold text-slate-900">{formatCurrency(openingBalance)}</TableCell>
+                    <TableCell className="text-right text-slate-600">-</TableCell>
                   </TableRow>
                   {transactions.length === 0 ? (
-                    <TableRow><TableCell colSpan={8} className="text-center py-12 text-muted-foreground">Tidak ada transaksi di periode ini.</TableCell></TableRow>
+                    <TableRow><TableCell colSpan={9} className="text-center py-12 text-muted-foreground">Tidak ada transaksi di periode ini.</TableCell></TableRow>
                   ) : (
                     transactions.map((t: any) => (
-                      <TableRow key={t.id} className="hover:bg-slate-50/80 transition-colors">
+                      <TableRow
+                        key={t.id}
+                        className={`hover:bg-slate-50/80 transition-colors ${t.is_orphan_payment ? 'bg-red-50' : ''}`}
+                      >
                         <TableCell className="text-sm">{formatDate(t.entry_date)}</TableCell>
                         <TableCell className="font-mono text-xs">{t.voucher_no || '-'}</TableCell>
                         <TableCell className="font-mono text-xs">{t.reference || '-'}</TableCell>
                         <TableCell className="text-xs">{t.entry_type || '-'}</TableCell>
-                        <TableCell className="text-sm">{t.description || '-'}</TableCell>
+                        <TableCell className="text-sm">
+                          <div>{t.description || '-'}</div>
+                          {t.is_orphan_payment && (
+                            <div className="text-xs text-red-700 font-semibold mt-1">
+                              Pembayaran tidak ditemukan di History Pembayaran/Hutang (jurnal tidak sinkron).
+                            </div>
+                          )}
+                        </TableCell>
                         <TableCell className="text-right font-semibold text-emerald-700">{formatCurrency(t.debit || 0)}</TableCell>
                         <TableCell className="text-right font-semibold text-red-700">{formatCurrency(t.credit || 0)}</TableCell>
                         <TableCell className="text-right font-bold text-slate-900">{formatCurrency(t.balance || 0)}</TableCell>
+                        <TableCell className="text-right">
+                          {t.is_orphan_payment && !String(t.id).endsWith('-fee') ? (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="text-red-700 border-red-200 hover:bg-red-50"
+                              onClick={() => cleanupOrphanPayment(String(t.entry_id || ''))}
+                              disabled={loading || cleaningEntryId === String(t.entry_id || '')}
+                            >
+                              <Trash2 className="h-4 w-4 mr-2" /> Bersihkan
+                            </Button>
+                          ) : (
+                            <span className="text-xs text-slate-400">-</span>
+                          )}
+                        </TableCell>
                       </TableRow>
                     ))
                   )}
