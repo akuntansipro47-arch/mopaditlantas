@@ -42,7 +42,6 @@ type NavItem = {
 };
 
 const navigation: NavItem[] = [
-  { name: 'Dashboard', href: '/', icon: LayoutDashboard, key: 'dashboard' },
   { 
     name: 'Transaksi', 
     icon: ClipboardList,
@@ -70,6 +69,7 @@ const navigation: NavItem[] = [
       { name: 'Anggaran', href: '/master/budget', icon: Wallet, key: 'master_budget' },
     ]
   },
+  { name: 'Dashboard', href: '/', icon: LayoutDashboard, key: 'dashboard' },
   { 
     name: 'Keuangan', 
     icon: CreditCard,
