@@ -20,6 +20,9 @@ export interface AuthContextType {
 
 export const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+const DEMO_USERNAME = 'demo';
+const DEMO_PASSWORD = 'demo123';
+
 function normalizeAllowedMenus(value: any): string[] {
   if (!value) return [];
   if (Array.isArray(value)) return value.map((v) => String(v).trim()).filter(Boolean);
@@ -50,6 +53,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           role: parsed.role,
           allowed_menus: normalizeAllowedMenus(parsed.allowed_menus),
         });
+        if (String(parsed.role || '').toUpperCase() === 'DEMO') {
+          localStorage.setItem('demo_mode', '1');
+        }
       } catch {
         localStorage.removeItem('app_user');
       }
@@ -59,6 +65,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const login = async (username: string, password: string): Promise<boolean> => {
     try {
+      if (String(username || '').trim().toLowerCase() === DEMO_USERNAME && String(password || '') === DEMO_PASSWORD) {
+        const loggedInUser: User = {
+          id: 'demo',
+          username: DEMO_USERNAME,
+          full_name: 'Demo',
+          role: 'DEMO',
+          allowed_menus: ['*'],
+        };
+        setUser(loggedInUser);
+        localStorage.setItem('app_user', JSON.stringify(loggedInUser));
+        localStorage.setItem('demo_mode', '1');
+        toast.success('Masuk Demo Mode');
+        return true;
+      }
+
       const isNetworkMsg = (msg: string) => {
         const m = String(msg || '').toLowerCase();
         return m.includes('failed to fetch') || m.includes('networkerror') || m.includes('load failed');
@@ -176,6 +197,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
     setUser(null);
     localStorage.removeItem('app_user');
+    localStorage.removeItem('demo_mode');
     toast.info('Logged out successfully');
   };
 

@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
+import { createDemoSupabase, isDemoMode } from '@/lib/demoSupabase';
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
@@ -28,8 +29,23 @@ const fetchWithRetry: typeof fetch = async (input, init) => {
   return await fetch(input, init);
 };
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+const realSupabase = createClient(supabaseUrl, supabaseAnonKey, {
   global: {
     fetch: fetchWithRetry,
   },
 });
+
+const demoSupabase = createDemoSupabase();
+
+function pickClient() {
+  return isDemoMode() ? demoSupabase : realSupabase;
+}
+
+export const supabase = new Proxy({} as any, {
+  get(_target, prop) {
+    const client: any = pickClient();
+    const value = client[prop as any];
+    if (typeof value === 'function') return value.bind(client);
+    return value;
+  },
+}) as any;
