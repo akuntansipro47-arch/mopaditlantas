@@ -41,6 +41,103 @@ function likeToContains(pattern: string) {
   return normalizeText(stripped);
 }
 
+function splitTopLevelComma(input: string) {
+  const out: string[] = [];
+  let cur = '';
+  let depth = 0;
+  for (let i = 0; i < input.length; i++) {
+    const ch = input[i];
+    if (ch === '(') depth += 1;
+    if (ch === ')') depth = Math.max(0, depth - 1);
+    if (ch === ',' && depth === 0) {
+      const t = cur.trim();
+      if (t) out.push(t);
+      cur = '';
+      continue;
+    }
+    cur += ch;
+  }
+  const last = cur.trim();
+  if (last) out.push(last);
+  return out;
+}
+
+type ParsedCond = { col: string; op: string; value: string };
+
+function parseCond(expr: string): ParsedCond | null {
+  const s = String(expr || '').trim();
+  if (!s) return null;
+  const ops = ['ilike', 'like', 'gte', 'lte', 'gt', 'lt', 'neq', 'eq', 'is', 'in'];
+  for (const op of ops) {
+    const token = `.${op}.`;
+    const idx = s.indexOf(token);
+    if (idx > 0) {
+      return {
+        col: s.slice(0, idx).trim(),
+        op,
+        value: s.slice(idx + token.length).trim(),
+      };
+    }
+  }
+  return null;
+}
+
+function parseInList(raw: string) {
+  const s = String(raw || '').trim();
+  const inner = s.startsWith('(') && s.endsWith(')') ? s.slice(1, -1) : s;
+  return inner
+    .split(',')
+    .map((v) => String(v).trim().replace(/^"+|"+$/g, '').replace(/^'+|'+$/g, ''))
+    .filter(Boolean);
+}
+
+function normalizeBoolish(value: string) {
+  const v = String(value || '').trim().toLowerCase();
+  if (v === 'true') return true;
+  if (v === 'false') return false;
+  return value;
+}
+
+function evalCond(row: any, cond: ParsedCond) {
+  const val = getPath(row, cond.col);
+  const op = cond.op;
+  const rhsRaw = cond.value;
+  const rhs = normalizeBoolish(rhsRaw);
+
+  if (op === 'is') {
+    if (String(rhsRaw).trim().toLowerCase() === 'null') return val == null;
+    return String(val) === String(rhs);
+  }
+
+  if (op === 'in') {
+    const list = parseInList(rhsRaw);
+    const set = new Set(list.map((x) => String(x)));
+    return set.has(String(val));
+  }
+
+  if (op === 'ilike' || op === 'like') {
+    const needle = likeToContains(rhsRaw);
+    return normalizeText(val).includes(needle);
+  }
+
+  if (op === 'eq') return String(val) === String(rhs);
+  if (op === 'neq') return String(val) !== String(rhs);
+
+  if (op === 'gte' || op === 'lte' || op === 'gt' || op === 'lt') {
+    if (val == null) return false;
+    const an = Number(val);
+    const bn = Number(rhs);
+    const a = Number.isFinite(an) ? an : String(val);
+    const b = Number.isFinite(bn) ? bn : String(rhs);
+    if (op === 'gte') return (a as any) >= (b as any);
+    if (op === 'lte') return (a as any) <= (b as any);
+    if (op === 'gt') return (a as any) > (b as any);
+    if (op === 'lt') return (a as any) < (b as any);
+  }
+
+  return true;
+}
+
 function demoKeyForTable(table: string) {
   return `demo_table_${String(table || '').trim()}`;
 }
@@ -180,6 +277,88 @@ class DemoQueryBuilder {
   ilike(column: string, pattern: string) {
     const needle = likeToContains(pattern);
     this.filters.push((row) => normalizeText(getPath(row, column)).includes(needle));
+    return this;
+  }
+
+  gt(column: string, value: any) {
+    this.filters.push((row) => {
+      const a = getPath(row, column);
+      if (a == null) return false;
+      const an = Number(a);
+      const bn = Number(value);
+      if (Number.isFinite(an) && Number.isFinite(bn)) return an > bn;
+      return String(a) > String(value);
+    });
+    return this;
+  }
+
+  lt(column: string, value: any) {
+    this.filters.push((row) => {
+      const a = getPath(row, column);
+      if (a == null) return false;
+      const an = Number(a);
+      const bn = Number(value);
+      if (Number.isFinite(an) && Number.isFinite(bn)) return an < bn;
+      return String(a) < String(value);
+    });
+    return this;
+  }
+
+  is(column: string, value: any) {
+    if (value === null) {
+      this.filters.push((row) => getPath(row, column) == null);
+      return this;
+    }
+    this.filters.push((row) => String(getPath(row, column)) === String(value));
+    return this;
+  }
+
+  not(column: string, operator: string, value: any) {
+    const op = String(operator || '').trim().toLowerCase();
+    if (op === 'is' && value == null) {
+      this.filters.push((row) => getPath(row, column) != null);
+      return this;
+    }
+    if (op === 'in') {
+      const list = parseInList(String(value || ''));
+      const set = new Set(list.map((x) => String(x)));
+      this.filters.push((row) => !set.has(String(getPath(row, column))));
+      return this;
+    }
+    this.filters.push((row) => String(getPath(row, column)) !== String(value));
+    return this;
+  }
+
+  match(query: Record<string, any>) {
+    const q = query || {};
+    Object.keys(q).forEach((k) => {
+      this.filters.push((row) => String(getPath(row, k)) === String(q[k]));
+    });
+    return this;
+  }
+
+  or(expression: string, _options?: any) {
+    const expr = String(expression || '').trim();
+    if (!expr) return this;
+    const parts = splitTopLevelComma(expr);
+    this.filters.push((row) => {
+      return parts.some((p) => {
+        const s = String(p || '').trim();
+        if (!s) return false;
+        if (s.startsWith('and(') && s.endsWith(')')) {
+          const inner = s.slice(4, -1);
+          const andParts = splitTopLevelComma(inner);
+          return andParts.every((ap) => {
+            const c = parseCond(ap);
+            if (!c) return true;
+            return evalCond(row, c);
+          });
+        }
+        const c = parseCond(s);
+        if (!c) return true;
+        return evalCond(row, c);
+      });
+    });
     return this;
   }
 
@@ -346,12 +525,23 @@ export function createDemoSupabase() {
     getPublicUrl: () => ({ data: { publicUrl: '' } }),
   };
 
+  const channelNoop = (name: string) => {
+    const ch: any = {
+      topic: name,
+      on: () => ch,
+      subscribe: () => ch,
+      unsubscribe: async () => ({ data: null, error: null }),
+    };
+    return ch;
+  };
+
   return {
     from: (table: string) => new DemoQueryBuilder(table),
     rpc: async (_fn: string, _args?: any) => ({ data: [], error: null }),
+    channel: (name: string) => channelNoop(name),
+    removeChannel: async (_ch: any) => ({ data: null, error: null }),
     storage: {
       from: (_bucket: string) => storageNoop,
     },
   } as any;
 }
-
