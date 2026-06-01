@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
-import { Wrench, ShoppingCart, Car, Wallet, Tractor, Truck, ArchiveX, TrendingUp, CircleDollarSign, Landmark } from 'lucide-react';
+import { ShoppingCart, ArchiveX, TrendingUp, CircleDollarSign, Landmark, Percent, Timer, Users } from 'lucide-react';
 
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -95,10 +95,10 @@ interface CriticalStockItem {
   current_stock: number | null;
 }
 
+type TopCustomer = { name: string; total: number };
+
 export default function Dashboard() {
   const [stats, setStats] = useState({
-    woR4: 0,
-    woR2: 0,
     poPendingCount: 0,
     lowStockItems: 0,
     outOfStockItems: 0,
@@ -106,6 +106,18 @@ export default function Dashboard() {
     outstandingAR: 0,
     outstandingAP: 0,
   });
+  const [profitability, setProfitability] = useState({
+    revenue30: 0,
+    hpp30: 0,
+    grossProfit30: 0,
+    avgMarginPct: 0,
+    avgProfitPerWo: 0,
+    avgCycleTimeDays: 0,
+    estimateConversionPct: 0,
+    newCustomers: 0,
+    returningCustomers: 0,
+  });
+  const [topCustomers, setTopCustomers] = useState<TopCustomer[]>([]);
   const [fastMovingItems, setFastMovingItems] = useState<FastMovingItem[]>([]);
   const [leadTimeData, setLeadTimeData] = useState<LeadTimeData[]>([]);
   const [monthlyProgress, setMonthlyProgress] = useState<MonthlyProgressData[]>([]);
@@ -117,28 +129,6 @@ export default function Dashboard() {
     async function fetchStats() {
       setLoading(true);
       try {
-        // Work Orders R4
-        const { count: woR4Count, error: woR4Error } = await supabase
-          .from('work_orders')
-          .select(`
-            id,
-            vehicle_entries!inner(
-              vehicles!inner(vehicle_type)
-            )
-          `, { count: 'exact', head: true })
-          .eq('vehicle_entries.vehicles.vehicle_type', 'R4');
-
-        // Work Orders R2
-        const { count: woR2Count, error: woR2Error } = await supabase
-          .from('work_orders')
-          .select(`
-            id,
-            vehicle_entries!inner(
-              vehicles!inner(vehicle_type)
-            )
-          `, { count: 'exact', head: true })
-          .in('vehicle_entries.vehicles.vehicle_type', ['R2', 'R2_KECIL']);
-
         // PO Pending Count
         const { count: poPendingCount, error: poPendingError } = await supabase
           .from('purchase_orders')
@@ -154,6 +144,10 @@ export default function Dashboard() {
         startOfMonth.setDate(1);
         startOfMonth.setHours(0, 0, 0, 0);
         const startOfMonthDate = startOfMonth.toISOString().split('T')[0];
+        const startOfLast30Days = new Date();
+        startOfLast30Days.setDate(startOfLast30Days.getDate() - 30);
+        startOfLast30Days.setHours(0, 0, 0, 0);
+        const start30Date = startOfLast30Days.toISOString().split('T')[0];
 
         // Monthly Revenue
         const { data: revenueData, error: revenueError } = await supabase
@@ -178,7 +172,8 @@ export default function Dashboard() {
         const { count: lowStockCount, error: lowStockError } = await supabase
           .from('goods')
           .select('*', { count: 'exact', head: true })
-          .lt('current_stock', 3);
+          .lt('current_stock', 3)
+          .gt('current_stock', 0);
 
         // Out Of Stock Items
         const { count: outOfStockCount, error: outOfStockError } = await supabase
@@ -220,6 +215,49 @@ export default function Dashboard() {
           `)
           .not('status', 'in', '("COMPLETED", "CLOSED")');
 
+        const { data: completedWos, error: completedWoErr } = await supabase
+          .from('work_orders')
+          .select(`
+            id,
+            wo_number,
+            status,
+            work_date,
+            completed_at,
+            vehicle_entry_id,
+            vehicle_entries (
+              entry_date
+            ),
+            work_order_billings (
+              item_type,
+              qty,
+              goods_id,
+              job_type_id,
+              unit_price,
+              total_price
+            )
+          `)
+          .gte('work_date', start30Date)
+          .in('status', ['CLOSED', 'COMPLETED']);
+
+        const { data: last30Invoices, error: invoices30Err } = await supabase
+          .from('sales_invoices')
+          .select('id, invoice_date, customer_name, total_amount')
+          .gte('invoice_date', start30Date);
+
+        const { data: last30Entries, error: entries30Err } = await supabase
+          .from('vehicle_entries')
+          .select('id')
+          .gte('entry_date', start30Date)
+          .limit(5000);
+
+        const entryIds30 = (last30Entries || []).map((e: any) => e.id).filter(Boolean);
+        const { count: woFromEntriesCount, error: woFromEntriesErr } = entryIds30.length
+          ? await supabase
+              .from('work_orders')
+              .select('id', { count: 'exact', head: true })
+              .in('vehicle_entry_id', entryIds30)
+          : { count: 0, error: null };
+
 
         // Monthly Progress Data (semua periode yang ada entry kendaraan)
         const monthlyWoData: any[] = [];
@@ -247,8 +285,6 @@ export default function Dashboard() {
         }
 
 
-        if (woR4Error) throw woR4Error;
-        if (woR2Error) throw woR2Error;
         if (poPendingError) throw poPendingError;
         if (poItemsError) throw poItemsError;
         if (lowStockError) throw lowStockError;
@@ -259,6 +295,10 @@ export default function Dashboard() {
         if (apError) console.error('Error fetching outstanding AP:', apError);
         if (issuedItemsError) throw issuedItemsError;
         if (activeWoError) throw activeWoError;
+        if (completedWoErr) throw completedWoErr;
+        if (invoices30Err) throw invoices30Err;
+        if (entries30Err) throw entries30Err;
+        if (woFromEntriesErr) throw woFromEntriesErr;
 
         // Process PO Monthly Data
         const poByMonthKey: { [key: string]: number } = {};
@@ -353,6 +393,187 @@ export default function Dashboard() {
         setFastMovingItems(sortedItems);
         setCriticalStockItems((criticalItems as any) || []);
 
+        const completedRows = Array.isArray(completedWos) ? completedWos : [];
+        const woIds = new Set<string>();
+        const goodsIds = new Set<string>();
+        const jobTypeIds = new Set<string>();
+
+        completedRows.forEach((wo: any) => {
+          if (wo?.id) woIds.add(String(wo.id));
+          const bills = Array.isArray(wo?.work_order_billings) ? wo.work_order_billings : [];
+          bills.forEach((b: any) => {
+            const type = String(b?.item_type || '').toUpperCase();
+            if (type === 'PART' && b?.goods_id) goodsIds.add(String(b.goods_id));
+            if (type === 'JOB' && b?.job_type_id) jobTypeIds.add(String(b.job_type_id));
+          });
+        });
+
+        const partHppByWoGoods: Record<string, number> = {};
+        const partHppAvgStockMap: Record<string, number> = {};
+        if (goodsIds.size > 0) {
+          const { data: poCostItems, error: poCostErr } = await supabase
+            .from('purchase_order_items')
+            .select('goods_id, quantity, unit_price, purchase_orders!inner(work_order_id, status)')
+            .in('purchase_orders.status', ['RECEIVED_PART', 'RECEIVED_FULL'])
+            .in('goods_id', Array.from(goodsIds))
+            .not('unit_price', 'is', null)
+            .limit(50000);
+          if (poCostErr) throw poCostErr;
+
+          const woAgg = new Map<string, { sumQty: number; sumValue: number }>();
+          const stockAgg = new Map<string, { sumQty: number; sumValue: number }>();
+          (poCostItems || []).forEach((it: any) => {
+            const gid = String(it?.goods_id || '').trim();
+            const qty = Number(it?.quantity || 0);
+            const price = Number(it?.unit_price || 0);
+            if (!gid || qty <= 0 || price <= 0) return;
+
+            const woId = String(it?.purchase_orders?.work_order_id || '').trim();
+            if (woId && woIds.has(woId)) {
+              const key = `${woId}:${gid}`;
+              const cur = woAgg.get(key) || { sumQty: 0, sumValue: 0 };
+              cur.sumQty += qty;
+              cur.sumValue += qty * price;
+              woAgg.set(key, cur);
+              return;
+            }
+
+            if (!woId) {
+              const cur = stockAgg.get(gid) || { sumQty: 0, sumValue: 0 };
+              cur.sumQty += qty;
+              cur.sumValue += qty * price;
+              stockAgg.set(gid, cur);
+            }
+          });
+
+          woAgg.forEach((v, k) => {
+            if (v.sumQty > 0) partHppByWoGoods[k] = v.sumValue / v.sumQty;
+          });
+          stockAgg.forEach((v, gid) => {
+            if (v.sumQty > 0) partHppAvgStockMap[gid] = v.sumValue / v.sumQty;
+          });
+        }
+
+        const jobCostMap: Record<string, number> = {};
+        if (jobTypeIds.size > 0) {
+          const { data: jobs, error: jobErr } = await supabase
+            .from('job_types')
+            .select('id, hpp')
+            .in('id', Array.from(jobTypeIds));
+          if (jobErr) throw jobErr;
+          (jobs || []).forEach((j: any) => {
+            jobCostMap[String(j.id)] = Number((j as any)?.hpp || 0);
+          });
+        }
+
+        const woMetrics = completedRows
+          .map((wo: any) => {
+            const bills = Array.isArray(wo?.work_order_billings) ? wo.work_order_billings : [];
+            let rev = 0;
+            let hpp = 0;
+            bills.forEach((b: any) => {
+              const qty = Number(b?.qty || 0);
+              if (qty <= 0) return;
+              const type = String(b?.item_type || '').toUpperCase();
+              const totalPrice = Number(b?.total_price || 0) || Number(b?.unit_price || 0) * qty;
+              rev += totalPrice;
+              if (type === 'PART' && b?.goods_id) {
+                const woKey = `${String(wo.id)}:${String(b.goods_id)}`;
+                const unitHpp =
+                  partHppByWoGoods[woKey] !== undefined
+                    ? partHppByWoGoods[woKey] || 0
+                    : partHppAvgStockMap[String(b.goods_id)] !== undefined
+                      ? partHppAvgStockMap[String(b.goods_id)] || 0
+                      : 0;
+                hpp += unitHpp * qty;
+              } else if (type === 'JOB' && b?.job_type_id) {
+                const unitHpp = jobCostMap[String(b.job_type_id)] || 0;
+                hpp += unitHpp * qty;
+              }
+            });
+
+            const entryDateRaw = (wo?.vehicle_entries as any)?.entry_date;
+            const endRaw = wo?.completed_at || wo?.work_date;
+            const entryDate = entryDateRaw ? new Date(entryDateRaw) : null;
+            const endDate = endRaw ? new Date(endRaw) : null;
+            const cycleDays =
+              entryDate && endDate && Number.isFinite(entryDate.getTime()) && Number.isFinite(endDate.getTime())
+                ? Math.max(0, (endDate.getTime() - entryDate.getTime()) / (1000 * 3600 * 24))
+                : null;
+
+            const profit = rev - hpp;
+            const margin = rev > 0 ? profit / rev : 0;
+            return { rev, hpp, profit, margin, cycleDays };
+          })
+          .filter((m) => Number.isFinite(m.rev) && Number.isFinite(m.hpp));
+
+        const revenue30 = woMetrics.reduce((s, m) => s + (m.rev || 0), 0);
+        const hpp30 = woMetrics.reduce((s, m) => s + (m.hpp || 0), 0);
+        const grossProfit30 = revenue30 - hpp30;
+        const avgProfitPerWo = woMetrics.length > 0 ? woMetrics.reduce((s, m) => s + (m.profit || 0), 0) / woMetrics.length : 0;
+
+        const marginRows = woMetrics.filter((m) => m.rev > 0);
+        const avgMarginPct = marginRows.length > 0 ? (marginRows.reduce((s, m) => s + (m.margin || 0), 0) / marginRows.length) * 100 : 0;
+
+        const cycleRows = woMetrics.filter((m) => typeof m.cycleDays === 'number');
+        const avgCycleTimeDays = cycleRows.length > 0 ? cycleRows.reduce((s, m) => s + (m.cycleDays as number), 0) / cycleRows.length : 0;
+
+        const entryCount = entryIds30.length;
+        const woCount = Number(woFromEntriesCount || 0);
+        const estimateConversionPct = entryCount > 0 ? (woCount / entryCount) * 100 : 0;
+
+        const invoiceRows30 = Array.isArray(last30Invoices) ? last30Invoices : [];
+        const customerNames = Array.from(
+          new Set(
+            invoiceRows30
+              .map((r: any) => String(r?.customer_name || '').trim())
+              .filter((x) => x.length > 0)
+          )
+        );
+
+        const { data: prevInvoicesByCustomer, error: prevInvErr } = customerNames.length
+          ? await supabase
+              .from('sales_invoices')
+              .select('customer_name')
+              .lt('invoice_date', start30Date)
+              .in('customer_name', customerNames)
+              .limit(50000)
+          : { data: [], error: null };
+        if (prevInvErr) throw prevInvErr;
+
+        const returningSet = new Set<string>(
+          (prevInvoicesByCustomer || [])
+            .map((r: any) => String(r?.customer_name || '').trim())
+            .filter((x: string) => x.length > 0)
+        );
+        const returningCustomers = returningSet.size;
+        const newCustomers = Math.max(0, customerNames.length - returningCustomers);
+
+        const revenueByCustomer = new Map<string, number>();
+        invoiceRows30.forEach((r: any) => {
+          const name = String(r?.customer_name || '').trim();
+          if (!name) return;
+          const amt = Number(r?.total_amount || 0);
+          revenueByCustomer.set(name, (revenueByCustomer.get(name) || 0) + amt);
+        });
+        const top5 = Array.from(revenueByCustomer.entries())
+          .map(([name, total]) => ({ name, total }))
+          .sort((a, b) => b.total - a.total)
+          .slice(0, 5);
+
+        setProfitability({
+          revenue30,
+          hpp30,
+          grossProfit30,
+          avgMarginPct,
+          avgProfitPerWo,
+          avgCycleTimeDays,
+          estimateConversionPct,
+          newCustomers,
+          returningCustomers,
+        });
+        setTopCustomers(top5);
+
         const totalRevenue = revenueData?.reduce((sum, inv: any) => {
           const totalAmount = Number(inv.total_amount || 0);
           const paidAmount = Number(inv.paid_amount || 0);
@@ -377,8 +598,6 @@ export default function Dashboard() {
         }, 0) || 0;
 
         setStats({
-          woR4: woR4Count || 0,
-          woR2: woR2Count || 0,
           poPendingCount: poPendingCount || 0,
           lowStockItems: lowStockCount || 0,
           outOfStockItems: outOfStockCount || 0,
@@ -438,41 +657,7 @@ export default function Dashboard() {
             <div>
               <div className="text-2xl font-bold">{stats.lowStockItems}</div>
               <div className="text-xs text-slate-500 mt-1">
-                Habis: {stats.outOfStockItems} • Menipis: {stats.lowStockItems} (stok &lt; 3)
-              </div>
-            </div>
-          }
-          icon={ArchiveX} 
-          loading={loading} 
-        />
-      </div>
-
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-        <StatCard 
-          title="Total WO Roda 4" 
-          value={stats.woR4} 
-          icon={Truck} 
-          loading={loading} 
-        />
-        <StatCard 
-          title="Total WO Roda 2" 
-          value={stats.woR2} 
-          icon={Tractor} 
-          loading={loading} 
-        />
-        <StatCard 
-          title="PO Pending (Jumlah)" 
-          value={stats.poPendingCount} 
-          icon={ShoppingCart} 
-          loading={loading} 
-        />
-        <StatCard 
-          title="Stok Mau Habis (< 3)" 
-          value={
-            <div>
-              <div className="text-2xl font-bold">{stats.lowStockItems}</div>
-              <div className="text-xs text-slate-500 mt-1">
-                Habis: {stats.outOfStockItems} • Menipis: {stats.lowStockItems}
+                Habis: {stats.outOfStockItems} • Menipis: {stats.lowStockItems} (stok 1–2)
               </div>
             </div>
           }
@@ -539,6 +724,102 @@ export default function Dashboard() {
                 )}
               </TableBody>
             </Table>
+          </CardContent>
+        </Card>
+      </div>
+
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+        <StatCard
+          title="Laba Kotor (30 Hari)"
+          value={formatCurrencyPrecise(profitability.grossProfit30)}
+          icon={TrendingUp}
+          loading={loading}
+        />
+        <StatCard
+          title="Margin Rata-rata/WO"
+          value={`${profitability.avgMarginPct.toFixed(1)}%`}
+          icon={Percent}
+          loading={loading}
+        />
+        <StatCard
+          title="Rata-rata Cycle Time WO"
+          value={`${profitability.avgCycleTimeDays.toFixed(1)} hari`}
+          icon={Timer}
+          loading={loading}
+        />
+        <StatCard
+          title="Konversi Estimasi → WO"
+          value={`${profitability.estimateConversionPct.toFixed(1)}%`}
+          icon={Users}
+          loading={loading}
+        />
+      </div>
+
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-7">
+        <Card className="lg:col-span-4">
+          <CardHeader>
+            <CardTitle>Pendapatan vs HPP (30 Hari)</CardTitle>
+          </CardHeader>
+          <CardContent className="pl-2">
+            <ResponsiveContainer width="100%" height={260}>
+              <BarChart
+                data={[
+                  { label: 'Pendapatan', total: profitability.revenue30 },
+                  { label: 'HPP', total: profitability.hpp30 },
+                ]}
+              >
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis dataKey="label" stroke="#888888" fontSize={12} tickLine={false} axisLine={false} />
+                <YAxis stroke="#888888" fontSize={12} tickLine={false} axisLine={false} tickFormatter={(value) => `${new Intl.NumberFormat('id-ID').format(value as number)}`} />
+                <Tooltip formatter={(value) => formatCurrency(Number(value || 0))} />
+                <Bar dataKey="total" fill="#16a34a" radius={[6, 6, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </CardContent>
+        </Card>
+        <Card className="lg:col-span-3">
+          <CardHeader>
+            <CardTitle>Pelanggan (30 Hari)</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {loading ? (
+              <p className="text-muted-foreground">Memuat data...</p>
+            ) : (
+              <div className="space-y-4">
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="rounded border p-3">
+                    <div className="text-xs text-slate-500">Pelanggan Baru</div>
+                    <div className="text-2xl font-bold">{profitability.newCustomers}</div>
+                  </div>
+                  <div className="rounded border p-3">
+                    <div className="text-xs text-slate-500">Pelanggan Berulang</div>
+                    <div className="text-2xl font-bold">{profitability.returningCustomers}</div>
+                  </div>
+                </div>
+                {topCustomers.length > 0 ? (
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Top 5 Pelanggan</TableHead>
+                        <TableHead className="text-right">Pendapatan</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {topCustomers.map((c) => (
+                        <TableRow key={c.name}>
+                          <TableCell className="text-xs">
+                            <div className="font-medium truncate max-w-[220px]">{c.name}</div>
+                          </TableCell>
+                          <TableCell className="text-right text-xs font-bold">{formatCurrencyPrecise(c.total)}</TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                ) : (
+                  <p className="text-muted-foreground">Belum ada data invoice dalam 30 hari terakhir.</p>
+                )}
+              </div>
+            )}
           </CardContent>
         </Card>
       </div>
