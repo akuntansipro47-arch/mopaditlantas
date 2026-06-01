@@ -695,11 +695,6 @@ export default function GoodsReceipt() {
         query = query.lte('receipt_date', dateFilter.endDate);
       }
 
-      // Add search filter logic
-      if (historySearch) {
-        query = query.ilike('receipt_number', `%${historySearch}%`);
-      }
-
       const { data, error } = await query;
 
       if (error) throw error;
