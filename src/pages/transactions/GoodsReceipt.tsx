@@ -151,6 +151,7 @@ export default function GoodsReceipt() {
     receiptDate: string;
     poNumber?: string | null;
     receiptAmountByGoodsId: Record<string, number>;
+    serviceAmount?: number;
     totalAmount: number;
   }) => {
     const {
@@ -159,22 +160,25 @@ export default function GoodsReceipt() {
       receiptDate,
       poNumber,
       receiptAmountByGoodsId,
+      serviceAmount: serviceAmountRaw,
       totalAmount,
     } = args;
 
+    const serviceAmount = Number(serviceAmountRaw || 0);
     const goodsIds = Object.keys(receiptAmountByGoodsId).filter(Boolean);
-    if (goodsIds.length === 0 || totalAmount <= 0) return;
-
-    const { data: goodsRows, error: goodsErr } = await supabase
-      .from('goods')
-      .select('id, item_type')
-      .in('id', goodsIds);
-    if (goodsErr) throw goodsErr;
+    if ((goodsIds.length === 0 && serviceAmount <= 0) || totalAmount <= 0) return;
 
     const goodsTypeById = new Map<string, string>();
-    (goodsRows || []).forEach((g: any) => {
-      goodsTypeById.set(String(g.id), String(g.item_type || ''));
-    });
+    if (goodsIds.length > 0) {
+      const { data: goodsRows, error: goodsErr } = await supabase
+        .from('goods')
+        .select('id, item_type')
+        .in('id', goodsIds);
+      if (goodsErr) throw goodsErr;
+      (goodsRows || []).forEach((g: any) => {
+        goodsTypeById.set(String(g.id), String(g.item_type || ''));
+      });
+    }
 
     const apAcc = await fetchApAccount();
     if (!apAcc) {
@@ -220,6 +224,15 @@ export default function GoodsReceipt() {
 
       if (!acc) continue;
       debitByAccountId[String(acc.id)] = (debitByAccountId[String(acc.id)] || 0) + amt;
+    }
+
+    if (serviceAmount > 0) {
+      const svcAcc = await fetchServiceExpenseAccount();
+      if (!svcAcc) {
+        toast.error('Jurnal GR tidak lengkap: Akun HPP/Beban Jasa tidak ditemukan di COA.');
+      } else {
+        debitByAccountId[String(svcAcc.id)] = (debitByAccountId[String(svcAcc.id)] || 0) + serviceAmount;
+      }
     }
 
     const debitLines = Object.entries(debitByAccountId).filter(([, v]) => Number(v || 0) !== 0);
@@ -1032,6 +1045,26 @@ export default function GoodsReceipt() {
         }
       }
 
+      const isFirstReceipt = historyReceipts.length === 0;
+      const serviceAmount = (() => {
+        if (!isFirstReceipt) return 0;
+        return poItems.reduce((sum: number, it: any) => {
+          const lt = String(it?.line_type || 'PART').toUpperCase();
+          const gType = String(it?.goods?.item_type || '').toUpperCase();
+          const isSvc =
+            lt === 'JASA' ||
+            gType === 'JASA' ||
+            gType === 'SERVICE' ||
+            (!it?.goods_id && (it?.job_type_id || it?.service_name));
+          if (!isSvc) return sum;
+          const qty = Number(it?.quantity || 0);
+          const price = Number(it?.unit_price || 0);
+          if (qty <= 0 || price <= 0) return sum;
+          return sum + qty * price;
+        }, 0);
+      })();
+      const totalInvoiceAmount = Number(totalReceiptAmount || 0) + Number(serviceAmount || 0);
+
       if (itemsToReceive.length === 0) {
         const hasGoodsLines = (poItems || []).some((it: any) => Boolean(it.goods_id));
         if (hasGoodsLines) {
@@ -1378,7 +1411,7 @@ export default function GoodsReceipt() {
 
       // 5. Auto-Create Purchase Invoice (Hutang Dagang)
       // Only for the amount received in THIS receipt
-      if (totalReceiptAmount > 0) {
+      if (totalInvoiceAmount > 0) {
         if (isEdit) {
           const invs = await getInvoicesForReceipt({
             id: receiptId,
@@ -1396,7 +1429,7 @@ export default function GoodsReceipt() {
               .update({
                 invoice_date: receiptData.receipt_date,
                 due_date: new Date(new Date(receiptData.receipt_date).setDate(new Date(receiptData.receipt_date).getDate() + 30)).toISOString().split('T')[0],
-                total_amount: totalReceiptAmount,
+                total_amount: totalInvoiceAmount,
                 status: 'UNPAID',
               } as any)
               .eq('id', invId);
@@ -1411,7 +1444,7 @@ export default function GoodsReceipt() {
                 supplier_id: selectedPO.supplier_id,
                 invoice_date: receiptData.receipt_date,
                 due_date: new Date(new Date(receiptData.receipt_date).setDate(new Date(receiptData.receipt_date).getDate() + 30)).toISOString().split('T')[0],
-                total_amount: totalReceiptAmount,
+                total_amount: totalInvoiceAmount,
                 status: 'UNPAID'
               }]);
             if (invInsErr) throw invInsErr;
@@ -1426,7 +1459,7 @@ export default function GoodsReceipt() {
               supplier_id: selectedPO.supplier_id,
               invoice_date: receiptData.receipt_date,
               due_date: new Date(new Date(receiptData.receipt_date).setDate(new Date(receiptData.receipt_date).getDate() + 30)).toISOString().split('T')[0],
-              total_amount: totalReceiptAmount,
+              total_amount: totalInvoiceAmount,
               status: 'UNPAID'
             }]);
 
@@ -1437,7 +1470,7 @@ export default function GoodsReceipt() {
         }
       }
 
-      if (totalReceiptAmount > 0) {
+      if (totalInvoiceAmount > 0) {
         try {
           if (isEdit) {
             await deleteJournalByReference(receiptId);
@@ -1448,7 +1481,8 @@ export default function GoodsReceipt() {
             receiptDate: receiptData.receipt_date,
             poNumber: selectedPO.po_number,
             receiptAmountByGoodsId,
-            totalAmount: totalReceiptAmount,
+            serviceAmount,
+            totalAmount: totalInvoiceAmount,
           });
         } catch (e: any) {
           console.error('Gagal membuat jurnal GR:', e);
@@ -1474,7 +1508,7 @@ export default function GoodsReceipt() {
           wo_number: (selectedPO as any)?.work_orders?.wo_number || null,
           status: newStatus,
           item_count: itemsToReceive.length,
-          total_amount: totalReceiptAmount,
+          total_amount: totalInvoiceAmount,
           receipt_date: receiptData.receipt_date,
         },
       });
