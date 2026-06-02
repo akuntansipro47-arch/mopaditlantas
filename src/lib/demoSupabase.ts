@@ -163,12 +163,218 @@ const relationMap: Record<string, { table: string; outKeys: string[] }> = {
   goods_id: { table: 'goods', outKeys: ['goods'] },
   work_order_id: { table: 'work_orders', outKeys: ['work_order', 'work_orders'] },
   vehicle_entry_id: { table: 'vehicle_entries', outKeys: ['vehicle_entry', 'vehicle_entries'] },
+  vehicle_id: { table: 'vehicles', outKeys: ['vehicle', 'vehicles'] },
   po_id: { table: 'purchase_orders', outKeys: ['purchase_order', 'purchase_orders', 'po'] },
   job_type_id: { table: 'job_types', outKeys: ['job_type', 'job_types'] },
   coa_id: { table: 'chart_of_accounts', outKeys: ['coa', 'chart_of_accounts'] },
   goods_receipt_id: { table: 'goods_receipts', outKeys: ['goods_receipt', 'goods_receipts'] },
   invoice_id: { table: 'purchase_invoices', outKeys: ['purchase_invoice', 'purchase_invoices'] },
 };
+
+function ensureDemoSeed() {
+  if (!isDemoMode()) return;
+  const seeded = localStorage.getItem('demo_seed_v1');
+  if (seeded === '1') return;
+
+  const existingGoods = readTable('goods');
+  const existingVehicles = readTable('vehicles');
+  const existingEntries = readTable('vehicle_entries');
+  const existingWos = readTable('work_orders');
+
+  if (existingGoods.length > 0 || existingVehicles.length > 0 || existingEntries.length > 0 || existingWos.length > 0) {
+    localStorage.setItem('demo_seed_v1', '1');
+    return;
+  }
+
+  const now = new Date();
+  const d = (daysAgo: number) => {
+    const x = new Date(now);
+    x.setDate(x.getDate() - daysAgo);
+    x.setHours(10, 0, 0, 0);
+    return x;
+  };
+  const dateOnly = (dt: Date) => dt.toISOString().split('T')[0];
+  const ts = (dt: Date) => dt.toISOString();
+
+  const v1 = ensureId({
+    vehicle_type: 'R4',
+    license_plate: 'B 1234 DEMO',
+    brand_type: 'Avanza',
+    owner_name: 'PT Demo',
+    created_at: ts(d(120)),
+    updated_at: ts(d(60)),
+  });
+  const v2 = ensureId({
+    vehicle_type: 'R2',
+    license_plate: 'D 5678 DEMO',
+    brand_type: 'Vario',
+    owner_name: 'Bpk Demo',
+    created_at: ts(d(90)),
+    updated_at: ts(d(30)),
+  });
+  writeTable('vehicles', [v1, v2]);
+
+  const jt1 = ensureId({ job_name: 'Service Ringan', job_group: 'SERVICE_RINGAN', hpp: 70000, selling_price: 150000, created_at: ts(d(200)) });
+  const jt2 = ensureId({ job_name: 'Perbaikan Rem', job_group: 'PERBAIKAN', hpp: 120000, selling_price: 250000, created_at: ts(d(200)) });
+  writeTable('job_types', [jt1, jt2]);
+
+  const g1 = ensureId({ item_code: 'BRG-DEMO-001', name: 'Oli Mesin', unit: 'BOTOL', item_type: 'PERSEDIAAN', current_stock: 1, selling_price: 65000, created_at: ts(d(200)) });
+  const g2 = ensureId({ item_code: 'BRG-DEMO-002', name: 'Kampas Rem', unit: 'SET', item_type: 'PERSEDIAAN', current_stock: 0, selling_price: 90000, created_at: ts(d(200)) });
+  const g3 = ensureId({ item_code: 'BRG-DEMO-003', name: 'Baut Roda', unit: 'PCS', item_type: 'PERSEDIAAN', current_stock: 12, selling_price: 5000, created_at: ts(d(200)) });
+  writeTable('goods', [g1, g2, g3]);
+
+  const e1 = ensureId({
+    entry_number: 'ENT-DEMO-0001',
+    vehicle_id: v1.id,
+    entry_date: dateOnly(d(8)),
+    estimated_finish_date: dateOnly(d(5)),
+    service_group: 'SERVICE_RINGAN',
+    status: 'OPEN',
+    created_at: ts(d(8)),
+  });
+  const e2 = ensureId({
+    entry_number: 'ENT-DEMO-0002',
+    vehicle_id: v2.id,
+    entry_date: dateOnly(d(18)),
+    estimated_finish_date: dateOnly(d(14)),
+    service_group: 'PERBAIKAN',
+    status: 'CLOSED',
+    created_at: ts(d(18)),
+  });
+  writeTable('vehicle_entries', [e1, e2]);
+
+  const wo1 = ensureId({
+    wo_number: 'WO-DEMO-0001',
+    vehicle_entry_id: e1.id,
+    work_date: dateOnly(d(8)),
+    status: 'IN_PROGRESS',
+    created_at: ts(d(8)),
+  });
+  const wo2 = ensureId({
+    wo_number: 'WO-DEMO-0002',
+    vehicle_entry_id: e2.id,
+    work_date: dateOnly(d(13)),
+    completed_at: ts(d(12)),
+    status: 'CLOSED',
+    created_at: ts(d(18)),
+  });
+  writeTable('work_orders', [wo1, wo2]);
+
+  const bills = [
+    ensureId({
+      work_order_id: wo2.id,
+      item_type: 'JOB',
+      job_type_id: jt2.id,
+      goods_id: null,
+      item_name: jt2.job_name,
+      qty: 1,
+      unit_price: 250000,
+      total_price: 250000,
+      job_group: jt2.job_group,
+      created_at: ts(d(13)),
+    }),
+    ensureId({
+      work_order_id: wo2.id,
+      item_type: 'PART',
+      goods_id: g2.id,
+      job_type_id: null,
+      item_name: g2.name,
+      qty: 1,
+      unit_price: 90000,
+      total_price: 90000,
+      created_at: ts(d(13)),
+    }),
+  ];
+  writeTable('work_order_billings', bills);
+
+  const po1 = ensureId({
+    po_number: 'PO-DEMO-0001',
+    supplier_id: null,
+    work_order_id: wo2.id,
+    status: 'RECEIVED_FULL',
+    total_amount: 70000,
+    created_at: ts(d(20)),
+  });
+  writeTable('purchase_orders', [po1]);
+
+  const poItems = [
+    ensureId({
+      po_id: po1.id,
+      goods_id: g2.id,
+      quantity: 1,
+      unit_price: 70000,
+      total_price: 70000,
+      created_at: ts(d(20)),
+    }),
+  ];
+  writeTable('purchase_order_items', poItems);
+
+  const inv1 = ensureId({
+    invoice_number: 'INV-DEMO-0001',
+    work_order_id: wo2.id,
+    customer_name: 'PT Demo',
+    vehicle_id: v1.id,
+    invoice_date: dateOnly(d(12)),
+    due_date: dateOnly(d(2)),
+    total_amount: 340000,
+    paid_amount: 340000,
+    status: 'PAID',
+    created_at: ts(d(12)),
+  });
+  const invOld = ensureId({
+    invoice_number: 'INV-DEMO-OLD',
+    work_order_id: null,
+    customer_name: 'PT Demo',
+    vehicle_id: v1.id,
+    invoice_date: dateOnly(d(60)),
+    due_date: dateOnly(d(30)),
+    total_amount: 150000,
+    paid_amount: 150000,
+    status: 'PAID',
+    created_at: ts(d(60)),
+  });
+  const inv2 = ensureId({
+    invoice_number: 'INV-DEMO-0002',
+    work_order_id: null,
+    customer_name: 'Bpk Demo',
+    vehicle_id: v2.id,
+    invoice_date: dateOnly(d(6)),
+    due_date: dateOnly(d(1)),
+    total_amount: 220000,
+    paid_amount: 0,
+    status: 'UNPAID',
+    created_at: ts(d(6)),
+  });
+  writeTable('sales_invoices', [inv1, invOld, inv2]);
+
+  const ap1 = ensureId({
+    invoice_number: 'AP-DEMO-0001',
+    po_id: po1.id,
+    supplier_id: null,
+    invoice_date: dateOnly(d(20)),
+    due_date: dateOnly(d(5)),
+    total_amount: 70000,
+    paid_amount: 0,
+    status: 'UNPAID',
+    created_at: ts(d(20)),
+  });
+  writeTable('purchase_invoices', [ap1]);
+
+  const issue1 = ensureId({
+    issue_number: 'GI-DEMO-0001',
+    work_order_id: wo2.id,
+    issue_date: dateOnly(d(13)),
+    created_at: ts(d(13)),
+  });
+  writeTable('goods_issues', [issue1]);
+  const issueItems = [
+    ensureId({ issue_id: issue1.id, goods_id: g2.id, quantity: 1, created_at: ts(d(13)) }),
+    ensureId({ issue_id: issue1.id, goods_id: g1.id, quantity: 1, created_at: ts(d(13)) }),
+  ];
+  writeTable('goods_issue_items', issueItems);
+
+  localStorage.setItem('demo_seed_v1', '1');
+}
 
 function attachRelations(row: any) {
   if (!row || typeof row !== 'object') return row;
@@ -536,7 +742,10 @@ export function createDemoSupabase() {
   };
 
   return {
-    from: (table: string) => new DemoQueryBuilder(table),
+    from: (table: string) => {
+      ensureDemoSeed();
+      return new DemoQueryBuilder(table);
+    },
     rpc: async (_fn: string, _args?: any) => ({ data: [], error: null }),
     channel: (name: string) => channelNoop(name),
     removeChannel: async (_ch: any) => ({ data: null, error: null }),

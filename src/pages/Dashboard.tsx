@@ -124,21 +124,30 @@ export default function Dashboard() {
   const [monthlyPoData, setMonthlyPoData] = useState<MonthlyPoData[]>([]);
   const [criticalStockItems, setCriticalStockItems] = useState<CriticalStockItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [warnings, setWarnings] = useState<string[]>([]);
 
   useEffect(() => {
     async function fetchStats() {
       setLoading(true);
+      const nextWarnings: string[] = [];
+      const warn = (label: string, err: any) => {
+        console.error(label, err);
+        nextWarnings.push(label);
+      };
       try {
         // PO Pending Count
         const { count: poPendingCount, error: poPendingError } = await supabase
           .from('purchase_orders')
           .select('*', { count: 'exact', head: true })
           .in('status', ['ISSUED', 'RECEIVED_PART']);
+        if (poPendingError) warn('Gagal ambil PO Pending', poPendingError);
 
         // PO Total Value & Monthly Data
         const { data: poItems, error: poItemsError } = await supabase
           .from('purchase_order_items')
           .select('quantity, unit_price, created_at');
+        if (poItemsError) warn('Gagal ambil data PO per bulan', poItemsError);
+        const poItemsRows = Array.isArray(poItems) ? poItems : [];
 
         const startOfMonth = new Date();
         startOfMonth.setDate(1);
@@ -155,18 +164,21 @@ export default function Dashboard() {
           .select('total_amount, paid_amount, status')
           .gte('invoice_date', startOfMonthDate)
           .in('status', ['PAID', 'PARTIAL']);
+        if (revenueError) warn('Gagal ambil pendapatan bulan ini', revenueError);
 
         // Outstanding AR (Piutang)
         const { data: arData, error: arError } = await supabase
           .from('sales_invoices')
           .select('total_amount, paid_amount, status')
           .in('status', ['UNPAID', 'PARTIAL']);
+        if (arError) warn('Gagal ambil piutang', arError);
 
         // Outstanding AP (Utang)
         const { data: apData, error: apError } = await supabase
           .from('purchase_invoices')
           .select('total_amount, paid_amount, status')
           .in('status', ['UNPAID', 'PARTIAL']);
+        if (apError) warn('Gagal ambil utang', apError);
 
         // Low Stock Items
         const { count: lowStockCount, error: lowStockError } = await supabase
@@ -174,12 +186,14 @@ export default function Dashboard() {
           .select('*', { count: 'exact', head: true })
           .lt('current_stock', 3)
           .gt('current_stock', 0);
+        if (lowStockError) warn('Gagal ambil stok menipis', lowStockError);
 
         // Out Of Stock Items
         const { count: outOfStockCount, error: outOfStockError } = await supabase
           .from('goods')
           .select('*', { count: 'exact', head: true })
           .lte('current_stock', 0);
+        if (outOfStockError) warn('Gagal ambil stok habis', outOfStockError);
 
         // Top Critical Stock Items (stok habis & menipis)
         const { data: criticalItems, error: criticalError } = await supabase
@@ -189,6 +203,7 @@ export default function Dashboard() {
           .order('current_stock', { ascending: true })
           .order('name', { ascending: true })
           .limit(10);
+        if (criticalError) warn('Gagal ambil stok kritis', criticalError);
 
         // Fast Moving Items (periode berjalan: dari awal bulan ini s.d. sekarang)
         const startOfRunningPeriod = new Date();
@@ -202,6 +217,7 @@ export default function Dashboard() {
             goods ( name )
           `)
           .gte('created_at', startOfRunningPeriod.toISOString());
+        if (issuedItemsError) warn('Gagal ambil fast moving items', issuedItemsError);
 
         // Lead Time Data for Active WO
         const { data: activeWoData, error: activeWoError } = await supabase
@@ -214,6 +230,7 @@ export default function Dashboard() {
             )
           `)
           .not('status', 'in', '("COMPLETED", "CLOSED")');
+        if (activeWoError) warn('Gagal ambil lead time WIP', activeWoError);
 
         const { data: completedWos, error: completedWoErr } = await supabase
           .from('work_orders')
@@ -222,7 +239,6 @@ export default function Dashboard() {
             wo_number,
             status,
             work_date,
-            completed_at,
             vehicle_entry_id,
             vehicle_entries (
               entry_date
@@ -238,17 +254,20 @@ export default function Dashboard() {
           `)
           .gte('work_date', start30Date)
           .in('status', ['CLOSED', 'COMPLETED']);
+        if (completedWoErr) warn('Gagal ambil WO selesai (30 hari)', completedWoErr);
 
         const { data: last30Invoices, error: invoices30Err } = await supabase
           .from('sales_invoices')
           .select('id, invoice_date, customer_name, total_amount')
           .gte('invoice_date', start30Date);
+        if (invoices30Err) warn('Gagal ambil invoice (30 hari)', invoices30Err);
 
         const { data: last30Entries, error: entries30Err } = await supabase
           .from('vehicle_entries')
           .select('id')
           .gte('entry_date', start30Date)
           .limit(5000);
+        if (entries30Err) warn('Gagal ambil estimasi/entry (30 hari)', entries30Err);
 
         const entryIds30 = (last30Entries || []).map((e: any) => e.id).filter(Boolean);
         const { count: woFromEntriesCount, error: woFromEntriesErr } = entryIds30.length
@@ -257,6 +276,7 @@ export default function Dashboard() {
               .select('id', { count: 'exact', head: true })
               .in('vehicle_entry_id', entryIds30)
           : { count: 0, error: null };
+        if (woFromEntriesErr) warn('Gagal hitung konversi estimasi → WO', woFromEntriesErr);
 
 
         // Monthly Progress Data (semua periode yang ada entry kendaraan)
@@ -276,7 +296,10 @@ export default function Dashboard() {
             `)
             .range(pageFrom, pageTo);
 
-          if (monthlyWoError) throw monthlyWoError;
+          if (monthlyWoError) {
+            warn('Gagal ambil progress bulanan', monthlyWoError);
+            break;
+          }
           if (!pageRows || pageRows.length === 0) break;
 
           monthlyWoData.push(...pageRows);
@@ -284,29 +307,13 @@ export default function Dashboard() {
           pageFrom += PAGE_SIZE;
         }
 
-
-        if (poPendingError) throw poPendingError;
-        if (poItemsError) throw poItemsError;
-        if (lowStockError) throw lowStockError;
-        if (outOfStockError) throw outOfStockError;
-        if (criticalError) console.error('Error fetching critical stock items:', criticalError);
-        if (revenueError) console.error('Error fetching monthly revenue:', revenueError);
-        if (arError) console.error('Error fetching outstanding AR:', arError);
-        if (apError) console.error('Error fetching outstanding AP:', apError);
-        if (issuedItemsError) throw issuedItemsError;
-        if (activeWoError) throw activeWoError;
-        if (completedWoErr) throw completedWoErr;
-        if (invoices30Err) throw invoices30Err;
-        if (entries30Err) throw entries30Err;
-        if (woFromEntriesErr) throw woFromEntriesErr;
-
         // Process PO Monthly Data
         const poByMonthKey: { [key: string]: number } = {};
         const monthShortFormatter = new Intl.DateTimeFormat('id-ID', { month: 'short' });
         
-        poItems.forEach(item => {
+        poItemsRows.forEach((item: any) => {
           const itemDate = new Date(item.created_at);
-          const total = item.quantity * item.unit_price;
+          const total = Number(item.quantity || 0) * Number(item.unit_price || 0);
           const monthKey = `${itemDate.getFullYear()}-${String(itemDate.getMonth() + 1).padStart(2, '0')}`;
           poByMonthKey[monthKey] = (poByMonthKey[monthKey] || 0) + total;
         });
@@ -329,7 +336,7 @@ export default function Dashboard() {
         setMonthlyPoData(sortedPoData);
         
         // Process Lead Time Data
-        const formattedLeadTime = activeWoData.map(wo => ({
+        const formattedLeadTime = (Array.isArray(activeWoData) ? activeWoData : []).map((wo: any) => ({
           license_plate: (wo.vehicle_entries as any)?.vehicles.license_plate || 'N/A',
           entry_date: (wo.vehicle_entries as any)?.entry_date,
           estimated_finish_date: (wo.vehicle_entries as any)?.estimated_finish_date,
@@ -539,7 +546,7 @@ export default function Dashboard() {
               .in('customer_name', customerNames)
               .limit(50000)
           : { data: [], error: null };
-        if (prevInvErr) throw prevInvErr;
+        if (prevInvErr) warn('Gagal ambil histori pelanggan (untuk segmentasi baru/berulang)', prevInvErr);
 
         const returningSet = new Set<string>(
           (prevInvoicesByCustomer || [])
@@ -574,7 +581,7 @@ export default function Dashboard() {
         });
         setTopCustomers(top5);
 
-        const totalRevenue = revenueData?.reduce((sum, inv: any) => {
+        const totalRevenue = (Array.isArray(revenueData) ? revenueData : [])?.reduce((sum, inv: any) => {
           const totalAmount = Number(inv.total_amount || 0);
           const paidAmount = Number(inv.paid_amount || 0);
           const status = String(inv.status || '').toUpperCase();
@@ -582,14 +589,14 @@ export default function Dashboard() {
           return sum + Math.min(paidAmount, totalAmount);
         }, 0) || 0;
 
-        const totalAR = arData?.reduce((sum, inv: any) => {
+        const totalAR = (Array.isArray(arData) ? arData : [])?.reduce((sum, inv: any) => {
           const totalAmount = Number(inv.total_amount || 0);
           const paidAmount = Number(inv.paid_amount || 0);
           const remaining = totalAmount - paidAmount;
           if (remaining <= 0) return sum;
           return sum + remaining;
         }, 0) || 0;
-        const totalAP = apData?.reduce((sum, inv: any) => {
+        const totalAP = (Array.isArray(apData) ? apData : [])?.reduce((sum, inv: any) => {
           const totalAmount = Number(inv.total_amount || 0);
           const paidAmount = Number(inv.paid_amount || 0);
           const remaining = totalAmount - paidAmount;
@@ -609,6 +616,7 @@ export default function Dashboard() {
       } catch (error: any) {
         console.error("Error fetching dashboard stats:", error);
       } finally {
+        setWarnings(nextWarnings);
         setLoading(false);
       }
     }
@@ -619,6 +627,21 @@ export default function Dashboard() {
   return (
     <div className="space-y-6">
       <h2 className="text-3xl font-bold tracking-tight">Dashboard</h2>
+
+      {warnings.length > 0 ? (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-sm">Sebagian data Dashboard tidak bisa dimuat</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-xs text-slate-600">
+              {warnings.map((w, i) => (
+                <div key={`${w}-${i}`}>- {w}</div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      ) : null}
       
       {/* Stat Cards Row */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7">
