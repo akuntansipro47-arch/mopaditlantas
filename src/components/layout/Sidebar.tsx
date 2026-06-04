@@ -159,6 +159,8 @@ export function Sidebar() {
   };
 
   const currentPath = location.pathname + location.search;
+  const appUrl =
+    typeof window !== 'undefined' ? `${window.location.origin}${currentPath}` : currentPath;
 
   useEffect(() => {
     if (!openMenus.includes('Daftar Laporan')) return;
@@ -185,7 +187,12 @@ export function Sidebar() {
     <div className="flex h-full w-72 flex-col bg-[#0f172a] text-slate-300 shadow-2xl transition-all duration-300 ease-in-out">
       {/* Header Logo */}
       <div className="flex h-24 items-center px-4 border-b border-slate-800/60 bg-slate-950/30">
-        <div className="flex items-center gap-1.5 w-full">
+        <a
+          href={appUrl}
+          target="_blank"
+          rel="noreferrer"
+          className="flex items-center gap-1.5 w-full"
+        >
           <div className="relative h-12 w-12 flex-shrink-0 flex items-center justify-center">
              <LogoMark className="h-12 w-12 text-white" />
           </div>
@@ -197,7 +204,7 @@ export function Sidebar() {
             </h1>
             <p className="text-[9px] text-slate-400 font-medium tracking-widest uppercase mt-0.5 ml-0.5">Complete Control Smart System</p>
           </div>
-        </div>
+        </a>
       </div>
       
       {/* Navigation */}
