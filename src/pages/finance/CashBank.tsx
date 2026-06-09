@@ -82,7 +82,7 @@ export default function CashBank() {
 
   useEffect(() => {
     if (activeTab !== 'history') return;
-    fetchHistory();
+    refreshHistory();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab, historyDateRange.start, historyDateRange.end, historyTypeFilter]);
 
@@ -126,13 +126,25 @@ export default function CashBank() {
         .map((a) => a.id)
         .filter(Boolean);
 
+      let entryIds: string[] = [];
+      if (cashBankIds.length > 0) {
+        const { data: idRows, error: idErr } = await supabase
+          .from('journal_entry_items')
+          .select('journal_entry_id')
+          .in('account_id', cashBankIds);
+        if (idErr) throw idErr;
+        const uniq = new Set<string>();
+        (idRows || []).forEach((r: any) => {
+          const v = String(r?.journal_entry_id || '').trim();
+          if (v) uniq.add(v);
+        });
+        entryIds = Array.from(uniq);
+      }
+
       let query = supabase
         .from('journal_entries')
         .select(`
           *,
-          cb:journal_entry_items!inner (
-             account_id
-          ),
           items:journal_entry_items (
              account_id,
              debit, credit,
@@ -144,7 +156,7 @@ export default function CashBank() {
 
       if (historyDateRange.start) query = query.gte('entry_date', historyDateRange.start);
       if (historyDateRange.end) query = query.lte('entry_date', historyDateRange.end);
-      if (cashBankIds.length > 0) query = query.in('cb.account_id', cashBankIds);
+      if (entryIds.length > 0) query = query.in('id', entryIds);
 
       const { data, error } = await query;
 
@@ -164,12 +176,17 @@ export default function CashBank() {
       });
       setHistory(normalized);
     } catch (error: any) {
-      // Ignore table not found error initially if migration hasn't run
       console.error(error);
+      toast.error('Gagal memuat history: ' + String(error?.message || error));
     } finally {
       setLoading(false);
     }
   }
+
+  const refreshHistory = async () => {
+    const nextAccounts = await fetchAccounts();
+    await fetchHistory(nextAccounts);
+  };
 
   const filteredHistory = history.filter((t: any) => {
     if (historyTypeFilter !== 'ALL' && String(t.cash_type || '') !== historyTypeFilter) return false;
@@ -965,7 +982,7 @@ export default function CashBank() {
                 <CardHeader className="pb-3">
                     <div className="flex justify-between items-center">
                         <CardTitle>History Kas/Bank</CardTitle>
-                        <Button variant="outline" size="sm" onClick={fetchHistory}><RefreshCw className="h-4 w-4 mr-2" /> Refresh</Button>
+                        <Button variant="outline" size="sm" onClick={refreshHistory}><RefreshCw className="h-4 w-4 mr-2" /> Refresh</Button>
                     </div>
                 </CardHeader>
                 <CardContent>
@@ -1011,7 +1028,7 @@ export default function CashBank() {
                       <Button
                         variant="outline"
                         size="sm"
-                        onClick={fetchHistory}
+                        onClick={refreshHistory}
                         disabled={loading}
                       >
                         <RefreshCw className="h-4 w-4 mr-2" /> Terapkan
