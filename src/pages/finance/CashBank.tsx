@@ -74,8 +74,10 @@ export default function CashBank() {
   const [editingType, setEditingType] = useState<'DEPOSIT' | 'PAYMENT' | null>(null);
 
   useEffect(() => {
-    fetchAccounts();
-    fetchHistory();
+    (async () => {
+      const nextAccounts = await fetchAccounts();
+      await fetchHistory(nextAccounts);
+    })();
   }, []);
 
   useEffect(() => {
@@ -105,18 +107,32 @@ export default function CashBank() {
       
       if (error) throw error;
       setAccounts(data || []);
+      return data || [];
     } catch (error: any) {
       toast.error('Gagal memuat akun: ' + error.message);
+      return [];
     }
   }
 
-  async function fetchHistory() {
+  async function fetchHistory(nextAccounts?: COA[]) {
     setLoading(true);
     try {
+      const sourceAccounts = Array.isArray(nextAccounts) ? nextAccounts : accounts;
+      const cashBankIds = sourceAccounts
+        .filter((a) =>
+          a.sub_category === 'AKTIVA_LANCAR' &&
+          (String(a.account_name || '').toLowerCase().includes('kas') || String(a.account_name || '').toLowerCase().includes('bank'))
+        )
+        .map((a) => a.id)
+        .filter(Boolean);
+
       let query = supabase
         .from('journal_entries')
         .select(`
           *,
+          cb:journal_entry_items!inner (
+             account_id
+          ),
           items:journal_entry_items (
              account_id,
              debit, credit,
@@ -124,17 +140,29 @@ export default function CashBank() {
              account:chart_of_accounts (account_name, account_code)
           )
         `)
-        .in('entry_type', ['DEPOSIT', 'PAYMENT'])
         .order('entry_date', { ascending: false });
 
       if (historyDateRange.start) query = query.gte('entry_date', historyDateRange.start);
       if (historyDateRange.end) query = query.lte('entry_date', historyDateRange.end);
-      if (historyTypeFilter !== 'ALL') query = query.eq('entry_type', historyTypeFilter);
+      if (cashBankIds.length > 0) query = query.in('cb.account_id', cashBankIds);
 
       const { data, error } = await query;
 
       if (error) throw error;
-      setHistory(data || []);
+      const cashBankIdSet = new Set(cashBankIds);
+      const normalized = (data || []).map((row: any) => {
+        const items = Array.isArray(row.items) ? row.items : [];
+        const cashItems = items.filter((i: any) => cashBankIdSet.has(String(i.account_id)));
+        const cashDebit = cashItems.reduce((acc: number, i: any) => acc + Number(i.debit || 0), 0);
+        const cashCredit = cashItems.reduce((acc: number, i: any) => acc + Number(i.credit || 0), 0);
+        const derivedType =
+          cashDebit > cashCredit ? 'DEPOSIT' : cashCredit > cashDebit ? 'PAYMENT' : String(row.entry_type || '').trim() || null;
+        return {
+          ...row,
+          cash_type: derivedType,
+        };
+      });
+      setHistory(normalized);
     } catch (error: any) {
       // Ignore table not found error initially if migration hasn't run
       console.error(error);
@@ -144,11 +172,12 @@ export default function CashBank() {
   }
 
   const filteredHistory = history.filter((t: any) => {
+    if (historyTypeFilter !== 'ALL' && String(t.cash_type || '') !== historyTypeFilter) return false;
     const q = historySearch.trim().toLowerCase();
     if (!q) return true;
     const voucher = String(t.voucher_no || '').toLowerCase();
     const desc = String(t.description || '').toLowerCase();
-    const type = String(t.entry_type || '').toLowerCase();
+    const type = String(t.cash_type || t.entry_type || '').toLowerCase();
     const amt = String(t.total_amount ?? '').toLowerCase();
     const items = Array.isArray(t.items) ? t.items : [];
     const itemText = items
@@ -1009,8 +1038,8 @@ export default function CashBank() {
                                         <TableCell>{formatDate(t.entry_date)}</TableCell>
                                         <TableCell className="font-mono text-xs">{t.voucher_no}</TableCell>
                                         <TableCell>
-                                            <span className={`px-2 py-1 rounded text-xs font-bold ${t.entry_type === 'DEPOSIT' ? 'bg-green-100 text-green-800' : t.entry_type === 'PAYMENT' ? 'bg-red-100 text-red-800' : 'bg-gray-100 text-gray-800'}`}>
-                                                {t.entry_type}
+                                            <span className={`px-2 py-1 rounded text-xs font-bold ${String(t.cash_type || t.entry_type) === 'DEPOSIT' ? 'bg-green-100 text-green-800' : String(t.cash_type || t.entry_type) === 'PAYMENT' ? 'bg-red-100 text-red-800' : 'bg-gray-100 text-gray-800'}`}>
+                                                {String(t.cash_type || t.entry_type || '')}
                                             </span>
                                         </TableCell>
                                         <TableCell className="max-w-[200px] truncate">{t.description}</TableCell>
