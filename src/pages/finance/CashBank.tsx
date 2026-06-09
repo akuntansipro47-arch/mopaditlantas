@@ -65,6 +65,7 @@ export default function CashBank() {
   // --- History State ---
   const [history, setHistory] = useState<any[]>([]);
   const [historySearch, setHistorySearch] = useState('');
+  const [historyTypeFilter, setHistoryTypeFilter] = useState<'ALL' | 'DEPOSIT' | 'PAYMENT'>('ALL');
   const [historyDateRange, setHistoryDateRange] = useState({
     start: new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0],
     end: new Date().toISOString().split('T')[0],
@@ -81,7 +82,7 @@ export default function CashBank() {
     if (activeTab !== 'history') return;
     fetchHistory();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeTab, historyDateRange.start, historyDateRange.end]);
+  }, [activeTab, historyDateRange.start, historyDateRange.end, historyTypeFilter]);
 
   useEffect(() => {
     const onFocus = () => fetchAccounts();
@@ -123,10 +124,12 @@ export default function CashBank() {
              account:chart_of_accounts (account_name, account_code)
           )
         `)
+        .in('entry_type', ['DEPOSIT', 'PAYMENT'])
         .order('entry_date', { ascending: false });
 
       if (historyDateRange.start) query = query.gte('entry_date', historyDateRange.start);
       if (historyDateRange.end) query = query.lte('entry_date', historyDateRange.end);
+      if (historyTypeFilter !== 'ALL') query = query.eq('entry_type', historyTypeFilter);
 
       const { data, error } = await query;
 
@@ -962,6 +965,19 @@ export default function CashBank() {
                           value={historySearch}
                           onChange={(e) => setHistorySearch(e.target.value)}
                         />
+                      </div>
+                      <div className="w-44">
+                        <Label htmlFor="history-type-filter" className="sr-only">Filter Tipe</Label>
+                        <select
+                          id="history-type-filter"
+                          className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                          value={historyTypeFilter}
+                          onChange={(e) => setHistoryTypeFilter(e.target.value as 'ALL' | 'DEPOSIT' | 'PAYMENT')}
+                        >
+                          <option value="ALL">Semua Tipe</option>
+                          <option value="DEPOSIT">Penerimaan</option>
+                          <option value="PAYMENT">Pengeluaran</option>
+                        </select>
                       </div>
                       <Button
                         variant="outline"
