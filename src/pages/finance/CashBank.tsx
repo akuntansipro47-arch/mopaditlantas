@@ -126,21 +126,6 @@ export default function CashBank() {
         .map((a) => a.id)
         .filter(Boolean);
 
-      let entryIds: string[] = [];
-      if (cashBankIds.length > 0) {
-        const { data: idRows, error: idErr } = await supabase
-          .from('journal_entry_items')
-          .select('journal_entry_id')
-          .in('account_id', cashBankIds);
-        if (idErr) throw idErr;
-        const uniq = new Set<string>();
-        (idRows || []).forEach((r: any) => {
-          const v = String(r?.journal_entry_id || '').trim();
-          if (v) uniq.add(v);
-        });
-        entryIds = Array.from(uniq);
-      }
-
       let query = supabase
         .from('journal_entries')
         .select(`
@@ -156,15 +141,16 @@ export default function CashBank() {
 
       if (historyDateRange.start) query = query.gte('entry_date', historyDateRange.start);
       if (historyDateRange.end) query = query.lte('entry_date', historyDateRange.end);
-      if (entryIds.length > 0) query = query.in('id', entryIds);
 
       const { data, error } = await query;
 
       if (error) throw error;
       const cashBankIdSet = new Set(cashBankIds);
-      const normalized = (data || []).map((row: any) => {
+      const normalized = (data || [])
+        .map((row: any) => {
         const items = Array.isArray(row.items) ? row.items : [];
         const cashItems = items.filter((i: any) => cashBankIdSet.has(String(i.account_id)));
+        if (cashItems.length === 0) return null;
         const cashDebit = cashItems.reduce((acc: number, i: any) => acc + Number(i.debit || 0), 0);
         const cashCredit = cashItems.reduce((acc: number, i: any) => acc + Number(i.credit || 0), 0);
         const derivedType =
@@ -173,8 +159,9 @@ export default function CashBank() {
           ...row,
           cash_type: derivedType,
         };
-      });
-      setHistory(normalized);
+      })
+      .filter(Boolean);
+      setHistory(normalized as any[]);
     } catch (error: any) {
       console.error(error);
       toast.error('Gagal memuat history: ' + String(error?.message || error));
