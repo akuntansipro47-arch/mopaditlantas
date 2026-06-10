@@ -208,7 +208,7 @@ export default function PurchasePayment() {
     try {
         const { data: pos } = await supabase
             .from('purchase_orders')
-            .select('id, po_number, supplier_id, total_amount, created_at')
+            .select('id, po_number, supplier_id, total_amount, created_at, status')
             .in('status', ['RECEIVED_FULL', 'RECEIVED_PART']);
         
         if (!pos || pos.length === 0) {
@@ -216,44 +216,79 @@ export default function PurchasePayment() {
             return;
         }
 
-        const { data: invoices } = await supabase
+        const { data: invoices, error: invErr } = await supabase
             .from('purchase_invoices')
-            .select('po_id');
+            .select('id, po_id, total_amount, paid_amount, status');
+        if (invErr) throw invErr;
         
-        const existingPoIds = new Set(invoices?.map(inv => inv.po_id));
+        const invoiceByPoId = new Map<string, any>();
+        (invoices || []).forEach((inv: any) => {
+          const k = String(inv?.po_id || '').trim();
+          if (k) invoiceByPoId.set(k, inv);
+        });
+        const existingPoIds = new Set(Array.from(invoiceByPoId.keys()));
 
         const missingPos = pos.filter(p => !existingPoIds.has(p.id));
+        const needFixTotals = pos
+          .filter((p: any) => {
+            const inv = invoiceByPoId.get(String(p.id));
+            if (!inv) return false;
+            const poStatus = String(p?.status || '').toUpperCase();
+            if (poStatus !== 'RECEIVED_FULL') return false;
+            const poTotal = Number(p?.total_amount || 0);
+            const invTotal = Number(inv?.total_amount || 0);
+            return poTotal > 0 && Math.abs(poTotal - invTotal) > 0.5;
+          })
+          .map((p: any) => ({ po: p, inv: invoiceByPoId.get(String(p.id)) }));
 
-        if (missingPos.length === 0) {
+        if (missingPos.length === 0 && needFixTotals.length === 0) {
             toast.success("Semua data sudah sinkron.");
             void logActivity({
               action: 'SYNC_AP_INVOICES',
               module: 'PURCHASE_PAYMENT',
               details: 'Sinkron tagihan: tidak ada data baru',
-              meta: { created_count: 0 },
+              meta: { created_count: 0, updated_count: 0 },
             });
             return;
         }
 
-        const newInvoices = missingPos.map(p => ({
-            invoice_number: `INV-${p.po_number}`,
-            po_id: p.id,
-            supplier_id: p.supplier_id,
-            invoice_date: new Date(p.created_at).toISOString().split('T')[0],
-            due_date: new Date(new Date(p.created_at).setDate(new Date(p.created_at).getDate() + 30)).toISOString().split('T')[0],
-            total_amount: p.total_amount,
-            status: 'UNPAID'
+        const newInvoices = missingPos.map((p: any) => ({
+          invoice_number: `INV-${p.po_number}`,
+          po_id: p.id,
+          supplier_id: p.supplier_id,
+          invoice_date: new Date(p.created_at).toISOString().split('T')[0],
+          due_date: new Date(new Date(p.created_at).setDate(new Date(p.created_at).getDate() + 30)).toISOString().split('T')[0],
+          total_amount: p.total_amount,
+          status: 'UNPAID'
         }));
 
-        const { error } = await supabase.from('purchase_invoices').insert(newInvoices);
-        if (error) throw error;
+        if (newInvoices.length > 0) {
+          const { error } = await supabase.from('purchase_invoices').insert(newInvoices);
+          if (error) throw error;
+        }
 
-        toast.success(`Berhasil membuat ${newInvoices.length} tagihan baru dari PO lama.`);
+        let updatedCount = 0;
+        for (const row of needFixTotals) {
+          const poTotal = Number(row.po?.total_amount || 0);
+          const paid = Number(row.inv?.paid_amount || 0);
+          const nextStatus = paid >= poTotal ? 'PAID' : paid > 0 ? 'PARTIAL' : 'UNPAID';
+          const { error: upErr } = await supabase
+            .from('purchase_invoices')
+            .update({ total_amount: poTotal, status: nextStatus })
+            .eq('id', row.inv.id);
+          if (upErr) throw upErr;
+          updatedCount += 1;
+        }
+
+        const msgParts: string[] = [];
+        if (newInvoices.length > 0) msgParts.push(`buat ${newInvoices.length} tagihan`);
+        if (updatedCount > 0) msgParts.push(`perbaiki total ${updatedCount} tagihan`);
+        toast.success(`Sinkronisasi selesai: ${msgParts.join(', ')}`);
         void logActivity({
           action: 'SYNC_AP_INVOICES',
           module: 'PURCHASE_PAYMENT',
-          details: `Sinkron tagihan: buat ${newInvoices.length} tagihan`,
-          meta: { created_count: newInvoices.length },
+          details: `Sinkron tagihan: buat ${newInvoices.length} tagihan, update ${updatedCount} tagihan`,
+          meta: { created_count: newInvoices.length, updated_count: updatedCount },
         });
         fetchInvoices();
 
