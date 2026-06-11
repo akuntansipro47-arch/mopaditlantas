@@ -244,6 +244,8 @@ export default function UserManagement() {
       return;
     }
 
+    const normalizedUsername = form.username.trim().toLowerCase();
+
     if (!editing && !form.password.trim()) {
       toast.error('Password wajib diisi untuk user baru.');
       return;
@@ -262,9 +264,21 @@ export default function UserManagement() {
 
     setSaving(true);
     try {
+      const { data: existing, error: existErr } = await supabase
+        .from('app_users')
+        .select('id, username')
+        .ilike('username', normalizedUsername)
+        .limit(1)
+        .maybeSingle();
+      if (existErr) throw existErr;
+      if (existing && String(existing.id) !== String(editing?.id || '')) {
+        toast.error(`Username "${normalizedUsername}" sudah digunakan. Gunakan username lain.`);
+        return;
+      }
+
       const { error } = await supabase.rpc('upsert_user', {
         p_id: editing?.id || null,
-        p_username: form.username.trim(),
+        p_username: normalizedUsername,
         p_password: form.password.trim(),
         p_full_name: form.full_name.trim() || null,
         p_role: form.role,
@@ -275,7 +289,13 @@ export default function UserManagement() {
       setDialogOpen(false);
       await fetchUsers();
     } catch (e: any) {
-      toast.error('Gagal simpan user: ' + e.message);
+      const msg = String(e?.message || e || '');
+      const code = String(e?.code || '');
+      if (code === '23505' || msg.toLowerCase().includes('duplicate key value') || msg.includes('app_users_username_key')) {
+        toast.error(`Gagal simpan user: username "${normalizedUsername}" sudah digunakan.`);
+      } else {
+        toast.error('Gagal simpan user: ' + msg);
+      }
     } finally {
       setSaving(false);
     }
