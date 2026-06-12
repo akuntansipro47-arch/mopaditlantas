@@ -35,6 +35,7 @@ type Row = {
   status: StatusLabel;
   po_numbers: string;
   po_status: string;
+  is_na: boolean;
 };
 
 const normalizeText = (v: string) =>
@@ -96,6 +97,7 @@ export default function UnorderedSparepartEstimationReport() {
             item_name,
             qty,
             estimated_price,
+            value_only,
             job_types (job_name)
           )
         `
@@ -232,6 +234,7 @@ export default function UnorderedSparepartEstimationReport() {
             status,
             po_numbers: poNumbers,
             po_status: poStatus,
+            is_na: Boolean(sp.value_only),
           });
         });
       });
@@ -283,6 +286,7 @@ export default function UnorderedSparepartEstimationReport() {
       Kendaraan: r.vehicle_type,
       Group: r.vehicle_group,
       'Item Estimasi': r.item_name,
+      'N/A': r.is_na ? 'YA' : 'TIDAK',
       'Qty Est': r.qty,
       'Qty PO': r.po_qty,
       'Qty Keluar': r.issued_qty,
@@ -388,6 +392,7 @@ export default function UnorderedSparepartEstimationReport() {
                   <TableHead className="font-semibold text-slate-700">No. WO</TableHead>
                   <TableHead className="font-semibold text-slate-700">Kendaraan & Group</TableHead>
                   <TableHead className="font-semibold text-slate-700">Estimasi Item</TableHead>
+                  <TableHead className="font-semibold text-slate-700">N/A</TableHead>
                   <TableHead className="text-right font-semibold text-slate-700">Qty Est</TableHead>
                   <TableHead className="text-right font-semibold text-slate-700">Qty PO</TableHead>
                   <TableHead className="text-right font-semibold text-slate-700">Qty Keluar</TableHead>
@@ -401,13 +406,13 @@ export default function UnorderedSparepartEstimationReport() {
               <TableBody>
                 {loading ? (
                   <TableRow>
-                    <TableCell colSpan={13} className="text-center py-12 text-muted-foreground">
+                    <TableCell colSpan={14} className="text-center py-12 text-muted-foreground">
                       Memuat data...
                     </TableCell>
                   </TableRow>
                 ) : filteredRows.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={13} className="text-center py-12 text-muted-foreground">
+                    <TableCell colSpan={14} className="text-center py-12 text-muted-foreground">
                       Tidak ada data ditemukan.
                     </TableCell>
                   </TableRow>
@@ -425,6 +430,13 @@ export default function UnorderedSparepartEstimationReport() {
                         </div>
                       </TableCell>
                       <TableCell className="text-sm">{r.item_name}</TableCell>
+                      <TableCell>
+                        {r.is_na ? (
+                          <span className="text-xs font-semibold px-2 py-1 rounded bg-amber-100 text-amber-800">N/A</span>
+                        ) : (
+                          <span className="text-xs text-slate-400">-</span>
+                        )}
+                      </TableCell>
                       <TableCell className="text-right font-semibold">{r.qty}</TableCell>
                       <TableCell className="text-right font-semibold text-slate-700">{r.po_qty}</TableCell>
                       <TableCell className="text-right font-semibold text-emerald-700">{r.issued_qty}</TableCell>
