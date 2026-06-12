@@ -395,7 +395,7 @@ export default function Dashboard() {
         const sortedItems = Object.entries(itemCounts)
           .map(([name, count]) => ({ name, count }))
           .sort((a, b) => b.count - a.count)
-          .slice(0, 10);
+          .slice(0, 15);
         
         setFastMovingItems(sortedItems);
         setCriticalStockItems((criticalItems as any) || []);
@@ -851,7 +851,7 @@ export default function Dashboard() {
       <div className="grid gap-4 md:grid-cols-1 lg:grid-cols-7">
         <Card className="lg:col-span-2">
           <CardHeader>
-            <CardTitle>Top 10 Fast Moving Items (Periode Berjalan)</CardTitle>
+            <CardTitle>Top 15 Fast Moving Items (Periode Berjalan)</CardTitle>
           </CardHeader>
           <CardContent>
             {loading ? (
