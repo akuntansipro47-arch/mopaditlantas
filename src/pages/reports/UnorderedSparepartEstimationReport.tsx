@@ -16,7 +16,9 @@ type StatusLabel =
   | 'BELUM_PO_DAN_BELUM_KELUAR'
   | 'SUDAH_PO_BELUM_KELUAR'
   | 'KELUAR_SEBAGIAN'
-  | 'SUDAH_KELUAR';
+  | 'SUDAH_KELUAR'
+  | 'NA_PART'
+  | 'NA_JASA';
 
 type Row = {
   entry_date: string;
@@ -36,6 +38,7 @@ type Row = {
   po_numbers: string;
   po_status: string;
   is_na: boolean;
+  na_label: 'N/A Part' | 'N/A Jasa' | null;
 };
 
 const normalizeText = (v: string) =>
@@ -60,6 +63,16 @@ const summarizePoStatus = (pos: any[]) => {
   if (statuses.includes('ISSUED')) return 'ISSUED';
   if (statuses.includes('DRAFT')) return 'DRAFT';
   return '-';
+};
+
+const getStatusText = (s: StatusLabel) => {
+  if (s === 'BELUM_WO') return 'Belum WO';
+  if (s === 'SUDAH_KELUAR') return 'Sudah Keluar';
+  if (s === 'KELUAR_SEBAGIAN') return 'Keluar Sebagian';
+  if (s === 'SUDAH_PO_BELUM_KELUAR') return 'Sudah PO, Belum Keluar';
+  if (s === 'NA_PART') return 'N/A Part';
+  if (s === 'NA_JASA') return 'N/A Jasa';
+  return 'Belum PO & Belum Keluar';
 };
 
 export default function UnorderedSparepartEstimationReport() {
@@ -188,6 +201,12 @@ export default function UnorderedSparepartEstimationReport() {
           const qty = Number(sp.qty || 0);
           const estPrice = Number(sp.estimated_price || 0);
           const total = qty * estPrice;
+          const jobName = String(sp.job_types?.job_name || '');
+          const isNa = Boolean(sp.value_only);
+          const naLabel: 'N/A Part' | 'N/A Jasa' | null =
+            isNa
+              ? (jobName && normalizeText(estName) === normalizeText(jobName) ? 'N/A Jasa' : 'N/A Part')
+              : null;
 
           const poQty = (poList || []).reduce((acc: number, po: any) => {
             const items = Array.isArray(po.purchase_order_items) ? po.purchase_order_items : [];
@@ -211,7 +230,8 @@ export default function UnorderedSparepartEstimationReport() {
           const remainingQty = Math.max(0, qty - issuedQty);
 
           let status: StatusLabel = 'BELUM_PO_DAN_BELUM_KELUAR';
-          if (!wo) status = 'BELUM_WO';
+          if (isNa) status = naLabel === 'N/A Jasa' ? 'NA_JASA' : 'NA_PART';
+          else if (!wo) status = 'BELUM_WO';
           else if (issuedQty >= qty && qty > 0) status = 'SUDAH_KELUAR';
           else if (issuedQty > 0) status = 'KELUAR_SEBAGIAN';
           else if (poQty > 0) status = 'SUDAH_PO_BELUM_KELUAR';
@@ -234,7 +254,8 @@ export default function UnorderedSparepartEstimationReport() {
             status,
             po_numbers: poNumbers,
             po_status: poStatus,
-            is_na: Boolean(sp.value_only),
+            is_na: isNa,
+            na_label: naLabel,
           });
         });
       });
@@ -286,14 +307,14 @@ export default function UnorderedSparepartEstimationReport() {
       Kendaraan: r.vehicle_type,
       Group: r.vehicle_group,
       'Item Estimasi': r.item_name,
-      'N/A': r.is_na ? 'YA' : 'TIDAK',
+      'N/A': r.na_label || 'TIDAK',
       'Qty Est': r.qty,
       'Qty PO': r.po_qty,
       'Qty Keluar': r.issued_qty,
       'Sisa Keluar': r.remaining_qty,
       'Est Harga': r.estimated_price,
       'Total Est': r.total_estimated,
-      Status: r.status,
+      Status: getStatusText(r.status),
       'No. PO': r.po_numbers,
       'Status PO': r.po_status,
     }));
@@ -309,6 +330,8 @@ export default function UnorderedSparepartEstimationReport() {
     if (s === 'SUDAH_KELUAR') return <span className="text-xs font-semibold px-2 py-1 rounded bg-emerald-100 text-emerald-800">Sudah Keluar</span>;
     if (s === 'KELUAR_SEBAGIAN') return <span className="text-xs font-semibold px-2 py-1 rounded bg-amber-100 text-amber-800">Keluar Sebagian</span>;
     if (s === 'SUDAH_PO_BELUM_KELUAR') return <span className="text-xs font-semibold px-2 py-1 rounded bg-blue-100 text-blue-800">Sudah PO, Belum Keluar</span>;
+    if (s === 'NA_PART') return <span className="text-xs font-semibold px-2 py-1 rounded bg-amber-100 text-amber-800">N/A Part</span>;
+    if (s === 'NA_JASA') return <span className="text-xs font-semibold px-2 py-1 rounded bg-violet-100 text-violet-800">N/A Jasa</span>;
     return <span className="text-xs font-semibold px-2 py-1 rounded bg-red-100 text-red-800">Belum PO & Belum Keluar</span>;
   };
 
