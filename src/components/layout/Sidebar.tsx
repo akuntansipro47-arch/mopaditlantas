@@ -103,6 +103,7 @@ const navigation: NavItem[] = [
       { name: 'Laporan Estimasi vs Realisasi', href: '/reports?tab=estimation', icon: BarChart3, key: 'report_estimation' },
       { name: 'Laporan Estimasi Part Belum PO', href: '/reports?tab=estimation_unpo', icon: ShoppingCart, key: 'report_unordered_parts' },
       { name: 'Detail WO', href: '/reports?tab=wodetail', icon: ClipboardCheck, key: 'report_wo' },
+      { name: 'Detail WO Unit Masuk (Simpel)', href: '/reports?tab=wo_unit_masuk', icon: ClipboardCheck, key: 'report_wo_unit_masuk' },
       { type: 'group', name: 'Laporan Pembelian' },
       { name: 'Pembelian (PO)', href: '/reports?tab=po', icon: ShoppingCart, key: 'report_po' },
       { name: 'Barang Masuk', href: '/reports?tab=receipt', icon: PackageCheck, key: 'report_receipt' },

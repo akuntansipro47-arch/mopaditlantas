@@ -23,6 +23,7 @@ import VehicleEntryReport from './reports/VehicleEntryReport';
 import VehicleExitReport from './reports/VehicleExitReport';
 import EstimationVsRealizationReport from './reports/EstimationVsRealizationReport';
 import UnorderedSparepartEstimationReport from './reports/UnorderedSparepartEstimationReport';
+import WOUnitMasukReport from './reports/WOUnitMasukReport';
 import BudgetMonitoringReport from './reports/BudgetMonitoringReport';
 import BudgetForecastReport from './reports/BudgetForecastReport';
 import ActivityLogReport from './reports/ActivityLogReport';
@@ -54,6 +55,7 @@ type ReportKey =
   | 'forecast_budget'
   | 'estimation'
   | 'estimation_unpo'
+  | 'wo_unit_masuk'
   | 'activity_log';
 
 export default function Reports() {
@@ -102,6 +104,7 @@ export default function Reports() {
       if (canAccess('report_cash_bank_book')) return 'cash_bank_book';
       if (canAccess('report_estimation')) return 'estimation';
       if (canAccess('report_unordered_parts')) return 'estimation_unpo';
+      if (canAccess('report_wo_unit_masuk')) return 'wo_unit_masuk';
       if (canAccess('report_budget')) return 'budget';
       if (canAccess('report_forecast_budget')) return 'forecast_budget';
       if (canAccess('report_activity_log')) return 'activity_log';
@@ -149,6 +152,7 @@ export default function Reports() {
     canAccess('report_cash_bank_book') ? 'cash_bank_book' : null,
     canAccess('report_estimation') ? 'estimation' : null,
     canAccess('report_unordered_parts') ? 'estimation_unpo' : null,
+    canAccess('report_wo_unit_masuk') ? 'wo_unit_masuk' : null,
     canAccess('report_budget') ? 'budget' : null,
     canAccess('report_forecast_budget') ? 'forecast_budget' : null,
     canAccess('report_activity_log') ? 'activity_log' : null,
@@ -179,6 +183,7 @@ export default function Reports() {
     if (key === 'cash_bank_book') return <CashBankBookReport />;
     if (key === 'estimation') return <EstimationVsRealizationReport />;
     if (key === 'estimation_unpo') return <UnorderedSparepartEstimationReport />;
+    if (key === 'wo_unit_masuk') return <WOUnitMasukReport />;
     if (key === 'budget') return <BudgetMonitoringReport />;
     if (key === 'forecast_budget') return <BudgetForecastReport />;
     if (key === 'activity_log') return <ActivityLogReport />;
