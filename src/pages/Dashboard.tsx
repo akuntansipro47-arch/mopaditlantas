@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
+import { useAuth } from '@/context/AuthContext';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { ShoppingCart, ArchiveX, TrendingUp, CircleDollarSign, Landmark, Percent, Timer, Users } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -98,11 +100,24 @@ interface CriticalStockItem {
 type TopCustomer = { name: string; total: number };
 
 export default function Dashboard() {
+  const { user } = useAuth();
+  const navigate = useNavigate();
+
+  const hasAccess = (key: string) => {
+    if (!user) return false;
+    if (user.role === 'SUPER_ADMIN') return true;
+    const allowed = Array.isArray(user.allowed_menus) ? user.allowed_menus : [];
+    if (allowed.includes('*')) return true;
+    return allowed.includes(key);
+  };
+
+  useEffect(() => {
+    if (user && user.role !== 'SUPER_ADMIN' && !hasAccess('dashboard')) {
+      navigate('/reports');
+    }
+  }, [user, navigate]);
+
   const [stats, setStats] = useState({
-    poPendingCount: 0,
-    lowStockItems: 0,
-    outOfStockItems: 0,
-    monthlyRevenue: 0,
     outstandingAR: 0,
     outstandingAP: 0,
   });

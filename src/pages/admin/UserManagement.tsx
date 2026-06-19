@@ -25,6 +25,12 @@ type AppUser = {
 
 const PERMISSION_GROUPS: Array<{ title: string; items: Array<{ key: string; label: string }> }> = [
   {
+    title: 'Tampilan',
+    items: [
+      { key: 'dashboard', label: 'Dashboard' },
+    ],
+  },
+  {
     title: 'Master Data',
     items: [
       { key: 'master_vehicles', label: 'Kendaraan' },

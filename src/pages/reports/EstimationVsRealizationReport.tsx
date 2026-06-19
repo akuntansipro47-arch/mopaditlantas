@@ -86,7 +86,7 @@ export default function EstimationVsRealizationReport() {
   async function fetchData() {
     setLoading(true);
     try {
-      // Fetch ALL Work Orders + Include Entries without WO
+      // Step 1: Fetch ALL Work Orders + Include Entries without WO
       const { data: woData, error } = await supabase
         .from('vehicle_entries')
         .select(`
@@ -122,23 +122,67 @@ export default function EstimationVsRealizationReport() {
 
       if (error) throw error;
 
-      // Process Data
-      const processedData = (woData || []).map(entry => {
+      // Step 2: Kumpulkan semua WO ID untuk query PO items
+      const allWoIds = (woData || [])
+        .flatMap((e: any) => e.work_orders || [])
+        .map((wo: any) => wo?.id)
+        .filter(Boolean);
+
+      // Step 3: Fetch received PO items per WO (RECEIVED_FULL only)
+      const poLastPriceByWoGoods: Record<string, number> = {};
+      if (allWoIds.length > 0) {
+        const { data: receivedPoItems } = await supabase
+          .from('purchase_order_items')
+          .select('goods_id, unit_price, purchase_orders!inner(id, work_order_id, status, created_at)')
+          .in('purchase_orders.work_order_id', allWoIds)
+          .eq('purchase_orders.status', 'RECEIVED_FULL')
+          .not('unit_price', 'is', null)
+          .order('purchase_orders.created_at', { ascending: false });
+
+        (receivedPoItems || []).forEach((item: any) => {
+          const woId = String(item.purchase_orders?.work_order_id || '').trim();
+          const goodsId = String(item.goods_id || '').trim();
+          const price = Number(item.unit_price || 0);
+          if (!woId || !goodsId || price <= 0) return;
+          // Selalu timpa dengan yang lebih baru (karena sudah di-order by created_at DESC)
+          poLastPriceByWoGoods[`${woId}:${goodsId}`] = price;
+        });
+      }
+
+      // Step 4: Fetch goods_issues per WO untuk tahu barang apa saja yang keluar
+      const goodsIssuedByWoGoods: Record<string, number> = {};
+      if (allWoIds.length > 0) {
+        const { data: giData } = await supabase
+          .from('goods_issue_items')
+          .select('quantity, goods_id, goods_issues!inner(work_order_id)')
+          .in('goods_issues.work_order_id', allWoIds);
+        (giData || []).forEach((item: any) => {
+          const woId = String(item.goods_issues?.work_order_id || '').trim();
+          const goodsId = String(item.goods_id || '').trim();
+          const qty = Number(item.quantity || 0);
+          if (!woId || !goodsId || qty <= 0) return;
+          const key = `${woId}:${goodsId}`;
+          goodsIssuedByWoGoods[key] = (goodsIssuedByWoGoods[key] || 0) + qty;
+        });
+      }
+
+      // Step 5: Process Data
+      const processedData = (woData || []).map((entry: any) => {
         // Estimation Calculation
         let estJob = 0;
         let estPart = 0;
-        
+
         entry.vehicle_entry_jobs?.forEach((j: any) => {
-             estJob += getJobEstimation(j);
+          estJob += getJobEstimation(j);
         });
-        
+
         entry.vehicle_entry_spareparts?.forEach((p: any) => {
-             estPart += (p.estimated_price || 0) * (p.qty || 0);
+          estPart += (p.estimated_price || 0) * (p.qty || 0);
         });
-        
+
         const totalEst = estJob + estPart;
 
-        // Realization Calculation (Check if WO exists)
+        // Realization Calculation
         let realJob = 0;
         let realPart = 0;
         let woInfo: any = null;
@@ -155,22 +199,36 @@ export default function EstimationVsRealizationReport() {
             const type = String(b.item_type || '').toUpperCase();
 
             if (type === 'JOB') {
-              realJob += total;
+              // Realisasi JASA: dari work_order_billings
+              realJob += total > 0 ? total : unit * qty;
               return;
             }
 
             if (type === 'PART') {
+              const goodsId = String(b.goods_id || '').trim();
+              const woId = String(woInfo?.id || '').trim();
+              const billName = String(b.item_name || '').replace(/^Penggantian\s+/i, '').trim();
+
+              if (woId && goodsId) {
+                // Prioritas 1: harga PO terakhir (RECEIVED_FULL) untuk unit ini
+                const poKey = `${woId}:${goodsId}`;
+                if (poLastPriceByWoGoods[poKey] !== undefined) {
+                  realPart += poLastPriceByWoGoods[poKey] * qty;
+                  return;
+                }
+              }
+
+              // Prioritas 2: harga dari billing (bila ada)
               if (total > 0) {
                 realPart += total;
                 return;
               }
-
               if (unit > 0 && qty > 0) {
                 realPart += unit * qty;
                 return;
               }
 
-              const billName = String(b.item_name || '').replace(/^Penggantian\s+/i, '').trim();
+              // Prioritas 3: fallback ke estimasi
               const matched = entryParts.find((p: any) => isNameMatch(String(p.item_name || ''), billName));
               const ep = Number(matched?.estimated_price || 0);
               const q = Number(matched?.qty || qty || 0);
@@ -182,30 +240,61 @@ export default function EstimationVsRealizationReport() {
               realPart += 0;
             }
           });
+
+          // Handle sparepart yang keluar tapi TIDAK ada di billing (issuedFromGi)
+          // Qty keluar × harga PO terakhir (RECEIVED_FULL)
+          entryParts.forEach((p: any) => {
+            const goodsId = String(p.goods_id || '').trim();
+            const partName = String(p.item_name || '').trim();
+            if (!woInfo?.id || !goodsId) return;
+            const woId = String(woInfo.id).trim();
+
+            // Cek apakah sudah masuk di billing
+            const billed = bills.some((b: any) => {
+              const bName = String(b.item_name || '').replace(/^Penggantian\s+/i, '').trim();
+              return isNameMatch(bName, partName) && String(b.goods_id || '').trim() === goodsId;
+            });
+            if (billed) return;
+
+            // Belum di billing — cek apakah ada di goods issued
+            const giKey = `${woId}:${goodsId}`;
+            const giQty = goodsIssuedByWoGoods[giKey];
+            if (!giQty) return;
+
+            // Ada di GI — pakai harga PO terakhir
+            const poKey = `${woId}:${goodsId}`;
+            const poPrice = poLastPriceByWoGoods[poKey];
+            if (poPrice !== undefined) {
+              realPart += poPrice * giQty;
+            } else {
+              // Fallback: harga estimasi
+              realPart += (p.estimated_price || 0) * giQty;
+            }
+          });
         }
-        
+
         const totalReal = realJob + realPart;
         const variance = totalReal - totalEst;
         const percentage = totalEst > 0 ? (variance / totalEst) * 100 : 0;
 
         return {
             id: entry.id,
-            date: entry.entry_date, // Use entry date, not WO date
+            date: entry.entry_date,
             wo_number: woInfo ? woInfo.wo_number : '-',
-            status: woInfo ? woInfo.status : entry.status, // Fallback to Entry Status if no WO
+            status: woInfo ? woInfo.status : entry.status,
             license_plate: entry.vehicles?.license_plate || '-',
             brand: entry.vehicles?.brand_type || '-',
             nota_dinas: entry.nota_dinas_number || '-',
             group: getVehicleGroupLabel(entry),
-            
+
             est_job: estJob,
             est_part: estPart,
             total_est: totalEst,
-            
+
             real_job: realJob,
             real_part: realPart,
             total_real: totalReal,
-            
+
             variance: variance,
             percentage: percentage
         };
