@@ -76,6 +76,7 @@ const PERMISSION_GROUPS: Array<{ title: string; items: Array<{ key: string; labe
       { key: 'report_issuedetail', label: 'Laporan Detail Barang Keluar' },
       { key: 'report_wo', label: 'Laporan Work Order' },
       { key: 'report_wodetail', label: 'Laporan Detail Work Order' },
+      { key: 'report_wo_unit_masuk', label: 'Detail WO Unit Masuk (Simpel)' },
       { key: 'report_vehicle_entry', label: 'Laporan Unit Masuk' },
       { key: 'report_profit', label: 'Laporan Laba Kotor' },
       { key: 'report_profit_loss', label: 'Laporan Laba Rugi' },
