@@ -122,6 +122,32 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         const result = data[0];
 
         if (result.success) {
+          try {
+            const { data: activeRow, error: activeErr } = await supabase
+              .from('app_users')
+              .select('is_active')
+              .eq('id', result.id)
+              .maybeSingle();
+            if (activeErr) throw activeErr;
+            if (activeRow && activeRow.is_active === false) {
+              void logActivity({
+                user_id: result.id,
+                username: result.username,
+                role: result.role,
+                action: 'LOGIN_FAILED',
+                module: 'AUTH',
+                details: 'User nonaktif',
+              });
+              toast.error('Akun nonaktif. Hubungi admin.');
+              return false;
+            }
+          } catch (activeCheckErr: any) {
+            const msg = String(activeCheckErr?.message || activeCheckErr || '');
+            if (!msg.toLowerCase().includes('is_active')) {
+              console.error('Login active check error:', activeCheckErr);
+            }
+          }
+
           const loggedInUser: User = {
             id: result.id,
             username: result.username,
