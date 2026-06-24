@@ -9,17 +9,23 @@ import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { toast } from 'sonner';
 import { formatDate, matchesFreeSearch } from '@/lib/utils';
-import { Printer, Search, Download, Calendar } from 'lucide-react';
+import { Printer, Search, Download, Calendar, Paperclip, ExternalLink } from 'lucide-react';
 import { 
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue 
 } from "@/components/ui/select";
 import * as XLSX from 'xlsx';
 import ReportPrintHeader from '@/components/reports/ReportPrintHeader';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 
 export default function VehicleEntryReport() {
   const [entries, setEntries] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
+  const [attachmentCountByEntryId, setAttachmentCountByEntryId] = useState<Record<string, number>>({});
+  const [attachmentOpen, setAttachmentOpen] = useState(false);
+  const [attachmentLoading, setAttachmentLoading] = useState(false);
+  const [attachmentEntry, setAttachmentEntry] = useState<any | null>(null);
+  const [attachments, setAttachments] = useState<any[]>([]);
   
   // Date Filter
   const [dateFilter, setDateFilter] = useState({
@@ -117,12 +123,104 @@ export default function VehicleEntryReport() {
       }
 
       setEntries(finalData);
+      const entryIds = (finalData || []).map((e: any) => e.id).filter(Boolean);
+      if (entryIds.length > 0) {
+        const { data: attRows, error: attErr } = await supabase
+          .from('vehicle_entry_attachments')
+          .select('vehicle_entry_id')
+          .in('vehicle_entry_id', entryIds);
+        if (attErr) throw attErr;
+        const counts: Record<string, number> = {};
+        (attRows || []).forEach((r: any) => {
+          const k = String(r?.vehicle_entry_id || '').trim();
+          if (!k) return;
+          counts[k] = (counts[k] || 0) + 1;
+        });
+        setAttachmentCountByEntryId(counts);
+      } else {
+        setAttachmentCountByEntryId({});
+      }
     } catch (error: any) {
       toast.error('Gagal mengambil data laporan: ' + error.message);
     } finally {
       setLoading(false);
     }
   }
+
+  const getAttachmentUrl = (a: any) => {
+    if (a?.data_url) return String(a.data_url);
+    const bucket = String(a?.storage_bucket || '').trim();
+    const path = String(a?.storage_path || '').trim();
+    if (!bucket || !path) return '';
+    const { data } = supabase.storage.from(bucket).getPublicUrl(path);
+    return String(data?.publicUrl || '');
+  };
+
+  const triggerDownload = (url: string, filename: string) => {
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  };
+
+  const openAttachmentDialog = async (entry: any) => {
+    setAttachmentEntry(entry);
+    setAttachments([]);
+    setAttachmentOpen(true);
+    setAttachmentLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from('vehicle_entry_attachments')
+        .select('id, file_name, mime_type, data_url, storage_bucket, storage_path, created_at')
+        .eq('vehicle_entry_id', entry.id)
+        .order('created_at', { ascending: false });
+      if (error) throw error;
+      setAttachments((data as any[]) || []);
+    } catch (e: any) {
+      toast.error('Gagal memuat lampiran: ' + e.message);
+      setAttachments([]);
+    } finally {
+      setAttachmentLoading(false);
+    }
+  };
+
+  const handleOpenAttachment = (a: any) => {
+    const url = getAttachmentUrl(a);
+    if (!url) {
+      toast.error('Lampiran tidak memiliki URL.');
+      return;
+    }
+    window.open(url, '_blank', 'noreferrer');
+  };
+
+  const handleDownloadAttachment = async (a: any) => {
+    const filename = String(a?.file_name || 'attachment');
+    try {
+      if (a?.data_url) {
+        const res = await fetch(String(a.data_url));
+        const blob = await res.blob();
+        const objectUrl = URL.createObjectURL(blob);
+        triggerDownload(objectUrl, filename);
+        setTimeout(() => URL.revokeObjectURL(objectUrl), 1500);
+        return;
+      }
+      const bucket = String(a?.storage_bucket || '').trim();
+      const path = String(a?.storage_path || '').trim();
+      if (!bucket || !path) {
+        toast.error('Lampiran tidak memiliki storage path.');
+        return;
+      }
+      const { data, error } = await supabase.storage.from(bucket).download(path);
+      if (error) throw error;
+      const objectUrl = URL.createObjectURL(data);
+      triggerDownload(objectUrl, filename);
+      setTimeout(() => URL.revokeObjectURL(objectUrl), 1500);
+    } catch (e: any) {
+      toast.error('Gagal download lampiran: ' + e.message);
+    }
+  };
 
   const handleExportExcel = () => {
     const dataToExport = filteredEntries.map((item, index) => ({
@@ -137,6 +235,7 @@ export default function VehicleEntryReport() {
       'Status Entry': item.status,
       'No. WO': item.work_orders?.[0]?.wo_number || '-',
       'Status WO': item.work_orders?.[0]?.status || '-',
+      'Lampiran': attachmentCountByEntryId[String(item.id)] || 0,
       'Catatan': item.notes || '-'
     }));
 
@@ -265,12 +364,13 @@ export default function VehicleEntryReport() {
                 <TableHead>Group</TableHead>
                 <TableHead>Nota Dinas</TableHead>
                 <TableHead className="w-[30%]">Pekerjaan / Keluhan</TableHead>
+                <TableHead>Lampiran</TableHead>
                 <TableHead>Status</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {filteredEntries.length === 0 ? (
-                <TableRow><TableCell colSpan={8} className="text-center h-24">Tidak ada data.</TableCell></TableRow>
+                <TableRow><TableCell colSpan={9} className="text-center h-24">Tidak ada data.</TableCell></TableRow>
               ) : (
                 filteredEntries.map((item, index) => (
                   <TableRow key={item.id} className="align-top">
@@ -308,6 +408,29 @@ export default function VehicleEntryReport() {
                         </div>
                     </TableCell>
                     <TableCell>
+                      {(() => {
+                        const cnt = attachmentCountByEntryId[String(item.id)] || 0;
+                        if (cnt <= 0) return <span className="text-xs text-slate-400">-</span>;
+                        return (
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs font-semibold px-2 py-1 rounded bg-amber-100 text-amber-800 inline-flex items-center gap-1">
+                              <Paperclip className="h-3 w-3" />
+                              {cnt}
+                            </span>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="h-7 px-2"
+                              onClick={() => openAttachmentDialog(item)}
+                            >
+                              <ExternalLink className="h-3.5 w-3.5 mr-1" />
+                              Lihat
+                            </Button>
+                          </div>
+                        );
+                      })()}
+                    </TableCell>
+                    <TableCell>
                         <div className="flex flex-col gap-1">
                             {/* Entry Status */}
                             <span className={`px-2 py-1 rounded-full text-[10px] font-bold border w-fit ${
@@ -338,6 +461,62 @@ export default function VehicleEntryReport() {
           </Table>
         </div>
       </CardContent>
+      <Dialog open={attachmentOpen} onOpenChange={setAttachmentOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Lampiran Unit Masuk</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-2 text-sm">
+            <div className="grid grid-cols-2 gap-2 text-xs text-slate-600">
+              <div>No. Entry: <span className="font-semibold text-slate-900">{attachmentEntry?.entry_number || '-'}</span></div>
+              <div>Nopol: <span className="font-semibold text-slate-900">{attachmentEntry?.vehicles?.license_plate || '-'}</span></div>
+            </div>
+            <div className="rounded-md border overflow-hidden">
+              <Table>
+                <TableHeader>
+                  <TableRow className="bg-slate-50">
+                    <TableHead>File</TableHead>
+                    <TableHead>Tipe</TableHead>
+                    <TableHead className="text-right">Aksi</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {attachmentLoading ? (
+                    <TableRow>
+                      <TableCell colSpan={3} className="text-center py-8 text-muted-foreground">
+                        Memuat lampiran...
+                      </TableCell>
+                    </TableRow>
+                  ) : attachments.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={3} className="text-center py-8 text-muted-foreground">
+                        Tidak ada lampiran.
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    attachments.map((a) => (
+                      <TableRow key={a.id}>
+                        <TableCell className="text-xs font-medium">{a.file_name}</TableCell>
+                        <TableCell className="text-xs text-slate-500">{a.mime_type || '-'}</TableCell>
+                        <TableCell className="text-right">
+                          <div className="flex justify-end gap-2">
+                            <Button variant="outline" size="sm" className="h-7 px-2" onClick={() => handleOpenAttachment(a)}>
+                              Buka
+                            </Button>
+                            <Button variant="outline" size="sm" className="h-7 px-2" onClick={() => void handleDownloadAttachment(a)}>
+                              Download
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  )}
+                </TableBody>
+              </Table>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </Card>
   );
 }
