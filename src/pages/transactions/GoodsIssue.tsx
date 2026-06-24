@@ -974,8 +974,11 @@ export default function GoodsIssuePage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h2 className="text-3xl font-bold tracking-tight">Barang Keluar / Sparepart</h2>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="min-w-0">
+          <h2 className="text-2xl font-bold tracking-tight sm:text-3xl">Barang Keluar / Sparepart</h2>
+          <p className="mt-1 text-sm text-slate-500">Form dan riwayat pengeluaran sparepart kini lebih rapi untuk layar kecil.</p>
+        </div>
         <div className="flex gap-2">
           <Button onClick={() => { resetForm(); setIsDialogOpen(true); }}>
             <Plus className="mr-2 h-4 w-4" /> Catat Barang Keluar
@@ -983,14 +986,14 @@ export default function GoodsIssuePage() {
         </div>
         
         <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-          <DialogContent className="sm:max-w-[700px] h-[80vh] flex flex-col">
+          <DialogContent className="flex h-[88vh] max-w-[calc(100vw-1rem)] flex-col p-3 sm:max-w-[700px] sm:p-6">
             <DialogHeader>
               <DialogTitle>{editingId ? 'Edit Pengeluaran Barang' : 'Pengeluaran Barang Baru'}</DialogTitle>
               <DialogDescription>{editingId ? 'Edit data pengeluaran dan sesuaikan stok.' : 'Keluarkan sparepart untuk Work Order tertentu.'}</DialogDescription>
             </DialogHeader>
             <form onSubmit={handleSubmit} className="flex-1 flex flex-col overflow-hidden">
-              <div className="grid gap-4 py-4 flex-1 overflow-y-auto px-1">
-                <div className="grid grid-cols-2 gap-4">
+              <div className="grid flex-1 gap-4 overflow-y-auto px-1 py-4">
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                   <div className="space-y-2">
                     <Label>Tanggal Keluar</Label>
                     <Input type="date" value={formData.issue_date} onChange={(e) => setFormData({...formData, issue_date: e.target.value})} required />
@@ -1019,7 +1022,7 @@ export default function GoodsIssuePage() {
 
                 {/* WO Search Dialog */}
                 <Dialog open={isWOSearchOpen} onOpenChange={setIsWOSearchOpen}>
-                  <DialogContent className="sm:max-w-[600px] p-0">
+                  <DialogContent className="max-w-[calc(100vw-1rem)] p-0 sm:max-w-[600px]">
                     <Command>
                       <CommandInput 
                         placeholder="Cari No. WO atau Nopol..." 
@@ -1065,8 +1068,8 @@ export default function GoodsIssuePage() {
                   </DialogContent>
                 </Dialog>
 
-                <div className="space-y-4 border rounded-md p-4 bg-slate-50">
-                  <div className="flex justify-between items-center">
+                <div className="space-y-4 rounded-md border bg-slate-50 p-3 sm:p-4">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                     <Label className="text-base font-semibold">Daftar Sparepart</Label>
                     <Button type="button" variant="outline" size="sm" onClick={handleAddItem}>+ Tambah Item</Button>
                   </div>
@@ -1160,7 +1163,7 @@ export default function GoodsIssuePage() {
                   ))}
                 </div>
               </div>
-              <DialogFooter className="flex justify-between sm:justify-end gap-2">
+              <DialogFooter className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
                   <Button type="button" variant="outline" onClick={() => setIsDialogOpen(false)}>Batal</Button>
                   <Button type="submit" disabled={loading} className="bg-blue-600 hover:bg-blue-700">
                     <Save className="mr-2 h-4 w-4" /> Simpan
@@ -1179,26 +1182,26 @@ export default function GoodsIssuePage() {
 
       <Card>
         <CardHeader className="pb-3">
-          <div className="flex justify-between items-center">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
             <CardTitle>Riwayat Barang Keluar</CardTitle>
-            <div className="flex items-center gap-2">
-              <div className="flex items-center gap-2 bg-white border rounded-md px-2 py-1">
+            <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
+              <div className="flex flex-col gap-2 rounded-md border bg-white px-3 py-2 sm:flex-row sm:items-center sm:px-2 sm:py-1">
                 <span className="text-sm text-gray-500">Periode:</span>
                 <Input 
                   type="date" 
-                  className="w-auto border-0 p-0 h-auto focus-visible:ring-0 text-xs"
+                  className="h-9 w-full border-0 p-0 text-xs focus-visible:ring-0 sm:w-auto"
                   value={dateFilter.startDate} 
                   onChange={(e) => setDateFilter({...dateFilter, startDate: e.target.value})} 
                 />
                 <span className="text-sm text-gray-500">-</span>
                 <Input 
                   type="date" 
-                  className="w-auto border-0 p-0 h-auto focus-visible:ring-0 text-xs"
+                  className="h-9 w-full border-0 p-0 text-xs focus-visible:ring-0 sm:w-auto"
                   value={dateFilter.endDate} 
                   onChange={(e) => setDateFilter({...dateFilter, endDate: e.target.value})} 
                 />
               </div>
-              <div className="relative w-64 ml-4">
+              <div className="relative w-full sm:w-64 sm:min-w-[16rem]">
                 <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground pointer-events-none" />
                 <Input placeholder="Cari No. Issue / WO / Nopol..." className="pl-8" value={search} onChange={e => setSearch(e.target.value)} />
               </div>
@@ -1230,7 +1233,7 @@ export default function GoodsIssuePage() {
                       <TableCell>{item.work_orders?.vehicle_entries?.vehicles?.license_plate || '-'}</TableCell>
                       <TableCell>{item.items?.length || 0} Item</TableCell>
                       <TableCell className="text-right">
-                        <div className="flex justify-end gap-2">
+                        <div className="flex flex-wrap justify-end gap-2">
                           <Button variant="outline" size="sm" onClick={() => handlePrint(item.id)} title="Cetak">
                             <Printer className="h-4 w-4" />
                           </Button>
@@ -1252,7 +1255,7 @@ export default function GoodsIssuePage() {
       </Card>
       {/* Item Search Dialog */}
       <Dialog open={itemSearchOpen} onOpenChange={setItemSearchOpen}>
-        <DialogContent className="sm:max-w-[500px] p-0">
+        <DialogContent className="max-w-[calc(100vw-1rem)] p-0 sm:max-w-[500px]">
           <Command className="rounded-lg border shadow-md">
             <CommandInput 
               placeholder="Cari nama barang..." 

@@ -223,8 +223,11 @@ export default function Vehicles() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h2 className="text-3xl font-bold tracking-tight">Data Kendaraan</h2>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="min-w-0">
+          <h2 className="text-2xl font-bold tracking-tight sm:text-3xl">Data Kendaraan</h2>
+          <p className="mt-1 text-sm text-slate-500">Kelola data armada dengan tampilan tabel dan form yang lebih nyaman di layar kecil.</p>
+        </div>
         <Dialog open={isDialogOpen} onOpenChange={(open) => {
           setIsDialogOpen(open);
           if (!open) resetForm();
@@ -234,7 +237,7 @@ export default function Vehicles() {
               <Plus className="mr-2 h-4 w-4" /> Tambah Kendaraan
             </Button>
           </DialogTrigger>
-          <DialogContent className="sm:max-w-[500px]">
+          <DialogContent className="max-w-[calc(100vw-1rem)] p-3 sm:max-w-[500px] sm:p-6">
             <DialogHeader>
               <DialogTitle>{isEditing ? 'Edit Kendaraan' : 'Tambah Kendaraan Baru'}</DialogTitle>
               <DialogDescription>
@@ -243,8 +246,8 @@ export default function Vehicles() {
             </DialogHeader>
             <form onSubmit={handleSubmit}>
               <div className="grid gap-4 py-4">
-                <div className="grid grid-cols-4 items-center gap-4">
-                  <Label htmlFor="vehicle_type" className="text-right">
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-4 sm:items-center sm:gap-4">
+                  <Label htmlFor="vehicle_type" className="text-left sm:text-right">
                     Jenis
                   </Label>
                   <Select 
@@ -260,10 +263,10 @@ export default function Vehicles() {
                       <SelectItem value="R2_KECIL">R2 Kecil</SelectItem>
                     </SelectContent>
                   </Select>
-                  {formErrors.vehicle_type && <div className="col-span-4 text-right text-xs text-red-600">{formErrors.vehicle_type}</div>}
+                  {formErrors.vehicle_type && <div className="text-xs text-red-600 sm:col-span-4 sm:text-right">{formErrors.vehicle_type}</div>}
                 </div>
-                <div className="grid grid-cols-4 items-center gap-4">
-                  <Label htmlFor="license_plate" className="text-right">
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-4 sm:items-center sm:gap-4">
+                  <Label htmlFor="license_plate" className="text-left sm:text-right">
                     No. Polisi
                   </Label>
                   <div className="col-span-3 space-y-1">
@@ -278,8 +281,8 @@ export default function Vehicles() {
                     {formErrors.license_plate && <p className="text-xs text-red-600">{formErrors.license_plate}</p>}
                   </div>
                 </div>
-                <div className="grid grid-cols-4 items-center gap-4">
-                  <Label htmlFor="brand_type" className="text-right">
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-4 sm:items-center sm:gap-4">
+                  <Label htmlFor="brand_type" className="text-left sm:text-right">
                     Merk/Type
                   </Label>
                   <div className="col-span-3 space-y-1">
@@ -294,8 +297,8 @@ export default function Vehicles() {
                     {formErrors.brand_type && <p className="text-xs text-red-600">{formErrors.brand_type}</p>}
                   </div>
                 </div>
-                <div className="grid grid-cols-4 items-center gap-4">
-                  <Label htmlFor="owner_name" className="text-right">
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-4 sm:items-center sm:gap-4">
+                  <Label htmlFor="owner_name" className="text-left sm:text-right">
                     Pemilik/Pemakai
                   </Label>
                   <div className="col-span-3 space-y-1">
@@ -310,8 +313,8 @@ export default function Vehicles() {
                     {formErrors.owner_name && <p className="text-xs text-red-600">{formErrors.owner_name}</p>}
                   </div>
                 </div>
-                <div className="grid grid-cols-4 items-center gap-4">
-                  <Label htmlFor="chassis_number" className="text-right">
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-4 sm:items-center sm:gap-4">
+                  <Label htmlFor="chassis_number" className="text-left sm:text-right">
                     No. Rangka
                   </Label>
                   <div className="col-span-3 space-y-1">
@@ -326,8 +329,8 @@ export default function Vehicles() {
                     {formErrors.chassis_number && <p className="text-xs text-red-600">{formErrors.chassis_number}</p>}
                   </div>
                 </div>
-                <div className="grid grid-cols-4 items-center gap-4">
-                  <Label htmlFor="engine_number" className="text-right">
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-4 sm:items-center sm:gap-4">
+                  <Label htmlFor="engine_number" className="text-left sm:text-right">
                     No. Mesin
                   </Label>
                   <div className="col-span-3 space-y-1">
@@ -342,8 +345,8 @@ export default function Vehicles() {
                     {formErrors.engine_number && <p className="text-xs text-red-600">{formErrors.engine_number}</p>}
                   </div>
                 </div>
-                <div className="grid grid-cols-4 items-center gap-4">
-                  <Label htmlFor="body_number" className="text-right">
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-4 sm:items-center sm:gap-4">
+                  <Label htmlFor="body_number" className="text-left sm:text-right">
                     No. Lambung
                   </Label>
                   <div className="col-span-3 space-y-1">
@@ -371,9 +374,9 @@ export default function Vehicles() {
 
       <Card>
         <CardHeader className="pb-3">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <CardTitle>Daftar Kendaraan</CardTitle>
-            <div className="relative w-64">
+            <div className="relative w-full sm:w-64">
               <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
               <Input
                 placeholder="Cari No. Polisi atau Merk..."
@@ -423,7 +426,7 @@ export default function Vehicles() {
                       <TableCell>{vehicle.chassis_number || '-'}</TableCell>
                       <TableCell>{vehicle.engine_number || '-'}</TableCell>
                       <TableCell className="text-right">
-                        <div className="flex justify-end gap-2">
+                        <div className="flex flex-wrap justify-end gap-2">
                           <Button variant="ghost" size="icon" onClick={() => handleEdit(vehicle)}>
                             <Pencil className="h-4 w-4" />
                           </Button>

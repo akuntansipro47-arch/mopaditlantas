@@ -1557,15 +1557,16 @@ export default function GoodsReceipt() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h2 className="text-3xl font-bold tracking-tight">Penerimaan Barang</h2>
+      <div className="flex flex-col gap-3">
+        <h2 className="text-2xl font-bold tracking-tight sm:text-3xl">Penerimaan Barang</h2>
+        <p className="text-sm text-slate-500">Proses penerimaan barang dan riwayat receipt kini lebih nyaman dibuka di HP maupun tablet.</p>
       </div>
 
       <Card>
         <CardHeader className="pb-3">
-          <div className="flex justify-between">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <CardTitle>Daftar PO (Menunggu Penerimaan)</CardTitle>
-            <div className="relative w-64">
+            <div className="relative w-full sm:w-64">
               <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
               <Input placeholder="Cari bebas berdasarkan kolom..." className="pl-8" value={search} onChange={e => setSearch(e.target.value)} />
             </div>
@@ -1622,29 +1623,29 @@ export default function GoodsReceipt() {
       {/* History Card */}
       <Card>
         <CardHeader className="pb-3">
-          <div className="flex justify-between items-center mb-4">
+          <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
              <CardTitle>Riwayat Penerimaan (History)</CardTitle>
-             <div className="flex gap-2 items-center">
+             <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
                 <Button variant="outline" size="sm" onClick={syncJournalFromHistory} disabled={loading}>
                   Sync Jurnal
                 </Button>
-                <div className="flex items-center gap-2">
+                <div className="flex flex-col gap-2 rounded-md border bg-white px-3 py-2 sm:flex-row sm:items-center sm:px-2 sm:py-1">
                   <span className="text-sm text-gray-500">Periode:</span>
                   <Input 
                     type="date" 
-                    className="w-36 h-8 text-xs"
+                    className="h-9 w-full border-0 p-0 text-xs focus-visible:ring-0 sm:w-36"
                     value={dateFilter.startDate} 
                     onChange={(e) => setDateFilter({...dateFilter, startDate: e.target.value})} 
                   />
                   <span className="text-sm text-gray-500">s/d</span>
                   <Input 
                     type="date" 
-                    className="w-36 h-8 text-xs"
+                    className="h-9 w-full border-0 p-0 text-xs focus-visible:ring-0 sm:w-36"
                     value={dateFilter.endDate} 
                     onChange={(e) => setDateFilter({...dateFilter, endDate: e.target.value})} 
                   />
                 </div>
-                <div className="relative w-64 ml-4">
+                <div className="relative w-full sm:w-64 sm:min-w-[16rem]">
                   <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
                   <Input placeholder="Cari bebas berdasarkan kolom history..." className="pl-8 h-9" value={historySearch} onChange={e => setHistorySearch(e.target.value)} />
                 </div>
@@ -1685,7 +1686,7 @@ export default function GoodsReceipt() {
                       <TableCell>{item.items.length} Item</TableCell>
                       <TableCell>{item.notes || '-'}</TableCell>
                       <TableCell className="text-right">
-                        <div className="flex space-x-2 justify-end">
+                        <div className="flex flex-wrap justify-end gap-2">
                           <Button variant="outline" size="icon" onClick={() => window.open(`/print/receive/${item.id}`, '_blank')}>
                             <Printer className="h-4 w-4" />
                           </Button>
@@ -1720,7 +1721,7 @@ export default function GoodsReceipt() {
           }
         }}
       >
-        <DialogContent className="sm:max-w-[700px]">
+        <DialogContent className="max-w-[calc(100vw-1rem)] p-3 sm:max-w-[700px] sm:p-6">
           <DialogHeader>
             <DialogTitle>{editingReceiptId ? 'Edit Penerimaan Barang' : 'Proses Penerimaan Barang'}</DialogTitle>
             <DialogDescription>
@@ -1732,8 +1733,8 @@ export default function GoodsReceipt() {
             </DialogDescription>
           </DialogHeader>
           
-          <div className="py-4 space-y-4">
-             <div className="grid grid-cols-2 gap-4">
+          <div className="space-y-4 py-4">
+             <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                 <div className="space-y-2">
                   <Label>Tanggal Terima</Label>
                   <Input type="date" value={receiptData.receipt_date} onChange={(e) => setReceiptData({...receiptData, receipt_date: e.target.value})} />

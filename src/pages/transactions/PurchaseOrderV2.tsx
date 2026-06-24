@@ -979,8 +979,11 @@ export default function PurchaseOrderV2() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h2 className="text-3xl font-bold tracking-tight text-green-700">Purchase Order (PO)</h2>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="min-w-0">
+          <h2 className="text-2xl font-bold tracking-tight text-green-700 sm:text-3xl">Purchase Order (PO)</h2>
+          <p className="mt-1 text-sm text-slate-500">Kelola pengadaan barang dan jasa dengan tampilan yang lebih nyaman di mobile.</p>
+        </div>
         <div className="flex gap-2">
           <Button onClick={() => { resetForm(); setIsDialogOpen(true); }}>
             <Plus className="mr-2 h-4 w-4" /> Buat PO Baru
@@ -989,7 +992,7 @@ export default function PurchaseOrderV2() {
         
         <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
           <DialogContent
-            className="sm:max-w-[90vw] h-[90vh] flex flex-col"
+            className="flex h-[92vh] max-w-[calc(100vw-1rem)] flex-col p-3 sm:max-w-[90vw] sm:p-6"
             onInteractOutside={(e) => {
               if (supplierSearchOpen || itemSearchOpen || woSearchOpen) e.preventDefault();
             }}
@@ -1005,11 +1008,11 @@ export default function PurchaseOrderV2() {
               <DialogDescription>{editingId ? (isReadOnly ? 'Lihat detail PO.' : 'Perbarui data Purchase Order.') : 'Pilih supplier dan daftar barang yang akan dibeli.'}</DialogDescription>
             </DialogHeader>
             <form onSubmit={handleSubmit} className="flex-1 flex flex-col overflow-hidden">
-              <div className="grid gap-4 py-4 flex-1 overflow-y-auto px-1">
+              <div className="grid flex-1 gap-4 overflow-y-auto px-1 py-4">
                 {/* PO Type Selection */}
                 <div className="flex flex-col space-y-3 border p-3 rounded-md bg-slate-50">
                   <Label>Tipe Pengadaan:</Label>
-                  <div className="flex items-center space-x-6">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-6">
                     <div className="flex items-center space-x-2">
                       <input 
                         type="radio" id="po_wo" name="po_type" 
@@ -1033,7 +1036,7 @@ export default function PurchaseOrderV2() {
                   </div>
                 </div>
 
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                   <div className="space-y-2">
                     <Label>Tanggal PO</Label>
                     <Input 
@@ -1198,8 +1201,8 @@ export default function PurchaseOrderV2() {
                 </DialogContent>
               </Dialog>
 
-              <div className="space-y-4 border rounded-md p-4 bg-slate-50">
-                  <div className="flex justify-between items-center">
+              <div className="space-y-4 rounded-md border bg-slate-50 p-3 sm:p-4">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                     <div>
                       <Label className="text-base font-semibold">Daftar Barang / Jasa</Label>
                       {poType === 'WO' && formData.work_order_id !== 'NONE' && (
@@ -1413,13 +1416,13 @@ export default function PurchaseOrderV2() {
                     </TableBody>
                   </Table>
                   
-                  <div className="flex justify-end pt-2 border-t">
-                    <span className="font-bold">Total: {formatCurrency(calculateTotal())}</span>
+                  <div className="flex justify-end border-t pt-2">
+                    <span className="text-sm font-bold sm:text-base">Total: {formatCurrency(calculateTotal())}</span>
                   </div>
                 </div>
               </div>
-              <DialogFooter className="flex justify-between sm:justify-between w-full">
-                <div className="flex gap-2">
+              <DialogFooter className="flex w-full flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div className="flex flex-wrap gap-2">
                   {isReadOnly && editingId && (
                     <Button type="button" variant="outline" onClick={() => handlePrint(editingId)}>
                       <Printer className="mr-2 h-4 w-4" /> Cetak PO
@@ -1431,7 +1434,7 @@ export default function PurchaseOrderV2() {
                     </Button>
                   )}
                 </div>
-                <div className="flex gap-2">
+                <div className="flex flex-col-reverse gap-2 sm:flex-row">
                   {!isReadOnly && (
                     <>
                       <Button type="submit" disabled={loading || prBlockEditing} className="bg-green-600 hover:bg-green-700">
@@ -1457,27 +1460,27 @@ export default function PurchaseOrderV2() {
 
       <Card>
         <CardHeader className="pb-3">
-          <div className="flex justify-between items-center mb-4">
+          <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
              <CardTitle>Daftar Purchase Order</CardTitle>
-             <div className="flex gap-2 items-center">
-                <div className="flex items-center gap-2 bg-white border rounded-md px-2 py-1">
+             <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
+                <div className="flex flex-col gap-2 rounded-md border bg-white px-3 py-2 sm:flex-row sm:items-center sm:px-2 sm:py-1">
                   <span className="text-sm text-gray-500">Periode:</span>
                   <Input 
                     type="date" 
-                    className="w-auto border-0 p-0 h-auto focus-visible:ring-0 text-xs"
+                    className="h-9 w-full border-0 p-0 text-xs focus-visible:ring-0 sm:w-auto"
                     value={dateFilter.startDate} 
                     onChange={(e) => setDateFilter({...dateFilter, startDate: e.target.value})} 
                   />
                   <span className="text-sm text-gray-500">-</span>
                   <Input 
                     type="date" 
-                    className="w-auto border-0 p-0 h-auto focus-visible:ring-0 text-xs"
+                    className="h-9 w-full border-0 p-0 text-xs focus-visible:ring-0 sm:w-auto"
                     value={dateFilter.endDate} 
                     onChange={(e) => setDateFilter({...dateFilter, endDate: e.target.value})} 
                   />
                 </div>
                 <Select value={statusFilter} onValueChange={setStatusFilter}>
-                  <SelectTrigger className="w-[160px] h-9">
+                  <SelectTrigger className="h-9 w-full sm:w-[160px]">
                     <SelectValue placeholder="Status" />
                   </SelectTrigger>
                   <SelectContent>
@@ -1490,7 +1493,7 @@ export default function PurchaseOrderV2() {
                     <SelectItem value="CANCELLED">CANCELLED</SelectItem>
                   </SelectContent>
                 </Select>
-                <div className="relative w-64 ml-4">
+                <div className="relative w-full sm:w-64 sm:min-w-[16rem]">
                   <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground pointer-events-none" />
                   <Input placeholder="Cari bebas berdasarkan kolom..." className="pl-8 h-9" value={search} onChange={e => setSearch(e.target.value)} />
                 </div>
@@ -1578,7 +1581,7 @@ export default function PurchaseOrderV2() {
                         </TableCell>
                         <TableCell className="font-bold">{formatCurrency(item.total_amount)}</TableCell>
                         <TableCell className="text-right">
-                          <div className="flex justify-end gap-2 items-center">
+                          <div className="flex flex-wrap items-center justify-end gap-2">
                             <Button variant="outline" size="sm" onClick={() => handlePrint(item.id)} title="Cetak PO">
                               <Printer className="h-4 w-4 mr-1" /> Cetak
                             </Button>

@@ -1677,13 +1677,16 @@ export default function VehicleEntryPage() {
   };
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h2 className="text-3xl font-bold tracking-tight">Entry Kendaraan Masuk</h2>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="min-w-0">
+          <h2 className="text-2xl font-bold tracking-tight sm:text-3xl">Entry Kendaraan Masuk</h2>
+          <p className="mt-1 text-sm text-slate-500">Form entry dan rincian estimasi sekarang lebih nyaman dibuka di mobile/tablet.</p>
+        </div>
         <Dialog open={isDialogOpen} onOpenChange={(open) => { setIsDialogOpen(open); if(!open) resetForm(); }}>
           <DialogTrigger asChild>
             <Button><Plus className="mr-2 h-4 w-4" /> Entry Baru</Button>
           </DialogTrigger>
-          <DialogContent className="sm:max-w-[700px] max-h-[90vh] flex flex-col">
+          <DialogContent className="flex max-h-[92vh] max-w-[calc(100vw-1rem)] flex-col p-3 sm:max-w-[700px] sm:p-6">
             <DialogHeader>
               <DialogTitle>{isEditing ? 'Edit Entry' : 'Entry Kendaraan Masuk'}</DialogTitle>
               <DialogDescription>Catat kendaraan masuk untuk perbaikan/service.</DialogDescription>
@@ -1691,7 +1694,7 @@ export default function VehicleEntryPage() {
             <form onSubmit={handleSubmit} className="flex flex-col flex-1 overflow-hidden">
               <div className="flex-1 overflow-y-auto pr-2">
                 <div className="grid gap-4 py-4">
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                     <div className="space-y-2">
                       <Label>Tanggal Masuk</Label>
                       <Input
@@ -1753,7 +1756,7 @@ export default function VehicleEntryPage() {
 
                   {/* Vehicle Search Dialog */}
                   <Dialog open={isVehicleSearchOpen} onOpenChange={setIsVehicleSearchOpen}>
-                    <DialogContent className="sm:max-w-[500px] p-0">
+                    <DialogContent className="max-w-[calc(100vw-1rem)] p-0 sm:max-w-[500px]">
                       <Command>
                         <CommandInput 
                           placeholder="Cari Nopol atau Tipe..." 
@@ -1791,7 +1794,7 @@ export default function VehicleEntryPage() {
 
                   {/* Job Search Dialog */}
                   <Dialog open={isJobSearchOpen} onOpenChange={setIsJobSearchOpen}>
-                    <DialogContent className="sm:max-w-[500px] p-0">
+                    <DialogContent className="max-w-[calc(100vw-1rem)] p-0 sm:max-w-[500px]">
                       <Command>
                         <CommandInput 
                           placeholder="Cari jenis pekerjaan..." 
@@ -1821,15 +1824,15 @@ export default function VehicleEntryPage() {
 
                   {/* Multiple Jobs Selection */}
                   <div className="space-y-3 border p-3 rounded-md bg-slate-50">
-                    <div className="flex justify-between items-center">
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                       <Label>Daftar Pekerjaan / Service (Bisa Campuran Group)</Label>
                       <Button type="button" variant="outline" size="sm" onClick={handleAddJob}>+ Tambah Pekerjaan</Button>
                     </div>
                     {formErrors.entryJobs && <p className="text-xs text-red-600">{formErrors.entryJobs}</p>}
                     
                     {entryJobs.map((job, index) => (
-                      <div key={index} className="grid grid-cols-12 gap-2 items-end border-b pb-2 mb-2 last:border-0 last:pb-0 last:mb-0">
-                        <div className="col-span-4 space-y-1">
+                      <div key={index} className="grid grid-cols-12 items-end gap-2 border-b pb-2 mb-2 last:border-0 last:pb-0 last:mb-0">
+                        <div className="col-span-12 space-y-1 md:col-span-4">
                           <Label className="text-xs">Group Service {index + 1}</Label>
                           <Select value={job.group} onValueChange={(v) => handleJobChange(index, 'group', v)}>
                             <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
@@ -1845,7 +1848,7 @@ export default function VehicleEntryPage() {
                             </SelectContent>
                           </Select>
                         </div>
-                        <div className="col-span-6 space-y-1">
+                        <div className="col-span-12 space-y-1 md:col-span-6">
                           <Label className="text-xs">Jenis Pekerjaan {index + 1}</Label>
                           <Button
                             type="button"
@@ -1871,7 +1874,7 @@ export default function VehicleEntryPage() {
                           </Button>
                           {formErrors[`job_${index}`] && <p className="text-xs text-red-600">{formErrors[`job_${index}`]}</p>}
                         </div>
-                        <div className="col-span-1 space-y-1">
+                        <div className="col-span-6 space-y-1 md:col-span-1">
                           <Label className="text-xs">N/A</Label>
                           <div className="flex items-center justify-center h-9 border rounded-md bg-white">
                             <Checkbox
@@ -1880,7 +1883,7 @@ export default function VehicleEntryPage() {
                             />
                           </div>
                         </div>
-                        <div className="col-span-1">
+                        <div className="col-span-6 flex justify-end md:col-span-1">
                           <Button type="button" variant="ghost" size="icon" className="h-9 w-9 text-red-500" onClick={() => handleRemoveJob(index)}>
                             <Trash2 className="h-4 w-4" />
                           </Button>

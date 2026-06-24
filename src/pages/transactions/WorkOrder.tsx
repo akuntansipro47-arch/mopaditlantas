@@ -616,20 +616,23 @@ export default function WorkOrder() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h2 className="text-3xl font-bold tracking-tight">Work Order (WO)</h2>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="min-w-0">
+          <h2 className="text-2xl font-bold tracking-tight sm:text-3xl">Work Order (WO)</h2>
+          <p className="mt-1 text-sm text-slate-500">Atur penugasan mekanik dan progres WO dengan tampilan yang lebih nyaman di mobile.</p>
+        </div>
         <Dialog open={isDialogOpen} onOpenChange={(open) => { setIsDialogOpen(open); if(!open) resetForm(); }}>
           <DialogTrigger asChild>
             <Button><Plus className="mr-2 h-4 w-4" /> Buat WO Baru</Button>
           </DialogTrigger>
-          <DialogContent className="sm:max-w-[600px]">
+          <DialogContent className="max-w-[calc(100vw-1rem)] p-3 sm:max-w-[600px] sm:p-6">
             <DialogHeader>
               <DialogTitle>{isEditing ? 'Edit Work Order' : 'Buat Work Order Baru'}</DialogTitle>
               <DialogDescription>Tugaskan mekanik untuk perbaikan kendaraan.</DialogDescription>
             </DialogHeader>
             <form onSubmit={handleSubmit}>
               <div className="grid gap-4 py-4">
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                    <div className="space-y-2">
                     <Label>Tanggal WO</Label>
                     <Input type="date" value={formData.work_date} onChange={(e) => setFormData({...formData, work_date: e.target.value})} required />
@@ -657,7 +660,7 @@ export default function WorkOrder() {
                           "Pilih Kendaraan Masuk..."}
                       </Button>
                     </DialogTrigger>
-                    <DialogContent className="sm:max-w-[600px]">
+                    <DialogContent className="max-w-[calc(100vw-1rem)] p-3 sm:max-w-[600px] sm:p-6">
                       <DialogHeader>
                         <DialogTitle>Cari Kendaraan Masuk</DialogTitle>
                         <DialogDescription>Cari berdasarkan plat nomor atau tipe kendaraan.</DialogDescription>
@@ -705,7 +708,7 @@ export default function WorkOrder() {
                       <Badge variant="outline">{selectedEntryDetails.nota_dinas_number}</Badge>
                     </div>
                     
-                    <div className="grid grid-cols-2 gap-2 text-sm">
+                    <div className="grid grid-cols-1 gap-2 text-sm sm:grid-cols-2">
                       <div>
                         <span className="text-xs text-muted-foreground block">Nopol</span>
                         <span className="font-medium">{selectedEntryDetails.vehicles?.license_plate}</span>
@@ -753,26 +756,26 @@ export default function WorkOrder() {
 
       <Card>
         <CardHeader className="pb-3">
-          <div className="flex justify-between items-center">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
             <CardTitle>Daftar Work Order</CardTitle>
-            <div className="flex gap-2 items-center">
-              <div className="flex items-center gap-2 bg-white border rounded-md px-2 py-1">
+            <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
+              <div className="flex flex-col gap-2 rounded-md border bg-white px-3 py-2 sm:flex-row sm:items-center sm:px-2 sm:py-1">
                 <span className="text-sm text-gray-500">Periode:</span>
                 <Input 
                   type="date" 
-                  className="w-auto border-0 p-0 h-auto focus-visible:ring-0 text-xs"
+                  className="h-9 w-full border-0 p-0 text-xs focus-visible:ring-0 sm:w-auto"
                   value={dateFilter.startDate} 
                   onChange={(e) => setDateFilter(prev => ({ ...prev, startDate: e.target.value }))}
                 />
                 <span className="text-sm text-gray-500">-</span>
                 <Input 
                   type="date" 
-                  className="w-auto border-0 p-0 h-auto focus-visible:ring-0 text-xs"
+                  className="h-9 w-full border-0 p-0 text-xs focus-visible:ring-0 sm:w-auto"
                   value={dateFilter.endDate} 
                   onChange={(e) => setDateFilter(prev => ({ ...prev, endDate: e.target.value }))}
                 />
               </div>
-              <div className="relative w-64 ml-2">
+              <div className="relative w-full sm:w-64 sm:min-w-[16rem]">
                 <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
                 <Input placeholder="Cari No. WO / Nopol..." className="pl-8" value={search} onChange={e => setSearch(e.target.value)} />
               </div>
@@ -843,7 +846,7 @@ export default function WorkOrder() {
                         </div>
                       </TableCell>
                       <TableCell className="text-right">
-                        <div className="flex justify-end gap-2">
+                        <div className="flex flex-wrap justify-end gap-2">
                           {item.status === 'OPEN' && (
                             <Button size="sm" variant="outline" onClick={() => handleStatusChange(item.id, 'IN_PROGRESS')}>
                               <Play className="h-4 w-4 mr-1" /> Mulai

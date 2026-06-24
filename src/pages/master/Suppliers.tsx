@@ -145,33 +145,36 @@ export default function Suppliers() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h2 className="text-3xl font-bold tracking-tight">Data Supplier</h2>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="min-w-0">
+          <h2 className="text-2xl font-bold tracking-tight sm:text-3xl">Data Supplier</h2>
+          <p className="mt-1 text-sm text-slate-500">Data vendor kini lebih enak dicari dan diedit dari layar kecil.</p>
+        </div>
         <Dialog open={isDialogOpen} onOpenChange={(open) => { setIsDialogOpen(open); if(!open) resetForm(); }}>
           <DialogTrigger asChild>
             <Button><Plus className="mr-2 h-4 w-4" /> Tambah Supplier</Button>
           </DialogTrigger>
-          <DialogContent className="sm:max-w-[500px]">
+          <DialogContent className="max-w-[calc(100vw-1rem)] p-3 sm:max-w-[500px] sm:p-6">
             <DialogHeader>
               <DialogTitle>{isEditing ? 'Edit Supplier' : 'Tambah Supplier Baru'}</DialogTitle>
               <DialogDescription>Input data supplier.</DialogDescription>
             </DialogHeader>
             <form onSubmit={handleSubmit}>
               <div className="grid gap-4 py-4">
-                <div className="grid grid-cols-4 items-center gap-4">
-                  <Label className="text-right">Nama Supplier</Label>
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-4 sm:items-center sm:gap-4">
+                  <Label className="text-left sm:text-right">Nama Supplier</Label>
                   <Input name="name" value={formData.name} onChange={handleInputChange} className="col-span-3" required />
                 </div>
-                <div className="grid grid-cols-4 items-center gap-4">
-                  <Label className="text-right">PIC Supplier</Label>
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-4 sm:items-center sm:gap-4">
+                  <Label className="text-left sm:text-right">PIC Supplier</Label>
                   <Input name="pic_name" value={formData.pic_name} onChange={handleInputChange} className="col-span-3" />
                 </div>
-                <div className="grid grid-cols-4 items-center gap-4">
-                  <Label className="text-right">No. Telp</Label>
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-4 sm:items-center sm:gap-4">
+                  <Label className="text-left sm:text-right">No. Telp</Label>
                   <Input name="phone_number" value={formData.phone_number} onChange={handleInputChange} className="col-span-3" type="number" />
                 </div>
-                <div className="grid grid-cols-4 items-center gap-4">
-                  <Label className="text-right">Alamat</Label>
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-4 sm:items-center sm:gap-4">
+                  <Label className="text-left sm:text-right">Alamat</Label>
                   <Input name="address" value={formData.address} onChange={handleInputChange} className="col-span-3" />
                 </div>
               </div>
@@ -185,9 +188,9 @@ export default function Suppliers() {
 
       <Card>
         <CardHeader className="pb-3">
-          <div className="flex justify-between">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <CardTitle>Daftar Supplier</CardTitle>
-            <div className="relative w-64">
+            <div className="relative w-full sm:w-64">
               <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
               <Input placeholder="Cari Nama/PIC..." className="pl-8" value={search} onChange={e => setSearch(e.target.value)} />
             </div>
@@ -216,7 +219,7 @@ export default function Suppliers() {
                       <TableCell>{item.phone_number || '-'}</TableCell>
                       <TableCell className="max-w-[200px] truncate" title={item.address || ''}>{item.address || '-'}</TableCell>
                       <TableCell className="text-right">
-                        <div className="flex justify-end gap-2">
+                        <div className="flex flex-wrap justify-end gap-2">
                           <Button variant="ghost" size="icon" onClick={() => handleEdit(item)}><Pencil className="h-4 w-4" /></Button>
                           <Button variant="ghost" size="icon" className="text-red-500" onClick={() => handleDelete(item.id)}><Trash2 className="h-4 w-4" /></Button>
                         </div>

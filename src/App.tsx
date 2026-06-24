@@ -1,8 +1,10 @@
+import type { ReactNode } from "react";
 import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
 import { AuthProvider } from "@/context/AuthContext";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { Toaster } from "sonner";
 import ProtectedRoute from "@/components/layout/ProtectedRoute";
+import PermissionRoute from "@/components/layout/PermissionRoute";
 import Login from "@/pages/auth/Login";
 import Dashboard from "@/pages/Dashboard";
 import Reports from "@/pages/Reports";
@@ -49,6 +51,22 @@ import PrintPODotMatrix from "@/pages/print/PrintPODotMatrix";
 import PrintSPKDotMatrix from "@/pages/print/PrintSPKDotMatrix";
 
 export default function App() {
+  const guardByPermission = (
+    element: ReactNode,
+    permissions: string[],
+    description?: string,
+  ) => (
+    <PermissionRoute permissions={permissions} description={description}>
+      {element}
+    </PermissionRoute>
+  );
+
+  const guardSuperAdmin = (element: ReactNode, description?: string) => (
+    <PermissionRoute requireSuperAdmin description={description}>
+      {element}
+    </PermissionRoute>
+  );
+
   return (
     <AuthProvider>
       <Router>
@@ -57,53 +75,99 @@ export default function App() {
           
           <Route element={<ProtectedRoute />}>
             <Route element={<DashboardLayout />}>
-              <Route path="/" element={<Dashboard />} />
-              <Route path="/reports" element={<Reports />} />
+              <Route
+                path="/"
+                element={guardByPermission(<Dashboard />, ['dashboard'], 'Anda tidak memiliki izin untuk membuka dashboard.')}
+              />
+              <Route
+                path="/reports"
+                element={
+                  <PermissionRoute
+                    requireReports
+                    description="Anda tidak memiliki izin untuk membuka pusat laporan."
+                  >
+                    <Reports />
+                  </PermissionRoute>
+                }
+              />
 
               {/* Master Data */}
-              <Route path="/master/vehicles" element={<Vehicles />} />
-              <Route path="/master/goods" element={<Goods />} />
-              <Route path="/master/budget" element={<Budget />} />
-              <Route path="/master/jobs" element={<Jobs />} />
-              <Route path="/master/suppliers" element={<Suppliers />} />
-              <Route path="/master/mechanics" element={<Mechanics />} />
-              <Route path="/master/coa" element={<ChartOfAccounts />} />
+              <Route path="/master/vehicles" element={guardByPermission(<Vehicles />, ['master_vehicles'])} />
+              <Route path="/master/goods" element={guardByPermission(<Goods />, ['master_goods'])} />
+              <Route path="/master/budget" element={guardByPermission(<Budget />, ['master_budget'])} />
+              <Route path="/master/jobs" element={guardByPermission(<Jobs />, ['master_jobs'])} />
+              <Route path="/master/suppliers" element={guardByPermission(<Suppliers />, ['master_suppliers'])} />
+              <Route path="/master/mechanics" element={guardByPermission(<Mechanics />, ['master_mechanics'])} />
+              <Route path="/master/coa" element={guardByPermission(<ChartOfAccounts />, ['master_coa'])} />
 
               {/* Transaksi */}
-              <Route path="/transactions/entry" element={<VehicleEntry />} />
-              <Route path="/transactions/wo" element={<WorkOrder />} />
-              <Route path="/transactions/po" element={<PurchaseOrderV2 />} />
-              <Route path="/transactions/receive" element={<GoodsReceipt />} />
-              <Route path="/transactions/issue" element={<GoodsIssue />} />
-              <Route path="/transactions/po-return" element={<PurchaseOrderReturn />} />
+              <Route path="/transactions/entry" element={guardByPermission(<VehicleEntry />, ['trans_entry'])} />
+              <Route path="/transactions/wo" element={guardByPermission(<WorkOrder />, ['trans_wo'])} />
+              <Route path="/transactions/po" element={guardByPermission(<PurchaseOrderV2 />, ['trans_po'])} />
+              <Route path="/transactions/receive" element={guardByPermission(<GoodsReceipt />, ['trans_receive'])} />
+              <Route path="/transactions/issue" element={guardByPermission(<GoodsIssue />, ['trans_issue'])} />
+              <Route path="/transactions/po-return" element={guardByPermission(<PurchaseOrderReturn />, ['trans_po_return'])} />
 
               {/* Keuangan */}
-              <Route path="/finance/payments" element={<PurchasePayment />} />
-              <Route path="/finance/sales" element={<SalesInvoiceDisabled />} />
-              <Route path="/finance/cash-bank" element={<CashBank />} />
-              <Route path="/finance/journal-entry" element={<ManualJournalEntry />} />
-              <Route path="/finance/general-ledger" element={<GeneralLedger />} />
+              <Route path="/finance/payments" element={guardByPermission(<PurchasePayment />, ['finance_payments'])} />
+              <Route path="/finance/sales" element={guardByPermission(<SalesInvoiceDisabled />, ['finance_sales'])} />
+              <Route path="/finance/cash-bank" element={guardByPermission(<CashBank />, ['finance_cash'])} />
+              <Route path="/finance/journal-entry" element={guardByPermission(<ManualJournalEntry />, ['finance_journal'])} />
+              <Route path="/finance/general-ledger" element={guardByPermission(<GeneralLedger />, ['finance_gl'])} />
 
               {/* Kepegawaian */}
-              <Route path="/hr/employees" element={<EmployeeData />} />
+              <Route path="/hr/employees" element={guardByPermission(<EmployeeData />, ['hr_employees'])} />
 
               {/* Admin */}
-              <Route path="/admin/users" element={<UserManagement />} />
-              <Route path="/admin/agency" element={<AgencyProfile />} />
-              <Route path="/admin/backup" element={<AdminBackup />} />
-              <Route path="/debug-sync" element={<DebugSync />} />
+              <Route
+                path="/admin/users"
+                element={guardSuperAdmin(<UserManagement />, 'Halaman manajemen user hanya untuk Super Admin.')}
+              />
+              <Route
+                path="/admin/agency"
+                element={guardSuperAdmin(<AgencyProfile />, 'Halaman profil instansi hanya untuk Super Admin.')}
+              />
+              <Route
+                path="/admin/backup"
+                element={guardSuperAdmin(<AdminBackup />, 'Halaman backup hanya untuk Super Admin.')}
+              />
+              <Route
+                path="/debug-sync"
+                element={guardSuperAdmin(<DebugSync />, 'Halaman debug sinkronisasi hanya untuk Super Admin.')}
+              />
 
             </Route>
 
             {/* Print Routes (Outside DashboardLayout for clean printing) */}
-            <Route path="/print/surat-jalan/:id" element={<PrintSuratJalan />} />
-            <Route path="/print/spk/:id" element={<PrintSPK />} />
-            <Route path="/print/spk-dot/:id" element={<PrintSPKDotMatrix />} />
-            <Route path="/print/entry/:id" element={<PrintVehicleEntry />} />
-            <Route path="/print/issue/:id" element={<PrintGoodsIssue />} />
-            <Route path="/print/receive/:id" element={<PrintGoodsReceipt />} />
-            <Route path="/print/po/:id" element={<PrintPO />} />
-            <Route path="/print/po-dot/:id" element={<PrintPODotMatrix />} />
+            <Route
+              path="/print/surat-jalan/:id"
+              element={guardByPermission(<PrintSuratJalan />, ['trans_wo', 'report_vehicle_exit'])}
+            />
+            <Route path="/print/spk/:id" element={guardByPermission(<PrintSPK />, ['trans_wo', 'report_wo'])} />
+            <Route
+              path="/print/spk-dot/:id"
+              element={guardByPermission(<PrintSPKDotMatrix />, ['trans_wo', 'report_wo'])}
+            />
+            <Route
+              path="/print/entry/:id"
+              element={guardByPermission(<PrintVehicleEntry />, ['trans_entry', 'report_vehicle_entry'])}
+            />
+            <Route
+              path="/print/issue/:id"
+              element={guardByPermission(<PrintGoodsIssue />, ['trans_issue', 'report_issue', 'report_issuedetail'])}
+            />
+            <Route
+              path="/print/receive/:id"
+              element={guardByPermission(<PrintGoodsReceipt />, ['trans_receive', 'report_receipt'])}
+            />
+            <Route
+              path="/print/po/:id"
+              element={guardByPermission(<PrintPO />, ['trans_po', 'report_po', 'report_podetail', 'report_po_detail_new'])}
+            />
+            <Route
+              path="/print/po-dot/:id"
+              element={guardByPermission(<PrintPODotMatrix />, ['trans_po', 'report_po', 'report_podetail', 'report_po_detail_new'])}
+            />
           </Route>
         </Routes>
       </Router>

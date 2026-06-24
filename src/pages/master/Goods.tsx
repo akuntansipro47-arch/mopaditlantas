@@ -181,29 +181,32 @@ export default function Goods() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h2 className="text-3xl font-bold tracking-tight">Data Barang/Jasa (Updated)</h2>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="min-w-0">
+          <h2 className="text-2xl font-bold tracking-tight sm:text-3xl">Data Barang/Jasa</h2>
+          <p className="mt-1 text-sm text-slate-500">Kelola stok, jasa, dan status barang dengan layout yang lebih rapi di mobile/tablet.</p>
+        </div>
         <Dialog open={isDialogOpen} onOpenChange={(open) => { setIsDialogOpen(open); if(!open) resetForm(); }}>
           <DialogTrigger asChild>
             <Button><Plus className="mr-2 h-4 w-4" /> Tambah Barang</Button>
           </DialogTrigger>
-          <DialogContent className="sm:max-w-[500px]">
+          <DialogContent className="max-w-[calc(100vw-1rem)] p-3 sm:max-w-[500px] sm:p-6">
             <DialogHeader>
               <DialogTitle>{isEditing ? 'Edit Barang' : 'Tambah Barang Baru'}</DialogTitle>
               <DialogDescription>Input data barang atau jasa.</DialogDescription>
             </DialogHeader>
             <form onSubmit={handleSubmit}>
               <div className="grid gap-4 py-4">
-                <div className="grid grid-cols-4 items-center gap-4">
-                  <Label className="text-right">Nama Barang</Label>
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-4 sm:items-center sm:gap-4">
+                  <Label className="text-left sm:text-right">Nama Barang</Label>
                   <Input name="name" value={formData.name} onChange={handleInputChange} className="col-span-3" required />
                 </div>
-                <div className="grid grid-cols-4 items-center gap-4">
-                  <Label className="text-right">Satuan</Label>
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-4 sm:items-center sm:gap-4">
+                  <Label className="text-left sm:text-right">Satuan</Label>
                   <Input name="unit" value={formData.unit} onChange={handleInputChange} className="col-span-3" required />
                 </div>
-                <div className="grid grid-cols-4 items-center gap-4">
-                  <Label className="text-right">Tipe</Label>
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-4 sm:items-center sm:gap-4">
+                  <Label className="text-left sm:text-right">Tipe</Label>
                   <Select value={formData.item_type} onValueChange={handleSelectChange}>
                     <SelectTrigger className="col-span-3"><SelectValue /></SelectTrigger>
                     <SelectContent>
@@ -217,8 +220,8 @@ export default function Goods() {
                     </SelectContent>
                   </Select>
                 </div>
-                <div className="grid grid-cols-4 items-center gap-4">
-                  <Label className="text-right">Group</Label>
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-4 sm:items-center sm:gap-4">
+                  <Label className="text-left sm:text-right">Group</Label>
                   <Select value={formData.group_sparepart || ''} onValueChange={handleGroupChange}>
                     <SelectTrigger className="col-span-3">
                       <SelectValue placeholder={formData.item_type === 'PERSEDIAAN' ? "Pilih Group (Wajib)" : "Pilih Group (Opsional)"} />
@@ -230,8 +233,8 @@ export default function Goods() {
                     </SelectContent>
                   </Select>
                 </div>
-                <div className="grid grid-cols-4 items-center gap-4">
-                  <Label className="text-right">Harga Jual (Rp)</Label>
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-4 sm:items-center sm:gap-4">
+                  <Label className="text-left sm:text-right">Harga Jual (Rp)</Label>
                   <Input 
                     type="text" 
                     name="selling_price" 
@@ -243,8 +246,8 @@ export default function Goods() {
                     required
                   />
                 </div>
-                <div className="grid grid-cols-4 items-center gap-4">
-                  <Label className="text-right">Status</Label>
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-4 sm:items-center sm:gap-4">
+                  <Label className="text-left sm:text-right">Status</Label>
                   <div className="col-span-3 flex items-center space-x-2">
                     <Checkbox 
                       id="is_active" 
@@ -270,9 +273,9 @@ export default function Goods() {
 
       <Card>
         <CardHeader className="pb-3">
-          <div className="flex justify-between">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <CardTitle>Daftar Barang</CardTitle>
-            <div className="relative w-64">
+            <div className="relative w-full sm:w-64">
               <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground pointer-events-none" />
               <Input placeholder="Cari Nama/Kode..." className="pl-8" value={search} onChange={e => setSearch(e.target.value)} />
             </div>
@@ -330,7 +333,7 @@ export default function Goods() {
                         )}
                       </TableCell>
                       <TableCell className="text-right">
-                        <div className="flex justify-end gap-2">
+                        <div className="flex flex-wrap justify-end gap-2">
                           <Button variant="ghost" size="icon" onClick={() => handleEdit(item)}><Pencil className="h-4 w-4" /></Button>
                           <Button variant="ghost" size="icon" className="text-red-500" onClick={() => handleDelete(item.id)}><Trash2 className="h-4 w-4" /></Button>
                         </div>

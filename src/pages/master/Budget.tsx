@@ -226,20 +226,23 @@ export default function Budget() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h2 className="text-3xl font-bold tracking-tight">Data Anggaran</h2>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="min-w-0">
+          <h2 className="text-2xl font-bold tracking-tight sm:text-3xl">Data Anggaran</h2>
+          <p className="mt-1 text-sm text-slate-500">Pengaturan budget bulanan kini lebih rapi di layar kecil.</p>
+        </div>
         <Dialog open={isDialogOpen} onOpenChange={(open) => { setIsDialogOpen(open); if(!open) resetForm(); }}>
           <DialogTrigger asChild>
             <Button><Plus className="mr-2 h-4 w-4" /> Tambah Anggaran</Button>
           </DialogTrigger>
-          <DialogContent className="sm:max-w-[600px]">
+          <DialogContent className="max-w-[calc(100vw-1rem)] p-3 sm:max-w-[600px] sm:p-6">
             <DialogHeader>
               <DialogTitle>{isEditing ? 'Edit Anggaran' : 'Setup Anggaran Baru'}</DialogTitle>
               <DialogDescription>Alokasi anggaran per periode dan grup.</DialogDescription>
             </DialogHeader>
             <form onSubmit={handleSubmit}>
               <div className="grid gap-4 py-4">
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                   <div className="space-y-2">
                     <Label>Bulan</Label>
                     <Select value={formData.month} onValueChange={(v) => handleSelectChange('month', v)}>
@@ -255,7 +258,7 @@ export default function Budget() {
                   </div>
                 </div>
 
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                   <div className="space-y-2">
                     <Label>Kendaraan</Label>
                     <Select value={formData.vehicle_type} onValueChange={(v) => handleSelectChange('vehicle_type', v)}>
@@ -301,9 +304,9 @@ export default function Budget() {
 
       <Card>
         <CardHeader className="pb-3">
-          <div className="flex justify-between">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <CardTitle>Daftar Anggaran</CardTitle>
-            <div className="relative w-64">
+            <div className="relative w-full sm:w-64">
               <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground pointer-events-none" />
               <Input placeholder="Cari Bulan/Tahun..." className="pl-8" value={search} onChange={e => setSearch(e.target.value)} />
             </div>
@@ -341,7 +344,7 @@ export default function Budget() {
                       </TableCell>
                       <TableCell className="font-bold">{formatCurrency(item.amount)}</TableCell>
                       <TableCell className="text-right">
-                        <div className="flex justify-end gap-2">
+                        <div className="flex flex-wrap justify-end gap-2">
                           <Button variant="ghost" size="icon" onClick={() => handleEdit(item)}><Pencil className="h-4 w-4" /></Button>
                           <Button variant="ghost" size="icon" className="text-red-500" onClick={() => handleDelete(item.id)}><Trash2 className="h-4 w-4" /></Button>
                         </div>

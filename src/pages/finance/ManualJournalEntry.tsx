@@ -366,11 +366,14 @@ export default function ManualJournalEntry() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h2 className="text-3xl font-bold tracking-tight">Jurnal Umum (General Journal)</h2>
-        <div className="flex gap-2">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+        <div className="min-w-0">
+          <h2 className="text-2xl font-bold tracking-tight sm:text-3xl">Jurnal Umum (General Journal)</h2>
+          <p className="mt-1 text-sm text-slate-500">Entri jurnal dan riwayatnya kini lebih rapi untuk tablet maupun HP.</p>
+        </div>
+        <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
           {editingId && (
-            <div className="bg-yellow-100 border border-yellow-400 text-yellow-800 px-4 py-2 rounded flex items-center gap-3">
+            <div className="flex flex-col gap-2 rounded border border-yellow-400 bg-yellow-100 px-4 py-2 text-yellow-800 sm:flex-row sm:items-center sm:gap-3">
               <span>Sedang mengedit jurnal...</span>
               <Button size="sm" variant="destructive" onClick={handleCancelEdit}>Batal Edit</Button>
             </div>
@@ -382,19 +385,19 @@ export default function ManualJournalEntry() {
       </div>
 
       <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as any)} className="w-full">
-        <TabsList className="grid w-full grid-cols-2">
+        <TabsList className="grid h-auto w-full grid-cols-1 gap-2 bg-transparent p-0 sm:grid-cols-2">
           <TabsTrigger value="entry">Entri Jurnal</TabsTrigger>
           <TabsTrigger value="history">Riwayat Jurnal Umum</TabsTrigger>
         </TabsList>
 
         <TabsContent value="entry" className="mt-4">
-          <Card className="flex flex-col h-[calc(100vh-180px)]">
+          <Card className="flex h-[calc(100vh-180px)] flex-col sm:h-[calc(100vh-190px)]">
             <CardHeader className="flex-none">
                 <CardTitle>Entri Jurnal Manual</CardTitle>
             </CardHeader>
             <CardContent className="flex flex-col flex-1 gap-4 overflow-hidden">
             {/* Header Inputs - Fixed */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 flex-none">
+            <div className="grid flex-none grid-cols-1 gap-4 md:grid-cols-3">
                 <div className="space-y-2">
                     <Label>Tanggal</Label>
                     <Input type="date" value={entryDate} onChange={e => setEntryDate(e.target.value)} />
@@ -479,12 +482,12 @@ export default function ManualJournalEntry() {
             
             {/* Footer Actions - Fixed */}
             <div className="flex-none flex flex-col gap-4 mt-auto pt-4 border-t bg-white">
-                <div className="flex justify-between items-center">
+                <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                     <Button variant="outline" onClick={addLine}>
                         <Plus className="mr-2 h-4 w-4" /> Tambah Baris
                     </Button>
                     
-                    <div className="flex gap-8 items-center bg-slate-100 p-4 rounded-lg">
+                    <div className="grid gap-3 rounded-lg bg-slate-100 p-4 sm:grid-cols-3 sm:items-center sm:gap-6">
                         <div className="text-right">
                             <p className="text-xs text-gray-500">Total Debit</p>
                             <p className="font-bold text-lg">{formatCurrency(totalDebit)}</p>
@@ -493,7 +496,7 @@ export default function ManualJournalEntry() {
                             <p className="text-xs text-gray-500">Total Kredit</p>
                             <p className="font-bold text-lg">{formatCurrency(totalCredit)}</p>
                         </div>
-                        <div className="text-right border-l pl-8 border-gray-300">
+                        <div className="text-right border-gray-300 pt-3 sm:border-l sm:pl-6 sm:pt-0">
                             <p className="text-xs text-gray-500">Balance (Selisih)</p>
                             <p className={`font-bold text-lg ${balance === 0 ? 'text-green-600' : 'text-red-600'}`}>
                                 {formatCurrency(balance)}
@@ -516,24 +519,24 @@ export default function ManualJournalEntry() {
           <Card>
             <CardHeader className="pb-3">
               <div className="flex flex-col gap-4">
-                <div className="flex justify-between items-center">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                   <CardTitle>Riwayat Jurnal Umum</CardTitle>
                   <Button variant="outline" size="sm" onClick={fetchHistory} disabled={historyLoading}>
                     <RefreshCw className={`h-4 w-4 mr-2 ${historyLoading ? 'animate-spin' : ''}`} /> Refresh
                   </Button>
                 </div>
-                <div className="flex flex-col md:flex-row gap-2">
-                  <div className="flex items-center gap-2 bg-slate-50 p-2 rounded border flex-1">
+                <div className="flex flex-col gap-2 md:flex-row">
+                  <div className="flex flex-col gap-2 rounded border bg-slate-50 p-2 sm:flex-row sm:items-center flex-1">
                     <Input
                       type="date"
-                      className="w-auto h-8 bg-white"
+                      className="h-9 w-full bg-white sm:w-auto"
                       value={historyFilter.startDate}
                       onChange={(e) => setHistoryFilter({ ...historyFilter, startDate: e.target.value })}
                     />
                     <span className="text-gray-400">-</span>
                     <Input
                       type="date"
-                      className="w-auto h-8 bg-white"
+                      className="h-9 w-full bg-white sm:w-auto"
                       value={historyFilter.endDate}
                       onChange={(e) => setHistoryFilter({ ...historyFilter, endDate: e.target.value })}
                     />
@@ -587,7 +590,7 @@ export default function ManualJournalEntry() {
                               {t.items?.length > 2 && <div>...</div>}
                             </TableCell>
                             <TableCell className="text-right">
-                              <div className="flex justify-end gap-2">
+                              <div className="flex flex-wrap justify-end gap-2">
                                 <Button variant="outline" size="sm" onClick={() => handleEditEntry(t)}>
                                   <Pencil className="h-4 w-4" />
                                 </Button>

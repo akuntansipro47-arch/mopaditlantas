@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/context/AuthContext';
+import { hasMenuAccess } from '@/lib/permissions';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { ShoppingCart, ArchiveX, TrendingUp, CircleDollarSign, Landmark, Percent, Timer, Users } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
@@ -103,16 +104,8 @@ export default function Dashboard() {
   const { user } = useAuth();
   const navigate = useNavigate();
 
-  const hasAccess = (key: string) => {
-    if (!user) return false;
-    if (user.role === 'SUPER_ADMIN') return true;
-    const allowed = Array.isArray(user.allowed_menus) ? user.allowed_menus : [];
-    if (allowed.includes('*')) return true;
-    return allowed.includes(key);
-  };
-
   useEffect(() => {
-    if (user && user.role !== 'SUPER_ADMIN' && !hasAccess('dashboard')) {
+    if (user && !hasMenuAccess(user, 'dashboard')) {
       navigate('/reports');
     }
   }, [user, navigate]);

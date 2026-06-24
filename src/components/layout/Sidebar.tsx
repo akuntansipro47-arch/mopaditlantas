@@ -28,6 +28,7 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import LogoMark from '@/components/brand/LogoMark';
+import { hasMenuAccess } from '@/lib/permissions';
 
 type NavChild =
   | { type: 'group'; name: string }
@@ -40,6 +41,20 @@ type NavItem = {
   key: string;
   children?: NavChild[];
 };
+
+type SidebarProps = {
+  className?: string;
+  onNavigate?: () => void;
+};
+
+function getDefaultOpenMenus(pathname: string): string[] {
+  if (pathname.startsWith('/master/')) return ['Master Data'];
+  if (pathname.startsWith('/transactions/')) return ['Transaksi'];
+  if (pathname.startsWith('/finance/')) return ['Keuangan'];
+  if (pathname.startsWith('/hr/')) return ['Kepegawaian'];
+  if (pathname.startsWith('/reports')) return ['Daftar Laporan'];
+  return [];
+}
 
 const navigation: NavItem[] = [
   { 
@@ -97,23 +112,24 @@ const navigation: NavItem[] = [
     children: [
       { type: 'group', name: 'Laporan Operasional' },
       { name: 'Rekap Barang Keluar', href: '/reports?tab=issue', icon: PackageMinus, key: 'report_issue' },
-      { name: 'Laporan Detail Barang Keluar', href: '/reports?tab=issuedetail', icon: PackageMinus, key: 'report_issue' },
+      { name: 'Laporan Detail Barang Keluar', href: '/reports?tab=issuedetail', icon: PackageMinus, key: 'report_issuedetail' },
       { name: 'Laporan Unit Masuk', href: '/reports?tab=vehicle_entry', icon: FileInput, key: 'report_vehicle_entry' },
       { name: 'Laporan Unit Keluar', href: '/reports?tab=vehicle_exit', icon: Car, key: 'report_vehicle_exit' },
       { name: 'Laporan Estimasi vs Realisasi', href: '/reports?tab=estimation', icon: BarChart3, key: 'report_estimation' },
       { name: 'Laporan Estimasi Part Belum PO', href: '/reports?tab=estimation_unpo', icon: ShoppingCart, key: 'report_unordered_parts' },
-      { name: 'Detail WO', href: '/reports?tab=wodetail', icon: ClipboardCheck, key: 'report_wo' },
+      { name: 'Detail WO', href: '/reports?tab=wodetail', icon: ClipboardCheck, key: 'report_wodetail' },
       { name: 'Detail WO Unit Masuk (Simpel)', href: '/reports?tab=wo_unit_masuk', icon: ClipboardCheck, key: 'report_wo_unit_masuk' },
       { type: 'group', name: 'Laporan Pembelian' },
       { name: 'Pembelian (PO)', href: '/reports?tab=po', icon: ShoppingCart, key: 'report_po' },
       { name: 'Barang Masuk', href: '/reports?tab=receipt', icon: PackageCheck, key: 'report_receipt' },
-      { name: 'Rincian Pembelian (Detail)', href: '/reports?tab=podetail', icon: ShoppingCart, key: 'report_podetail' },
+      { name: 'Rincian Pembelian', href: '/reports?tab=podetail', icon: ShoppingCart, key: 'report_podetail' },
+      { name: 'Rincian Pembelian (Detail)', href: '/reports?tab=po_detail_new', icon: ShoppingCart, key: 'report_po_detail_new' },
       { name: 'Hutang Supplier', href: '/reports?tab=supplier_payable', icon: Wallet, key: 'report_supplier_payable' },
       { name: 'Riwayat Bayar Hutang', href: '/reports?tab=payment_history_ap', icon: Wallet, key: 'report_payment_history_ap' },
       { type: 'group', name: 'Laporan Persediaan' },
       { name: 'Stok Barang', href: '/reports?tab=stock', icon: Package, key: 'report_stock' },
-      { name: 'Nilai Persediaan', href: '/reports?tab=inventory_value', icon: Package, key: 'report_stock' },
-      { name: 'History Barang', href: '/reports?tab=item_history', icon: Package, key: 'report_stock' },
+      { name: 'Nilai Persediaan', href: '/reports?tab=inventory_value', icon: Package, key: 'report_inventory_value' },
+      { name: 'History Barang', href: '/reports?tab=item_history', icon: Package, key: 'report_item_history' },
       { type: 'group', name: 'Laporan Keuangan' },
       { name: 'Neraca', href: '/reports?tab=balance_sheet', icon: Building2, key: 'report_balance_sheet' },
       { name: 'Laba Rugi', href: '/reports?tab=profit_loss', icon: BarChart3, key: 'report_profit_loss' },
@@ -128,10 +144,10 @@ const navigation: NavItem[] = [
   },
 ];
 
-export function Sidebar() {
+export function Sidebar({ className, onNavigate }: SidebarProps) {
   const location = useLocation();
   const { user, logout } = useAuth();
-  const [openMenus, setOpenMenus] = useState<string[]>(['Transaksi', 'Master Data', 'Keuangan', 'Kepegawaian', 'Daftar Laporan']);
+  const [openMenus, setOpenMenus] = useState<string[]>(() => getDefaultOpenMenus(location.pathname));
   const [openReportGroups, setOpenReportGroups] = useState<string[]>([]);
 
   const toggleMenu = (name: string) => {
@@ -148,20 +164,25 @@ export function Sidebar() {
     );
   };
 
-  // Helper to check access
-  const hasAccess = (key: string) => {
-    if (!user) return false;
-    if (user.role === 'SUPER_ADMIN') return true;
-    if (key === 'report_activity_log') return false;
-    const allowed = Array.isArray(user.allowed_menus) ? user.allowed_menus : [];
-    if (allowed.includes('*')) return true;
-    if (key === 'reports') return allowed.includes('reports') || allowed.some((k: string) => String(k).startsWith('report_'));
-    return allowed.includes(key);
-  };
+  const hasAccess = (key: string) => hasMenuAccess(user, key);
 
   const currentPath = location.pathname + location.search;
   const appUrl =
     typeof window !== 'undefined' ? `${window.location.origin}${currentPath}` : currentPath;
+
+  useEffect(() => {
+    const currentMenus = getDefaultOpenMenus(location.pathname);
+    if (currentMenus.length === 0) return;
+    setOpenMenus((prev) => {
+      const next = new Set(prev);
+      currentMenus.forEach((menu) => next.add(menu));
+      return Array.from(next);
+    });
+  }, [location.pathname]);
+
+  const handleNavigate = () => {
+    onNavigate?.();
+  };
 
   useEffect(() => {
     if (!openMenus.includes('Daftar Laporan')) return;
@@ -185,9 +206,9 @@ export function Sidebar() {
   }, [currentPath, openMenus, user]);
 
   return (
-    <div className="flex h-full w-72 flex-col bg-[#0f172a] text-slate-300 shadow-2xl transition-all duration-300 ease-in-out">
+    <div className={cn("flex h-full w-72 max-w-full flex-col bg-[#0f172a] text-slate-300 shadow-2xl transition-all duration-300 ease-in-out", className)}>
       {/* Header Logo */}
-      <div className="flex h-24 items-center px-4 border-b border-slate-800/60 bg-slate-950/30">
+      <div className="flex min-h-20 items-center border-b border-slate-800/60 bg-slate-950/30 px-4 py-4">
         <a
           href={appUrl}
           target="_blank"
@@ -198,18 +219,18 @@ export function Sidebar() {
              <LogoMark className="h-12 w-12 text-white" />
           </div>
           
-          <div className="flex flex-col justify-center -mt-1">
-            <h1 className="text-3xl font-black tracking-tighter leading-none flex items-baseline">
+          <div className="flex min-w-0 flex-col justify-center -mt-1">
+            <h1 className="flex items-baseline text-2xl font-black leading-none tracking-tighter sm:text-3xl">
               <span className="text-white italic">Oto</span>
               <span className="text-lime-500 italic">Smart</span>
             </h1>
-            <p className="text-[9px] text-slate-400 font-medium tracking-widest uppercase mt-0.5 ml-0.5">Complete Control Smart System</p>
+            <p className="mt-0.5 ml-0.5 truncate text-[9px] font-medium uppercase tracking-widest text-slate-400">Complete Control Smart System</p>
           </div>
         </a>
       </div>
       
       {/* Navigation */}
-      <nav className="flex-1 overflow-y-auto px-4 py-6 space-y-2 scrollbar-thin scrollbar-thumb-slate-800 scrollbar-track-transparent">
+      <nav className="flex-1 overflow-y-auto px-3 py-4 space-y-2 scrollbar-thin scrollbar-thumb-slate-800 scrollbar-track-transparent sm:px-4 sm:py-6">
         {navigation.map((item) => {
           const parentAccess = hasAccess(item.key);
           const children = item.children || [];
@@ -309,6 +330,7 @@ export function Sidebar() {
                                           <NavLink
                                             key={`${link.key}-${link.href}`}
                                             to={link.href}
+                                            onClick={handleNavigate}
                                             className={() =>
                                               cn(
                                                 "flex items-center rounded-md px-3 py-2 text-sm transition-all duration-200",
@@ -355,6 +377,7 @@ export function Sidebar() {
                           <NavLink
                             key={child.name}
                             to={child.href}
+                            onClick={handleNavigate}
                             className={() =>
                               cn(
                                 "flex items-center rounded-md px-3 py-2 text-sm transition-all duration-200",
@@ -381,6 +404,7 @@ export function Sidebar() {
             ) : (
               <NavLink
                 to={item.href}
+                onClick={handleNavigate}
                 className={({ isActive }) =>
                   cn(
                     "flex items-center rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-200",
@@ -408,6 +432,7 @@ export function Sidebar() {
             {user?.role === 'SUPER_ADMIN' && (
               <NavLink
                 to="/admin/users"
+                onClick={handleNavigate}
                 className={({ isActive }) =>
                   cn(
                     "flex items-center rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-200",
@@ -425,6 +450,7 @@ export function Sidebar() {
             {user?.role === 'SUPER_ADMIN' && (
               <NavLink
                 to="/admin/agency"
+                onClick={handleNavigate}
                 className={({ isActive }) =>
                   cn(
                     "flex items-center rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-200",
@@ -442,6 +468,7 @@ export function Sidebar() {
             {user?.role === 'SUPER_ADMIN' && (
               <NavLink
                 to="/admin/backup"
+                onClick={handleNavigate}
                 className={({ isActive }) =>
                   cn(
                     "flex items-center rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-200",
@@ -459,6 +486,7 @@ export function Sidebar() {
             {user?.role === 'SUPER_ADMIN' && (
               <NavLink
                 to="/debug-sync"
+                onClick={handleNavigate}
                 className={({ isActive }) =>
                   cn(
                     "flex items-center rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-200 text-red-400 hover:bg-red-900/20",
@@ -495,7 +523,10 @@ export function Sidebar() {
             </div>
           </div>
           <button 
-            onClick={logout} 
+            onClick={() => {
+              logout();
+              handleNavigate();
+            }}
             className="p-2 rounded-md text-slate-500 hover:text-red-400 hover:bg-red-950/30 transition-colors"
             title="Logout"
           >

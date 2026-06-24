@@ -73,27 +73,31 @@ const PERMISSION_GROUPS: Array<{ title: string; items: Array<{ key: string; labe
     title: 'Laporan',
     items: [
       { key: 'reports', label: 'Menu Pusat Laporan' },
+      { key: 'report_vehicle_entry', label: 'Laporan Unit Masuk' },
+      { key: 'report_vehicle_exit', label: 'Laporan Unit Keluar' },
+      { key: 'report_wo', label: 'Laporan Work Order' },
+      { key: 'report_wodetail', label: 'Laporan Detail Work Order' },
+      { key: 'report_wo_unit_masuk', label: 'Detail WO Unit Masuk (Simpel)' },
       { key: 'report_po', label: 'Laporan Pembelian (PO)' },
       { key: 'report_podetail', label: 'Laporan Rincian Pembelian' },
       { key: 'report_po_detail_new', label: 'Laporan Rincian Pembelian (Detail)' },
       { key: 'report_receipt', label: 'Laporan Barang Masuk' },
-      { key: 'report_stock', label: 'Laporan Stok/Nilai/History' },
       { key: 'report_issue', label: 'Laporan Rekap Barang Keluar' },
       { key: 'report_issuedetail', label: 'Laporan Detail Barang Keluar' },
-      { key: 'report_wo', label: 'Laporan Work Order' },
-      { key: 'report_wodetail', label: 'Laporan Detail Work Order' },
-      { key: 'report_wo_unit_masuk', label: 'Detail WO Unit Masuk (Simpel)' },
-      { key: 'report_vehicle_entry', label: 'Laporan Unit Masuk' },
+      { key: 'report_stock', label: 'Laporan Stok Barang' },
+      { key: 'report_inventory_value', label: 'Laporan Nilai Persediaan' },
+      { key: 'report_item_history', label: 'Laporan History Barang' },
+      { key: 'report_estimation', label: 'Laporan Estimasi vs Realisasi' },
+      { key: 'report_unordered_parts', label: 'Laporan Estimasi Part Belum PO' },
       { key: 'report_profit', label: 'Laporan Laba Kotor' },
       { key: 'report_profit_loss', label: 'Laporan Laba Rugi' },
       { key: 'report_balance_sheet', label: 'Laporan Neraca' },
+      { key: 'report_cash_flow', label: 'Laporan Arus Kas' },
       { key: 'report_supplier_payable', label: 'Laporan Hutang Supplier' },
       { key: 'report_payment_history_ap', label: 'Laporan Riwayat Pembayaran Hutang' },
       { key: 'report_cash_bank_book', label: 'Laporan Buku Bank/Kas' },
-      { key: 'report_estimation', label: 'Laporan Estimasi vs Realisasi' },
       { key: 'report_budget', label: 'Laporan Monitoring Pagu' },
       { key: 'report_forecast_budget', label: 'Laporan Forecasting Anggaran' },
-      { key: 'report_unordered_parts', label: 'Laporan Estimasi Part Belum PO' },
     ],
   },
 ];
@@ -321,7 +325,7 @@ export default function UserManagement() {
   if (!user || user.role !== 'SUPER_ADMIN') {
     return (
       <div className="space-y-6">
-        <h2 className="text-3xl font-bold tracking-tight">Manajemen User</h2>
+        <h2 className="text-2xl font-bold tracking-tight sm:text-3xl">Manajemen User</h2>
         <Card>
           <CardHeader>
             <CardTitle>Akses Ditolak</CardTitle>
@@ -336,7 +340,10 @@ export default function UserManagement() {
 
   return (
     <div className="space-y-6">
-      <h2 className="text-3xl font-bold tracking-tight">Manajemen User</h2>
+      <div>
+        <h2 className="text-2xl font-bold tracking-tight sm:text-3xl">Manajemen User</h2>
+        <p className="mt-1 text-sm text-muted-foreground">Kelola user, role, dan akses menu dengan tampilan yang lebih rapi di layar kecil.</p>
+      </div>
       <Card className="border-slate-200">
         <CardHeader className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <div>
@@ -345,13 +352,13 @@ export default function UserManagement() {
               Kelola username, role, akses menu, dan reset password.
             </div>
           </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <div className="relative">
+          <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap sm:items-center">
+            <div className="relative w-full sm:w-auto">
               <Input
                 placeholder="Cari user..."
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                className="w-64"
+                className="w-full sm:w-64"
               />
             </div>
             <Button variant="outline" onClick={fetchUsers} disabled={loading || saving}>
@@ -429,7 +436,7 @@ export default function UserManagement() {
       </Card>
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="max-w-3xl">
+        <DialogContent className="max-w-[calc(100vw-1rem)] p-3 sm:max-w-3xl sm:p-6">
           <DialogHeader>
             <DialogTitle>{editing ? 'Edit User' : 'Tambah User'}</DialogTitle>
             <DialogDescription>

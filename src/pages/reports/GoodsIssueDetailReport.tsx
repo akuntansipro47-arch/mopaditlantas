@@ -155,14 +155,14 @@ export default function GoodsIssueDetailReport() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row justify-between gap-4">
-        <h2 className="text-2xl font-bold">Laporan Detail Barang Keluar</h2>
-        <div className="flex flex-wrap gap-2">
-           <div className="flex items-center gap-2 bg-white border border-gray-300 p-1.5 rounded-md shadow-sm">
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+        <h2 className="text-2xl font-bold sm:text-3xl">Laporan Detail Barang Keluar</h2>
+        <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+           <div className="flex flex-col gap-2 rounded-md border border-gray-300 bg-white p-2 shadow-sm sm:flex-row sm:items-center sm:gap-2 sm:p-1.5">
               <Calendar className="h-4 w-4 text-gray-500 ml-2" />
-              <Input type="date" className="border-0 h-9 w-36 focus-visible:ring-0 cursor-pointer" value={dateRange.start} onChange={e => setDateRange({...dateRange, start: e.target.value})} />
+              <Input type="date" className="h-9 w-full cursor-pointer border-0 focus-visible:ring-0 sm:w-36" value={dateRange.start} onChange={e => setDateRange({...dateRange, start: e.target.value})} />
               <span className="text-gray-400 font-medium">-</span>
-              <Input type="date" className="border-0 h-9 w-36 focus-visible:ring-0 cursor-pointer" value={dateRange.end} onChange={e => setDateRange({...dateRange, end: e.target.value})} />
+              <Input type="date" className="h-9 w-full cursor-pointer border-0 focus-visible:ring-0 sm:w-36" value={dateRange.end} onChange={e => setDateRange({...dateRange, end: e.target.value})} />
            </div>
            <Button variant="outline" onClick={exportToExcel}><Download className="mr-2 h-4 w-4" /> Export</Button>
         </div>
@@ -170,13 +170,13 @@ export default function GoodsIssueDetailReport() {
 
       <Card>
         <CardHeader className="pb-3">
-          <div className="flex justify-between items-center">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
             <CardTitle>Daftar Item Keluar</CardTitle>
-            <div className="flex items-center gap-3">
+            <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
               <div className="flex items-center gap-2">
                 <span className="text-sm font-medium">Group:</span>
                 <Select value={groupFilter} onValueChange={setGroupFilter}>
-                  <SelectTrigger className="w-[140px] bg-white"><SelectValue placeholder="Semua" /></SelectTrigger>
+                  <SelectTrigger className="w-full bg-white sm:w-[140px]"><SelectValue placeholder="Semua" /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="ALL">Semua</SelectItem>
                     <SelectItem value="R2">R2</SelectItem>
@@ -185,7 +185,7 @@ export default function GoodsIssueDetailReport() {
                   </SelectContent>
                 </Select>
               </div>
-              <div className="relative w-64">
+              <div className="relative w-full sm:w-64">
                 <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
                 <Input placeholder="Cari bebas berdasarkan kolom laporan..." className="pl-8" value={search} onChange={e => setSearch(e.target.value)} />
               </div>

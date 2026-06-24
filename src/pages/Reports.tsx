@@ -1,5 +1,6 @@
 import { useSearchParams } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext'; // Import Auth Context
+import { hasMenuAccess } from '@/lib/permissions';
 import PurchaseOrderPrint from '@/components/print/PurchaseOrderPrint';
 import PurchaseOrderReport from './reports/PurchaseOrderReport';
 import PurchaseDetailReport from './reports/PurchaseDetailReport';
@@ -65,21 +66,16 @@ export default function Reports() {
   const reportId = searchParams.get('id');
 
   // Helper to check permission
-  const canAccess = (reportKey: string) => {
-    if (!user) return false;
-    if (user.role === 'SUPER_ADMIN') return true;
-    if (String(reportKey).trim().toLowerCase() === 'report_activity_log') return false;
-    const allowed = Array.isArray(user.allowed_menus) ? user.allowed_menus : [];
-    const allowedLower = allowed.map((v) => String(v).trim().toLowerCase()).filter(Boolean);
-    if (allowedLower.includes('*')) return true;
-    return allowedLower.includes(String(reportKey).trim().toLowerCase());
-  };
+  const canAccess = (reportKey: string) => hasMenuAccess(user, reportKey);
 
   const canAccessIssueDetail = () =>
     canAccess('report_issuedetail') ||
     canAccess('report_issue_detail') ||
-    canAccess('report_goods_issue_detail') ||
-    canAccess('report_issue');
+    canAccess('report_goods_issue_detail');
+
+  const canAccessWoDetail = () => canAccess('report_wodetail');
+  const canAccessItemHistory = () => canAccess('report_item_history');
+  const canAccessInventoryValue = () => canAccess('report_inventory_value');
 
   // Get the first allowed tab to set as default
   const getDefaultTab = () => {
@@ -88,11 +84,12 @@ export default function Reports() {
       if (canAccess('report_po_detail_new')) return 'po_detail_new'; // Tambahkan key untuk laporan baru
       if (canAccess('report_receipt')) return 'receipt';
       if (canAccess('report_stock')) return 'stock';
-      if (canAccess('report_stock')) return 'item_history'; // Reuse stock permission
-      if (canAccess('report_stock')) return 'inventory_value'; // Reuse stock permission
+      if (canAccessItemHistory()) return 'item_history';
+      if (canAccessInventoryValue()) return 'inventory_value';
       if (canAccessIssueDetail()) return 'issuedetail';
       if (canAccess('report_issue')) return 'issue';
       if (canAccess('report_wo')) return 'wo';
+      if (canAccessWoDetail()) return 'wodetail';
       if (canAccess('report_vehicle_entry')) return 'vehicle_entry';
       if (canAccess('report_vehicle_exit')) return 'vehicle_exit';
       if (canAccess('report_profit')) return 'profit';
@@ -133,7 +130,7 @@ export default function Reports() {
     canAccess('report_vehicle_entry') ? 'vehicle_entry' : null,
     canAccess('report_vehicle_exit') ? 'vehicle_exit' : null,
     canAccess('report_wo') ? 'wo' : null,
-    canAccess('report_wo') ? 'wodetail' : null,
+    canAccessWoDetail() ? 'wodetail' : null,
     canAccess('report_po') ? 'po' : null,
     canAccess('report_podetail') ? 'podetail' : null,
     canAccess('report_po_detail_new') ? 'po_detail_new' : null,
@@ -141,8 +138,8 @@ export default function Reports() {
     canAccess('report_issue') ? 'issue' : null,
     canAccessIssueDetail() ? 'issuedetail' : null,
     canAccess('report_stock') ? 'stock' : null,
-    canAccess('report_stock') ? 'item_history' : null,
-    canAccess('report_stock') ? 'inventory_value' : null,
+    canAccessItemHistory() ? 'item_history' : null,
+    canAccessInventoryValue() ? 'inventory_value' : null,
     canAccess('report_profit') ? 'profit' : null,
     canAccess('report_profit_loss') ? 'profit_loss' : null,
     canAccess('report_balance_sheet') ? 'balance_sheet' : null,
@@ -191,18 +188,18 @@ export default function Reports() {
   };
 
   return (
-    <div className="report-print-scope space-y-8 animate-in fade-in duration-500 pb-10">
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-200 pb-6 print:hidden">
+    <div className="report-print-scope space-y-6 animate-in fade-in duration-500 pb-8 sm:space-y-8 sm:pb-10">
+      <div className="flex flex-col gap-3 border-b border-slate-200 pb-4 print:hidden sm:gap-4 sm:pb-6 lg:flex-row lg:items-center lg:justify-between">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight text-slate-900">Pusat Laporan</h1>
-          <p className="text-slate-500 mt-1">Analisis dan ringkasan data operasional secara real-time.</p>
+          <h1 className="text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">Pusat Laporan</h1>
+          <p className="mt-1 text-sm text-slate-500 sm:text-base">Analisis dan ringkasan data operasional secara real-time.</p>
         </div>
-        <div className="flex items-center gap-2 text-sm text-slate-500 bg-slate-100 px-3 py-1 rounded-full">
+        <div className="flex w-fit items-center gap-2 rounded-full bg-slate-100 px-3 py-1 text-xs text-slate-500 sm:text-sm">
           <Activity className="h-4 w-4" />
           <span>Last updated: {new Date().toLocaleTimeString()}</span>
         </div>
       </div>
-      <Card className="min-h-[500px]">
+      <Card className="min-h-[420px] sm:min-h-[500px]">
         {renderReport(effectiveTab)}
       </Card>
     </div>

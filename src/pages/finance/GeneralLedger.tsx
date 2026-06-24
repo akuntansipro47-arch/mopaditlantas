@@ -188,9 +188,12 @@ export default function GeneralLedger() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h2 className="text-3xl font-bold tracking-tight">Buku Besar (General Ledger)</h2>
-        <div className="flex gap-2">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+        <div className="min-w-0">
+          <h2 className="text-2xl font-bold tracking-tight sm:text-3xl">Buku Besar (General Ledger)</h2>
+          <p className="mt-1 text-sm text-slate-500 print:hidden">Ringkasan saldo dan mutasi akun kini lebih nyaman dibaca di tablet/HP.</p>
+        </div>
+        <div className="flex flex-col gap-2 sm:flex-row">
             <Button variant="outline" onClick={exportToExcel} disabled={!currentAccount || loading} className="print:hidden">
                 <Download className="mr-2 h-4 w-4" /> Export Excel
             </Button>
@@ -200,7 +203,7 @@ export default function GeneralLedger() {
         </div>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-4 print:hidden">
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4 print:hidden">
         <Card className="bg-white shadow-sm border-slate-200">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium text-slate-600">Saldo Awal</CardTitle>
@@ -241,7 +244,7 @@ export default function GeneralLedger() {
 
       <Card className="print:shadow-none print:border-none">
         <CardHeader className="pb-3 print:hidden">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
                 <div className="space-y-2">
                     <label className="text-sm font-medium">Pilih Akun</label>
                     <Select value={selectedAccount} onValueChange={setSelectedAccount}>

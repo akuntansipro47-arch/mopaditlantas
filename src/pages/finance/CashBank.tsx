@@ -676,12 +676,15 @@ export default function CashBank() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h2 className="text-3xl font-bold tracking-tight">Kas & Bank</h2>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="min-w-0">
+          <h2 className="text-2xl font-bold tracking-tight sm:text-3xl">Kas & Bank</h2>
+          <p className="mt-1 text-sm text-slate-500">Form penerimaan, pengeluaran, dan history kas kini lebih nyaman dipakai di mobile/tablet.</p>
+        </div>
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-        <TabsList className="grid w-full grid-cols-3">
+        <TabsList className="grid h-auto w-full grid-cols-1 gap-2 bg-transparent p-0 sm:grid-cols-3">
           <TabsTrigger value="deposit" className="data-[state=active]:bg-green-100 data-[state=active]:text-green-800">
              Penerimaan (Deposit)
           </TabsTrigger>
@@ -715,7 +718,7 @@ export default function CashBank() {
                   <p className="text-xs text-green-600 font-medium">*Posisi: Debit (Bertambah)</p>
                 </div>
                 
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                     <div className="space-y-2">
                         <Label>No. Voucher</Label>
                         <Input 
@@ -748,7 +751,7 @@ export default function CashBank() {
               </div>
 
               {/* Amount Display */}
-              <div className="flex justify-between items-center bg-green-50 p-4 rounded-lg border border-green-100">
+              <div className="flex flex-col gap-1 rounded-lg border border-green-100 bg-green-50 p-4 sm:flex-row sm:items-center sm:justify-between">
                   <span className="font-semibold text-green-800">Total Amount</span>
                   <span className="text-2xl font-bold text-green-700">{formatCurrency(depositTotal)}</span>
               </div>
@@ -810,7 +813,7 @@ export default function CashBank() {
                 </div>
               </div>
 
-              <div className="flex justify-end gap-3">
+              <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
                   <Button
                     variant="outline"
                     onClick={() => {
@@ -850,7 +853,7 @@ export default function CashBank() {
                   <p className="text-xs text-red-600 font-medium">*Posisi: Kredit (Berkurang)</p>
                 </div>
                 
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                     <div className="space-y-2">
                         <Label>No. Voucher</Label>
                         <Input 
@@ -883,7 +886,7 @@ export default function CashBank() {
               </div>
 
               {/* Amount Display */}
-              <div className="flex justify-between items-center bg-red-50 p-4 rounded-lg border border-red-100">
+              <div className="flex flex-col gap-1 rounded-lg border border-red-100 bg-red-50 p-4 sm:flex-row sm:items-center sm:justify-between">
                   <span className="font-semibold text-red-800">Total Amount</span>
                   <span className="text-2xl font-bold text-red-700">{formatCurrency(paymentTotal)}</span>
               </div>
@@ -945,7 +948,7 @@ export default function CashBank() {
                 </div>
               </div>
 
-              <div className="flex justify-end gap-3">
+              <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
                   <Button
                     variant="outline"
                     onClick={() => {
@@ -967,30 +970,30 @@ export default function CashBank() {
         <TabsContent value="history" className="space-y-4">
              <Card>
                 <CardHeader className="pb-3">
-                    <div className="flex justify-between items-center">
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                         <CardTitle>History Kas/Bank</CardTitle>
                         <Button variant="outline" size="sm" onClick={refreshHistory}><RefreshCw className="h-4 w-4 mr-2" /> Refresh</Button>
                     </div>
                 </CardHeader>
                 <CardContent>
                     <div className="flex flex-wrap items-end gap-3 mb-4">
-                      <div className="flex items-center gap-2 bg-white border border-gray-300 p-1.5 rounded-md shadow-sm">
+                      <div className="flex flex-col gap-2 rounded-md border border-gray-300 bg-white p-2 shadow-sm sm:flex-row sm:items-center sm:gap-2 sm:p-1.5">
                         <CalendarIcon className="h-4 w-4 text-gray-500 ml-2" />
                         <Input
                           type="date"
-                          className="border-0 h-9 w-36 focus-visible:ring-0 cursor-pointer"
+                          className="h-9 w-full cursor-pointer border-0 focus-visible:ring-0 sm:w-36"
                           value={historyDateRange.start}
                           onChange={(e) => setHistoryDateRange({ ...historyDateRange, start: e.target.value })}
                         />
                         <span className="text-gray-400 font-medium">-</span>
                         <Input
                           type="date"
-                          className="border-0 h-9 w-36 focus-visible:ring-0 cursor-pointer"
+                          className="h-9 w-full cursor-pointer border-0 focus-visible:ring-0 sm:w-36"
                           value={historyDateRange.end}
                           onChange={(e) => setHistoryDateRange({ ...historyDateRange, end: e.target.value })}
                         />
                       </div>
-                      <div className="relative w-72">
+                      <div className="relative w-full sm:w-72 sm:min-w-[18rem]">
                         <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
                         <Input
                           placeholder="Cari voucher/keterangan/akun..."
@@ -999,7 +1002,7 @@ export default function CashBank() {
                           onChange={(e) => setHistorySearch(e.target.value)}
                         />
                       </div>
-                      <div className="w-44">
+                      <div className="w-full sm:w-44">
                         <Label htmlFor="history-type-filter" className="sr-only">Filter Tipe</Label>
                         <select
                           id="history-type-filter"

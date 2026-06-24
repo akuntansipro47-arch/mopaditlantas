@@ -333,9 +333,12 @@ export default function ChartOfAccounts() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h2 className="text-3xl font-bold tracking-tight">Akun Perkiraan (COA)</h2>
-        <div className="flex gap-2">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+        <div className="min-w-0">
+          <h2 className="text-2xl font-bold tracking-tight sm:text-3xl">Akun Perkiraan (COA)</h2>
+          <p className="mt-1 text-sm text-slate-500">Struktur akun dibuat lebih nyaman dikelola dari tablet maupun HP.</p>
+        </div>
+        <div className="flex flex-col gap-2 sm:flex-row">
           <Button variant="outline" type="button" onClick={createRootPersediaan}>
             Buat Root Persediaan
           </Button>
@@ -343,14 +346,14 @@ export default function ChartOfAccounts() {
             <DialogTrigger asChild>
               <Button><Plus className="mr-2 h-4 w-4" /> Tambah Akun</Button>
             </DialogTrigger>
-          <DialogContent className="sm:max-w-[600px]">
+          <DialogContent className="max-w-[calc(100vw-1rem)] p-3 sm:max-w-[600px] sm:p-6">
             <DialogHeader>
               <DialogTitle>{isEditing ? 'Edit Akun' : 'Tambah Akun Baru'}</DialogTitle>
               <DialogDescription>Kelola Chart of Accounts.</DialogDescription>
             </DialogHeader>
             <form onSubmit={handleSubmit}>
               <div className="grid gap-4 py-4">
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                   <div className="space-y-2">
                     <Label>Kode Akun</Label>
                     <Input name="account_code" value={formData.account_code} onChange={handleInputChange} required placeholder="Contoh: 1101" />
@@ -361,7 +364,7 @@ export default function ChartOfAccounts() {
                   </div>
                 </div>
                 
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                   <div className="space-y-2">
                     <Label>Tipe Akun</Label>
                     <Select value={formData.account_type} onValueChange={(v) => handleSelectChange('account_type', v)}>
@@ -386,7 +389,7 @@ export default function ChartOfAccounts() {
                   </div>
                 </div>
 
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                   <div className="space-y-2">
                     <Label>Kategori Utama</Label>
                     <Select value={formData.category} onValueChange={(v) => handleSelectChange('category', v)}>
@@ -424,7 +427,7 @@ export default function ChartOfAccounts() {
 
                 <div className="space-y-2">
                    <Label>Saldo Normal</Label>
-                   <div className="flex gap-4">
+                   <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:gap-4">
                       <div className="flex items-center space-x-2">
                         <input type="radio" id="debit" name="balance_type" checked={formData.balance_type === 'DEBIT'} onChange={() => handleSelectChange('balance_type', 'DEBIT')} className="h-4 w-4" />
                         <label htmlFor="debit">Debit (Bertambah di Debit)</label>
@@ -448,9 +451,9 @@ export default function ChartOfAccounts() {
 
       <Card>
         <CardHeader className="pb-3">
-          <div className="flex justify-between">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <CardTitle>Daftar Akun</CardTitle>
-            <div className="relative w-64">
+            <div className="relative w-full sm:w-64">
               <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
               <Input placeholder="Cari Kode / Nama Akun..." className="pl-8" value={search} onChange={e => setSearch(e.target.value)} />
             </div>

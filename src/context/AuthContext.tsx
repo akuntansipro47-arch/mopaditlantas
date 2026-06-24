@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useState } from 'react';
 import { SUPABASE_URL, supabase } from '@/lib/supabase';
 import { toast } from 'sonner';
 import { logActivity } from '@/lib/activityLog';
@@ -15,6 +15,7 @@ export interface AuthContextType {
   user: User | null;
   login: (username: string, password: string) => Promise<boolean>;
   logout: () => void;
+  refreshCurrentUser: () => Promise<User | null>;
   loading: boolean;
 }
 
@@ -41,27 +42,126 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
 
+  const clearStoredSession = useCallback(() => {
+    setUser(null);
+    localStorage.removeItem('app_user');
+    localStorage.removeItem('demo_mode');
+  }, []);
+
+  const refreshUserFromServer = useCallback(
+    async (baseUser: User | null): Promise<User | null> => {
+      if (!baseUser || String(baseUser.role || '').toUpperCase() === 'DEMO') {
+        return baseUser;
+      }
+
+      try {
+        const { data, error } = await supabase
+          .from('app_users')
+          .select('id, username, full_name, role, allowed_menus, is_active')
+          .eq('id', baseUser.id)
+          .maybeSingle();
+
+        if (error) throw error;
+
+        if (!data || data.is_active === false) {
+          clearStoredSession();
+          toast.error('Akun nonaktif. Hubungi admin.');
+          return null;
+        }
+
+        const refreshedUser: User = {
+          id: data.id,
+          username: data.username,
+          full_name: data.full_name,
+          role: data.role,
+          allowed_menus: normalizeAllowedMenus(data.allowed_menus),
+        };
+
+        setUser(refreshedUser);
+        localStorage.setItem('app_user', JSON.stringify(refreshedUser));
+        return refreshedUser;
+      } catch (error) {
+        console.error('Failed to refresh current user:', error);
+        return baseUser;
+      }
+    },
+    [clearStoredSession],
+  );
+
   useEffect(() => {
-    const storedUser = localStorage.getItem('app_user');
-    if (storedUser) {
+    let isMounted = true;
+
+    const restoreUser = async () => {
+      const storedUser = localStorage.getItem('app_user');
+      if (!storedUser) {
+        if (isMounted) setLoading(false);
+        return;
+      }
+
       try {
         const parsed = JSON.parse(storedUser);
-        setUser({
+        const baseUser: User = {
           id: parsed.id,
           username: parsed.username,
           full_name: parsed.full_name,
           role: parsed.role,
           allowed_menus: normalizeAllowedMenus(parsed.allowed_menus),
-        });
+        };
+
+        setUser(baseUser);
+
         if (String(parsed.role || '').toUpperCase() === 'DEMO') {
           localStorage.setItem('demo_mode', '1');
+        } else {
+          await refreshUserFromServer(baseUser);
         }
       } catch {
         localStorage.removeItem('app_user');
+      } finally {
+        if (isMounted) setLoading(false);
       }
-    }
-    setLoading(false);
-  }, []);
+    };
+
+    void restoreUser();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [refreshUserFromServer]);
+
+  useEffect(() => {
+    if (!user || String(user.role || '').toUpperCase() === 'DEMO') return;
+
+    const handleRefresh = () => {
+      if (document.visibilityState === 'hidden') return;
+      void refreshUserFromServer(user);
+    };
+
+    window.addEventListener('focus', handleRefresh);
+    document.addEventListener('visibilitychange', handleRefresh);
+
+    return () => {
+      window.removeEventListener('focus', handleRefresh);
+      document.removeEventListener('visibilitychange', handleRefresh);
+    };
+  }, [refreshUserFromServer, user]);
+
+  const refreshCurrentUser = useCallback(async (): Promise<User | null> => {
+    if (!user) return null;
+    return refreshUserFromServer(user);
+  }, [refreshUserFromServer, user]);
+
+  useEffect(() => {
+    if (!user || String(user.role || '').toUpperCase() === 'DEMO') return;
+
+    const intervalId = window.setInterval(() => {
+      void refreshUserFromServer(user);
+    }, 15000);
+
+    return () => {
+      window.clearInterval(intervalId);
+    };
+  }, [refreshUserFromServer, user]);
 
   const login = async (username: string, password: string): Promise<boolean> => {
     try {
@@ -221,14 +321,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         module: 'AUTH',
       });
     }
-    setUser(null);
-    localStorage.removeItem('app_user');
-    localStorage.removeItem('demo_mode');
+    clearStoredSession();
     toast.info('Logged out successfully');
   };
 
   return (
-    <AuthContext.Provider value={{ user, login, logout, loading }}>
+    <AuthContext.Provider value={{ user, login, logout, refreshCurrentUser, loading }}>
       {children}
     </AuthContext.Provider>
   );
