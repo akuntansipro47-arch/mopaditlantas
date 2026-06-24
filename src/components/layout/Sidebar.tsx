@@ -213,18 +213,17 @@ export function Sidebar({ className, onNavigate }: SidebarProps) {
           href={appUrl}
           target="_blank"
           rel="noreferrer"
-          className="flex items-center gap-1.5 w-full"
+          className="flex w-full items-center gap-3"
         >
-          <div className="relative h-12 w-12 flex-shrink-0 flex items-center justify-center">
-             <LogoMark className="h-12 w-12 text-white" />
+          <div className="relative flex h-11 w-11 flex-shrink-0 items-center justify-center">
+             <LogoMark className="h-11 w-11" />
           </div>
           
-          <div className="flex min-w-0 flex-col justify-center -mt-1">
-            <h1 className="flex items-baseline text-2xl font-black leading-none tracking-tighter sm:text-3xl">
-              <span className="text-white italic">Oto</span>
-              <span className="text-lime-500 italic">Smart</span>
+          <div className="flex min-w-0 flex-col justify-center">
+            <h1 className="text-xl font-semibold leading-none tracking-tight text-white sm:text-2xl">
+              Oto<span className="text-lime-400">Smart</span>
             </h1>
-            <p className="mt-0.5 ml-0.5 truncate text-[9px] font-medium uppercase tracking-widest text-slate-400">Complete Control Smart System</p>
+            <p className="mt-1 truncate text-[10px] font-medium tracking-[0.16em] text-slate-400 uppercase">Workshop Control System</p>
           </div>
         </a>
       </div>

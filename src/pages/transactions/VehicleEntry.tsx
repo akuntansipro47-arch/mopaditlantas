@@ -4,7 +4,7 @@ import { Database } from '@/types/supabase';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Plus, Search, Pencil, Trash2, Printer, Check, Eye, Paperclip } from 'lucide-react';
+import { Plus, Search, Pencil, Trash2, Printer, Check, Eye, Paperclip, RefreshCw } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { toast } from 'sonner';
 import {
@@ -127,6 +127,7 @@ export default function VehicleEntryPage() {
   const [attachments, setAttachments] = useState<EntryAttachment[]>([]);
   const [pendingAttachments, setPendingAttachments] = useState<PendingAttachment[]>([]);
   const [attachmentCounts, setAttachmentCounts] = useState<Record<string, number>>({});
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
   const attachmentDialogFileInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -310,6 +311,21 @@ export default function VehicleEntryPage() {
       setLoading(false);
     }
   }
+
+  const handleRefreshPageData = async () => {
+    setIsRefreshing(true);
+    try {
+      await Promise.allSettled([
+        fetchEntries(),
+        fetchMasterData(),
+        currentId ? fetchAttachments(currentId) : Promise.resolve(),
+        attachmentDialogEntry?.id ? fetchAttachmentsForDialog(attachmentDialogEntry.id) : Promise.resolve(),
+      ]);
+      toast.success('Data entry estimasi berhasil disegarkan.');
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
 
   const fetchAttachmentCountsForEntries = async (rows: EntryWithDetails[]) => {
     try {
@@ -1682,6 +1698,11 @@ export default function VehicleEntryPage() {
           <h2 className="text-2xl font-bold tracking-tight sm:text-3xl">Entry Kendaraan Masuk</h2>
           <p className="mt-1 text-sm text-slate-500">Form entry dan rincian estimasi sekarang lebih nyaman dibuka di mobile/tablet.</p>
         </div>
+        <div className="flex flex-col gap-2 sm:flex-row">
+          <Button type="button" variant="outline" onClick={handleRefreshPageData} disabled={loading || isRefreshing}>
+            <RefreshCw className={cn("mr-2 h-4 w-4", isRefreshing && "animate-spin")} />
+            Refresh
+          </Button>
         <Dialog open={isDialogOpen} onOpenChange={(open) => { setIsDialogOpen(open); if(!open) resetForm(); }}>
           <DialogTrigger asChild>
             <Button><Plus className="mr-2 h-4 w-4" /> Entry Baru</Button>
@@ -2244,6 +2265,7 @@ export default function VehicleEntryPage() {
                 </Dialog>
             </DialogContent>
         </Dialog>
+        </div>
 
         <Dialog open={isAttachmentDialogOpen} onOpenChange={(v) => { setIsAttachmentDialogOpen(v); if (!v) setAttachmentDialogEntry(null); }}>
           <DialogContent className="sm:max-w-[700px]">

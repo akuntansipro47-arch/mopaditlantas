@@ -31,13 +31,13 @@ export default function Login() {
       <Card className="w-full max-w-sm border-slate-800 bg-slate-950/50 text-slate-200">
         <CardHeader className="space-y-4 pt-8">
           <div className="flex flex-col items-center gap-1.5">
-            <LogoMark className="h-16 w-16 text-white" />
-            <div className="flex flex-col items-center -mt-1">
-              <h1 className="text-5xl font-black tracking-tighter leading-none flex items-baseline">
-                <span className="text-white italic">Oto</span>
-                <span className="text-lime-500 italic">Smart</span>
+            <LogoMark className="h-16 w-16" />
+            <div className="flex flex-col items-center">
+              <h1 className="text-4xl font-semibold leading-none tracking-tight">
+                <span className="text-white">Oto</span>
+                <span className="text-lime-400">Smart</span>
               </h1>
-              <p className="text-[10px] text-slate-400 font-medium tracking-[0.2em] uppercase mt-1">Complete Control Smart System</p>
+              <p className="mt-2 text-[10px] font-medium uppercase tracking-[0.2em] text-slate-400">Workshop Control System</p>
             </div>
           </div>
           <CardTitle className="text-center text-slate-200 mt-6">Sign In</CardTitle>
