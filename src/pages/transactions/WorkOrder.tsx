@@ -7,7 +7,7 @@ import {
 } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Plus, Search, Eye, Trash2, ClipboardCheck, Play, CheckCircle, RefreshCw, Printer, Unlock } from 'lucide-react';
+import { Plus, Search, Eye, Trash2, ClipboardCheck, Play, CheckCircle, RefreshCw, Printer } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { toast } from 'sonner';
 import {
@@ -24,6 +24,7 @@ import PrintSPK from '@/components/ui/PrintSPK';
 import { useAuth } from '@/context/AuthContext';
 import { incrementDocumentPrintCounter } from '@/lib/printCounter';
 import { logActivity } from '@/lib/activityLog';
+import { ensureCanPrintSpk, logSpkPrintActivity } from '@/lib/woPrint';
 
 type WO = Database['public']['Tables']['work_orders']['Row'];
 type VehicleEntry = Database['public']['Tables']['vehicle_entries']['Row'];
@@ -68,10 +69,6 @@ export default function WorkOrder() {
     contentRef: printComponentRef,
     documentTitle: printData?.wo?.wo_number ? `SPK-${printData.wo.wo_number}` : 'SPK',
     onAfterPrint: () => {
-      const id = printingIdRef.current;
-      if (id) {
-        void lockWorkOrderAfterPrint(id);
-      }
       setPrintData(null);
       setPrintingSPKId(null);
       printingIdRef.current = null;
@@ -148,73 +145,6 @@ export default function WorkOrder() {
     setCurrentId(null);
   };
 
-  const isLocked = (wo: any) => Boolean((wo as any)?.is_locked);
-
-  const lockWorkOrderAfterPrint = async (id: string) => {
-    try {
-      const metaUser = user || (JSON.parse(localStorage.getItem('app_user') || 'null') as any);
-      const { error } = await supabase
-        .from('work_orders')
-        .update({
-          is_locked: true,
-          locked_at: new Date().toISOString(),
-          locked_by_username: metaUser?.username || null,
-          locked_by_role: metaUser?.role || null,
-          lock_reason: 'PRINT_SPK',
-        } as any)
-        .eq('id', id);
-      if (error) throw error;
-      void logActivity({
-        user_id: metaUser?.id || null,
-        username: metaUser?.username || null,
-        role: metaUser?.role || null,
-        action: 'WO_LOCK',
-        module: 'WORK_ORDER',
-        entity_type: 'work_orders',
-        entity_id: String(id),
-        details: 'Lock WO setelah cetak SPK',
-        meta: { lock_reason: 'PRINT_SPK' },
-      });
-      await fetchWOs();
-    } catch (e: any) {
-      toast.error('Gagal lock WO setelah cetak: ' + String(e?.message || e));
-    }
-  };
-
-  const handleUnlock = async (wo: WOWithDetails) => {
-    if (!user || user.role !== 'SUPER_ADMIN') {
-      toast.error('Hanya Super Admin yang bisa unlock WO.');
-      return;
-    }
-    if (!window.confirm(`Unlock WO "${wo.wo_number}"? Setelah unlock, WO bisa dicetak lagi.`)) return;
-    try {
-      const { error } = await supabase
-        .from('work_orders')
-        .update({
-          is_locked: false,
-          unlocked_at: new Date().toISOString(),
-          unlocked_by_username: user.username,
-          unlocked_by_role: user.role,
-        } as any)
-        .eq('id', wo.id);
-      if (error) throw error;
-      void logActivity({
-        user_id: user.id,
-        username: user.username,
-        role: user.role,
-        action: 'WO_UNLOCK',
-        module: 'WORK_ORDER',
-        entity_type: 'work_orders',
-        entity_id: String(wo.id),
-        details: 'Unlock WO',
-      });
-      toast.success('WO berhasil di-unlock.');
-      await fetchWOs();
-    } catch (e: any) {
-      toast.error('Gagal unlock WO: ' + String(e?.message || e));
-    }
-  };
-
   const handleEdit = (item: WOWithDetails) => {
     if (item.status !== 'IN_PROGRESS') {
       toast.warning('Hanya Work Order dengan status IN_PROGRESS yang dapat diedit.');
@@ -235,8 +165,11 @@ export default function WorkOrder() {
       toast.warning('Cetak SPK hanya tersedia untuk WO dengan status IN_PROGRESS.');
       return;
     }
-    if (isLocked(wo)) {
-      toast.error(user?.role === 'SUPER_ADMIN' ? 'WO terkunci untuk cetak. Unlock dulu untuk cetak ulang.' : 'WO terkunci untuk cetak.');
+    try {
+      const res = await ensureCanPrintSpk(user as any, wo.id);
+      await logSpkPrintActivity(user as any, wo.id, res, { source: 'WorkOrder.tsx', method: 'react-to-print' });
+    } catch (e: any) {
+      toast.error(String(e?.message || e));
       return;
     }
 
@@ -311,11 +244,15 @@ export default function WorkOrder() {
       toast.warning('Cetak SPK Dot Matrix hanya tersedia untuk WO dengan status IN_PROGRESS.');
       return;
     }
-    if (isLocked(wo)) {
-      toast.error(user?.role === 'SUPER_ADMIN' ? 'WO terkunci untuk cetak. Unlock dulu untuk cetak ulang.' : 'WO terkunci untuk cetak.');
-      return;
-    }
-    window.open(`/print/spk-dot/${wo.id}`, '_blank');
+    (async () => {
+      try {
+        const res = await ensureCanPrintSpk(user as any, wo.id);
+        await logSpkPrintActivity(user as any, wo.id, res, { source: 'WorkOrder.tsx', method: 'dotmatrix' });
+        window.open(`/print/spk-dot/${wo.id}`, '_blank');
+      } catch (e: any) {
+        toast.error(String(e?.message || e));
+      }
+    })();
   };
 
   const checkSparepartsIssued = async (wo: WOWithDetails): Promise<{ valid: boolean; message: string; unissued: string[] }> => {
@@ -505,11 +442,7 @@ export default function WorkOrder() {
 
     try {
       if (isEditing && currentId) {
-        const current = wos.find((x) => String((x as any).id) === String(currentId)) as any;
-        if (current && isLocked(current)) {
-          toast.error(user?.role === 'SUPER_ADMIN' ? 'WO terkunci. Unlock dulu untuk edit.' : 'WO terkunci setelah dicetak.');
-          return;
-        }
+        // Hard-lock setelah cetak dihapus dari flow. Kontrol cetak ulang via permission.
       }
       const payload = {
         work_date: formData.work_date,
@@ -838,11 +771,6 @@ export default function WorkOrder() {
                         } className={(item.status === 'COMPLETED' || item.status === 'CLOSED') ? 'bg-green-100 text-green-800 border-transparent' : ''}>
                           {item.status.replace('_', ' ')}
                         </Badge>
-                        {isLocked(item) && (
-                          <Badge variant="destructive" className="bg-amber-100 text-amber-800 border-transparent">
-                            LOCK
-                          </Badge>
-                        )}
                         </div>
                       </TableCell>
                       <TableCell className="text-right">
@@ -867,17 +795,12 @@ export default function WorkOrder() {
                               <RefreshCw className="h-4 w-4 mr-1" /> Re-open
                             </Button>
                           )}
-                          <Button variant="outline" size="sm" className="h-8" onClick={() => handlePrintSPK(item)} disabled={item.status !== 'IN_PROGRESS' || printingSPKId === item.id || isLocked(item)}>
+                          <Button variant="outline" size="sm" className="h-8" onClick={() => handlePrintSPK(item)} disabled={item.status !== 'IN_PROGRESS' || printingSPKId === item.id}>
                             <Printer className="h-4 w-4 mr-1" /> SPK
                           </Button>
-                          <Button variant="outline" size="sm" className="h-8" onClick={() => handlePrintSPKDotMatrix(item)} disabled={item.status !== 'IN_PROGRESS' || isLocked(item)}>
+                          <Button variant="outline" size="sm" className="h-8" onClick={() => handlePrintSPKDotMatrix(item)} disabled={item.status !== 'IN_PROGRESS'}>
                             <Printer className="h-4 w-4 mr-1" /> Dot
                           </Button>
-                          {isLocked(item) && user?.role === 'SUPER_ADMIN' && (
-                            <Button variant="outline" size="sm" className="h-8" onClick={() => handleUnlock(item)}>
-                              <Unlock className="h-4 w-4 mr-1" /> Unlock
-                            </Button>
-                          )}
                           <Button
                             variant="outline"
                             size="sm"

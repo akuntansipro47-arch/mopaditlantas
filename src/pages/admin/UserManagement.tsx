@@ -47,6 +47,7 @@ const PERMISSION_GROUPS: Array<{ title: string; items: Array<{ key: string; labe
     items: [
       { key: 'trans_entry', label: 'Entry Kendaraan' },
       { key: 'trans_wo', label: 'Work Order' },
+      { key: 'trans_wo_reprint', label: 'Cetak Ulang SPK (WO)' },
       { key: 'trans_purchase_request', label: 'Purchase Request / Request Item' },
       { key: 'trans_po', label: 'Purchase Order' },
       { key: 'trans_receive', label: 'Penerimaan Barang' },

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { Loader2 } from 'lucide-react';
 import { incrementDocumentPrintCounter } from '@/lib/printCounter';
+import { ensureCanPrintSpk, logSpkPrintActivity } from '@/lib/woPrint';
 
 function padRight(v: string, len: number) {
   const s = String(v ?? '');
@@ -41,46 +42,25 @@ export default function SPKPrintDotMatrix({ id }: SPKDotProps) {
   const [wo, setWo] = useState<any>(null);
   const [entry, setEntry] = useState<any>(null);
   const [printCount, setPrintCount] = useState<number>(1);
-  const [printLocked, setPrintLocked] = useState(false);
+  const [permissionError, setPermissionError] = useState<string | null>(null);
   const lockedRef = useRef(false);
 
   useEffect(() => {
     fetchData();
   }, [id]);
 
-  useEffect(() => {
-    const handler = async () => {
-      if (lockedRef.current) return;
-      lockedRef.current = true;
-      try {
-        let metaUser: any = null;
-        try {
-          metaUser = JSON.parse(localStorage.getItem('app_user') || 'null');
-        } catch {
-          metaUser = null;
-        }
-        const { error } = await supabase
-          .from('work_orders')
-          .update({
-            is_locked: true,
-            locked_at: new Date().toISOString(),
-            locked_by_username: metaUser?.username || null,
-            locked_by_role: metaUser?.role || null,
-            lock_reason: 'PRINT_SPK',
-          } as any)
-          .eq('id', id);
-        if (error) return;
-      } catch {
-        return;
-      }
-    };
-    window.addEventListener('afterprint', handler);
-    return () => window.removeEventListener('afterprint', handler);
-  }, [id]);
-
   async function fetchData() {
     setLoading(true);
     try {
+      // Permission check (termasuk aturan cetak ulang)
+      try {
+        const res = await ensureCanPrintSpk(null, String(id));
+        await logSpkPrintActivity(null, String(id), res, { source: 'SPKPrintDotMatrix.tsx', method: 'auto-print' });
+      } catch (e: any) {
+        setPermissionError(String(e?.message || e));
+        return;
+      }
+
       const { data: agencyData } = await supabase.from('agency_profile').select('*').single();
       setAgency(agencyData);
 
@@ -91,8 +71,6 @@ export default function SPKPrintDotMatrix({ id }: SPKDotProps) {
         .single();
       if (woErr) throw woErr;
       setWo(woData);
-      const alreadyLocked = Boolean((woData as any)?.is_locked);
-      setPrintLocked(alreadyLocked);
 
       let entryData: any = null;
       if (woData?.vehicle_entry_id) {
@@ -125,10 +103,6 @@ export default function SPKPrintDotMatrix({ id }: SPKDotProps) {
         entryData = { ...ve, vehicle_entry_spareparts: spareparts };
       }
       setEntry(entryData);
-
-      if (alreadyLocked) {
-        return;
-      }
 
       const cnt = await incrementDocumentPrintCounter('SPK', String(id));
       setPrintCount(cnt);
@@ -286,19 +260,18 @@ export default function SPKPrintDotMatrix({ id }: SPKDotProps) {
     );
   }
 
-  if (!wo) return <div>Data WO tidak ditemukan.</div>;
-  if (printLocked) {
+  if (permissionError) {
     return (
       <div className="min-h-screen bg-white flex items-center justify-center p-8">
         <div className="max-w-xl text-center">
-          <div className="text-xl font-bold">WO terkunci untuk cetak</div>
-          <div className="text-sm text-gray-600 mt-2">
-            Silakan unlock dari menu Work Order (hanya Super Admin) untuk bisa cetak ulang.
-          </div>
+          <div className="text-xl font-bold text-amber-700">Tidak bisa cetak SPK</div>
+          <div className="text-sm text-gray-600 mt-2">{permissionError}</div>
         </div>
       </div>
     );
   }
+
+  if (!wo) return <div>Data WO tidak ditemukan.</div>;
 
   return (
     <div className="printable-area min-h-screen bg-white p-0">

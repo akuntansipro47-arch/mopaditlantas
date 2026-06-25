@@ -11,6 +11,7 @@ import { PlusCircle, Edit, Trash2, CheckCircle, Search, Barcode, RefreshCw } fro
 import { generateTransactionNumber, formatDate } from '@/lib/utils';
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { incrementDocumentPrintCounter } from '@/lib/printCounter';
+import { ensureCanPrintSpk, logSpkPrintActivity } from '@/lib/woPrint';
 
 import { useReactToPrint } from 'react-to-print';
 import { Card, CardContent } from '@/components/ui/card';
@@ -69,6 +70,13 @@ const WorkOrderV2 = () => {
   });
 
   const handlePrintSpk = async (wo: WorkOrder) => {
+    try {
+      const res = await ensureCanPrintSpk(user as any, wo.id);
+      await logSpkPrintActivity(user as any, wo.id, res, { source: 'WorkOrderV2.tsx', method: 'react-to-print' });
+    } catch (e: any) {
+      toast.error(String(e?.message || e));
+      return;
+    }
     setSelectedWoForPrint(wo);
     const cnt = await incrementDocumentPrintCounter('SPK', String(wo.id));
     setSpkPrintCount(cnt);

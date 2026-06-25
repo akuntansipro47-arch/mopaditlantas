@@ -143,10 +143,10 @@ export default function App() {
               path="/print/surat-jalan/:id"
               element={guardByPermission(<PrintSuratJalan />, ['trans_wo', 'report_vehicle_exit'])}
             />
-            <Route path="/print/spk/:id" element={guardByPermission(<PrintSPK />, ['trans_wo', 'report_wo'])} />
+            <Route path="/print/spk/:id" element={guardByPermission(<PrintSPK />, ['trans_wo', 'trans_wo_reprint', 'report_wo'])} />
             <Route
               path="/print/spk-dot/:id"
-              element={guardByPermission(<PrintSPKDotMatrix />, ['trans_wo', 'report_wo'])}
+              element={guardByPermission(<PrintSPKDotMatrix />, ['trans_wo', 'trans_wo_reprint', 'report_wo'])}
             />
             <Route
               path="/print/entry/:id"
