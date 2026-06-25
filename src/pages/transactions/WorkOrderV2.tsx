@@ -497,7 +497,7 @@ const WorkOrderV2 = () => {
 
       {/* Add/Edit Dialog */}
       <Dialog open={isDialogOpen} onOpenChange={(open) => { if (!open) resetForm(); setIsDialogOpen(open); }}>
-        <DialogContent className="sm:max-w-[500px]">
+        <DialogContent className="sm:max-w-[500px] lg:max-w-[900px] xl:max-w-[1100px]">
           <DialogHeader>
             <DialogTitle>{isEditing ? 'Edit Work Order' : 'Tambah Work Order'}</DialogTitle>
             <DialogDescription>

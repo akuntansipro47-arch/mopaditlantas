@@ -1707,7 +1707,7 @@ export default function VehicleEntryPage() {
           <DialogTrigger asChild>
             <Button><Plus className="mr-2 h-4 w-4" /> Entry Baru</Button>
           </DialogTrigger>
-          <DialogContent className="flex max-h-[92vh] max-w-[calc(100vw-1rem)] flex-col p-3 sm:max-w-[700px] sm:p-6">
+          <DialogContent className="flex max-h-[92vh] max-w-[calc(100vw-1rem)] flex-col p-3 sm:max-w-[700px] sm:p-6 lg:max-w-[980px] xl:max-w-[1200px]">
             <DialogHeader>
               <DialogTitle>{isEditing ? 'Edit Entry' : 'Entry Kendaraan Masuk'}</DialogTitle>
               <DialogDescription>Catat kendaraan masuk untuk perbaikan/service.</DialogDescription>

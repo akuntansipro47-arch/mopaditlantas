@@ -558,7 +558,7 @@ export default function WorkOrder() {
           <DialogTrigger asChild>
             <Button><Plus className="mr-2 h-4 w-4" /> Buat WO Baru</Button>
           </DialogTrigger>
-          <DialogContent className="max-w-[calc(100vw-1rem)] p-3 sm:max-w-[600px] sm:p-6">
+          <DialogContent className="max-w-[calc(100vw-1rem)] p-3 sm:max-w-[600px] sm:p-6 lg:max-w-[900px] xl:max-w-[1100px]">
             <DialogHeader>
               <DialogTitle>{isEditing ? 'Edit Work Order' : 'Buat Work Order Baru'}</DialogTitle>
               <DialogDescription>Tugaskan mekanik untuk perbaikan kendaraan.</DialogDescription>
