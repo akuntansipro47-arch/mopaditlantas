@@ -121,6 +121,9 @@ export default function PurchaseOrderPrintDotMatrix({ id }: POPrintProps) {
     const dateLabel = `TGL ${poDate}`;
     const dateCol = Math.max(12, dateLabel.length);
 
+    const poNotesRaw = String((po as any)?.notes || '').replace(/\s+/g, ' ').trim();
+    const poNotesLines = poNotesRaw ? wrapText(poNotesRaw, 76) : ['-'];
+
     const supplierName = String(po.suppliers?.name || '-');
     const supplierAddress = String(po.suppliers?.address || '-');
     const supplierPhone = String(po.suppliers?.phone || '-');
@@ -155,6 +158,12 @@ export default function PurchaseOrderPrintDotMatrix({ id }: POPrintProps) {
           padRight(`KENDARAAN: ${vehiclePlate} ${vehicleName}`, WIDTH),
         ]
       : [padRight(`TIPE     : STOK GUDANG`, WIDTH)];
+
+    const notesLines = [
+      line(WIDTH, '-'),
+      padRight('KETERANGAN:', WIDTH),
+      ...poNotesLines.map((ln) => padRight(`  ${ln}`, WIDTH)),
+    ];
 
     const colNo = 3;
     const colName = 28;
@@ -226,7 +235,7 @@ export default function PurchaseOrderPrintDotMatrix({ id }: POPrintProps) {
       padRight('______________', 26) + padRight('______________', 27) + padRight('______________', 27),
     ];
 
-    return [...headerLines, ...projectLines, line(WIDTH, '-'), head, line(WIDTH, '-'), ...itemLines, ...footerLines].join('\n');
+    return [...headerLines, ...projectLines, ...notesLines, line(WIDTH, '-'), head, line(WIDTH, '-'), ...itemLines, ...footerLines].join('\n');
   }, [agency, items, po, printCount]);
 
   const lineCount = useMemo(() => {

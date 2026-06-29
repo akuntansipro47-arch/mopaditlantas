@@ -183,6 +183,12 @@ export default function PurchaseOrderPrint({ id }: POPrintProps) {
         </div>
       </div>
 
+      {/* Keterangan */}
+      <div className="border border-gray-400 p-1.5 rounded-sm mb-2">
+        <h3 className="font-bold border-b border-gray-300 pb-0.5 mb-0.5 text-[9px] uppercase text-gray-500">KETERANGAN</h3>
+        <p className="text-[9px] whitespace-pre-wrap leading-tight">{String((po as any)?.notes || '').trim() || '-'}</p>
+      </div>
+
       {/* Items Table */}
       <table className="w-full mb-2 border-collapse text-[10px]">
         <thead>

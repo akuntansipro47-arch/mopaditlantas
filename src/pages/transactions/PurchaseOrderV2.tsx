@@ -18,6 +18,7 @@ import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
@@ -69,6 +70,7 @@ export default function PurchaseOrderV2() {
     supplier_id: '',
     work_order_id: 'NONE', // Optional
     po_date: new Date().toISOString().split('T')[0],
+    notes: '',
   });
 
   const isWoMode = poType === 'WO' && String(formData.work_order_id || '') !== 'NONE';
@@ -519,7 +521,8 @@ export default function PurchaseOrderV2() {
     setFormData({ 
       supplier_id: '', 
       work_order_id: 'NONE',
-      po_date: new Date().toISOString().split('T')[0]
+      po_date: new Date().toISOString().split('T')[0],
+      notes: '',
     });
     setPoItems([{ line_type: 'PART', goods_id: '', job_type_id: '', service_name: '', brand: '', quantity: 1, unit_price: 0 }]);
     setPoType('WO');
@@ -600,6 +603,7 @@ export default function PurchaseOrderV2() {
         supplier_id: po.supplier_id || '',
         work_order_id: po.work_order_id || 'NONE',
         po_date: po.po_date || new Date().toISOString().split('T')[0],
+        notes: String((po as any)?.notes || ''),
       });
       
       setPoType(po.work_order_id ? 'WO' : 'STOCK');
@@ -761,6 +765,7 @@ export default function PurchaseOrderV2() {
             work_order_id: poType === 'WO' && formData.work_order_id !== 'NONE' ? formData.work_order_id : null,
             total_amount: calculateTotal(),
             po_date: formData.po_date,
+            notes: String(formData.notes || '').trim() ? String(formData.notes || '').trim() : null,
             ...(isReturnEditMode ? { status: 'ISSUED' as any } : {}),
           })
           .eq('id', editingId);
@@ -786,6 +791,7 @@ export default function PurchaseOrderV2() {
             status: 'ISSUED',
             total_amount: calculateTotal(),
             po_date: formData.po_date,
+            notes: String(formData.notes || '').trim() ? String(formData.notes || '').trim() : null,
           }])
           .select()
           .single();
@@ -967,6 +973,7 @@ export default function PurchaseOrderV2() {
       item.po_number,
       item.po_date,
       item.created_at,
+      item.notes,
       item.suppliers?.name,
       item.work_orders?.wo_number,
       v?.license_plate,
@@ -1067,6 +1074,16 @@ export default function PurchaseOrderV2() {
                         <Search className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                       </Button>
                     </div>
+                  </div>
+                  <div className="space-y-2 md:col-span-2">
+                    <Label>Keterangan</Label>
+                    <Textarea
+                      value={formData.notes}
+                      onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
+                      placeholder="Contoh: Mohon kirim secepatnya / Sesuai spesifikasi / Catatan khusus lainnya..."
+                      className="min-h-[72px]"
+                      disabled={isReadOnly}
+                    />
                   </div>
                   
                 {/* WO Selection Popup */}
