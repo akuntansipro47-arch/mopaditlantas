@@ -755,21 +755,32 @@ export default function PurchaseOrderV2() {
     try {
       let targetPoId = editingId;
       let createdPO: any = null;
+      const notesValue = String(formData.notes || '').trim();
 
       if (editingId) {
         // UPDATE Existing PO
-        const { error: poError } = await supabase
-          .from('purchase_orders')
-          .update({
-            supplier_id: formData.supplier_id,
-            work_order_id: poType === 'WO' && formData.work_order_id !== 'NONE' ? formData.work_order_id : null,
-            total_amount: calculateTotal(),
-            po_date: formData.po_date,
-            notes: String(formData.notes || '').trim() ? String(formData.notes || '').trim() : null,
-            ...(isReturnEditMode ? { status: 'ISSUED' as any } : {}),
-          })
-          .eq('id', editingId);
+        const basePayload: any = {
+          supplier_id: formData.supplier_id,
+          work_order_id: poType === 'WO' && formData.work_order_id !== 'NONE' ? formData.work_order_id : null,
+          total_amount: calculateTotal(),
+          po_date: formData.po_date,
+          ...(isReturnEditMode ? { status: 'ISSUED' as any } : {}),
+        };
 
+        const payloadWithNotes: any = {
+          ...basePayload,
+          notes: notesValue ? notesValue : null,
+        };
+
+        let { error: poError } = await supabase.from('purchase_orders').update(payloadWithNotes).eq('id', editingId);
+        if (poError) {
+          const msg = String((poError as any)?.message || poError);
+          // Fallback kalau kolom notes belum ada di database (schema cache / migration belum diterapkan).
+          if (msg.includes("Could not find the 'notes' column")) {
+            toast.warning('Kolom "Keterangan" belum tersedia di database. Simpan tetap dilanjutkan tanpa keterangan. Mohon jalankan migration Supabase terlebih dulu.');
+            ({ error: poError } = await supabase.from('purchase_orders').update(basePayload).eq('id', editingId));
+          }
+        }
         if (poError) throw poError;
 
         // Delete existing items to replace with new ones
@@ -782,20 +793,29 @@ export default function PurchaseOrderV2() {
 
       } else {
         // CREATE New PO
-        const { data: newPO, error: poError } = await supabase
-          .from('purchase_orders')
-          .insert([{
-            po_number: generateTransactionNumber('PO'),
-            supplier_id: formData.supplier_id,
-            work_order_id: poType === 'WO' && formData.work_order_id !== 'NONE' ? formData.work_order_id : null,
-            status: 'ISSUED',
-            total_amount: calculateTotal(),
-            po_date: formData.po_date,
-            notes: String(formData.notes || '').trim() ? String(formData.notes || '').trim() : null,
-          }])
-          .select()
-          .single();
-        
+        const basePayload: any = {
+          po_number: generateTransactionNumber('PO'),
+          supplier_id: formData.supplier_id,
+          work_order_id: poType === 'WO' && formData.work_order_id !== 'NONE' ? formData.work_order_id : null,
+          status: 'ISSUED',
+          total_amount: calculateTotal(),
+          po_date: formData.po_date,
+        };
+
+        const payloadWithNotes: any = {
+          ...basePayload,
+          notes: notesValue ? notesValue : null,
+        };
+
+        let { data: newPO, error: poError } = await supabase.from('purchase_orders').insert([payloadWithNotes]).select().single();
+        if (poError) {
+          const msg = String((poError as any)?.message || poError);
+          if (msg.includes("Could not find the 'notes' column")) {
+            toast.warning('Kolom "Keterangan" belum tersedia di database. Simpan tetap dilanjutkan tanpa keterangan. Mohon jalankan migration Supabase terlebih dulu.');
+            ({ data: newPO, error: poError } = await supabase.from('purchase_orders').insert([basePayload]).select().single());
+          }
+        }
+
         if (poError) throw poError;
         createdPO = newPO;
         targetPoId = newPO.id;
