@@ -1845,9 +1845,8 @@ export default function VehicleEntryPage() {
 
                   {/* Multiple Jobs Selection */}
                   <div className="space-y-3 border p-3 rounded-md bg-slate-50">
-                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
                       <Label>Daftar Pekerjaan / Service (Bisa Campuran Group)</Label>
-                      <Button type="button" variant="outline" size="sm" onClick={handleAddJob}>+ Tambah Pekerjaan</Button>
                     </div>
                     {formErrors.entryJobs && <p className="text-xs text-red-600">{formErrors.entryJobs}</p>}
                     
@@ -2027,10 +2026,22 @@ export default function VehicleEntryPage() {
                     ))}
                     {entryJobs.length === 0 && (
                       <div className="text-center py-4">
-                        <p className="text-sm text-muted-foreground italic mb-2">Belum ada pekerjaan dipilih.</p>
-                        <Button type="button" variant="secondary" size="sm" onClick={handleAddJob}>+ Tambah Pekerjaan Pertama</Button>
+                        <p className="text-sm text-muted-foreground italic">Belum ada pekerjaan dipilih.</p>
                       </div>
                     )}
+
+                    <div className="mt-2 flex">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={handleAddJob}
+                        className="w-full border-dashed sm:ml-auto sm:w-auto"
+                      >
+                        + Tambah Pekerjaan
+                      </Button>
+                    </div>
+
                     {entryJobs.length > 0 && (
                       <div className="flex justify-end pt-2">
                         <div className="text-sm font-semibold">
