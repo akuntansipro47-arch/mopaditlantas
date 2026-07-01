@@ -5,6 +5,7 @@ import { hasMenuAccess } from '@/lib/permissions';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { ShoppingCart, ArchiveX, TrendingUp, CircleDollarSign, Landmark, Percent, Timer, Users } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import { formatDate } from '@/lib/utils';
 
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -100,6 +101,26 @@ interface CriticalStockItem {
 
 type TopCustomer = { name: string; total: number };
 
+type RepeatWoVehicle = {
+  license_plate: string;
+  vehicle_name: string;
+  wo_count: number;
+  wo_numbers: string[];
+  latest_entry_date: string | null;
+  latest_entry_number: string | null;
+  latest_total_estimation: number;
+};
+
+const getJobEstimationFromRow = (row: any) => {
+  const epRaw = (row as any)?.estimated_price;
+  const ep = Number(epRaw);
+  const sp = Number((row as any)?.job_types?.selling_price || 0);
+  if (Number.isFinite(ep) && ep > 0) return ep;
+  if ((!Number.isFinite(ep) || epRaw === null || epRaw === undefined) && sp > 0) return sp;
+  if (Number.isFinite(ep) && ep === 0 && sp > 0) return sp;
+  return Number.isFinite(ep) ? ep : 0;
+};
+
 export default function Dashboard() {
   const { user } = useAuth();
   const navigate = useNavigate();
@@ -131,6 +152,7 @@ export default function Dashboard() {
   const [monthlyProgress, setMonthlyProgress] = useState<MonthlyProgressData[]>([]);
   const [monthlyPoData, setMonthlyPoData] = useState<MonthlyPoData[]>([]);
   const [criticalStockItems, setCriticalStockItems] = useState<CriticalStockItem[]>([]);
+  const [repeatWoVehicles, setRepeatWoVehicles] = useState<RepeatWoVehicle[]>([]);
   const [loading, setLoading] = useState(true);
   const [warnings, setWarnings] = useState<string[]>([]);
 
@@ -350,6 +372,178 @@ export default function Dashboard() {
           estimated_finish_date: (wo.vehicle_entries as any)?.estimated_finish_date,
         }));
         setLeadTimeData(formattedLeadTime);
+
+        // Kendaraan yang punya WO lebih dari 1 kali (nopol sama)
+        try {
+          const woRows: any[] = [];
+          const PAGE_SIZE_WO = 1000;
+          const MAX_ROWS = 5000; // batasi supaya tidak berat di Dashboard
+          let pageFrom = 0;
+          while (true) {
+            const pageTo = pageFrom + PAGE_SIZE_WO - 1;
+            const { data: pageRows, error: woErr } = await supabase
+              .from('work_orders')
+              .select(
+                `
+                id,
+                wo_number,
+                work_date,
+                vehicle_entry_id,
+                vehicle_entries!inner(
+                  id,
+                  entry_date,
+                  entry_number,
+                  vehicles!inner(license_plate, brand_type)
+                )
+              `
+              )
+              .range(pageFrom, pageTo);
+
+            if (woErr) {
+              warn('Gagal ambil histori WO per kendaraan', woErr);
+              break;
+            }
+            if (!pageRows || pageRows.length === 0) break;
+
+            woRows.push(...pageRows);
+            if (pageRows.length < PAGE_SIZE_WO) break;
+            pageFrom += PAGE_SIZE_WO;
+            if (woRows.length >= MAX_ROWS) break;
+          }
+
+          const byPlate = new Map<
+            string,
+            {
+              license_plate: string;
+              vehicle_name: string;
+              woIds: Set<string>;
+              woNumbers: Map<string, string>; // wo_number -> work_date
+              latestEntryId: string | null;
+              latestEntryDate: string | null;
+              latestEntryNumber: string | null;
+            }
+          >();
+
+          woRows.forEach((wo: any) => {
+            const entry = (wo as any)?.vehicle_entries as any;
+            const v = entry?.vehicles as any;
+            const plate = String(v?.license_plate || '').trim();
+            if (!plate) return;
+            const vehicleName = String(v?.brand_type || '-').trim() || '-';
+            const woId = String(wo?.id || '').trim();
+            const woNumber = String(wo?.wo_number || '').trim();
+            const workDate = String(wo?.work_date || entry?.entry_date || '').trim();
+            const entryId = String(entry?.id || wo?.vehicle_entry_id || '').trim();
+            const entryDate = String(entry?.entry_date || '').trim() || null;
+            const entryNumber = String(entry?.entry_number || '').trim() || null;
+
+            if (!byPlate.has(plate)) {
+              byPlate.set(plate, {
+                license_plate: plate,
+                vehicle_name: vehicleName,
+                woIds: new Set<string>(),
+                woNumbers: new Map<string, string>(),
+                latestEntryId: entryId || null,
+                latestEntryDate: entryDate,
+                latestEntryNumber: entryNumber,
+              });
+            }
+
+            const agg = byPlate.get(plate)!;
+            if (woId) agg.woIds.add(woId);
+            if (woNumber) agg.woNumbers.set(woNumber, workDate || '');
+
+            // Update entry terbaru (pakai entry_date; fallback work_date)
+            const curTs = agg.latestEntryDate ? Date.parse(agg.latestEntryDate) : Number.NaN;
+            const nextTs = entryDate ? Date.parse(entryDate) : Number.NaN;
+            const curWorkTs = curTs;
+            const nextWorkTs = workDate ? Date.parse(workDate) : Number.NaN;
+            const shouldUpdate =
+              (Number.isFinite(nextTs) && (!Number.isFinite(curTs) || nextTs > curTs)) ||
+              (!Number.isFinite(nextTs) && Number.isFinite(nextWorkTs) && (!Number.isFinite(curWorkTs) || nextWorkTs > curWorkTs));
+
+            if (shouldUpdate) {
+              agg.latestEntryId = entryId || agg.latestEntryId;
+              agg.latestEntryDate = entryDate || agg.latestEntryDate;
+              agg.latestEntryNumber = entryNumber || agg.latestEntryNumber;
+              agg.vehicle_name = vehicleName || agg.vehicle_name;
+            }
+          });
+
+          const candidates = Array.from(byPlate.values())
+            .map((x) => ({
+              license_plate: x.license_plate,
+              vehicle_name: x.vehicle_name,
+              wo_count: x.woIds.size,
+              wo_numbers: Array.from(x.woNumbers.entries())
+                .sort((a, b) => String(b[1] || '').localeCompare(String(a[1] || '')))
+                .map(([woNumber]) => woNumber),
+              latest_entry_id: x.latestEntryId,
+              latest_entry_date: x.latestEntryDate,
+              latest_entry_number: x.latestEntryNumber,
+            }))
+            .filter((x) => x.wo_count > 1);
+
+          const latestEntryIds = Array.from(new Set(candidates.map((x) => x.latest_entry_id).filter(Boolean))) as string[];
+          const estByEntryId = new Map<string, number>();
+
+          if (latestEntryIds.length > 0) {
+            const { data: jobRows, error: jobErr } = await supabase
+              .from('vehicle_entry_jobs')
+              .select('vehicle_entry_id, estimated_price, value_only, job_types ( selling_price )')
+              .in('vehicle_entry_id', latestEntryIds)
+              .limit(50000);
+            if (jobErr) warn('Gagal hitung estimasi pekerjaan (dashboard)', jobErr);
+
+            const { data: partRows, error: partErr } = await supabase
+              .from('vehicle_entry_spareparts')
+              .select('vehicle_entry_id, qty, estimated_price, total_price, value_only')
+              .in('vehicle_entry_id', latestEntryIds)
+              .limit(50000);
+            if (partErr) warn('Gagal hitung estimasi part (dashboard)', partErr);
+
+            (jobRows || []).forEach((r: any) => {
+              const entryId = String(r?.vehicle_entry_id || '').trim();
+              if (!entryId) return;
+              if (Boolean(r?.value_only) === true) return;
+              const amt = getJobEstimationFromRow(r);
+              estByEntryId.set(entryId, (estByEntryId.get(entryId) || 0) + amt);
+            });
+
+            (partRows || []).forEach((r: any) => {
+              const entryId = String(r?.vehicle_entry_id || '').trim();
+              if (!entryId) return;
+              if (Boolean(r?.value_only) === true) return;
+              const total =
+                r?.total_price !== null && r?.total_price !== undefined
+                  ? Number(r.total_price || 0)
+                  : Number(r?.qty || 0) * Number(r?.estimated_price || 0);
+              estByEntryId.set(entryId, (estByEntryId.get(entryId) || 0) + total);
+            });
+          }
+
+          const repeatRows: RepeatWoVehicle[] = candidates
+            .map((x) => ({
+              license_plate: x.license_plate,
+              vehicle_name: x.vehicle_name,
+              wo_count: x.wo_count,
+              wo_numbers: x.wo_numbers,
+              latest_entry_date: x.latest_entry_date,
+              latest_entry_number: x.latest_entry_number,
+              latest_total_estimation: x.latest_entry_id ? Number(estByEntryId.get(String(x.latest_entry_id)) || 0) : 0,
+            }))
+            .sort((a, b) => {
+              if (b.wo_count !== a.wo_count) return b.wo_count - a.wo_count;
+              const bt = b.latest_entry_date ? Date.parse(b.latest_entry_date) : 0;
+              const at = a.latest_entry_date ? Date.parse(a.latest_entry_date) : 0;
+              return bt - at;
+            })
+            .slice(0, 12);
+
+          setRepeatWoVehicles(repeatRows);
+        } catch (e: any) {
+          warn('Gagal proses kendaraan WO berulang', e);
+        }
 
         // Process Monthly Progress (hanya bulan yang ada datanya)
         const progress: { [key: string]: MonthlyProgressData } = {};
@@ -850,6 +1044,57 @@ export default function Dashboard() {
                   <p className="text-muted-foreground">Belum ada data invoice dalam 30 hari terakhir.</p>
                 )}
               </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+
+      <div className="grid gap-4 md:grid-cols-1 lg:grid-cols-7">
+        <Card className="lg:col-span-7">
+          <CardHeader>
+            <CardTitle>Unit dengan WO Berulang (Nopol Sama)</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {loading ? (
+              <p className="text-muted-foreground">Memuat data...</p>
+            ) : repeatWoVehicles.length > 0 ? (
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>No. Polisi</TableHead>
+                    <TableHead>Kendaraan</TableHead>
+                    <TableHead>No. WO</TableHead>
+                    <TableHead className="text-right">Estimasi Terakhir</TableHead>
+                    <TableHead className="text-right">Jumlah WO</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {repeatWoVehicles.map((row) => {
+                    const woShort = row.wo_numbers.slice(0, 3);
+                    const extra = Math.max(0, row.wo_numbers.length - woShort.length);
+                    const woLabel = `${woShort.join(', ')}${extra > 0 ? ` (+${extra})` : ''}`;
+                    return (
+                      <TableRow key={row.license_plate}>
+                        <TableCell className="font-medium">{row.license_plate}</TableCell>
+                        <TableCell className="text-xs">
+                          <div className="font-medium truncate max-w-[260px]">{row.vehicle_name}</div>
+                          <div className="text-[10px] text-slate-400">
+                            {row.latest_entry_number ? `Entry: ${row.latest_entry_number}` : '-'}
+                            {row.latest_entry_date ? ` • ${formatDate(row.latest_entry_date)}` : ''}
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-xs" title={row.wo_numbers.join(', ')}>
+                          <div className="truncate max-w-[360px]">{woLabel || '-'}</div>
+                        </TableCell>
+                        <TableCell className="text-right text-xs font-bold">{formatCurrencyPrecise(row.latest_total_estimation)}</TableCell>
+                        <TableCell className="text-right font-bold">{row.wo_count}</TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            ) : (
+              <p className="text-muted-foreground">Belum ada unit dengan WO lebih dari 1 kali.</p>
             )}
           </CardContent>
         </Card>
