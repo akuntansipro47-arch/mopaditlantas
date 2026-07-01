@@ -3,9 +3,10 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/context/AuthContext';
 import { hasMenuAccess } from '@/lib/permissions';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
-import { ShoppingCart, ArchiveX, TrendingUp, CircleDollarSign, Landmark, Percent, Timer, Users } from 'lucide-react';
+import { ShoppingCart, ArchiveX, TrendingUp, CircleDollarSign, Landmark, Percent, Timer, Users, Download } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { formatDate } from '@/lib/utils';
+import * as XLSX from 'xlsx';
 
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -104,6 +105,7 @@ type TopCustomer = { name: string; total: number };
 type RepeatWoVehicle = {
   license_plate: string;
   vehicle_name: string;
+  group: string;
   wo_count: number;
   wo_numbers: string[];
   latest_entry_date: string | null;
@@ -124,6 +126,7 @@ const getJobEstimationFromRow = (row: any) => {
 export default function Dashboard() {
   const { user } = useAuth();
   const navigate = useNavigate();
+  const canViewRepeatWo = hasMenuAccess(user, 'dashboard_repeat_wo');
 
   useEffect(() => {
     if (user && !hasMenuAccess(user, 'dashboard')) {
@@ -155,6 +158,36 @@ export default function Dashboard() {
   const [repeatWoVehicles, setRepeatWoVehicles] = useState<RepeatWoVehicle[]>([]);
   const [loading, setLoading] = useState(true);
   const [warnings, setWarnings] = useState<string[]>([]);
+
+  const exportRepeatWoToExcel = () => {
+    try {
+      const rows = (repeatWoVehicles || []).map((r) => ({
+        'No. Polisi': r.license_plate,
+        Group: r.group,
+        Kendaraan: r.vehicle_name,
+        'Jumlah WO': r.wo_count,
+        'No. WO': r.wo_numbers.join(', '),
+        'Estimasi Total': Number(r.total_estimation || 0),
+        'Entry Terakhir': r.latest_entry_number || '',
+        'Tgl Entry Terakhir': r.latest_entry_date || '',
+      }));
+      const ws = XLSX.utils.json_to_sheet(rows);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'WO Berulang');
+      const today = new Date().toISOString().slice(0, 10);
+      XLSX.writeFile(wb, `Dashboard_WO_Berulang_${today}.xlsx`);
+    } catch (e) {
+      console.error('Export repeat WO failed', e);
+    }
+  };
+
+  const normalizeVehicleGroup = (vehicleType?: string | null) => {
+    const vt = String(vehicleType || '').toUpperCase();
+    if (vt.includes('R2_KECIL') || vt.includes('R2 KECIL') || vt.includes('KECIL')) return 'R2 Kecil';
+    if (vt === 'R4' || vt.includes('R4') || vt.includes('MOBIL')) return 'R4';
+    if (vt === 'R2' || vt.includes('R2') || vt.includes('MOTOR')) return 'R2';
+    return '-';
+  };
 
   useEffect(() => {
     async function fetchStats() {
@@ -375,10 +408,16 @@ export default function Dashboard() {
 
         // Kendaraan yang punya WO lebih dari 1 kali (nopol sama)
         try {
+          if (!canViewRepeatWo) {
+            setRepeatWoVehicles([]);
+            throw new Error('skip'); // skip heavy query bila tidak ada izin
+          }
+
           const woRows: any[] = [];
           const PAGE_SIZE_WO = 1000;
-          const MAX_ROWS = 20000; // batasi supaya tidak terlalu berat di Dashboard
+          const MAX_PAGES_WO = 400; // safety cap (400k rows max)
           let pageFrom = 0;
+          let pages = 0;
           while (true) {
             const pageTo = pageFrom + PAGE_SIZE_WO - 1;
             const { data: pageRows, error: woErr } = await supabase
@@ -393,7 +432,7 @@ export default function Dashboard() {
                   id,
                   entry_date,
                   entry_number,
-                  vehicles!inner(license_plate, brand_type)
+                  vehicles(license_plate, brand_type, vehicle_type)
                 )
               `
               )
@@ -408,7 +447,8 @@ export default function Dashboard() {
             woRows.push(...pageRows);
             if (pageRows.length < PAGE_SIZE_WO) break;
             pageFrom += PAGE_SIZE_WO;
-            if (woRows.length >= MAX_ROWS) break;
+            pages += 1;
+            if (pages >= MAX_PAGES_WO) break;
           }
 
           const byPlate = new Map<
@@ -422,6 +462,7 @@ export default function Dashboard() {
               latestEntryId: string | null;
               latestEntryDate: string | null;
               latestEntryNumber: string | null;
+              group: string;
             }
           >();
 
@@ -431,6 +472,7 @@ export default function Dashboard() {
             const plate = String(v?.license_plate || '').trim();
             if (!plate) return;
             const vehicleName = String(v?.brand_type || '-').trim() || '-';
+            const group = normalizeVehicleGroup(v?.vehicle_type);
             const woId = String(wo?.id || '').trim();
             const woNumber = String(wo?.wo_number || '').trim();
             const workDate = String(wo?.work_date || entry?.entry_date || '').trim();
@@ -442,6 +484,7 @@ export default function Dashboard() {
               byPlate.set(plate, {
                 license_plate: plate,
                 vehicle_name: vehicleName,
+                group,
                 woIds: new Set<string>(),
                 woNumbers: new Map<string, string>(),
                 entryIds: new Set<string>(),
@@ -470,6 +513,7 @@ export default function Dashboard() {
               agg.latestEntryDate = entryDate || agg.latestEntryDate;
               agg.latestEntryNumber = entryNumber || agg.latestEntryNumber;
               agg.vehicle_name = vehicleName || agg.vehicle_name;
+              agg.group = group || agg.group;
             }
           });
 
@@ -477,6 +521,7 @@ export default function Dashboard() {
             .map((x) => ({
               license_plate: x.license_plate,
               vehicle_name: x.vehicle_name,
+              group: x.group,
               wo_count: x.woIds.size,
               wo_numbers: Array.from(x.woNumbers.entries())
                 .sort((a, b) => String(b[1] || '').localeCompare(String(a[1] || '')))
@@ -499,44 +544,54 @@ export default function Dashboard() {
           const estByEntryId = new Map<string, number>();
 
           if (entryIdsForEstimation.length > 0) {
-            const { data: jobRows, error: jobErr } = await supabase
-              .from('vehicle_entry_jobs')
-              .select('vehicle_entry_id, estimated_price, value_only, job_types ( selling_price )')
-              .in('vehicle_entry_id', entryIdsForEstimation)
-              .limit(50000);
-            if (jobErr) warn('Gagal hitung estimasi pekerjaan (dashboard)', jobErr);
+            const chunk = <T,>(arr: T[], size: number) => {
+              const out: T[][] = [];
+              for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
+              return out;
+            };
 
-            const { data: partRows, error: partErr } = await supabase
-              .from('vehicle_entry_spareparts')
-              .select('vehicle_entry_id, qty, estimated_price, total_price, value_only')
-              .in('vehicle_entry_id', entryIdsForEstimation)
-              .limit(50000);
-            if (partErr) warn('Gagal hitung estimasi part (dashboard)', partErr);
+            // Query bertahap supaya aman dari limit IN dan limit row.
+            for (const ids of chunk(entryIdsForEstimation, 300)) {
+              const { data: jobRows, error: jobErr } = await supabase
+                .from('vehicle_entry_jobs')
+                .select('vehicle_entry_id, estimated_price, value_only, job_types ( selling_price )')
+                .in('vehicle_entry_id', ids)
+                .limit(50000);
+              if (jobErr) warn('Gagal hitung estimasi pekerjaan (dashboard)', jobErr);
 
-            (jobRows || []).forEach((r: any) => {
-              const entryId = String(r?.vehicle_entry_id || '').trim();
-              if (!entryId) return;
-              if (Boolean(r?.value_only) === true) return;
-              const amt = getJobEstimationFromRow(r);
-              estByEntryId.set(entryId, (estByEntryId.get(entryId) || 0) + amt);
-            });
+              (jobRows || []).forEach((r: any) => {
+                const entryId = String(r?.vehicle_entry_id || '').trim();
+                if (!entryId) return;
+                if (Boolean(r?.value_only) === true) return;
+                const amt = getJobEstimationFromRow(r);
+                estByEntryId.set(entryId, (estByEntryId.get(entryId) || 0) + amt);
+              });
 
-            (partRows || []).forEach((r: any) => {
-              const entryId = String(r?.vehicle_entry_id || '').trim();
-              if (!entryId) return;
-              if (Boolean(r?.value_only) === true) return;
-              const total =
-                r?.total_price !== null && r?.total_price !== undefined
-                  ? Number(r.total_price || 0)
-                  : Number(r?.qty || 0) * Number(r?.estimated_price || 0);
-              estByEntryId.set(entryId, (estByEntryId.get(entryId) || 0) + total);
-            });
+              const { data: partRows, error: partErr } = await supabase
+                .from('vehicle_entry_spareparts')
+                .select('vehicle_entry_id, qty, estimated_price, total_price, value_only')
+                .in('vehicle_entry_id', ids)
+                .limit(50000);
+              if (partErr) warn('Gagal hitung estimasi part (dashboard)', partErr);
+
+              (partRows || []).forEach((r: any) => {
+                const entryId = String(r?.vehicle_entry_id || '').trim();
+                if (!entryId) return;
+                if (Boolean(r?.value_only) === true) return;
+                const total =
+                  r?.total_price !== null && r?.total_price !== undefined
+                    ? Number(r.total_price || 0)
+                    : Number(r?.qty || 0) * Number(r?.estimated_price || 0);
+                estByEntryId.set(entryId, (estByEntryId.get(entryId) || 0) + total);
+              });
+            }
           }
 
           const repeatRows: RepeatWoVehicle[] = candidates
             .map((x) => ({
               license_plate: x.license_plate,
               vehicle_name: x.vehicle_name,
+              group: x.group,
               wo_count: x.wo_count,
               wo_numbers: x.wo_numbers,
               latest_entry_date: x.latest_entry_date,
@@ -557,7 +612,8 @@ export default function Dashboard() {
 
           setRepeatWoVehicles(repeatRows);
         } catch (e: any) {
-          warn('Gagal proses kendaraan WO berulang', e);
+          const msg = String(e?.message || '');
+          if (msg !== 'skip') warn('Gagal proses kendaraan WO berulang', e);
         }
 
         // Process Monthly Progress (hanya bulan yang ada datanya)
@@ -1065,9 +1121,22 @@ export default function Dashboard() {
       </div>
 
       <div className="grid gap-4 md:grid-cols-1 lg:grid-cols-7">
+        {canViewRepeatWo && (
         <Card className="lg:col-span-7">
           <CardHeader>
-            <CardTitle>Unit dengan WO Berulang (Nopol Sama)</CardTitle>
+            <div className="flex items-center justify-between gap-3">
+              <CardTitle>Unit dengan WO Berulang (Nopol Sama)</CardTitle>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={exportRepeatWoToExcel}
+                disabled={repeatWoVehicles.length === 0}
+                className="print:hidden"
+              >
+                <Download className="mr-2 h-4 w-4" /> Export
+              </Button>
+            </div>
           </CardHeader>
           <CardContent>
             {loading ? (
@@ -1077,6 +1146,7 @@ export default function Dashboard() {
                 <TableHeader>
                   <TableRow>
                     <TableHead>No. Polisi</TableHead>
+                    <TableHead>Group</TableHead>
                     <TableHead>Kendaraan</TableHead>
                     <TableHead>No. WO</TableHead>
                     <TableHead className="text-right">Estimasi Total</TableHead>
@@ -1089,6 +1159,7 @@ export default function Dashboard() {
                     return (
                       <TableRow key={row.license_plate}>
                         <TableCell className="font-medium">{row.license_plate}</TableCell>
+                        <TableCell className="text-xs font-medium">{row.group}</TableCell>
                         <TableCell className="text-xs">
                           <div className="font-medium truncate max-w-[260px]">{row.vehicle_name}</div>
                           <div className="text-[10px] text-slate-400">
@@ -1111,6 +1182,7 @@ export default function Dashboard() {
             )}
           </CardContent>
         </Card>
+        )}
       </div>
 
       {/* Bottom Tables Row */}

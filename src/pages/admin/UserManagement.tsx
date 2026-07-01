@@ -28,6 +28,7 @@ const PERMISSION_GROUPS: Array<{ title: string; items: Array<{ key: string; labe
     title: 'Tampilan',
     items: [
       { key: 'dashboard', label: 'Dashboard' },
+      { key: 'dashboard_repeat_wo', label: 'Dashboard: Unit WO Berulang' },
     ],
   },
   {
