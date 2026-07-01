@@ -181,7 +181,7 @@ export default function PurchaseOrderDetailReport() {
         const po = item.purchase_orders;
         if (!po) return null;
 
-        const workOrder = po.work_order_id ? workOrderMap.get(po.work_order_id) : null;
+        const workOrder = (po.work_order_id ? workOrderMap.get(po.work_order_id) : null) as any;
         const ve = Array.isArray((workOrder as any)?.vehicle_entries) ? (workOrder as any).vehicle_entries[0] : (workOrder as any)?.vehicle_entries;
         const vehicle = Array.isArray(ve?.vehicles) ? ve.vehicles[0] : ve?.vehicles;
         const paymentStatus = paymentStatusMap.get(po.id);
@@ -284,7 +284,7 @@ export default function PurchaseOrderDetailReport() {
         const po = item.purchase_orders;
         if (!po) return null;
 
-        const workOrder = po.work_order_id ? workOrderMap.get(po.work_order_id) : null;
+        const workOrder = (po.work_order_id ? workOrderMap.get(po.work_order_id) : null) as any;
         const ve = Array.isArray((workOrder as any)?.vehicle_entries) ? (workOrder as any).vehicle_entries[0] : (workOrder as any)?.vehicle_entries;
         const vehicle = Array.isArray(ve?.vehicles) ? ve.vehicles[0] : ve?.vehicles;
         const paymentStatus = paymentStatusMap.get(po.id);

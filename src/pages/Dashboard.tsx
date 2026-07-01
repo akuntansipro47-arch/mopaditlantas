@@ -7,6 +7,7 @@ import { ShoppingCart, ArchiveX, TrendingUp, CircleDollarSign, Landmark, Percent
 import { useNavigate } from 'react-router-dom';
 import { formatDate } from '@/lib/utils';
 import * as XLSX from 'xlsx';
+import { Button } from '@/components/ui/button';
 
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -135,8 +136,12 @@ export default function Dashboard() {
   }, [user, navigate]);
 
   const [stats, setStats] = useState({
+    monthlyRevenue: 0,
     outstandingAR: 0,
     outstandingAP: 0,
+    poPendingCount: 0,
+    lowStockItems: 0,
+    outOfStockItems: 0,
   });
   const [profitability, setProfitability] = useState({
     revenue30: 0,

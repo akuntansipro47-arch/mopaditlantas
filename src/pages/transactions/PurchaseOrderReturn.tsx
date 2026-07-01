@@ -704,7 +704,7 @@ export default function PurchaseOrderReturn() {
     // --- LANGKAH 4: Gabungkan semua data dengan aman ---
     const lines: ReturnLine[] = poItems
       .map(item => {
-        const g = goodsMap.get(item.goods_id);
+        const g = goodsMap.get(item.goods_id) as any;
         // JIKA DATA GOODS TIDAK DITEMUKAN, LEWATI ITEM INI
         if (!g) {
           console.warn(`[DATA-SKIP] Melewatkan item PO karena data barang (goods) dengan ID ${item.goods_id} tidak ditemukan.`);

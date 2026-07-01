@@ -586,7 +586,7 @@ const WorkOrderDetailReport = () => {
             // Step 7: Combine all data into the final report structure
             const finalReportData = woData.map(wo => {
                 const vehicleEntry = vehicleEntryMap.get(wo.vehicle_entry_id) as any;
-                const vehicle = vehicleEntry ? vehicleMap.get(vehicleEntry.vehicle_id) : undefined;
+                const vehicle = (vehicleEntry ? vehicleMap.get(vehicleEntry.vehicle_id) : undefined) as any;
                 const items = reportItemsByWo.get(wo.id) || [];
                 const total_realized = items.reduce((sum, item) => sum + item.total_price, 0);
                 const total_hpp = items.reduce((sum, item) => sum + item.total_hpp, 0);
