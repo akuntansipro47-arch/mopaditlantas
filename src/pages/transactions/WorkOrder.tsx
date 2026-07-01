@@ -162,7 +162,7 @@ export default function WorkOrder() {
 
   const handlePrintSPK = async (wo: WOWithDetails) => {
     if (wo.status !== 'IN_PROGRESS') {
-      toast.warning('Cetak SPK hanya tersedia untuk WO dengan status IN_PROGRESS.');
+      toast.warning('Print SPK hanya tersedia untuk WO dengan status IN_PROGRESS.');
       return;
     }
     try {
@@ -223,7 +223,7 @@ export default function WorkOrder() {
           try {
             triggerSPKPrint();
           } catch (e: any) {
-            toast.error('Gagal memulai proses cetak: ' + String(e?.message || e));
+            toast.error('Gagal memulai proses print: ' + String(e?.message || e));
             setPrintData(null);
             setPrintingSPKId(null);
             printingIdRef.current = null;
@@ -231,7 +231,7 @@ export default function WorkOrder() {
         });
       });
     } catch (error: any) {
-      toast.error('Gagal mempersiapkan data cetak SPK: ' + (error?.message || 'Unknown error'));
+      toast.error('Gagal mempersiapkan data print SPK: ' + (error?.message || 'Unknown error'));
       setPrintData(null);
       setPrintingSPKId(null);
       printingIdRef.current = null;
@@ -241,7 +241,7 @@ export default function WorkOrder() {
 
   const handlePrintSPKDotMatrix = (wo: WOWithDetails) => {
     if (wo.status !== 'IN_PROGRESS') {
-      toast.warning('Cetak SPK Dot Matrix hanya tersedia untuk WO dengan status IN_PROGRESS.');
+      toast.warning('Print SPK Dot Matrix hanya tersedia untuk WO dengan status IN_PROGRESS.');
       return;
     }
     (async () => {

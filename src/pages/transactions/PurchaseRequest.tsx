@@ -978,7 +978,7 @@ export default function PurchaseRequest() {
               {editingId && (
                 <Button variant="outline" className="text-blue-600 border-blue-200 hover:bg-blue-50" onClick={() => handlePrintDotMatrix(editingId)}>
                   <Printer className="h-4 w-4 mr-2" />
-                  Cetak Dot Matrix
+                  Print Dot Matrix
                 </Button>
               )}
             </div>

@@ -648,12 +648,12 @@ export default function PurchaseOrderV2() {
   const handlePrint = (poId: string) => {
     // Open dedicated print page
     window.open(`/print/po/${poId}`, '_blank');
-    toast.success('Mencetak PO...');
+    toast.success('Printing PO...');
   };
 
   const handlePrintDotMatrix = (poId: string) => {
     window.open(`/print/po-dot/${poId}`, '_blank');
-    toast.success('Mencetak PO (Dot Matrix)...');
+    toast.success('Printing PO (Dot Matrix)...');
   };
 
   const handleSubmit = async (e?: React.FormEvent) => {
@@ -1462,7 +1462,7 @@ export default function PurchaseOrderV2() {
                 <div className="flex flex-wrap gap-2">
                   {isReadOnly && editingId && (
                     <Button type="button" variant="outline" onClick={() => handlePrint(editingId)}>
-                      <Printer className="mr-2 h-4 w-4" /> Cetak PO
+                      <Printer className="mr-2 h-4 w-4" /> Print PO
                     </Button>
                   )}
                   {isReadOnly && editingId && (
@@ -1483,7 +1483,7 @@ export default function PurchaseOrderV2() {
                           handlePrint(poId);
                         }
                       }}>
-                        <Printer className="mr-2 h-4 w-4" /> Simpan & Cetak
+                        <Printer className="mr-2 h-4 w-4" /> Simpan & Print
                       </Button>
                     </>
                   )}
@@ -1619,10 +1619,10 @@ export default function PurchaseOrderV2() {
                         <TableCell className="font-bold">{formatCurrency(item.total_amount)}</TableCell>
                         <TableCell className="text-right">
                           <div className="flex flex-wrap items-center justify-end gap-2">
-                            <Button variant="outline" size="sm" onClick={() => handlePrint(item.id)} title="Cetak PO">
-                              <Printer className="h-4 w-4 mr-1" /> Cetak
+                            <Button variant="outline" size="sm" onClick={() => handlePrint(item.id)} title="Print PO">
+                              <Printer className="h-4 w-4 mr-1" /> Print
                             </Button>
-                            <Button variant="outline" size="sm" onClick={() => handlePrintDotMatrix(item.id)} title="Cetak Dot Matrix (LX-310)">
+                            <Button variant="outline" size="sm" onClick={() => handlePrintDotMatrix(item.id)} title="Print Dot Matrix (LX-310)">
                               <Printer className="h-4 w-4 mr-1" /> Dot
                             </Button>
                             <Button variant="secondary" size="sm" onClick={() => handleEdit(item, true)} title="Lihat Detail">

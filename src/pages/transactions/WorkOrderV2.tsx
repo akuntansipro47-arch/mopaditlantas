@@ -465,7 +465,7 @@ const WorkOrderV2 = () => {
                       <TableCell className="max-w-[300px] truncate">{wo.vehicle_entries?.complaint || '-'}</TableCell>
                       <TableCell>{wo.mechanics?.name || '-'}</TableCell>
                       <TableCell className="text-right">
-                        <Button variant="ghost" size="icon" title="Cetak SPK" onClick={() => handlePrintSpk(wo)}>
+                        <Button variant="ghost" size="icon" title="Print SPK" onClick={() => handlePrintSpk(wo)}>
                           <Barcode className="h-4 w-4" />
                         </Button>
                         <Button variant="ghost" size="icon" onClick={() => handleEdit(wo)} title="Edit">

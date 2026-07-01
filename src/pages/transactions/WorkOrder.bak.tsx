@@ -493,7 +493,7 @@ export default function WorkOrder() {
       <Dialog open={isPrintDialogOpen} onOpenChange={setIsPrintDialogOpen}>
         <DialogContent className="max-w-3xl">
           <DialogHeader className="no-print">
-            <DialogTitle>Cetak Surat Perintah Kerja (SPK)</DialogTitle>
+            <DialogTitle>Print Surat Perintah Kerja (SPK)</DialogTitle>
           </DialogHeader>
           
           <div className="border p-4 rounded bg-white max-h-[70vh] overflow-y-auto" id="printable-spk">
@@ -600,7 +600,7 @@ export default function WorkOrder() {
           </div>
           <DialogFooter className="no-print">
             <Button variant="outline" onClick={() => setIsPrintDialogOpen(false)}>Tutup</Button>
-            <Button onClick={() => window.print()}><ClipboardCheck className="h-4 w-4 mr-2" /> Cetak Sekarang</Button>
+            <Button onClick={() => window.print()}><ClipboardCheck className="h-4 w-4 mr-2" /> Print Sekarang</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

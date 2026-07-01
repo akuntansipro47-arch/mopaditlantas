@@ -1129,7 +1129,7 @@ export default function VehicleEntryPage() {
       module: 'PRINT_ENTRY',
       entity_type: 'vehicle_entries',
       entity_id: String(id),
-      details: `Cetak Entry${entryNumber ? ` ${entryNumber}` : ''}${plate ? ` • ${plate}` : ''}`.trim(),
+      details: `Print Entry${entryNumber ? ` ${entryNumber}` : ''}${plate ? ` • ${plate}` : ''}`.trim(),
       meta: { entry_id: id, entry_number: entryNumber, license_plate: plate },
     });
   };
@@ -2538,7 +2538,7 @@ export default function VehicleEntryPage() {
                           const canEditThis = !isLocked || isSuperAdmin;
                           return (
                             <div className="flex justify-end gap-3">
-                              <Button variant="ghost" size="icon" onClick={() => handlePrintEntry(item.id)} title={isLocked ? "View" : "Cetak SPK Awal"}>
+                              <Button variant="ghost" size="icon" onClick={() => handlePrintEntry(item.id)} title={isLocked ? "View" : "Print SPK Awal"}>
                                 {isLocked ? <Eye className="h-4 w-4" /> : <Printer className="h-4 w-4" />}
                               </Button>
                               <Button variant="ghost" size="icon" onClick={() => openAttachmentDialog(item)} title="Lampiran">

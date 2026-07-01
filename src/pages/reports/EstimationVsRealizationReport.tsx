@@ -375,13 +375,13 @@ export default function EstimationVsRealizationReport() {
         </div>
         <div className="flex gap-2">
             <Button variant="outline" onClick={fetchData} disabled={loading}>
-                <RefreshCw className={`mr-2 h-4 w-4 ${loading ? 'animate-spin' : ''}`} /> Segarkan
+                <RefreshCw className={`mr-2 h-4 w-4 ${loading ? 'animate-spin' : ''}`} /> Refresh
             </Button>
             <Button variant="outline" onClick={exportToExcel}>
                 <FileDown className="mr-2 h-4 w-4" /> Export Excel
             </Button>
             <Button variant="outline" onClick={() => window.print()}>
-                <Printer className="mr-2 h-4 w-4" /> Cetak
+                <Printer className="mr-2 h-4 w-4" /> Print
             </Button>
         </div>
       </div>

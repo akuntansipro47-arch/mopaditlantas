@@ -50,17 +50,17 @@ export async function ensureCanPrintSpk(
     return { mode, action: mode === 'FIRST' ? 'WO_PRINT' : 'WO_REPRINT' };
   }
 
-  // Cetak pertama kali boleh untuk yang punya akses transaksi WO
+  // Print pertama kali boleh untuk yang punya akses transaksi WO
   if (mode === 'FIRST') {
     if (!hasMenuAccess(user as any, 'trans_wo')) {
-      throw new Error('Anda tidak memiliki izin untuk cetak SPK.');
+      throw new Error('Anda tidak memiliki izin untuk print SPK.');
     }
     return { mode, action: 'WO_PRINT' };
   }
 
-  // Cetak ulang harus permission terpisah
+  // Reprint harus permission terpisah
   if (!hasMenuAccess(user as any, 'trans_wo_reprint')) {
-    throw new Error('Anda tidak memiliki izin untuk cetak ulang SPK.');
+    throw new Error('Anda tidak memiliki izin untuk reprint SPK.');
   }
   return { mode, action: 'WO_REPRINT' };
 }
@@ -73,7 +73,7 @@ export async function logSpkPrintActivity(
 ) {
   const user = (userInput || getLocalUser() || null) as any;
   const action = result.action;
-  const label = action === 'WO_PRINT' ? 'Cetak SPK (pertama)' : 'Cetak ulang SPK';
+  const label = action === 'WO_PRINT' ? 'Print SPK (first)' : 'Reprint SPK';
   await logActivity({
     user_id: user?.id ?? null,
     username: user?.username ?? null,
@@ -86,4 +86,3 @@ export async function logSpkPrintActivity(
     meta: { ...((extraMeta as any) || {}), mode: result.mode },
   });
 }
-

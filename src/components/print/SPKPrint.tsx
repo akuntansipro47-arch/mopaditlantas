@@ -227,7 +227,7 @@ export default function PrintSPK({ id }: { id: string }) {
                 cursor: 'pointer'
               }}
             >
-              🖨️ Cetak / Simpan PDF
+              🖨️ Print / Save PDF
             </button>
           </div>
         </div>

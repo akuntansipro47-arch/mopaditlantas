@@ -319,7 +319,7 @@ export default function ProfitLossReport() {
                 <Download className="mr-2 h-4 w-4" /> Export Excel
             </Button>
             <Button variant="outline" onClick={() => window.print()} className="print:hidden">
-                <Printer className="mr-2 h-4 w-4" /> Cetak
+                <Printer className="mr-2 h-4 w-4" /> Print
             </Button>
             <Button onClick={fetchReport} disabled={loading} className="print:hidden">
                 <RefreshCw className={`mr-2 h-4 w-4 ${loading ? 'animate-spin' : ''}`} /> Refresh

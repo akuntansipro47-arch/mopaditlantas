@@ -1172,7 +1172,7 @@ export default function GoodsIssuePage() {
                     const id = await handleSubmit(e);
                     if (id && typeof id === 'string') handlePrint(id);
                   }}>
-                    <Printer className="mr-2 h-4 w-4" /> Simpan & Cetak
+                    <Printer className="mr-2 h-4 w-4" /> Simpan & Print
                   </Button>
               </DialogFooter>
             </form>
@@ -1234,7 +1234,7 @@ export default function GoodsIssuePage() {
                       <TableCell>{item.items?.length || 0} Item</TableCell>
                       <TableCell className="text-right">
                         <div className="flex flex-wrap justify-end gap-2">
-                          <Button variant="outline" size="sm" onClick={() => handlePrint(item.id)} title="Cetak">
+                          <Button variant="outline" size="sm" onClick={() => handlePrint(item.id)} title="Print">
                             <Printer className="h-4 w-4" />
                           </Button>
                           <Button variant="secondary" size="sm" onClick={() => handleEdit(item)} title="Edit">
