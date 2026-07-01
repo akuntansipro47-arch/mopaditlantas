@@ -1070,9 +1070,7 @@ export default function Dashboard() {
                 </TableHeader>
                 <TableBody>
                   {repeatWoVehicles.map((row) => {
-                    const woShort = row.wo_numbers.slice(0, 3);
-                    const extra = Math.max(0, row.wo_numbers.length - woShort.length);
-                    const woLabel = `${woShort.join(', ')}${extra > 0 ? ` (+${extra})` : ''}`;
+                    const woLabel = row.wo_numbers.join(', ');
                     return (
                       <TableRow key={row.license_plate}>
                         <TableCell className="font-medium">{row.license_plate}</TableCell>
@@ -1083,8 +1081,8 @@ export default function Dashboard() {
                             {row.latest_entry_date ? ` • ${formatDate(row.latest_entry_date)}` : ''}
                           </div>
                         </TableCell>
-                        <TableCell className="text-xs" title={row.wo_numbers.join(', ')}>
-                          <div className="truncate max-w-[360px]">{woLabel || '-'}</div>
+                        <TableCell className="text-xs">
+                          <div className="max-w-[360px] whitespace-normal break-words leading-snug">{woLabel || '-'}</div>
                         </TableCell>
                         <TableCell className="text-right text-xs font-bold">{formatCurrencyPrecise(row.latest_total_estimation)}</TableCell>
                         <TableCell className="text-right font-bold">{row.wo_count}</TableCell>
