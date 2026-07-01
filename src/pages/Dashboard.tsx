@@ -108,7 +108,7 @@ type RepeatWoVehicle = {
   wo_numbers: string[];
   latest_entry_date: string | null;
   latest_entry_number: string | null;
-  latest_total_estimation: number;
+  total_estimation: number;
 };
 
 const getJobEstimationFromRow = (row: any) => {
@@ -377,7 +377,7 @@ export default function Dashboard() {
         try {
           const woRows: any[] = [];
           const PAGE_SIZE_WO = 1000;
-          const MAX_ROWS = 5000; // batasi supaya tidak berat di Dashboard
+          const MAX_ROWS = 20000; // batasi supaya tidak terlalu berat di Dashboard
           let pageFrom = 0;
           while (true) {
             const pageTo = pageFrom + PAGE_SIZE_WO - 1;
@@ -418,6 +418,7 @@ export default function Dashboard() {
               vehicle_name: string;
               woIds: Set<string>;
               woNumbers: Map<string, string>; // wo_number -> work_date
+              entryIds: Set<string>;
               latestEntryId: string | null;
               latestEntryDate: string | null;
               latestEntryNumber: string | null;
@@ -443,6 +444,7 @@ export default function Dashboard() {
                 vehicle_name: vehicleName,
                 woIds: new Set<string>(),
                 woNumbers: new Map<string, string>(),
+                entryIds: new Set<string>(),
                 latestEntryId: entryId || null,
                 latestEntryDate: entryDate,
                 latestEntryNumber: entryNumber,
@@ -452,6 +454,7 @@ export default function Dashboard() {
             const agg = byPlate.get(plate)!;
             if (woId) agg.woIds.add(woId);
             if (woNumber) agg.woNumbers.set(woNumber, workDate || '');
+            if (entryId) agg.entryIds.add(entryId);
 
             // Update entry terbaru (pakai entry_date; fallback work_date)
             const curTs = agg.latestEntryDate ? Date.parse(agg.latestEntryDate) : Number.NaN;
@@ -478,27 +481,35 @@ export default function Dashboard() {
               wo_numbers: Array.from(x.woNumbers.entries())
                 .sort((a, b) => String(b[1] || '').localeCompare(String(a[1] || '')))
                 .map(([woNumber]) => woNumber),
+              entry_ids: Array.from(x.entryIds.values()),
               latest_entry_id: x.latestEntryId,
               latest_entry_date: x.latestEntryDate,
               latest_entry_number: x.latestEntryNumber,
             }))
             .filter((x) => x.wo_count > 1);
 
-          const latestEntryIds = Array.from(new Set(candidates.map((x) => x.latest_entry_id).filter(Boolean))) as string[];
+          const entryIdsForEstimation = Array.from(
+            new Set(
+              candidates
+                .flatMap((x) => (Array.isArray(x.entry_ids) ? x.entry_ids : []))
+                .map((v: any) => String(v || '').trim())
+                .filter(Boolean)
+            )
+          ) as string[];
           const estByEntryId = new Map<string, number>();
 
-          if (latestEntryIds.length > 0) {
+          if (entryIdsForEstimation.length > 0) {
             const { data: jobRows, error: jobErr } = await supabase
               .from('vehicle_entry_jobs')
               .select('vehicle_entry_id, estimated_price, value_only, job_types ( selling_price )')
-              .in('vehicle_entry_id', latestEntryIds)
+              .in('vehicle_entry_id', entryIdsForEstimation)
               .limit(50000);
             if (jobErr) warn('Gagal hitung estimasi pekerjaan (dashboard)', jobErr);
 
             const { data: partRows, error: partErr } = await supabase
               .from('vehicle_entry_spareparts')
               .select('vehicle_entry_id, qty, estimated_price, total_price, value_only')
-              .in('vehicle_entry_id', latestEntryIds)
+              .in('vehicle_entry_id', entryIdsForEstimation)
               .limit(50000);
             if (partErr) warn('Gagal hitung estimasi part (dashboard)', partErr);
 
@@ -530,7 +541,11 @@ export default function Dashboard() {
               wo_numbers: x.wo_numbers,
               latest_entry_date: x.latest_entry_date,
               latest_entry_number: x.latest_entry_number,
-              latest_total_estimation: x.latest_entry_id ? Number(estByEntryId.get(String(x.latest_entry_id)) || 0) : 0,
+              total_estimation: (Array.isArray(x.entry_ids) ? x.entry_ids : []).reduce((sum: number, entryId: any) => {
+                const id = String(entryId || '').trim();
+                if (!id) return sum;
+                return sum + Number(estByEntryId.get(id) || 0);
+              }, 0),
             }))
             .sort((a, b) => {
               if (b.wo_count !== a.wo_count) return b.wo_count - a.wo_count;
@@ -1064,7 +1079,7 @@ export default function Dashboard() {
                     <TableHead>No. Polisi</TableHead>
                     <TableHead>Kendaraan</TableHead>
                     <TableHead>No. WO</TableHead>
-                    <TableHead className="text-right">Estimasi Terakhir</TableHead>
+                    <TableHead className="text-right">Estimasi Total</TableHead>
                     <TableHead className="text-right">Jumlah WO</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -1084,7 +1099,7 @@ export default function Dashboard() {
                         <TableCell className="text-xs">
                           <div className="max-w-[360px] whitespace-normal break-words leading-snug">{woLabel || '-'}</div>
                         </TableCell>
-                        <TableCell className="text-right text-xs font-bold">{formatCurrencyPrecise(row.latest_total_estimation)}</TableCell>
+                        <TableCell className="text-right text-xs font-bold">{formatCurrencyPrecise(row.total_estimation)}</TableCell>
                         <TableCell className="text-right font-bold">{row.wo_count}</TableCell>
                       </TableRow>
                     );
