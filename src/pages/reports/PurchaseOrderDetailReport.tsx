@@ -176,6 +176,15 @@ export default function PurchaseOrderDetailReport() {
 
       const workOrderMap = new Map(workOrdersResult?.map(wo => [wo.id, wo]));
 
+      const getStatusBayar = (poStatusRaw: any, paymentStatus: any) => {
+        const poStatus = String(poStatusRaw || '').toUpperCase();
+        if (poStatus.startsWith('RETURNED') || poStatus === 'RETUR') return 'Diretur';
+        if (paymentStatus === 'PAID') return 'Lunas';
+        if (paymentStatus === 'PARTIAL') return 'Bayar Sebagian';
+        if (paymentStatus) return 'Belum Lunas';
+        return 'Belum Ditagih';
+      };
+
       // 4. Combine all data
       const combinedData = poItems.map(item => {
         const po = item.purchase_orders;
@@ -186,10 +195,7 @@ export default function PurchaseOrderDetailReport() {
         const vehicle = Array.isArray(ve?.vehicles) ? ve.vehicles[0] : ve?.vehicles;
         const paymentStatus = paymentStatusMap.get(po.id);
 
-        let statusBayar = 'Belum Ditagih';
-        if (paymentStatus === 'PAID') statusBayar = 'Lunas';
-        else if (paymentStatus === 'PARTIAL') statusBayar = 'Bayar Sebagian';
-        else if (paymentStatus) statusBayar = 'Belum Lunas';
+        const statusBayar = getStatusBayar(po.status, paymentStatus);
 
         const receivedQty = receivedQtyMap.get(`${po.id}-${item.goods_id}`) || 0;
 
@@ -280,6 +286,15 @@ export default function PurchaseOrderDetailReport() {
 
       const workOrderMap = new Map(workOrdersResult?.map(wo => [wo.id, wo]));
 
+      const getStatusBayar = (poStatusRaw: any, paymentStatus: any) => {
+        const poStatus = String(poStatusRaw || '').toUpperCase();
+        if (poStatus.startsWith('RETURNED') || poStatus === 'RETUR') return 'Diretur';
+        if (paymentStatus === 'PAID') return 'Lunas';
+        if (paymentStatus === 'PARTIAL') return 'Bayar Sebagian';
+        if (paymentStatus) return 'Belum Lunas';
+        return 'Belum Ditagih';
+      };
+
       const combinedData = poItems.map(item => {
         const po = item.purchase_orders;
         if (!po) return null;
@@ -289,10 +304,7 @@ export default function PurchaseOrderDetailReport() {
         const vehicle = Array.isArray(ve?.vehicles) ? ve.vehicles[0] : ve?.vehicles;
         const paymentStatus = paymentStatusMap.get(po.id);
 
-        let statusBayar = 'Belum Ditagih';
-        if (paymentStatus === 'PAID') statusBayar = 'Lunas';
-        else if (paymentStatus === 'PARTIAL') statusBayar = 'Bayar Sebagian';
-        else if (paymentStatus) statusBayar = 'Belum Lunas';
+        const statusBayar = getStatusBayar(po.status, paymentStatus);
 
         const receivedQty = receivedQtyMap.get(`${po.id}-${item.goods_id}`) || 0;
 

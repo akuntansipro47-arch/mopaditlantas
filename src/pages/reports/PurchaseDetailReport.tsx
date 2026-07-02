@@ -132,6 +132,11 @@ export default function PurchaseDetailReport() {
   const totalReceivedValue = Number(detailQuery.data?.summary?.total_received_value || 0);
   const totalItems = Number(detailQuery.data?.summary?.item_rows || 0);
   const loading = suppliersQuery.isLoading || detailQuery.isLoading;
+  const getPaymentStatusLabel = (row: PurchaseDetailRow) => {
+    const poStatus = String(row.po_status || '').toUpperCase();
+    if (poStatus.startsWith('RETURNED') || poStatus === 'RETUR') return 'Diretur';
+    return String(row.payment_status_label || 'Belum Ditagih');
+  };
   const getVehicleGroupLabel = (row: PurchaseDetailRow) => {
     const sg = String(row.service_group || '').toUpperCase();
     if (sg.includes('R4')) return 'R4';
@@ -189,7 +194,7 @@ export default function PurchaseDetailReport() {
         'Tanggal': formatDate(r.po_date || r.po_created_at),
         'Supplier': r.supplier_name,
         'Status PO': r.po_status,
-        'Status Bayar': r.payment_status_label,
+        'Status Bayar': getPaymentStatusLabel(r),
         'No. WO': r.wo_number || '-',
         'Group': getVehicleGroupLabel(r),
         'Nopol': r.license_plate || '-',
@@ -307,7 +312,7 @@ export default function PurchaseDetailReport() {
                     <TableCell className="font-medium">{item.po_number}</TableCell>
                     <TableCell>{item.supplier_name}</TableCell>
                     <TableCell>{String(item.po_status || '-')}</TableCell>
-                    <TableCell>{String(item.payment_status_label || 'Belum Ditagih')}</TableCell>
+                    <TableCell>{getPaymentStatusLabel(item)}</TableCell>
                     <TableCell>{item.wo_number || '-'}</TableCell>
                     <TableCell>{getVehicleGroupLabel(item)}</TableCell>
                     <TableCell>
