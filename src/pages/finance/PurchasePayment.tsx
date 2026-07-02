@@ -30,7 +30,8 @@ export default function PurchasePayment() {
   const [isSyncing, setIsSyncing] = useState(false);
   
   const [dateFilter, setDateFilter] = useState({
-    startDate: new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0],
+    // Default: tahun berjalan (biar tagihan lama tetap muncul, tidak hilang karena filter bulanan)
+    startDate: new Date(new Date().getFullYear(), 0, 1).toISOString().split('T')[0],
     endDate: new Date().toISOString().split('T')[0]
   });
   const [statusFilter, setStatusFilter] = useState('ALL');
@@ -252,15 +253,38 @@ export default function PurchasePayment() {
             return;
         }
 
-        const newInvoices = missingPos.map((p: any) => ({
+        // Ambil tanggal receipt terbaru per PO (kalau ada), supaya invoice_date lebih akurat dan mudah dicari di filter.
+        const receiptDateByPoId = new Map<string, string>();
+        const missingPoIds = missingPos.map((p: any) => p.id).filter(Boolean);
+        if (missingPoIds.length > 0) {
+          const { data: receipts, error: rErr } = await supabase
+            .from('goods_receipts')
+            .select('po_id, receipt_date')
+            .in('po_id', missingPoIds)
+            .order('receipt_date', { ascending: false });
+          if (rErr) throw rErr;
+          (receipts || []).forEach((r: any) => {
+            const poId = String(r?.po_id || '').trim();
+            const dt = String(r?.receipt_date || '').trim();
+            if (!poId || !dt) return;
+            if (!receiptDateByPoId.has(poId)) receiptDateByPoId.set(poId, dt);
+          });
+        }
+
+        const newInvoices = missingPos.map((p: any) => {
+          const poId = String(p.id || '').trim();
+          const baseDate = receiptDateByPoId.get(poId) || new Date(p.created_at).toISOString().split('T')[0];
+          const due = new Date(new Date(baseDate).setDate(new Date(baseDate).getDate() + 30)).toISOString().split('T')[0];
+          return {
           invoice_number: `INV-${p.po_number}`,
           po_id: p.id,
           supplier_id: p.supplier_id,
-          invoice_date: new Date(p.created_at).toISOString().split('T')[0],
-          due_date: new Date(new Date(p.created_at).setDate(new Date(p.created_at).getDate() + 30)).toISOString().split('T')[0],
+          invoice_date: baseDate,
+          due_date: due,
           total_amount: p.total_amount,
           status: 'UNPAID'
-        }));
+          };
+        });
 
         if (newInvoices.length > 0) {
           const { error } = await supabase.from('purchase_invoices').insert(newInvoices);
@@ -318,7 +342,7 @@ export default function PurchasePayment() {
             )
           )
         `)
-        .in('purchase_orders.status', ['RECEIVED_FULL', 'RECEIVED_PART', 'RETUR'])
+        .in('purchase_orders.status', ['RECEIVED_FULL', 'RECEIVED_PART', 'RETURNED_FULL', 'RETURNED_PART'])
         .order('created_at', { ascending: false });
 
       if (error) throw error;
@@ -480,7 +504,8 @@ export default function PurchasePayment() {
     if (!selectedInvoice) return;
     setLoading(true);
     try {
-      if (selectedInvoice.purchase_orders?.status === 'RETUR') {
+      const poStatus = String(selectedInvoice.purchase_orders?.status || '').toUpperCase();
+      if (poStatus.startsWith('RETURNED')) {
         toast.error("Tidak dapat memproses pembayaran. PO terkait sudah diretur.");
         setIsPayOpen(false);
         setLoading(false);
@@ -565,8 +590,14 @@ export default function PurchasePayment() {
           description: 'Pengeluaran Kas/Bank',
         });
 
-        const { error: itemsErr } = await supabase.from('journal_entry_items').insert(itemsPayload);
-        if (itemsErr) throw itemsErr;
+        try {
+          const { error: itemsErr } = await supabase.from('journal_entry_items').insert(itemsPayload);
+          if (itemsErr) throw itemsErr;
+        } catch (e) {
+          // Cleanup bila gagal insert item jurnal agar tidak ada jurnal "yatim"
+          await supabase.from('journal_entries').delete().eq('id', entry.id);
+          throw e;
+        }
         return entry.id as string;
       };
 
@@ -576,31 +607,31 @@ export default function PurchasePayment() {
           const tempRef = `${editingPaymentId}:tmp:${Date.now().toString().slice(-6)}`;
           const newJournalId = await createJournal(tempRef);
 
-          const { error: updateError } = await supabase
-            .from('purchase_payments')
-            .update({
+          const adjustedPaidAmount = currentPaid - originalPaymentAmount + amount;
+          const newStatus = adjustedPaidAmount >= selectedInvoice.total_amount ? 'PAID' : 'PARTIAL';
+
+          const [{ error: updateError }, { error: invErr }, { error: delOldErr }] = await Promise.all([
+            supabase
+              .from('purchase_payments')
+              .update({
                 amount: amount,
                 transfer_fee: transferFee,
                 fee_account_id: paymentData.fee_account_id || null,
                 payment_date: paymentData.payment_date,
                 payment_method: paymentData.payment_method,
                 payment_account_id: paymentData.payment_account_id,
-                notes: paymentData.notes
-            })
-            .eq('id', editingPaymentId);
-          
+                notes: paymentData.notes,
+              })
+              .eq('id', editingPaymentId),
+            supabase
+              .from('purchase_invoices')
+              .update({ paid_amount: adjustedPaidAmount, status: newStatus })
+              .eq('id', selectedInvoice.id),
+            supabase.from('journal_entries').delete().eq('reference', editingPaymentId),
+          ]);
+
           if (updateError) throw updateError;
-
-          const adjustedPaidAmount = currentPaid - originalPaymentAmount + amount;
-          const newStatus = adjustedPaidAmount >= selectedInvoice.total_amount ? 'PAID' : 'PARTIAL';
-
-          const { error: invErr } = await supabase
-            .from('purchase_invoices')
-            .update({ paid_amount: adjustedPaidAmount, status: newStatus })
-            .eq('id', selectedInvoice.id);
           if (invErr) throw invErr;
-            
-          const { error: delOldErr } = await supabase.from('journal_entries').delete().eq('reference', editingPaymentId);
           if (delOldErr) throw delOldErr;
 
           const { error: refErr } = await supabase.from('journal_entries').update({ reference: editingPaymentId }).eq('id', newJournalId);
@@ -796,19 +827,19 @@ export default function PurchasePayment() {
                         <TableCell className="text-right font-semibold">{formatCurrency(invoice.total_amount - invoice.paid_amount)}</TableCell>
                         <TableCell>
                           <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                            invoice.purchase_orders?.status === 'RETUR' ? 'bg-gray-200 text-gray-800' :
+                            String(invoice.purchase_orders?.status || '').toUpperCase().startsWith('RETURNED') ? 'bg-gray-200 text-gray-800' :
                             invoice.status === 'PAID' ? 'bg-green-200 text-green-800' :
                             invoice.status === 'PARTIAL' ? 'bg-yellow-200 text-yellow-800' :
                             'bg-red-200 text-red-800'
                           }`}>
-                            {invoice.purchase_orders?.status === 'RETUR' ? 'DIRETUR' : invoice.status}
+                            {String(invoice.purchase_orders?.status || '').toUpperCase().startsWith('RETURNED') ? 'DIRETUR' : invoice.status}
                           </span>
                         </TableCell>
                         <TableCell>
                           <Button 
                             size="sm" 
                             onClick={() => handlePayClick(invoice)} 
-                            disabled={invoice.status === 'PAID' || invoice.purchase_orders?.status === 'RETUR'}
+                            disabled={invoice.status === 'PAID' || String(invoice.purchase_orders?.status || '').toUpperCase().startsWith('RETURNED')}
                           >
                             <Wallet className="mr-2 h-4 w-4" /> Bayar
                           </Button>
