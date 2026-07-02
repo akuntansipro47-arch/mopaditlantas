@@ -463,7 +463,7 @@ export default function Dashboard() {
               vehicle_name: string;
               woIds: Set<string>;
               woNumbers: Map<string, string>; // wo_number -> work_date
-              entryIds: Set<string>;
+              entryWoCounts: Map<string, number>; // vehicle_entry_id -> jumlah WO
               latestEntryId: string | null;
               latestEntryDate: string | null;
               latestEntryNumber: string | null;
@@ -492,7 +492,7 @@ export default function Dashboard() {
                 group,
                 woIds: new Set<string>(),
                 woNumbers: new Map<string, string>(),
-                entryIds: new Set<string>(),
+                entryWoCounts: new Map<string, number>(),
                 latestEntryId: entryId || null,
                 latestEntryDate: entryDate,
                 latestEntryNumber: entryNumber,
@@ -502,7 +502,7 @@ export default function Dashboard() {
             const agg = byPlate.get(plate)!;
             if (woId) agg.woIds.add(woId);
             if (woNumber) agg.woNumbers.set(woNumber, workDate || '');
-            if (entryId) agg.entryIds.add(entryId);
+            if (entryId) agg.entryWoCounts.set(entryId, (agg.entryWoCounts.get(entryId) || 0) + 1);
 
             // Update entry terbaru (pakai entry_date; fallback work_date)
             const curTs = agg.latestEntryDate ? Date.parse(agg.latestEntryDate) : Number.NaN;
@@ -531,7 +531,7 @@ export default function Dashboard() {
               wo_numbers: Array.from(x.woNumbers.entries())
                 .sort((a, b) => String(b[1] || '').localeCompare(String(a[1] || '')))
                 .map(([woNumber]) => woNumber),
-              entry_ids: Array.from(x.entryIds.values()),
+              entry_ids: Array.from(x.entryWoCounts.entries()).map(([id, count]) => ({ id, count })),
               latest_entry_id: x.latestEntryId,
               latest_entry_date: x.latestEntryDate,
               latest_entry_number: x.latestEntryNumber,
@@ -542,7 +542,7 @@ export default function Dashboard() {
             new Set(
               candidates
                 .flatMap((x) => (Array.isArray(x.entry_ids) ? x.entry_ids : []))
-                .map((v: any) => String(v || '').trim())
+                .map((v: any) => String(v?.id || '').trim())
                 .filter(Boolean)
             )
           ) as string[];
@@ -567,7 +567,6 @@ export default function Dashboard() {
               (jobRows || []).forEach((r: any) => {
                 const entryId = String(r?.vehicle_entry_id || '').trim();
                 if (!entryId) return;
-                if (Boolean(r?.value_only) === true) return;
                 const amt = getJobEstimationFromRow(r);
                 estByEntryId.set(entryId, (estByEntryId.get(entryId) || 0) + amt);
               });
@@ -582,7 +581,6 @@ export default function Dashboard() {
               (partRows || []).forEach((r: any) => {
                 const entryId = String(r?.vehicle_entry_id || '').trim();
                 if (!entryId) return;
-                if (Boolean(r?.value_only) === true) return;
                 const total =
                   r?.total_price !== null && r?.total_price !== undefined
                     ? Number(r.total_price || 0)
@@ -601,10 +599,13 @@ export default function Dashboard() {
               wo_numbers: x.wo_numbers,
               latest_entry_date: x.latest_entry_date,
               latest_entry_number: x.latest_entry_number,
-              total_estimation: (Array.isArray(x.entry_ids) ? x.entry_ids : []).reduce((sum: number, entryId: any) => {
-                const id = String(entryId || '').trim();
-                if (!id) return sum;
-                return sum + Number(estByEntryId.get(id) || 0);
+              // Samakan dengan laporan Estimasi vs Realisasi: jika 1 entry menghasilkan beberapa WO,
+              // estimasi entry tsb dihitung per WO (dikalikan jumlah WO pada entry tsb).
+              total_estimation: (Array.isArray(x.entry_ids) ? x.entry_ids : []).reduce((sum: number, it: any) => {
+                const id = String(it?.id || '').trim();
+                const cnt = Number(it?.count || 0);
+                if (!id || !Number.isFinite(cnt) || cnt <= 0) return sum;
+                return sum + Number(estByEntryId.get(id) || 0) * cnt;
               }, 0),
             }))
             .sort((a, b) => {
@@ -612,8 +613,7 @@ export default function Dashboard() {
               const bt = b.latest_entry_date ? Date.parse(b.latest_entry_date) : 0;
               const at = a.latest_entry_date ? Date.parse(a.latest_entry_date) : 0;
               return bt - at;
-            })
-            .slice(0, 12);
+            });
 
           setRepeatWoVehicles(repeatRows);
         } catch (e: any) {
