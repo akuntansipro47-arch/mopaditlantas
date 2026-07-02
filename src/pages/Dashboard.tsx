@@ -435,9 +435,10 @@ export default function Dashboard() {
                 vehicle_entry_id,
                 vehicle_entries!inner(
                   id,
+                  vehicle_id,
                   entry_date,
                   entry_number,
-                  vehicles(license_plate, brand_type, vehicle_type)
+                  vehicles(id, license_plate, brand_type, vehicle_type)
                 )
               `
               )
@@ -468,6 +469,7 @@ export default function Dashboard() {
               latestEntryDate: string | null;
               latestEntryNumber: string | null;
               group: string;
+              vehicleId: string | null;
             }
           >();
 
@@ -478,6 +480,7 @@ export default function Dashboard() {
             if (!plate) return;
             const vehicleName = String(v?.brand_type || '-').trim() || '-';
             const group = normalizeVehicleGroup(v?.vehicle_type);
+            const vehicleId = String(entry?.vehicle_id || v?.id || '').trim() || null;
             const woId = String(wo?.id || '').trim();
             const woNumber = String(wo?.wo_number || '').trim();
             const workDate = String(wo?.work_date || entry?.entry_date || '').trim();
@@ -496,6 +499,7 @@ export default function Dashboard() {
                 latestEntryId: entryId || null,
                 latestEntryDate: entryDate,
                 latestEntryNumber: entryNumber,
+                vehicleId,
               });
             }
 
@@ -503,6 +507,7 @@ export default function Dashboard() {
             if (woId) agg.woIds.add(woId);
             if (woNumber) agg.woNumbers.set(woNumber, workDate || '');
             if (entryId) agg.entryWoCounts.set(entryId, (agg.entryWoCounts.get(entryId) || 0) + 1);
+            if (!agg.vehicleId && vehicleId) agg.vehicleId = vehicleId;
 
             // Update entry terbaru (pakai entry_date; fallback work_date)
             const curTs = agg.latestEntryDate ? Date.parse(agg.latestEntryDate) : Number.NaN;
@@ -519,6 +524,7 @@ export default function Dashboard() {
               agg.latestEntryNumber = entryNumber || agg.latestEntryNumber;
               agg.vehicle_name = vehicleName || agg.vehicle_name;
               agg.group = group || agg.group;
+              if (vehicleId) agg.vehicleId = vehicleId;
             }
           });
 
@@ -527,6 +533,7 @@ export default function Dashboard() {
               license_plate: x.license_plate,
               vehicle_name: x.vehicle_name,
               group: x.group,
+              vehicle_id: x.vehicleId,
               wo_count: x.woIds.size,
               wo_numbers: Array.from(x.woNumbers.entries())
                 .sort((a, b) => String(b[1] || '').localeCompare(String(a[1] || '')))
@@ -537,6 +544,68 @@ export default function Dashboard() {
               latest_entry_number: x.latestEntryNumber,
             }))
             .filter((x) => x.wo_count > 1);
+
+          // Tambahkan entry lain untuk kendaraan tsb (termasuk entry yang belum dibuat WO),
+          // supaya total estimasi selaras dengan sumber "Laporan Estimasi vs Realisasi".
+          try {
+            const vehicleIds = Array.from(new Set(candidates.map((c: any) => String(c.vehicle_id || '').trim()).filter(Boolean)));
+            if (vehicleIds.length > 0) {
+              const entriesByVehicle = new Map<string, Set<string>>();
+              const PAGE_SIZE_E = 1000;
+              const MAX_PAGES_E = 80;
+              let ef = 0;
+              let ep = 0;
+              while (true) {
+                const et = ef + PAGE_SIZE_E - 1;
+                const { data: entryRows, error: entryErr } = await supabase
+                  .from('vehicle_entries')
+                  .select('id, vehicle_id, entry_date')
+                  .in('vehicle_id', vehicleIds)
+                  .order('entry_date', { ascending: false })
+                  .range(ef, et);
+
+                if (entryErr) {
+                  warn('Gagal ambil entry kendaraan (dashboard repeat WO)', entryErr);
+                  break;
+                }
+                if (!entryRows || entryRows.length === 0) break;
+
+                (entryRows || []).forEach((r: any) => {
+                  const vid = String(r?.vehicle_id || '').trim();
+                  const id = String(r?.id || '').trim();
+                  if (!vid || !id) return;
+                  if (!entriesByVehicle.has(vid)) entriesByVehicle.set(vid, new Set<string>());
+                  entriesByVehicle.get(vid)!.add(id);
+                });
+
+                if (entryRows.length < PAGE_SIZE_E) break;
+                ef += PAGE_SIZE_E;
+                ep += 1;
+                if (ep >= MAX_PAGES_E) break;
+              }
+
+              // merge: entry yg tidak punya WO masuk count=1
+              candidates.forEach((c: any) => {
+                const vid = String(c.vehicle_id || '').trim();
+                if (!vid) return;
+                const extraIds = Array.from(entriesByVehicle.get(vid) || []);
+                if (extraIds.length === 0) return;
+                const existing = new Map<string, number>();
+                (Array.isArray(c.entry_ids) ? c.entry_ids : []).forEach((it: any) => {
+                  const id = String(it?.id || '').trim();
+                  const cnt = Number(it?.count || 0);
+                  if (!id) return;
+                  existing.set(id, cnt);
+                });
+                extraIds.forEach((id) => {
+                  if (!existing.has(id)) existing.set(id, 1);
+                });
+                c.entry_ids = Array.from(existing.entries()).map(([id, count]) => ({ id, count }));
+              });
+            }
+          } catch (e: any) {
+            warn('Gagal merge entry tanpa WO (dashboard repeat WO)', e);
+          }
 
           const entryIdsForEstimation = Array.from(
             new Set(
