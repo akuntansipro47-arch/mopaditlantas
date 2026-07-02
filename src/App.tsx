@@ -77,7 +77,7 @@ export default function App() {
             <Route element={<DashboardLayout />}>
               <Route
                 path="/"
-                element={guardByPermission(<Dashboard />, ['dashboard'], 'Anda tidak memiliki izin untuk membuka dashboard.')}
+                element={guardByPermission(<Dashboard />, ['dashboard', 'dashboard_repeat_wo'], 'Anda tidak memiliki izin untuk membuka dashboard.')}
               />
               <Route
                 path="/reports"

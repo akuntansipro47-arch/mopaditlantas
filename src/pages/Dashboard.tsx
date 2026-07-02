@@ -130,7 +130,8 @@ export default function Dashboard() {
   const canViewRepeatWo = hasMenuAccess(user, 'dashboard_repeat_wo');
 
   useEffect(() => {
-    if (user && !hasMenuAccess(user, 'dashboard')) {
+    // Izinkan akses Dashboard jika user punya akses Dashboard ATAU akses khusus Dashboard: Unit WO Berulang
+    if (user && !(hasMenuAccess(user, 'dashboard') || hasMenuAccess(user, 'dashboard_repeat_wo'))) {
       navigate('/reports');
     }
   }, [user, navigate]);
