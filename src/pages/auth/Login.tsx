@@ -27,7 +27,7 @@ export default function Login() {
   };
 
   return (
-    <div className="flex h-screen w-full items-center justify-center bg-[radial-gradient(circle_at_top_left,rgba(56,189,248,0.24),transparent_28%),radial-gradient(circle_at_top_right,rgba(132,204,22,0.18),transparent_28%),radial-gradient(circle_at_bottom_left,rgba(251,191,36,0.18),transparent_24%),linear-gradient(180deg,#081223_0%,#0f172a_55%,#111827_100%)] px-4">
+    <div className="flex h-screen w-full items-center justify-center bg-[radial-gradient(circle_at_top_left,rgba(56,189,248,0.24),transparent_28%),radial-gradient(circle_at_top_right,rgba(132,204,22,0.14),transparent_28%),radial-gradient(circle_at_bottom_left,rgba(251,191,36,0.07),transparent_18%),linear-gradient(180deg,#081223_0%,#0f172a_55%,#111827_100%)] px-4">
       <Card className="w-full max-w-sm border-sky-100/10 bg-slate-950/60 text-slate-200 shadow-2xl backdrop-blur-sm">
         <CardHeader className="space-y-4 pt-8">
           <div className="flex flex-col items-center gap-1.5">
@@ -35,7 +35,7 @@ export default function Login() {
             <div className="flex flex-col items-center">
               <h1 className="text-4xl font-semibold leading-none tracking-tight">
                 <span className="text-white">Oto</span>
-                <span className="bg-gradient-to-r from-sky-400 via-lime-400 to-amber-400 bg-clip-text text-transparent">Smart</span>
+                <span className="bg-gradient-to-r from-sky-400 via-lime-400 to-amber-300 bg-clip-text text-transparent">Smart</span>
               </h1>
               <p className="mt-2 text-[10px] font-medium uppercase tracking-[0.2em] text-slate-400">Workshop Control System</p>
             </div>

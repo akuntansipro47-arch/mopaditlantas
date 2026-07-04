@@ -208,7 +208,7 @@ export function Sidebar({ className, onNavigate }: SidebarProps) {
   return (
     <div className={cn("flex h-full w-72 max-w-full flex-col bg-[linear-gradient(180deg,#0b1630_0%,#102240_46%,#163052_100%)] text-slate-300 shadow-2xl transition-all duration-300 ease-in-out", className)}>
       {/* Header Logo */}
-      <div className="flex min-h-20 items-center border-b border-sky-100/10 bg-[linear-gradient(90deg,rgba(56,189,248,0.08),rgba(132,204,22,0.06),rgba(251,191,36,0.06))] px-4 py-4">
+      <div className="flex min-h-20 items-center border-b border-sky-100/10 bg-[linear-gradient(90deg,rgba(56,189,248,0.08),rgba(132,204,22,0.05),rgba(251,191,36,0.025))] px-4 py-4">
         <a
           href={appUrl}
           target="_blank"
@@ -221,7 +221,7 @@ export function Sidebar({ className, onNavigate }: SidebarProps) {
           
           <div className="flex min-w-0 flex-col justify-center">
             <h1 className="text-xl font-semibold leading-none tracking-tight text-white sm:text-2xl">
-              Oto<span className="bg-gradient-to-r from-sky-400 via-lime-400 to-amber-300 bg-clip-text text-transparent">Smart</span>
+              Oto<span className="bg-gradient-to-r from-sky-400 via-lime-400 to-amber-200 bg-clip-text text-transparent">Smart</span>
             </h1>
             <p className="mt-1 truncate text-[10px] font-medium tracking-[0.16em] text-slate-400 uppercase">Workshop Control System</p>
           </div>
