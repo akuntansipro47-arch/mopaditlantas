@@ -85,6 +85,7 @@ export default function PurchaseOrderReturn() {
   const [coaAccounts, setCoaAccounts] = useState<any[]>([]);
   const [returnHistory, setReturnHistory] = useState<ReturnHistoryItem[]>([]);
   const [isHistoryLoading, setIsHistoryLoading] = useState(false);
+  const [isHistoryOpen, setIsHistoryOpen] = useState(false);
 
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [editingReturn, setEditingReturn] = useState<ReturnHistoryItem | null>(null);
@@ -151,6 +152,67 @@ export default function PurchaseOrderReturn() {
     );
   };
 
+  const recomputePoStatusAfterReturn = async (poId: string) => {
+    const [{ data: poItems, error: poErr }, { data: receiptsRows, error: rErr }, { data: returns, error: retErr }] = await Promise.all([
+      supabase.from('purchase_order_items').select('goods_id, quantity').eq('po_id', poId),
+      supabase.from('goods_receipts').select('id, items:goods_receipt_items(goods_id, quantity_received)').eq('po_id', poId),
+      supabase.from('purchase_returns').select('id').eq('po_id', poId),
+    ]);
+    if (poErr) throw poErr;
+    if (rErr) throw rErr;
+    if (retErr) throw retErr;
+
+    const items = (poItems || []) as any[];
+    const hasGoods = items.some((x: any) => Boolean(x.goods_id));
+    const returnIds = (returns || []).map((x: any) => x.id).filter(Boolean);
+
+    if (!hasGoods) {
+      const next = (receiptsRows || []).length > 0 ? 'RECEIVED_FULL' : 'ISSUED';
+      const { error: up } = await supabase.from('purchase_orders').update({ status: next as any }).eq('id', poId);
+      if (up) throw up;
+      return;
+    }
+
+    const orderedByGoods: Record<string, number> = {};
+    items.forEach((it: any) => {
+      if (!it.goods_id) return;
+      const gid = String(it.goods_id);
+      orderedByGoods[gid] = (orderedByGoods[gid] || 0) + Number(it.quantity || 0);
+    });
+
+    const receivedByGoods: Record<string, number> = {};
+    (receiptsRows || []).forEach((r: any) => (r.items || []).forEach((i: any) => {
+      if (!i.goods_id) return;
+      const gid = String(i.goods_id);
+      receivedByGoods[gid] = (receivedByGoods[gid] || 0) + Number(i.quantity_received || 0);
+    }));
+
+    const returnedByGoods: Record<string, number> = {};
+    if (returnIds.length > 0) {
+      const { data: retItems, error: retItemErr } = await supabase
+        .from('purchase_return_items')
+        .select('goods_id, quantity_returned')
+        .in('return_id', returnIds);
+      if (retItemErr) throw retItemErr;
+      (retItems || []).forEach((it: any) => {
+        if (!it.goods_id) return;
+        const gid = String(it.goods_id);
+        returnedByGoods[gid] = (returnedByGoods[gid] || 0) + Number(it.quantity_returned || 0);
+      });
+    }
+
+    const goodsIds = Object.keys(orderedByGoods);
+    const anyReceived = goodsIds.some((gid) => Number(receivedByGoods[gid] || 0) > 0);
+    const isReceivedFull = goodsIds.every((gid) => Number(receivedByGoods[gid] || 0) >= Number(orderedByGoods[gid] || 0));
+    const isReturnedFull =
+      goodsIds.length > 0 &&
+      goodsIds.every((gid) => Number(receivedByGoods[gid] || 0) > 0 && Number(returnedByGoods[gid] || 0) >= Number(receivedByGoods[gid] || 0));
+
+    const nextStatus = isReturnedFull ? 'RETURNED_FULL' : isReceivedFull ? 'RECEIVED_FULL' : anyReceived ? 'RECEIVED_PART' : 'ISSUED';
+    const { error: up } = await supabase.from('purchase_orders').update({ status: nextStatus as any }).eq('id', poId);
+    if (up) throw up;
+  };
+
   async function fetchCompletedPOs() {
     setLoading(true);
     try {
@@ -169,7 +231,8 @@ export default function PurchaseOrderReturn() {
           created_at,
           status,
           suppliers (name),
-          purchase_invoices (id, status, total_amount, paid_amount)
+          purchase_invoices (id, status, total_amount, paid_amount),
+          purchase_returns (id)
         `)
         .in('status', ['RECEIVED_FULL', 'RECEIVED_PART', 'RETURNED_FULL'])
         .or(
@@ -557,6 +620,7 @@ export default function PurchaseOrderReturn() {
       });
       setIsEditOpen(false);
       setEditingReturn(null);
+      await recomputePoStatusAfterReturn(poId);
       await loadReturnHistory(poId);
       const { data: refreshed } = await supabase
         .from('purchase_orders')
@@ -566,7 +630,8 @@ export default function PurchaseOrderReturn() {
           po_date,
           status,
           suppliers (name),
-          purchase_invoices (id, status, total_amount, paid_amount)
+          purchase_invoices (id, status, total_amount, paid_amount),
+          purchase_returns (id)
         `)
         .eq('id', poId)
         .single();
@@ -581,10 +646,10 @@ export default function PurchaseOrderReturn() {
     }
   };
 
-  const deleteReturn = async (ret: ReturnHistoryItem) => {
+  const cancelReturn = async (ret: ReturnHistoryItem) => {
     const poId = String(selectedPO?.id || '');
     if (!poId) return;
-    if (!window.confirm(`Hapus retur ${ret.return_number}?`)) return;
+    if (!window.confirm(`Batalkan retur ${ret.return_number}? Stok dan jurnal retur akan dikembalikan seperti semula.`)) return;
 
     try {
       const allItems = (ret.items || []).map((it: any) => ({
@@ -611,16 +676,20 @@ export default function PurchaseOrderReturn() {
       }
 
       await supabase.from('journal_entries').delete().eq('reference', ret.id);
+      const { error: delItemsErr } = await supabase.from('purchase_return_items').delete().eq('return_id', ret.id);
+      if (delItemsErr) throw delItemsErr;
       const { error: delErr } = await supabase.from('purchase_returns').delete().eq('id', ret.id);
       if (delErr) throw delErr;
 
-      toast.success('Retur berhasil dihapus.');
+      await recomputePoStatusAfterReturn(poId);
+
+      toast.success('Retur berhasil dibatalkan.');
       void logActivity({
-        action: 'PR_DELETE',
+        action: 'PR_CANCEL',
         module: 'PURCHASE_RETURN',
         entity_type: 'purchase_returns',
         entity_id: String(ret.id),
-        details: `Delete Retur ${ret.return_number} • PO ${selectedPO?.po_number || ''}`.trim(),
+        details: `Batal Retur ${ret.return_number} • PO ${selectedPO?.po_number || ''}`.trim(),
         meta: { return_id: ret.id, return_number: ret.return_number, po_id: selectedPO?.id || null, po_number: selectedPO?.po_number || null },
       });
       await loadReturnHistory(poId);
@@ -632,7 +701,8 @@ export default function PurchaseOrderReturn() {
           po_date,
           status,
           suppliers (name),
-          purchase_invoices (id, status, total_amount, paid_amount)
+          purchase_invoices (id, status, total_amount, paid_amount),
+          purchase_returns (id)
         `)
         .eq('id', poId)
         .single();
@@ -641,7 +711,7 @@ export default function PurchaseOrderReturn() {
         setSelectedPO(refreshed);
       }
     } catch (e: any) {
-      toast.error('Gagal menghapus retur: ' + (e?.message || 'Unknown error'));
+      toast.error('Gagal membatalkan retur: ' + (e?.message || 'Unknown error'));
     }
   };
 
@@ -756,6 +826,17 @@ export default function PurchaseOrderReturn() {
       await loadReturnHistory(String(po.id || ''));
     } catch (e: any) {
       toast.error('Gagal memuat rincian PO: ' + (e?.message || 'Unknown error'));
+    }
+  };
+
+  const handleHistoryClick = async (po: any) => {
+    setSelectedPO(po);
+    setReturnHistory([]);
+    setIsHistoryOpen(true);
+    try {
+      await loadReturnHistory(String(po.id || ''));
+    } catch (e: any) {
+      toast.error('Gagal memuat riwayat retur: ' + (e?.message || 'Unknown error'));
     }
   };
 
@@ -1000,6 +1081,8 @@ export default function PurchaseOrderReturn() {
         if (jelErr) throw jelErr;
       }
 
+      await recomputePoStatusAfterReturn(String(selectedPO.id || ''));
+
       const { data: refreshed } = await supabase
         .from('purchase_orders')
         .select(`
@@ -1008,7 +1091,8 @@ export default function PurchaseOrderReturn() {
           po_date,
           status,
           suppliers (name),
-          purchase_invoices (id, status, total_amount, paid_amount)
+          purchase_invoices (id, status, total_amount, paid_amount),
+          purchase_returns (id)
         `)
         .eq('id', selectedPO.id)
         .single();
@@ -1051,6 +1135,84 @@ export default function PurchaseOrderReturn() {
     p.po_number.toLowerCase().includes(search.toLowerCase()) ||
     p.suppliers?.name.toLowerCase().includes(search.toLowerCase())
   );
+
+  const renderReturnHistorySection = () => {
+    const latestId = returnHistory[0]?.id;
+    return (
+      <div className="mt-4 border rounded-md">
+        <div className="px-3 py-2 border-b flex items-center justify-between">
+          <div className="font-medium">Riwayat Retur</div>
+          <div className="text-xs text-muted-foreground">
+            {isHistoryLoading ? 'Memuat...' : `${returnHistory.length} retur`}
+          </div>
+        </div>
+        <div className="max-h-56 overflow-y-auto">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>No. Retur</TableHead>
+                <TableHead>Tanggal</TableHead>
+                <TableHead className="text-right">Total</TableHead>
+                <TableHead className="text-right">Item</TableHead>
+                <TableHead>Aksi</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {returnHistory.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={5} className="text-center h-16 text-sm text-muted-foreground">
+                    Belum ada retur.
+                  </TableCell>
+                </TableRow>
+              ) : (
+                returnHistory.map((r) => {
+                  const itemCount = Array.isArray(r.items) ? r.items.length : 0;
+                  const canCancel = String(r.id) === String(latestId) && !isProcessing && !isEditProcessing;
+                  return (
+                    <TableRow key={r.id}>
+                      <TableCell className="font-medium">{r.return_number}</TableCell>
+                      <TableCell>{formatDate(r.return_date)}</TableCell>
+                      <TableCell className="text-right">{formatCurrency(Number(r.settlement_amount || 0))}</TableCell>
+                      <TableCell className="text-right">{itemCount}</TableCell>
+                      <TableCell>
+                        <div className="flex items-center gap-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            disabled={isProcessing || isEditProcessing}
+                            onClick={() => openEditReturn(r)}
+                          >
+                            Edit
+                          </Button>
+                          <Button
+                            variant="destructive"
+                            size="sm"
+                            disabled={!canCancel}
+                            onClick={() => cancelReturn(r)}
+                          >
+                            Batal Retur
+                          </Button>
+                        </div>
+                        {String(r.id) === String(latestId) ? (
+                          <div className="text-[11px] text-muted-foreground mt-1">
+                            Batal retur hanya diizinkan untuk retur terakhir agar stok dan jurnal tetap konsisten.
+                          </div>
+                        ) : (
+                          <div className="text-[11px] text-muted-foreground mt-1">
+                            Retur lama tidak bisa dibatalkan langsung. Edit atau batalkan retur terakhir terlebih dulu.
+                          </div>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  );
+                })
+              )}
+            </TableBody>
+          </Table>
+        </div>
+      </div>
+    );
+  };
 
   return (
     <div className="p-4">
@@ -1144,9 +1306,15 @@ export default function PurchaseOrderReturn() {
                         </Badge>
                       </TableCell>
                       <TableCell>
-                        <Button onClick={() => handleReturnClick(po)} size="sm">
-                          Retur
-                        </Button>
+                        <div className="flex items-center gap-2">
+                          <Button onClick={() => handleReturnClick(po)} size="sm">
+                            Retur
+                          </Button>
+                          <Button onClick={() => handleHistoryClick(po)} size="sm" variant="outline">
+                            Riwayat
+                            {Array.isArray((po as any)?.purchase_returns) && (po as any).purchase_returns.length > 0 ? ` (${(po as any).purchase_returns.length})` : ''}
+                          </Button>
+                        </div>
                       </TableCell>
                     </TableRow>
                   )
@@ -1283,74 +1451,7 @@ export default function PurchaseOrderReturn() {
           </div>
           <p className="text-xs text-yellow-600 mt-1"><AlertTriangle className="inline-block h-3 w-3 mr-1" />Qty retur tidak boleh melebihi sisa diterima.</p>
 
-          <div className="mt-4 border rounded-md">
-            <div className="px-3 py-2 border-b flex items-center justify-between">
-              <div className="font-medium">Riwayat Retur</div>
-              <div className="text-xs text-muted-foreground">
-                {isHistoryLoading ? 'Memuat...' : `${returnHistory.length} retur`}
-              </div>
-            </div>
-            <div className="max-h-56 overflow-y-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>No. Retur</TableHead>
-                    <TableHead>Tanggal</TableHead>
-                    <TableHead className="text-right">Total</TableHead>
-                    <TableHead className="text-right">Item</TableHead>
-                    <TableHead>Aksi</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {returnHistory.length === 0 ? (
-                    <TableRow>
-                      <TableCell colSpan={5} className="text-center h-16 text-sm text-muted-foreground">
-                        Belum ada retur.
-                      </TableCell>
-                    </TableRow>
-                  ) : (
-                    returnHistory.map((r, idx) => {
-                      const latestId = returnHistory[0]?.id;
-                      const canEdit = String(selectedPO?.status || '') !== 'RETURNED_FULL';
-                      const canDelete = String(selectedPO?.status || '') === 'RETURNED_FULL' && String(r.id) === String(latestId);
-                      const itemCount = Array.isArray(r.items) ? r.items.length : 0;
-                      return (
-                        <TableRow key={r.id}>
-                          <TableCell className="font-medium">{r.return_number}</TableCell>
-                          <TableCell>{formatDate(r.return_date)}</TableCell>
-                          <TableCell className="text-right">{formatCurrency(Number(r.settlement_amount || 0))}</TableCell>
-                          <TableCell className="text-right">{itemCount}</TableCell>
-                          <TableCell>
-                            <div className="flex items-center gap-2">
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                disabled={!canEdit || isProcessing}
-                                onClick={() => openEditReturn(r)}
-                              >
-                                Edit
-                              </Button>
-                              <Button
-                                variant="destructive"
-                                size="sm"
-                                disabled={!canDelete || isProcessing}
-                                onClick={() => deleteReturn(r)}
-                              >
-                                Hapus
-                              </Button>
-                            </div>
-                            {String(selectedPO?.status || '') === 'RETURNED_FULL' && idx === 0 && (
-                              <div className="text-[11px] text-muted-foreground mt-1">Hapus aktif hanya untuk retur terakhir saat status PO = RETURNED_FULL.</div>
-                            )}
-                          </TableCell>
-                        </TableRow>
-                      );
-                    })
-                  )}
-                </TableBody>
-              </Table>
-            </div>
-          </div>
+          {renderReturnHistorySection()}
           </div>
 
           <DialogFooter>
@@ -1369,6 +1470,25 @@ export default function PurchaseOrderReturn() {
                 </Button>
               </div>
             </div>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={isHistoryOpen} onOpenChange={(open) => { setIsHistoryOpen(open); if (!open) setReturnHistory([]); }}>
+        <DialogContent className="max-w-4xl max-h-[85vh] flex flex-col">
+          <DialogHeader>
+            <DialogTitle>Riwayat Retur Pembelian</DialogTitle>
+            <DialogDescription>
+              Riwayat retur untuk PO {selectedPO?.po_number || '-'}.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex-1 overflow-y-auto pr-1">
+            {renderReturnHistorySection()}
+          </div>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setIsHistoryOpen(false)}>
+              Tutup
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
