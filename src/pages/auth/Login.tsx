@@ -27,15 +27,15 @@ export default function Login() {
   };
 
   return (
-    <div className="flex h-screen w-full items-center justify-center bg-slate-900 px-4">
-      <Card className="w-full max-w-sm border-slate-800 bg-slate-950/50 text-slate-200">
+    <div className="flex h-screen w-full items-center justify-center bg-[radial-gradient(circle_at_top_left,rgba(56,189,248,0.24),transparent_28%),radial-gradient(circle_at_top_right,rgba(132,204,22,0.18),transparent_28%),radial-gradient(circle_at_bottom_left,rgba(251,191,36,0.18),transparent_24%),linear-gradient(180deg,#081223_0%,#0f172a_55%,#111827_100%)] px-4">
+      <Card className="w-full max-w-sm border-sky-100/10 bg-slate-950/60 text-slate-200 shadow-2xl backdrop-blur-sm">
         <CardHeader className="space-y-4 pt-8">
           <div className="flex flex-col items-center gap-1.5">
             <LogoMark className="h-16 w-16" />
             <div className="flex flex-col items-center">
               <h1 className="text-4xl font-semibold leading-none tracking-tight">
                 <span className="text-white">Oto</span>
-                <span className="text-lime-400">Smart</span>
+                <span className="bg-gradient-to-r from-sky-400 via-lime-400 to-amber-400 bg-clip-text text-transparent">Smart</span>
               </h1>
               <p className="mt-2 text-[10px] font-medium uppercase tracking-[0.2em] text-slate-400">Workshop Control System</p>
             </div>
@@ -52,7 +52,7 @@ export default function Login() {
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
                 required
-                className="bg-slate-900 border-slate-700 text-slate-200 placeholder:text-slate-600 focus:ring-lime-500"
+                className="border-slate-700 bg-slate-900/80 text-slate-200 placeholder:text-slate-600 focus:ring-sky-400"
               />
             </div>
             <div className="space-y-2">
@@ -65,7 +65,7 @@ export default function Login() {
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   required
-                  className="bg-slate-900 border-slate-700 text-slate-200 placeholder:text-slate-600 focus:ring-lime-500 pr-10"
+                  className="border-slate-700 bg-slate-900/80 text-slate-200 placeholder:text-slate-600 focus:ring-sky-400 pr-10"
                 />
                 <button
                   type="button"
@@ -78,7 +78,7 @@ export default function Login() {
             </div>
           </CardContent>
           <CardFooter className="flex flex-col gap-4">
-            <Button className="w-full bg-lime-600 hover:bg-lime-700 text-white font-semibold" type="submit" disabled={loading}>
+            <Button className="w-full bg-gradient-to-r from-sky-500 via-cyan-500 to-lime-500 text-white font-semibold shadow-lg shadow-sky-950/30 hover:from-sky-600 hover:via-cyan-600 hover:to-lime-600" type="submit" disabled={loading}>
               {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : 'Sign In'}
             </Button>
             <div className="text-center text-xs text-slate-400">
@@ -87,7 +87,7 @@ export default function Login() {
                 href="https://bintangelanginovasi.tech"
                 target="_blank"
                 rel="noreferrer"
-                className="text-lime-400 hover:text-lime-300 underline underline-offset-2"
+                className="text-sky-400 hover:text-cyan-300 underline underline-offset-2"
               >
                 bintangelanginovasi.tech
               </a>

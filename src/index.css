@@ -9,11 +9,20 @@
   :root {
     --background: 0 0% 100%;
     --foreground: 222.2 84% 4.9%;
+    --brand-blue: 200 88% 56%;
+    --brand-green: 95 62% 53%;
+    --brand-orange: 38 98% 56%;
   }
 
   body {
-    @apply bg-slate-50 text-slate-900 font-sans antialiased;
+    @apply text-slate-900 font-sans antialiased;
     font-family: 'Inter', sans-serif;
+    background-color: #f8fbff;
+    background-image:
+      radial-gradient(circle at top left, rgba(56, 189, 248, 0.12), transparent 26%),
+      radial-gradient(circle at top center, rgba(132, 204, 22, 0.1), transparent 28%),
+      radial-gradient(circle at top right, rgba(251, 191, 36, 0.1), transparent 24%),
+      linear-gradient(180deg, #f8fbff 0%, #f7fafc 46%, #f8fafc 100%);
   }
 
   /* Custom Scrollbar for Webkit */
