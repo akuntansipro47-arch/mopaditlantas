@@ -77,10 +77,21 @@ export default function Login() {
               </div>
             </div>
           </CardContent>
-          <CardFooter>
+          <CardFooter className="flex flex-col gap-4">
             <Button className="w-full bg-lime-600 hover:bg-lime-700 text-white font-semibold" type="submit" disabled={loading}>
               {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : 'Sign In'}
             </Button>
+            <div className="text-center text-xs text-slate-400">
+              Built and developed by <span className="font-semibold text-slate-200">B.E.I Team+</span>{' '}
+              <a
+                href="https://bintangelanginovasi.tech"
+                target="_blank"
+                rel="noreferrer"
+                className="text-lime-400 hover:text-lime-300 underline underline-offset-2"
+              >
+                bintangelanginovasi.tech
+              </a>
+            </div>
           </CardFooter>
         </form>
       </Card>
