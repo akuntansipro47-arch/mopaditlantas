@@ -80,6 +80,7 @@ export default function PurchaseOrderReturn() {
   const [pos, setPos] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState<'ALL' | 'RECEIVED_FULL' | 'RECEIVED_PART' | 'RETURNED_FULL' | 'RETURNED_PART'>('ALL');
   const [selectedPO, setSelectedPO] = useState<any>(null);
   const [isConfirmOpen, setIsConfirmOpen] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -185,7 +186,7 @@ export default function PurchaseOrderReturn() {
 
     const { data, error } = await supabase
       .from('activity_logs')
-      .select('entity_id, action, username, role, created_at, meta')
+        .select('entity_id, action, username, role, occurred_at, meta')
       .eq('entity_type', 'purchase_returns')
       .in('entity_id', cleanIds)
       .in('action', ['PR_CREATE', 'PR_CANCEL']);
@@ -210,7 +211,7 @@ export default function PurchaseOrderReturn() {
       }
       if (action === 'PR_CANCEL') {
         current.is_canceled = true;
-        current.canceled_at = String(row?.created_at || '').trim() || current.canceled_at;
+        current.canceled_at = String(row?.occurred_at || '').trim() || current.canceled_at;
         current.canceled_by_username = String(row?.username || '').trim() || current.canceled_by_username;
         current.canceled_by_role = String(row?.role || '').trim() || current.canceled_by_role;
         current.cancel_reason = String(row?.meta?.cancel_reason || '').trim() || current.cancel_reason;
@@ -304,7 +305,7 @@ export default function PurchaseOrderReturn() {
           purchase_invoices (id, status, total_amount, paid_amount),
           purchase_returns (id)
         `)
-        .in('status', ['RECEIVED_FULL', 'RECEIVED_PART', 'RETURNED_FULL'])
+        .in('status', ['RECEIVED_FULL', 'RECEIVED_PART', 'RETURNED_FULL', 'RETURNED_PART'])
         .or(
           `and(po_date.gte.${startDate},po_date.lte.${endDate}),and(po_date.is.null,created_at.gte.${startTs},created_at.lte.${endTs})`
         )
@@ -1248,10 +1249,14 @@ export default function PurchaseOrderReturn() {
     setDateFilter(prev => ({ ...prev, [name]: value }));
   };
 
-  const filteredPos = pos.filter(p => 
-    p.po_number.toLowerCase().includes(search.toLowerCase()) ||
-    p.suppliers?.name.toLowerCase().includes(search.toLowerCase())
-  );
+  const filteredPos = pos.filter((p) => {
+    const keyword = search.toLowerCase();
+    const matchSearch =
+      String(p?.po_number || '').toLowerCase().includes(keyword) ||
+      String(p?.suppliers?.name || '').toLowerCase().includes(keyword);
+    const matchStatus = statusFilter === 'ALL' ? true : String(p?.status || '') === statusFilter;
+    return matchSearch && matchStatus;
+  });
 
   const renderReturnHistorySection = () => {
     const latestActiveId = returnHistory.find((x) => !x.is_canceled)?.id;
@@ -1380,6 +1385,20 @@ export default function PurchaseOrderReturn() {
               <Input type="date" name="startDate" value={dateFilter.startDate} onChange={handleDateChange} />
               <Label>Sampai</Label>
               <Input type="date" name="endDate" value={dateFilter.endDate} onChange={handleDateChange} />
+            </div>
+            <div className="min-w-[180px]">
+              <Select value={statusFilter} onValueChange={(v: any) => setStatusFilter(v)}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Filter Status" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="ALL">Semua Status</SelectItem>
+                  <SelectItem value="RECEIVED_FULL">Received Full</SelectItem>
+                  <SelectItem value="RECEIVED_PART">Received Part</SelectItem>
+                  <SelectItem value="RETURNED_FULL">Returned Full</SelectItem>
+                  <SelectItem value="RETURNED_PART">Returned Part</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
             <Button onClick={fetchCompletedPOs} variant="outline" size="icon">
               <RotateCcw className="h-4 w-4" />
