@@ -41,6 +41,13 @@ type ReturnHistoryItem = {
   settlement_account_id: string | null;
   settlement_amount: number | null;
   created_at: string;
+  created_by_username?: string | null;
+  created_by_role?: string | null;
+  is_canceled?: boolean;
+  canceled_at?: string | null;
+  canceled_by_username?: string | null;
+  canceled_by_role?: string | null;
+  cancel_reason?: string | null;
   items: Array<{
     goods_id: string;
     quantity_returned: number;
@@ -86,6 +93,10 @@ export default function PurchaseOrderReturn() {
   const [returnHistory, setReturnHistory] = useState<ReturnHistoryItem[]>([]);
   const [isHistoryLoading, setIsHistoryLoading] = useState(false);
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
+  const [cancelTarget, setCancelTarget] = useState<ReturnHistoryItem | null>(null);
+  const [cancelReason, setCancelReason] = useState('');
+  const [isCancelOpen, setIsCancelOpen] = useState(false);
+  const [isCancelProcessing, setIsCancelProcessing] = useState(false);
 
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [editingReturn, setEditingReturn] = useState<ReturnHistoryItem | null>(null);
@@ -152,6 +163,63 @@ export default function PurchaseOrderReturn() {
     );
   };
 
+  const formatDateTimeLocal = (value?: string | null) => {
+    if (!value) return '-';
+    const d = new Date(value);
+    if (Number.isNaN(d.getTime())) return String(value);
+    return d.toLocaleString('id-ID');
+  };
+
+  const fetchReturnAuditMap = async (returnIds: string[]) => {
+    const cleanIds = Array.from(new Set((returnIds || []).map((id) => String(id || '').trim()).filter(Boolean)));
+    const result = new Map<string, {
+      created_by_username: string | null;
+      created_by_role: string | null;
+      is_canceled: boolean;
+      canceled_at: string | null;
+      canceled_by_username: string | null;
+      canceled_by_role: string | null;
+      cancel_reason: string | null;
+    }>();
+    if (cleanIds.length === 0) return result;
+
+    const { data, error } = await supabase
+      .from('activity_logs')
+      .select('entity_id, action, username, role, created_at, meta')
+      .eq('entity_type', 'purchase_returns')
+      .in('entity_id', cleanIds)
+      .in('action', ['PR_CREATE', 'PR_CANCEL']);
+    if (error) throw error;
+
+    (data || []).forEach((row: any) => {
+      const id = String(row?.entity_id || '').trim();
+      if (!id) return;
+      const current = result.get(id) || {
+        created_by_username: null,
+        created_by_role: null,
+        is_canceled: false,
+        canceled_at: null,
+        canceled_by_username: null,
+        canceled_by_role: null,
+        cancel_reason: null,
+      };
+      const action = String(row?.action || '').toUpperCase();
+      if (action === 'PR_CREATE') {
+        current.created_by_username = String(row?.username || '').trim() || current.created_by_username;
+        current.created_by_role = String(row?.role || '').trim() || current.created_by_role;
+      }
+      if (action === 'PR_CANCEL') {
+        current.is_canceled = true;
+        current.canceled_at = String(row?.created_at || '').trim() || current.canceled_at;
+        current.canceled_by_username = String(row?.username || '').trim() || current.canceled_by_username;
+        current.canceled_by_role = String(row?.role || '').trim() || current.canceled_by_role;
+        current.cancel_reason = String(row?.meta?.cancel_reason || '').trim() || current.cancel_reason;
+      }
+      result.set(id, current);
+    });
+    return result;
+  };
+
   const recomputePoStatusAfterReturn = async (poId: string) => {
     const [{ data: poItems, error: poErr }, { data: receiptsRows, error: rErr }, { data: returns, error: retErr }] = await Promise.all([
       supabase.from('purchase_order_items').select('goods_id, quantity').eq('po_id', poId),
@@ -164,7 +232,9 @@ export default function PurchaseOrderReturn() {
 
     const items = (poItems || []) as any[];
     const hasGoods = items.some((x: any) => Boolean(x.goods_id));
-    const returnIds = (returns || []).map((x: any) => x.id).filter(Boolean);
+    const returnIds = (returns || []).map((x: any) => String(x.id || '')).filter(Boolean);
+    const auditMap = await fetchReturnAuditMap(returnIds);
+    const activeReturnIds = returnIds.filter((id) => !auditMap.get(String(id))?.is_canceled);
 
     if (!hasGoods) {
       const next = (receiptsRows || []).length > 0 ? 'RECEIVED_FULL' : 'ISSUED';
@@ -188,11 +258,11 @@ export default function PurchaseOrderReturn() {
     }));
 
     const returnedByGoods: Record<string, number> = {};
-    if (returnIds.length > 0) {
+    if (activeReturnIds.length > 0) {
       const { data: retItems, error: retItemErr } = await supabase
         .from('purchase_return_items')
         .select('goods_id, quantity_returned')
-        .in('return_id', returnIds);
+        .in('return_id', activeReturnIds);
       if (retItemErr) throw retItemErr;
       (retItems || []).forEach((it: any) => {
         if (!it.goods_id) return;
@@ -282,7 +352,23 @@ export default function PurchaseOrderReturn() {
         .eq('po_id', poId)
         .order('created_at', { ascending: false });
       if (error) throw error;
-      setReturnHistory((data as any[]) || []);
+      const rows = (data as any[]) || [];
+      const auditMap = await fetchReturnAuditMap(rows.map((r: any) => String(r.id || '')).filter(Boolean));
+      setReturnHistory(
+        rows.map((r: any) => {
+          const audit = auditMap.get(String(r.id || ''));
+          return {
+            ...r,
+            created_by_username: audit?.created_by_username || null,
+            created_by_role: audit?.created_by_role || null,
+            is_canceled: Boolean(audit?.is_canceled),
+            canceled_at: audit?.canceled_at || null,
+            canceled_by_username: audit?.canceled_by_username || null,
+            canceled_by_role: audit?.canceled_by_role || null,
+            cancel_reason: audit?.cancel_reason || null,
+          };
+        })
+      );
     } catch (e: any) {
       setReturnHistory([]);
       toast.error('Gagal memuat riwayat retur: ' + (e?.message || 'Unknown error'));
@@ -304,15 +390,17 @@ export default function PurchaseOrderReturn() {
 
     const { data: returns, error: retErr } = await supabase.from('purchase_returns').select('id').eq('po_id', poId);
     if (retErr) throw retErr;
-    const returnIds = (returns || []).map((x: any) => x.id).filter(Boolean);
+    const returnIds = (returns || []).map((x: any) => String(x.id || '')).filter(Boolean);
+    const auditMap = await fetchReturnAuditMap(returnIds);
+    const activeReturnIds = returnIds.filter((id) => !auditMap.get(String(id))?.is_canceled);
 
     const returnedTotalByGoods = new Map<string, number>();
     const currentReturnByGoods = new Map<string, number>();
-    if (returnIds.length > 0) {
+    if (activeReturnIds.length > 0) {
       const { data: retItems, error: retItemErr } = await supabase
         .from('purchase_return_items')
         .select('return_id, goods_id, quantity_returned')
-        .in('return_id', returnIds);
+        .in('return_id', activeReturnIds);
       if (retItemErr) throw retItemErr;
       (retItems || []).forEach((it: any) => {
         const gid = String(it.goods_id || '');
@@ -340,6 +428,10 @@ export default function PurchaseOrderReturn() {
   const openEditReturn = async (ret: ReturnHistoryItem) => {
     const poId = String(selectedPO?.id || '');
     if (!poId) return;
+    if (ret.is_canceled) {
+      toast.error('Retur yang sudah dibatalkan tidak bisa diedit.');
+      return;
+    }
     setEditingReturn(ret);
     setEditDate(String(ret.return_date || new Date().toISOString().split('T')[0]));
     setEditNotes(String(ret.notes || ''));
@@ -646,11 +738,16 @@ export default function PurchaseOrderReturn() {
     }
   };
 
-  const cancelReturn = async (ret: ReturnHistoryItem) => {
+  const cancelReturn = async () => {
+    const ret = cancelTarget;
     const poId = String(selectedPO?.id || '');
-    if (!poId) return;
-    if (!window.confirm(`Batalkan retur ${ret.return_number}? Stok dan jurnal retur akan dikembalikan seperti semula.`)) return;
+    if (!poId || !ret) return;
+    if (!String(cancelReason || '').trim()) {
+      toast.error('Alasan pembatalan retur wajib diisi.');
+      return;
+    }
 
+    setIsCancelProcessing(true);
     try {
       const allItems = (ret.items || []).map((it: any) => ({
         goods_id: String(it.goods_id || ''),
@@ -676,22 +773,25 @@ export default function PurchaseOrderReturn() {
       }
 
       await supabase.from('journal_entries').delete().eq('reference', ret.id);
-      const { error: delItemsErr } = await supabase.from('purchase_return_items').delete().eq('return_id', ret.id);
-      if (delItemsErr) throw delItemsErr;
-      const { error: delErr } = await supabase.from('purchase_returns').delete().eq('id', ret.id);
-      if (delErr) throw delErr;
 
-      await recomputePoStatusAfterReturn(poId);
-
-      toast.success('Retur berhasil dibatalkan.');
-      void logActivity({
+      await logActivity({
         action: 'PR_CANCEL',
         module: 'PURCHASE_RETURN',
         entity_type: 'purchase_returns',
         entity_id: String(ret.id),
         details: `Batal Retur ${ret.return_number} • PO ${selectedPO?.po_number || ''}`.trim(),
-        meta: { return_id: ret.id, return_number: ret.return_number, po_id: selectedPO?.id || null, po_number: selectedPO?.po_number || null },
+        meta: {
+          return_id: ret.id,
+          return_number: ret.return_number,
+          po_id: selectedPO?.id || null,
+          po_number: selectedPO?.po_number || null,
+          cancel_reason: String(cancelReason || '').trim(),
+        },
       });
+
+      await recomputePoStatusAfterReturn(poId);
+
+      toast.success('Retur berhasil dibatalkan.');
       await loadReturnHistory(poId);
       const { data: refreshed } = await supabase
         .from('purchase_orders')
@@ -710,8 +810,13 @@ export default function PurchaseOrderReturn() {
         setPos((prev) => prev.map((x) => (x.id === refreshed.id ? refreshed : x)));
         setSelectedPO(refreshed);
       }
+      setIsCancelOpen(false);
+      setCancelTarget(null);
+      setCancelReason('');
     } catch (e: any) {
       toast.error('Gagal membatalkan retur: ' + (e?.message || 'Unknown error'));
+    } finally {
+      setIsCancelProcessing(false);
     }
   };
 
@@ -762,9 +867,11 @@ export default function PurchaseOrderReturn() {
     const { data: returns, error: retErr } = await supabase.from('purchase_returns').select('id').eq('po_id', poId);
     if (retErr) throw retErr;
     const returnedByGoods = new Map<string, number>();
-    const returnIds = (returns || []).map(x => x.id).filter(Boolean);
-    if (returnIds.length > 0) {
-      const { data: retItems, error: retItemErr } = await supabase.from('purchase_return_items').select('goods_id, quantity_returned').in('return_id', returnIds);
+    const returnIds = (returns || []).map(x => String((x as any).id || '')).filter(Boolean);
+    const auditMap = await fetchReturnAuditMap(returnIds);
+    const activeReturnIds = returnIds.filter((id) => !auditMap.get(String(id))?.is_canceled);
+    if (activeReturnIds.length > 0) {
+      const { data: retItems, error: retItemErr } = await supabase.from('purchase_return_items').select('goods_id, quantity_returned').in('return_id', activeReturnIds);
       if (retItemErr) throw retItemErr;
       (retItems || []).forEach((it: any) => {
         if (it.goods_id) returnedByGoods.set(it.goods_id, (returnedByGoods.get(it.goods_id) || 0) + Number(it.quantity_returned || 0));
@@ -838,6 +945,16 @@ export default function PurchaseOrderReturn() {
     } catch (e: any) {
       toast.error('Gagal memuat riwayat retur: ' + (e?.message || 'Unknown error'));
     }
+  };
+
+  const openCancelReturn = (ret: ReturnHistoryItem) => {
+    if (ret.is_canceled) {
+      toast.error('Retur ini sudah dibatalkan.');
+      return;
+    }
+    setCancelTarget(ret);
+    setCancelReason('');
+    setIsCancelOpen(true);
   };
 
   const processReturn = async () => {
@@ -1101,7 +1218,7 @@ export default function PurchaseOrderReturn() {
       }
 
       toast.success('Retur berhasil diproses.');
-      void logActivity({
+      await logActivity({
         action: 'PR_CREATE',
         module: 'PURCHASE_RETURN',
         entity_type: 'purchase_returns',
@@ -1137,7 +1254,7 @@ export default function PurchaseOrderReturn() {
   );
 
   const renderReturnHistorySection = () => {
-    const latestId = returnHistory[0]?.id;
+    const latestActiveId = returnHistory.find((x) => !x.is_canceled)?.id;
     return (
       <div className="mt-4 border rounded-md">
         <div className="px-3 py-2 border-b flex items-center justify-between">
@@ -1152,6 +1269,8 @@ export default function PurchaseOrderReturn() {
               <TableRow>
                 <TableHead>No. Retur</TableHead>
                 <TableHead>Tanggal</TableHead>
+                <TableHead>Pembuat</TableHead>
+                <TableHead>Status</TableHead>
                 <TableHead className="text-right">Total</TableHead>
                 <TableHead className="text-right">Item</TableHead>
                 <TableHead>Aksi</TableHead>
@@ -1160,18 +1279,38 @@ export default function PurchaseOrderReturn() {
             <TableBody>
               {returnHistory.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={5} className="text-center h-16 text-sm text-muted-foreground">
+                  <TableCell colSpan={7} className="text-center h-16 text-sm text-muted-foreground">
                     Belum ada retur.
                   </TableCell>
                 </TableRow>
               ) : (
                 returnHistory.map((r) => {
                   const itemCount = Array.isArray(r.items) ? r.items.length : 0;
-                  const canCancel = String(r.id) === String(latestId) && !isProcessing && !isEditProcessing;
+                  const canCancel =
+                    !r.is_canceled &&
+                    String(r.id) === String(latestActiveId) &&
+                    !isProcessing &&
+                    !isEditProcessing &&
+                    !isCancelProcessing;
                   return (
                     <TableRow key={r.id}>
                       <TableCell className="font-medium">{r.return_number}</TableCell>
                       <TableCell>{formatDate(r.return_date)}</TableCell>
+                      <TableCell>
+                        <div className="text-sm">{r.created_by_username || '-'}</div>
+                        <div className="text-[11px] text-muted-foreground">{r.created_by_role || '-'}</div>
+                      </TableCell>
+                      <TableCell>
+                        <div className={`inline-flex items-center rounded px-2 py-1 text-xs font-medium ${r.is_canceled ? 'bg-red-100 text-red-700' : 'bg-emerald-100 text-emerald-700'}`}>
+                          {r.is_canceled ? 'Dibatalkan' : 'Aktif'}
+                        </div>
+                        {r.is_canceled && (
+                          <div className="text-[11px] text-muted-foreground mt-1 leading-snug">
+                            Oleh {r.canceled_by_username || '-'}{r.canceled_at ? ` • ${formatDateTimeLocal(r.canceled_at)}` : ''}
+                            {r.cancel_reason ? ` • Alasan: ${r.cancel_reason}` : ''}
+                          </div>
+                        )}
+                      </TableCell>
                       <TableCell className="text-right">{formatCurrency(Number(r.settlement_amount || 0))}</TableCell>
                       <TableCell className="text-right">{itemCount}</TableCell>
                       <TableCell>
@@ -1179,7 +1318,7 @@ export default function PurchaseOrderReturn() {
                           <Button
                             variant="outline"
                             size="sm"
-                            disabled={isProcessing || isEditProcessing}
+                            disabled={isProcessing || isEditProcessing || isCancelProcessing || !!r.is_canceled}
                             onClick={() => openEditReturn(r)}
                           >
                             Edit
@@ -1188,12 +1327,16 @@ export default function PurchaseOrderReturn() {
                             variant="destructive"
                             size="sm"
                             disabled={!canCancel}
-                            onClick={() => cancelReturn(r)}
+                            onClick={() => openCancelReturn(r)}
                           >
                             Batal Retur
                           </Button>
                         </div>
-                        {String(r.id) === String(latestId) ? (
+                        {r.is_canceled ? (
+                          <div className="text-[11px] text-muted-foreground mt-1">
+                            Retur ini sudah dibatalkan dan tersimpan di riwayat audit.
+                          </div>
+                        ) : String(r.id) === String(latestActiveId) ? (
                           <div className="text-[11px] text-muted-foreground mt-1">
                             Batal retur hanya diizinkan untuk retur terakhir agar stok dan jurnal tetap konsisten.
                           </div>
@@ -1488,6 +1631,46 @@ export default function PurchaseOrderReturn() {
           <DialogFooter>
             <Button variant="ghost" onClick={() => setIsHistoryOpen(false)}>
               Tutup
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={isCancelOpen} onOpenChange={(open) => {
+        setIsCancelOpen(open);
+        if (!open) {
+          setCancelTarget(null);
+          setCancelReason('');
+        }
+      }}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Batal Retur</DialogTitle>
+            <DialogDescription>
+              Pembatalan retur akan mengembalikan stok dan menonaktifkan efek retur pada status PO.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="rounded-md border p-3 text-sm">
+              <div><span className="font-medium">No. Retur:</span> {cancelTarget?.return_number || '-'}</div>
+              <div><span className="font-medium">Tanggal:</span> {cancelTarget?.return_date ? formatDate(cancelTarget.return_date) : '-'}</div>
+              <div><span className="font-medium">Dibuat oleh:</span> {cancelTarget?.created_by_username || '-'}</div>
+            </div>
+            <div>
+              <Label>Alasan Pembatalan</Label>
+              <Input
+                value={cancelReason}
+                onChange={(e) => setCancelReason(e.target.value)}
+                placeholder="Contoh: salah pilih item / qty retur salah / input dobel"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setIsCancelOpen(false)} disabled={isCancelProcessing}>
+              Tutup
+            </Button>
+            <Button variant="destructive" onClick={cancelReturn} disabled={isCancelProcessing}>
+              {isCancelProcessing ? 'Membatalkan...' : 'Konfirmasi Batal Retur'}
             </Button>
           </DialogFooter>
         </DialogContent>
