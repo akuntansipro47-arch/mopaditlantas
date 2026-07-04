@@ -31,7 +31,9 @@ export default function Login() {
       <Card className="w-full max-w-sm border-sky-100/10 bg-slate-950/60 text-slate-200 shadow-2xl backdrop-blur-sm">
         <CardHeader className="space-y-4 pt-8">
           <div className="flex flex-col items-center gap-1.5">
-            <LogoMark className="h-16 w-16" />
+            <div className="flex h-16 w-16 items-center justify-center overflow-hidden rounded-full border border-sky-200/15 bg-white/95 p-1.5 shadow-[0_10px_24px_rgba(8,15,40,0.28)] ring-1 ring-white/8">
+              <LogoMark className="h-full w-full rounded-full object-cover" />
+            </div>
             <div className="flex flex-col items-center">
               <h1 className="text-4xl font-semibold leading-none tracking-tight">
                 <span className="text-white">Oto</span>
