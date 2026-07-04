@@ -243,8 +243,8 @@ export function Sidebar({ className, onNavigate }: SidebarProps) {
           rel="noreferrer"
           className="flex w-full items-center gap-3"
         >
-          <div className="relative flex h-11 w-11 flex-shrink-0 items-center justify-center">
-             <LogoMark className="h-11 w-11" />
+          <div className="relative flex h-12 w-12 flex-shrink-0 items-center justify-center overflow-hidden rounded-full border border-sky-200/15 bg-white/95 p-1 shadow-[0_10px_24px_rgba(8,15,40,0.28)] ring-1 ring-white/8">
+             <LogoMark className="h-full w-full rounded-full object-cover" />
           </div>
           
           <div className="flex min-w-0 flex-col justify-center">
