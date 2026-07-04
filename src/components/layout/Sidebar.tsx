@@ -47,6 +47,34 @@ type SidebarProps = {
   onNavigate?: () => void;
 };
 
+function DebugWrenchIcon({ active }: { active: boolean }) {
+  return (
+    <span className="relative mr-3 flex h-5 w-5 items-center justify-center">
+      <Wrench
+        className={cn(
+          'absolute inset-0 h-5 w-5',
+          active ? 'text-orange-200' : 'text-orange-300/60'
+        )}
+        style={{ clipPath: 'polygon(0 0, 42% 0, 24% 100%, 0 100%)' }}
+      />
+      <Wrench
+        className={cn(
+          'absolute inset-0 h-5 w-5',
+          active ? 'text-lime-200' : 'text-lime-300/85'
+        )}
+        style={{ clipPath: 'polygon(18% 0, 72% 0, 54% 100%, 8% 100%)' }}
+      />
+      <Wrench
+        className={cn(
+          'absolute inset-0 h-5 w-5',
+          active ? 'text-sky-100' : 'text-sky-300/85'
+        )}
+        style={{ clipPath: 'polygon(56% 0, 100% 0, 100% 100%, 44% 100%)' }}
+      />
+    </span>
+  );
+}
+
 function getDefaultOpenMenus(pathname: string): string[] {
   if (pathname.startsWith('/master/')) return ['Master Data'];
   if (pathname.startsWith('/transactions/')) return ['Transaksi'];
@@ -229,7 +257,7 @@ export function Sidebar({ className, onNavigate }: SidebarProps) {
       </div>
       
       {/* Navigation */}
-      <nav className="flex-1 overflow-y-auto px-3 py-4 space-y-2 scrollbar-thin scrollbar-thumb-slate-800 scrollbar-track-transparent sm:px-4 sm:py-6">
+      <nav className="flex-1 overflow-y-auto px-3 py-4 space-y-2 scrollbar-thin scrollbar-thumb-sky-950/70 scrollbar-track-transparent sm:px-4 sm:py-6">
         {navigation.map((item) => {
           const parentAccess = hasAccess(item.key);
           const children = item.children || [];
@@ -260,26 +288,26 @@ export function Sidebar({ className, onNavigate }: SidebarProps) {
                   onClick={() => toggleMenu(item.name)}
                   className={cn(
                     "flex w-full items-center justify-between rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-200",
-                    "hover:bg-slate-800/50 hover:text-white",
-                    openMenus.includes(item.name) ? "text-white bg-slate-800/30" : "text-slate-400"
+                    "hover:bg-sky-500/10 hover:text-white",
+                    openMenus.includes(item.name) ? "text-white bg-gradient-to-r from-sky-500/14 via-emerald-400/8 to-transparent shadow-[inset_0_0_0_1px_rgba(125,211,252,0.08)]" : "text-slate-300/85"
                   )}
                 >
                   <div className="flex items-center">
                     <item.icon className={cn(
                       "mr-3 h-5 w-5 transition-colors",
-                      openMenus.includes(item.name) ? "text-indigo-400" : "text-slate-500 group-hover:text-slate-300"
+                      openMenus.includes(item.name) ? "text-sky-300" : "text-slate-400 group-hover:text-sky-200"
                     )} />
                     {item.name}
                   </div>
                   {openMenus.includes(item.name) ? (
-                    <ChevronDown className="h-4 w-4 text-slate-500" />
+                    <ChevronDown className="h-4 w-4 text-slate-400" />
                   ) : (
-                    <ChevronRight className="h-4 w-4 text-slate-600" />
+                    <ChevronRight className="h-4 w-4 text-slate-500" />
                   )}
                 </button>
                 
                 {openMenus.includes(item.name) && (
-                  <div className="ml-4 space-y-1 pl-2 border-l-2 border-slate-800 animate-in slide-in-from-left-2 duration-200">
+                  <div className="ml-4 space-y-1 pl-2 border-l-2 border-sky-400/18 animate-in slide-in-from-left-2 duration-200">
                     {item.key === 'reports' ? (
                       (() => {
                         const groups: { name: string; links: Extract<NavChild, { href: string }>[] }[] = [];
@@ -309,20 +337,20 @@ export function Sidebar({ className, onNavigate }: SidebarProps) {
                                     onClick={() => toggleReportGroup(grp.name)}
                                     className={cn(
                                       "flex w-full items-center justify-between rounded-md px-3 py-2 text-xs font-semibold uppercase tracking-wide transition-all duration-200",
-                                      "hover:bg-slate-800/30 hover:text-slate-200",
-                                      isOpen || groupHasActive ? "text-slate-200 bg-slate-900/20" : "text-slate-500"
+                                      "hover:bg-sky-500/8 hover:text-slate-100",
+                                      isOpen || groupHasActive ? "text-slate-100 bg-sky-500/10" : "text-slate-400"
                                     )}
                                   >
                                     <span>{grp.name}</span>
                                     {isOpen ? (
-                                      <ChevronDown className="h-4 w-4 text-slate-600" />
+                                      <ChevronDown className="h-4 w-4 text-slate-400" />
                                     ) : (
-                                      <ChevronRight className="h-4 w-4 text-slate-600" />
+                                      <ChevronRight className="h-4 w-4 text-slate-500" />
                                     )}
                                   </button>
 
                                   {isOpen && (
-                                    <div className="ml-3 space-y-1 pl-2 border-l border-slate-800/70">
+                                    <div className="ml-3 space-y-1 pl-2 border-l border-sky-300/12">
                                       {grp.links.map((link) => {
                                         const active = currentPath === link.href;
                                         return (
@@ -334,15 +362,15 @@ export function Sidebar({ className, onNavigate }: SidebarProps) {
                                               cn(
                                                 "flex items-center rounded-md px-3 py-2 text-sm transition-all duration-200",
                                                 active
-                                                  ? "bg-indigo-600/10 text-indigo-300 font-medium"
-                                                  : "text-slate-500 hover:text-slate-200 hover:bg-slate-800/30"
+                                                  ? "bg-gradient-to-r from-sky-500/16 via-emerald-400/10 to-transparent text-sky-100 font-medium"
+                                                  : "text-slate-400 hover:text-slate-100 hover:bg-sky-500/8"
                                               )
                                             }
                                           >
                                             <span
                                               className={cn(
                                                 "mr-3 h-1.5 w-1.5 rounded-full transition-all",
-                                                active ? "bg-indigo-400 scale-125" : "bg-slate-600"
+                                                active ? "bg-lime-300 scale-125" : "bg-slate-500"
                                               )}
                                             />
                                             {link.name}
@@ -363,7 +391,7 @@ export function Sidebar({ className, onNavigate }: SidebarProps) {
                           return (
                             <div
                               key={`group-${child.name}`}
-                              className="px-3 pt-3 pb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500"
+                              className="px-3 pt-3 pb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-400/80"
                             >
                               {child.name}
                             </div>
@@ -381,15 +409,15 @@ export function Sidebar({ className, onNavigate }: SidebarProps) {
                               cn(
                                 "flex items-center rounded-md px-3 py-2 text-sm transition-all duration-200",
                                 active
-                                  ? "bg-indigo-600/10 text-indigo-300 font-medium"
-                                  : "text-slate-500 hover:text-slate-200 hover:bg-slate-800/30"
+                                  ? "bg-gradient-to-r from-sky-500/16 via-emerald-400/10 to-transparent text-sky-100 font-medium"
+                                  : "text-slate-400 hover:text-slate-100 hover:bg-sky-500/8"
                               )
                             }
                           >
                             <span
                               className={cn(
                                 "mr-3 h-1.5 w-1.5 rounded-full transition-all",
-                                active ? "bg-indigo-400 scale-125" : "bg-slate-600"
+                                active ? "bg-lime-300 scale-125" : "bg-slate-500"
                               )}
                             />
                             {child.name}
@@ -408,14 +436,14 @@ export function Sidebar({ className, onNavigate }: SidebarProps) {
                   cn(
                     "flex items-center rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-200",
                     isActive 
-                      ? "bg-indigo-600 text-white shadow-lg shadow-indigo-900/20" 
-                      : "text-slate-400 hover:bg-slate-800/50 hover:text-white"
+                      ? "bg-gradient-to-r from-sky-500/85 via-cyan-500/78 to-emerald-500/72 text-white shadow-lg shadow-sky-950/30" 
+                      : "text-slate-300/85 hover:bg-sky-500/10 hover:text-white"
                   )
                 }
               >
                 <item.icon className={cn(
                   "mr-3 h-5 w-5 transition-colors",
-                  location.pathname === item.href ? "text-white" : "text-slate-500 group-hover:text-slate-300"
+                  location.pathname === item.href ? "text-white" : "text-slate-400 group-hover:text-sky-200"
                 )} />
                 {item.name}
               </NavLink>
@@ -425,8 +453,8 @@ export function Sidebar({ className, onNavigate }: SidebarProps) {
 
         {/* User Management Menu for Super Admin & Admin */}
         {(user?.role === 'SUPER_ADMIN' || user?.role === 'ADMIN') && (
-          <div className="pt-4 mt-4 border-t border-slate-800/50">
-            <p className="px-3 text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Administrator</p>
+          <div className="pt-4 mt-4 border-t border-sky-300/10">
+            <p className="px-3 mb-2 text-xs font-semibold uppercase tracking-wider text-slate-400/80">Administrator</p>
             
             {user?.role === 'SUPER_ADMIN' && (
               <NavLink
@@ -436,12 +464,12 @@ export function Sidebar({ className, onNavigate }: SidebarProps) {
                   cn(
                     "flex items-center rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-200",
                     isActive 
-                      ? "bg-indigo-600 text-white shadow-lg shadow-indigo-900/20" 
-                      : "text-slate-400 hover:bg-slate-800/50 hover:text-white"
+                      ? "bg-gradient-to-r from-sky-500/85 via-cyan-500/78 to-emerald-500/72 text-white shadow-lg shadow-sky-950/30" 
+                      : "text-slate-300/85 hover:bg-sky-500/10 hover:text-white"
                   )
                 }
               >
-                <Settings className="mr-3 h-5 w-5 text-slate-500 group-hover:text-slate-300" />
+                <Settings className="mr-3 h-5 w-5 text-slate-400 group-hover:text-sky-200" />
                 Manajemen User
               </NavLink>
             )}
@@ -454,12 +482,12 @@ export function Sidebar({ className, onNavigate }: SidebarProps) {
                   cn(
                     "flex items-center rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-200",
                     isActive 
-                      ? "bg-indigo-600 text-white shadow-lg shadow-indigo-900/20" 
-                      : "text-slate-400 hover:bg-slate-800/50 hover:text-white"
+                      ? "bg-gradient-to-r from-sky-500/85 via-cyan-500/78 to-emerald-500/72 text-white shadow-lg shadow-sky-950/30" 
+                      : "text-slate-300/85 hover:bg-sky-500/10 hover:text-white"
                   )
                 }
               >
-                <Building2 className="mr-3 h-5 w-5 text-slate-500 group-hover:text-slate-300" />
+                <Building2 className="mr-3 h-5 w-5 text-slate-400 group-hover:text-sky-200" />
                 Profil Instansi
               </NavLink>
             )}
@@ -472,12 +500,12 @@ export function Sidebar({ className, onNavigate }: SidebarProps) {
                   cn(
                     "flex items-center rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-200",
                     isActive
-                      ? "bg-indigo-600 text-white shadow-lg shadow-indigo-900/20"
-                      : "text-slate-400 hover:bg-slate-800/50 hover:text-white"
+                      ? "bg-gradient-to-r from-sky-500/85 via-cyan-500/78 to-emerald-500/72 text-white shadow-lg shadow-sky-950/30"
+                      : "text-slate-300/85 hover:bg-sky-500/10 hover:text-white"
                   )
                 }
               >
-                <Download className="mr-3 h-5 w-5 text-slate-500 group-hover:text-slate-300" />
+                <Download className="mr-3 h-5 w-5 text-slate-400 group-hover:text-sky-200" />
                 Backup & Export
               </NavLink>
             )}
@@ -488,15 +516,28 @@ export function Sidebar({ className, onNavigate }: SidebarProps) {
                 onClick={handleNavigate}
                 className={({ isActive }) =>
                   cn(
-                    "flex items-center rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-200 text-red-400 hover:bg-red-900/20",
+                    "group flex items-center rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-200",
                     isActive 
-                      ? "bg-red-900/30 text-red-300" 
-                      : ""
+                      ? "bg-[linear-gradient(90deg,rgba(251,146,60,0.10),rgba(163,230,53,0.13),rgba(56,189,248,0.18))] text-white shadow-lg shadow-sky-950/20 ring-1 ring-sky-200/10"
+                      : "text-slate-200/90 hover:bg-[linear-gradient(90deg,rgba(251,146,60,0.05),rgba(163,230,53,0.08),rgba(56,189,248,0.10))] hover:text-white"
                   )
                 }
               >
-                <Wrench className="mr-3 h-5 w-5 text-red-500" />
-                Debug & Fix Data
+                {({ isActive }) => (
+                  <>
+                    <DebugWrenchIcon active={isActive} />
+                    <span
+                      className={cn(
+                        'bg-gradient-to-r bg-clip-text text-transparent transition-all duration-200',
+                        isActive
+                          ? 'from-orange-100 via-lime-100 to-sky-100'
+                          : 'from-orange-300 via-lime-300 to-sky-300 group-hover:from-orange-200 group-hover:via-lime-200 group-hover:to-sky-100'
+                      )}
+                    >
+                      Debug & Fix Data
+                    </span>
+                  </>
+                )}
               </NavLink>
             )}
           </div>
@@ -504,18 +545,18 @@ export function Sidebar({ className, onNavigate }: SidebarProps) {
       </nav>
       
       {/* User Profile Footer */}
-      <div className="p-4 bg-slate-950/30 border-t border-slate-800/60">
+      <div className="border-t border-sky-300/10 bg-[linear-gradient(180deg,rgba(2,6,23,0.12),rgba(56,189,248,0.04))] p-4">
         <div className="flex items-center justify-between group">
           <div className="flex items-center gap-3">
             <div className="relative">
-              <div className="h-10 w-10 rounded-full bg-gradient-to-tr from-slate-700 to-slate-600 flex items-center justify-center border-2 border-slate-800 shadow-md">
+              <div className="flex h-10 w-10 items-center justify-center rounded-full border-2 border-sky-300/10 bg-gradient-to-tr from-sky-900 via-cyan-800 to-emerald-700 shadow-md">
                 <span className="text-sm font-bold text-white">{user?.full_name?.charAt(0) || 'U'}</span>
               </div>
               <span className="absolute bottom-0 right-0 h-2.5 w-2.5 rounded-full bg-emerald-500 border-2 border-slate-900"></span>
             </div>
             <div className="overflow-hidden">
               <p className="text-sm font-semibold text-white truncate max-w-[120px]">{user?.full_name || 'User'}</p>
-              <div className="flex items-center gap-1 text-xs text-slate-500 truncate">
+              <div className="flex items-center gap-1 truncate text-xs text-slate-400">
                 <span>{user?.role || 'Guest'}</span>
                 <span className="text-[10px] bg-red-900 text-red-200 px-1 rounded">v3.0.6-DEBUG</span>
               </div>
@@ -526,7 +567,7 @@ export function Sidebar({ className, onNavigate }: SidebarProps) {
               logout();
               handleNavigate();
             }}
-            className="p-2 rounded-md text-slate-500 hover:text-red-400 hover:bg-red-950/30 transition-colors"
+            className="rounded-md p-2 text-slate-400 transition-colors hover:bg-red-950/30 hover:text-red-400"
             title="Logout"
           >
             <LogOut className="h-5 w-5" />
