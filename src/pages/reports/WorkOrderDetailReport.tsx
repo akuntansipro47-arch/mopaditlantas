@@ -9,6 +9,7 @@ import { toast } from 'sonner';
 import * as XLSX from 'xlsx';
 import { format } from 'date-fns';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { matchesFreeSearch } from '@/lib/utils';
 
 type ReportData = {
     wo_id: string;
@@ -643,12 +644,37 @@ const WorkOrderDetailReport = () => {
         }
 
         if (searchTerm) {
-            const lowercasedFilter = searchTerm.toLowerCase();
-            filtered = filtered.filter(item =>
-                item.wo_number?.toLowerCase().includes(lowercasedFilter) ||
-                item.plate_number?.toLowerCase().includes(lowercasedFilter) ||
-                item.brand_type?.toLowerCase().includes(lowercasedFilter)
-            );
+            filtered = filtered
+                .map((entry) => {
+                    const filteredItems = entry.items.filter((item) =>
+                        matchesFreeSearch(searchTerm, [
+                            entry.wo_number,
+                            entry.entry_date,
+                            entry.plate_number,
+                            entry.brand_type,
+                            entry.vehicle_type,
+                            entry.customer_name,
+                            getVehicleGroupLabel(entry.vehicle_type, entry.service_group),
+                            entry.po_payment_summary,
+                            item.item_type === 'JOB' ? 'Jasa' : 'Sparepart',
+                            item.item_name,
+                            item.value_only ? 'N/A' : '-',
+                            item.qty,
+                            item.unit_price,
+                            item.total_price,
+                            item.po_info,
+                            item.hpp,
+                            item.total_hpp,
+                            item.profit,
+                        ])
+                    );
+
+                    return {
+                        ...entry,
+                        items: filteredItems,
+                    };
+                })
+                .filter((entry) => entry.items.length > 0);
         }
 
         if (statusFilter === 'realisasi') {
@@ -774,7 +800,7 @@ const WorkOrderDetailReport = () => {
 
                     <div className="mb-4">
                         <Input
-                            placeholder="Cari No. WO / Nopol / Kendaraan..."
+                            placeholder="Cari bebas berdasarkan kolom laporan..."
                             value={searchTerm}
                             onChange={(e) => setSearchTerm(e.target.value)}
                             className="max-w-sm"
