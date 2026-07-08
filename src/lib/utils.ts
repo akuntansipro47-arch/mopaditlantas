@@ -14,15 +14,39 @@ export function formatCurrency(amount: number) {
   }).format(safe);
 }
 
+function parseDateForDisplay(date: string | Date) {
+  if (date instanceof Date) return date;
+  const raw = String(date).trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
+    return new Date(`${raw}T00:00:00`);
+  }
+  return new Date(raw);
+}
+
 export function formatDate(date: string | Date | null | undefined) {
   if (!date) return '-';
   try {
     return new Intl.DateTimeFormat("id-ID", {
       dateStyle: "medium",
-    }).format(new Date(date));
+    }).format(parseDateForDisplay(date));
   } catch (e) {
     return '-';
   }
+}
+
+export function toDateInputValue(date: string | Date = new Date()) {
+  const parsed = parseDateForDisplay(date);
+  if (!Number.isFinite(parsed.getTime())) return '';
+  const year = parsed.getFullYear();
+  const month = String(parsed.getMonth() + 1).padStart(2, '0');
+  const day = String(parsed.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+export function getStartOfMonthInputValue(date: string | Date = new Date()) {
+  const parsed = parseDateForDisplay(date);
+  if (!Number.isFinite(parsed.getTime())) return '';
+  return toDateInputValue(new Date(parsed.getFullYear(), parsed.getMonth(), 1));
 }
 
 export function generateTransactionNumber(prefix: string) {

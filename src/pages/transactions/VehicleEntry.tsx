@@ -14,7 +14,7 @@ import { Label } from "@/components/ui/label";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
-import { formatDate, cn } from '@/lib/utils';
+import { formatDate, cn, toDateInputValue, getStartOfMonthInputValue } from '@/lib/utils';
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList
@@ -107,7 +107,7 @@ export default function VehicleEntryPage() {
   
   // Form State
   const [formData, setFormData] = useState({
-    entry_date: new Date().toISOString().split('T')[0],
+    entry_date: toDateInputValue(),
     estimated_finish_date: '',
     vehicle_id: '',
     nota_dinas_number: '',
@@ -117,8 +117,8 @@ export default function VehicleEntryPage() {
 
   // Filter State
   const [dateFilter, setDateFilter] = useState({
-    startDate: new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0], // First day of current month
-    endDate: new Date().toISOString().split('T')[0] // Today
+    startDate: getStartOfMonthInputValue(),
+    endDate: toDateInputValue()
   });
 
   const [entryJobs, setEntryJobs] = useState<{ group: string, job_id: string; job_name?: string; notes: string; value_only: boolean; estimated_price: number; spareparts?: SparepartDraft[]; sparepart_enabled?: boolean }[]>([]);
@@ -558,7 +558,7 @@ export default function VehicleEntryPage() {
 
   const resetForm = () => {
     setFormData({
-      entry_date: new Date().toISOString().split('T')[0],
+      entry_date: toDateInputValue(),
       estimated_finish_date: '',
       vehicle_id: '',
       nota_dinas_number: '',
