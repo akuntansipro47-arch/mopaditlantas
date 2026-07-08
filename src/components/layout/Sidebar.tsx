@@ -259,7 +259,10 @@ export function Sidebar({ className, onNavigate }: SidebarProps) {
       {/* Navigation */}
       <nav className="flex-1 overflow-y-auto px-3 py-4 space-y-2 scrollbar-thin scrollbar-thumb-sky-950/70 scrollbar-track-transparent sm:px-4 sm:py-6">
         {navigation.map((item) => {
-          const parentAccess = hasAccess(item.key);
+          const parentAccess =
+            item.key === 'dashboard'
+              ? hasAccess('dashboard') || hasAccess('dashboard_repeat_wo')
+              : hasAccess(item.key);
           const children = item.children || [];
           const visibleChildren: NavChild[] = [];
           let currentGroup: { type: 'group'; name: string } | null = null;

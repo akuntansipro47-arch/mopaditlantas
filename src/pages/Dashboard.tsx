@@ -127,14 +127,16 @@ const getJobEstimationFromRow = (row: any) => {
 export default function Dashboard() {
   const { user } = useAuth();
   const navigate = useNavigate();
+  const canViewMainDashboard = hasMenuAccess(user, 'dashboard');
   const canViewRepeatWo = hasMenuAccess(user, 'dashboard_repeat_wo');
+  const canViewAnyDashboard = canViewMainDashboard || canViewRepeatWo;
 
   useEffect(() => {
     // Izinkan akses Dashboard jika user punya akses Dashboard ATAU akses khusus Dashboard: Unit WO Berulang
-    if (user && !(hasMenuAccess(user, 'dashboard') || hasMenuAccess(user, 'dashboard_repeat_wo'))) {
+    if (user && !canViewAnyDashboard) {
       navigate('/reports');
     }
-  }, [user, navigate]);
+  }, [canViewAnyDashboard, user, navigate]);
 
   const [stats, setStats] = useState({
     monthlyRevenue: 0,
@@ -204,106 +206,107 @@ export default function Dashboard() {
         nextWarnings.push(label);
       };
       try {
-        // PO Pending Count
-        const { count: poPendingCount, error: poPendingError } = await supabase
-          .from('purchase_orders')
-          .select('*', { count: 'exact', head: true })
-          .in('status', ['ISSUED', 'RECEIVED_PART']);
-        if (poPendingError) warn('Gagal ambil PO Pending', poPendingError);
+        if (canViewMainDashboard) {
+          // PO Pending Count
+          const { count: poPendingCount, error: poPendingError } = await supabase
+            .from('purchase_orders')
+            .select('*', { count: 'exact', head: true })
+            .in('status', ['ISSUED', 'RECEIVED_PART']);
+          if (poPendingError) warn('Gagal ambil PO Pending', poPendingError);
 
-        // PO Total Value & Monthly Data
-        const { data: poItems, error: poItemsError } = await supabase
-          .from('purchase_order_items')
-          .select('quantity, unit_price, created_at');
-        if (poItemsError) warn('Gagal ambil data PO per bulan', poItemsError);
-        const poItemsRows = Array.isArray(poItems) ? poItems : [];
+          // PO Total Value & Monthly Data
+          const { data: poItems, error: poItemsError } = await supabase
+            .from('purchase_order_items')
+            .select('quantity, unit_price, created_at');
+          if (poItemsError) warn('Gagal ambil data PO per bulan', poItemsError);
+          const poItemsRows = Array.isArray(poItems) ? poItems : [];
 
-        const startOfMonth = new Date();
-        startOfMonth.setDate(1);
-        startOfMonth.setHours(0, 0, 0, 0);
-        const startOfMonthDate = startOfMonth.toISOString().split('T')[0];
-        const startOfLast30Days = new Date();
-        startOfLast30Days.setDate(startOfLast30Days.getDate() - 30);
-        startOfLast30Days.setHours(0, 0, 0, 0);
-        const start30Date = startOfLast30Days.toISOString().split('T')[0];
+          const startOfMonth = new Date();
+          startOfMonth.setDate(1);
+          startOfMonth.setHours(0, 0, 0, 0);
+          const startOfMonthDate = startOfMonth.toISOString().split('T')[0];
+          const startOfLast30Days = new Date();
+          startOfLast30Days.setDate(startOfLast30Days.getDate() - 30);
+          startOfLast30Days.setHours(0, 0, 0, 0);
+          const start30Date = startOfLast30Days.toISOString().split('T')[0];
 
-        // Monthly Revenue
-        const { data: revenueData, error: revenueError } = await supabase
-          .from('sales_invoices')
-          .select('total_amount, paid_amount, status')
-          .gte('invoice_date', startOfMonthDate)
-          .in('status', ['PAID', 'PARTIAL']);
-        if (revenueError) warn('Gagal ambil pendapatan bulan ini', revenueError);
+          // Monthly Revenue
+          const { data: revenueData, error: revenueError } = await supabase
+            .from('sales_invoices')
+            .select('total_amount, paid_amount, status')
+            .gte('invoice_date', startOfMonthDate)
+            .in('status', ['PAID', 'PARTIAL']);
+          if (revenueError) warn('Gagal ambil pendapatan bulan ini', revenueError);
 
-        // Outstanding AR (Piutang)
-        const { data: arData, error: arError } = await supabase
-          .from('sales_invoices')
-          .select('total_amount, paid_amount, status')
-          .in('status', ['UNPAID', 'PARTIAL']);
-        if (arError) warn('Gagal ambil piutang', arError);
+          // Outstanding AR (Piutang)
+          const { data: arData, error: arError } = await supabase
+            .from('sales_invoices')
+            .select('total_amount, paid_amount, status')
+            .in('status', ['UNPAID', 'PARTIAL']);
+          if (arError) warn('Gagal ambil piutang', arError);
 
-        // Outstanding AP (Utang)
-        const { data: apData, error: apError } = await supabase
-          .from('purchase_invoices')
-          .select('total_amount, paid_amount, status')
-          .in('status', ['UNPAID', 'PARTIAL']);
-        if (apError) warn('Gagal ambil utang', apError);
+          // Outstanding AP (Utang)
+          const { data: apData, error: apError } = await supabase
+            .from('purchase_invoices')
+            .select('total_amount, paid_amount, status')
+            .in('status', ['UNPAID', 'PARTIAL']);
+          if (apError) warn('Gagal ambil utang', apError);
 
-        // Low Stock Items
-        const { count: lowStockCount, error: lowStockError } = await supabase
-          .from('goods')
-          .select('*', { count: 'exact', head: true })
-          .lt('current_stock', 3)
-          .gt('current_stock', 0);
-        if (lowStockError) warn('Gagal ambil stok menipis', lowStockError);
+          // Low Stock Items
+          const { count: lowStockCount, error: lowStockError } = await supabase
+            .from('goods')
+            .select('*', { count: 'exact', head: true })
+            .lt('current_stock', 3)
+            .gt('current_stock', 0);
+          if (lowStockError) warn('Gagal ambil stok menipis', lowStockError);
 
-        // Out Of Stock Items
-        const { count: outOfStockCount, error: outOfStockError } = await supabase
-          .from('goods')
-          .select('*', { count: 'exact', head: true })
-          .lte('current_stock', 0);
-        if (outOfStockError) warn('Gagal ambil stok habis', outOfStockError);
+          // Out Of Stock Items
+          const { count: outOfStockCount, error: outOfStockError } = await supabase
+            .from('goods')
+            .select('*', { count: 'exact', head: true })
+            .lte('current_stock', 0);
+          if (outOfStockError) warn('Gagal ambil stok habis', outOfStockError);
 
-        // Top Critical Stock Items (stok habis & menipis)
-        const { data: criticalItems, error: criticalError } = await supabase
-          .from('goods')
-          .select('id, name, item_code, unit, current_stock')
-          .lte('current_stock', 2)
-          .order('current_stock', { ascending: true })
-          .order('name', { ascending: true })
-          .limit(10);
-        if (criticalError) warn('Gagal ambil stok kritis', criticalError);
+          // Top Critical Stock Items (stok habis & menipis)
+          const { data: criticalItems, error: criticalError } = await supabase
+            .from('goods')
+            .select('id, name, item_code, unit, current_stock')
+            .lte('current_stock', 2)
+            .order('current_stock', { ascending: true })
+            .order('name', { ascending: true })
+            .limit(10);
+          if (criticalError) warn('Gagal ambil stok kritis', criticalError);
 
-        // Fast Moving Items (periode berjalan: dari awal bulan ini s.d. sekarang)
-        const startOfRunningPeriod = new Date();
-        startOfRunningPeriod.setDate(1);
-        startOfRunningPeriod.setHours(0, 0, 0, 0);
-        
-        const { data: issuedItems, error: issuedItemsError } = await supabase
-          .from('goods_issue_items')
-          .select(`
+          // Fast Moving Items (periode berjalan: dari awal bulan ini s.d. sekarang)
+          const startOfRunningPeriod = new Date();
+          startOfRunningPeriod.setDate(1);
+          startOfRunningPeriod.setHours(0, 0, 0, 0);
+          
+          const { data: issuedItems, error: issuedItemsError } = await supabase
+            .from('goods_issue_items')
+            .select(`
             quantity,
             goods ( name )
           `)
-          .gte('created_at', startOfRunningPeriod.toISOString());
-        if (issuedItemsError) warn('Gagal ambil fast moving items', issuedItemsError);
+            .gte('created_at', startOfRunningPeriod.toISOString());
+          if (issuedItemsError) warn('Gagal ambil fast moving items', issuedItemsError);
 
-        // Lead Time Data for Active WO
-        const { data: activeWoData, error: activeWoError } = await supabase
-          .from('work_orders')
-          .select(`
+          // Lead Time Data for Active WO
+          const { data: activeWoData, error: activeWoError } = await supabase
+            .from('work_orders')
+            .select(`
             vehicle_entries (
               entry_date,
               estimated_finish_date,
               vehicles ( license_plate )
             )
           `)
-          .not('status', 'in', '("COMPLETED", "CLOSED")');
-        if (activeWoError) warn('Gagal ambil lead time WIP', activeWoError);
+            .not('status', 'in', '("COMPLETED", "CLOSED")');
+          if (activeWoError) warn('Gagal ambil lead time WIP', activeWoError);
 
-        const { data: completedWos, error: completedWoErr } = await supabase
-          .from('work_orders')
-          .select(`
+          const { data: completedWos, error: completedWoErr } = await supabase
+            .from('work_orders')
+            .select(`
             id,
             wo_number,
             status,
@@ -321,104 +324,394 @@ export default function Dashboard() {
               total_price
             )
           `)
-          .gte('work_date', start30Date)
-          .in('status', ['CLOSED', 'COMPLETED']);
-        if (completedWoErr) warn('Gagal ambil WO selesai (30 hari)', completedWoErr);
+            .gte('work_date', start30Date)
+            .in('status', ['CLOSED', 'COMPLETED']);
+          if (completedWoErr) warn('Gagal ambil WO selesai (30 hari)', completedWoErr);
 
-        const { data: last30Invoices, error: invoices30Err } = await supabase
-          .from('sales_invoices')
-          .select('id, invoice_date, customer_name, total_amount')
-          .gte('invoice_date', start30Date);
-        if (invoices30Err) warn('Gagal ambil invoice (30 hari)', invoices30Err);
+          const { data: last30Invoices, error: invoices30Err } = await supabase
+            .from('sales_invoices')
+            .select('id, invoice_date, customer_name, total_amount')
+            .gte('invoice_date', start30Date);
+          if (invoices30Err) warn('Gagal ambil invoice (30 hari)', invoices30Err);
 
-        const { data: last30Entries, error: entries30Err } = await supabase
-          .from('vehicle_entries')
-          .select('id')
-          .gte('entry_date', start30Date)
-          .limit(5000);
-        if (entries30Err) warn('Gagal ambil estimasi/entry (30 hari)', entries30Err);
+          const { data: last30Entries, error: entries30Err } = await supabase
+            .from('vehicle_entries')
+            .select('id')
+            .gte('entry_date', start30Date)
+            .limit(5000);
+          if (entries30Err) warn('Gagal ambil estimasi/entry (30 hari)', entries30Err);
 
-        const entryIds30 = (last30Entries || []).map((e: any) => e.id).filter(Boolean);
-        const { count: woFromEntriesCount, error: woFromEntriesErr } = entryIds30.length
-          ? await supabase
+          const entryIds30 = (last30Entries || []).map((e: any) => e.id).filter(Boolean);
+          const { count: woFromEntriesCount, error: woFromEntriesErr } = entryIds30.length
+            ? await supabase
+                .from('work_orders')
+                .select('id', { count: 'exact', head: true })
+                .in('vehicle_entry_id', entryIds30)
+            : { count: 0, error: null };
+          if (woFromEntriesErr) warn('Gagal hitung konversi estimasi → WO', woFromEntriesErr);
+
+          // Monthly Progress Data (semua periode yang ada entry kendaraan)
+          const monthlyWoData: any[] = [];
+          const PAGE_SIZE = 1000;
+          let pageFrom = 0;
+          while (true) {
+            const pageTo = pageFrom + PAGE_SIZE - 1;
+            const { data: pageRows, error: monthlyWoError } = await supabase
               .from('work_orders')
-              .select('id', { count: 'exact', head: true })
-              .in('vehicle_entry_id', entryIds30)
-          : { count: 0, error: null };
-        if (woFromEntriesErr) warn('Gagal hitung konversi estimasi → WO', woFromEntriesErr);
-
-
-        // Monthly Progress Data (semua periode yang ada entry kendaraan)
-        const monthlyWoData: any[] = [];
-        const PAGE_SIZE = 1000;
-        let pageFrom = 0;
-        while (true) {
-          const pageTo = pageFrom + PAGE_SIZE - 1;
-          const { data: pageRows, error: monthlyWoError } = await supabase
-            .from('work_orders')
-            .select(`
+              .select(`
               status,
               vehicle_entries!inner (
                 entry_date,
                 vehicles!inner ( vehicle_type )
               )
             `)
-            .range(pageFrom, pageTo);
+              .range(pageFrom, pageTo);
 
-          if (monthlyWoError) {
-            warn('Gagal ambil progress bulanan', monthlyWoError);
-            break;
+            if (monthlyWoError) {
+              warn('Gagal ambil progress bulanan', monthlyWoError);
+              break;
+            }
+            if (!pageRows || pageRows.length === 0) break;
+
+            monthlyWoData.push(...pageRows);
+            if (pageRows.length < PAGE_SIZE) break;
+            pageFrom += PAGE_SIZE;
           }
-          if (!pageRows || pageRows.length === 0) break;
 
-          monthlyWoData.push(...pageRows);
-          if (pageRows.length < PAGE_SIZE) break;
-          pageFrom += PAGE_SIZE;
+          // Process PO Monthly Data
+          const poByMonthKey: { [key: string]: number } = {};
+          const monthShortFormatter = new Intl.DateTimeFormat('id-ID', { month: 'short' });
+          
+          poItemsRows.forEach((item: any) => {
+            const itemDate = new Date(item.created_at);
+            const total = Number(item.quantity || 0) * Number(item.unit_price || 0);
+            const monthKey = `${itemDate.getFullYear()}-${String(itemDate.getMonth() + 1).padStart(2, '0')}`;
+            poByMonthKey[monthKey] = (poByMonthKey[monthKey] || 0) + total;
+          });
+
+          const poBuckets = Array.from({ length: 6 }, (_, i) => {
+            const d = new Date();
+            d.setDate(1);
+            d.setMonth(d.getMonth() - 5 + i);
+            const monthKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+            const monthLabel = `${monthShortFormatter.format(d)} ${String(d.getFullYear()).slice(2)}`;
+            return { monthKey, monthLabel };
+          });
+
+          const sortedPoData = poBuckets.map(({ monthKey, monthLabel }) => ({
+            monthKey,
+            monthLabel,
+            total: poByMonthKey[monthKey] || 0,
+          }));
+
+          setMonthlyPoData(sortedPoData);
+          
+          // Process Lead Time Data
+          const formattedLeadTime = (Array.isArray(activeWoData) ? activeWoData : []).map((wo: any) => ({
+            license_plate: (wo.vehicle_entries as any)?.vehicles.license_plate || 'N/A',
+            entry_date: (wo.vehicle_entries as any)?.entry_date,
+            estimated_finish_date: (wo.vehicle_entries as any)?.estimated_finish_date,
+          }));
+          setLeadTimeData(formattedLeadTime);
+
+          // Process Monthly Progress (hanya bulan yang ada datanya)
+          const progress: { [key: string]: MonthlyProgressData } = {};
+          const monthLongFormatter = new Intl.DateTimeFormat('id-ID', { month: 'long' });
+
+          monthlyWoData.forEach((wo: any) => {
+            const entry = wo.vehicle_entries as any;
+            if (!entry || !entry.entry_date) return;
+
+            const entryDate = new Date(entry.entry_date);
+            const monthKey = `${entryDate.getFullYear()}-${String(entryDate.getMonth() + 1).padStart(2, '0')}`;
+            if (!progress[monthKey]) {
+              progress[monthKey] = {
+                monthKey,
+                monthLabel: `${monthLongFormatter.format(entryDate)} ${entryDate.getFullYear()}`,
+                totalIn: { r4: 0, r2: 0 },
+                totalWip: { r4: 0, r2: 0 },
+                totalCompleted: { r4: 0, r2: 0 },
+              };
+            }
+
+            const vehicleType = entry.vehicles.vehicle_type;
+            const isR4 = vehicleType === 'R4';
+            const isR2 = vehicleType === 'R2' || vehicleType === 'R2_KECIL';
+
+            if (isR4) progress[monthKey].totalIn.r4++;
+            if (isR2) progress[monthKey].totalIn.r2++;
+
+            if (wo.status === 'COMPLETED' || wo.status === 'CLOSED') {
+              if (isR4) progress[monthKey].totalCompleted.r4++;
+              if (isR2) progress[monthKey].totalCompleted.r2++;
+            } else {
+              if (isR4) progress[monthKey].totalWip.r4++;
+              if (isR2) progress[monthKey].totalWip.r2++;
+            }
+          });
+          
+          setMonthlyProgress(
+            Object.values(progress).sort((a, b) => a.monthKey.localeCompare(b.monthKey))
+          );
+          
+          // Process Fast Moving Items
+          const itemCounts: { [key: string]: number } = {};
+          issuedItems.forEach(item => {
+            const itemName = (item.goods as any)?.name;
+            if (itemName) {
+              itemCounts[itemName] = (itemCounts[itemName] || 0) + item.quantity;
+            }
+          });
+
+          const sortedItems = Object.entries(itemCounts)
+            .map(([name, count]) => ({ name, count }))
+            .sort((a, b) => b.count - a.count)
+            .slice(0, 15);
+          
+          setFastMovingItems(sortedItems);
+          setCriticalStockItems((criticalItems as any) || []);
+
+          const completedRows = Array.isArray(completedWos) ? completedWos : [];
+          const woIds = new Set<string>();
+          const goodsIds = new Set<string>();
+          const jobTypeIds = new Set<string>();
+
+          completedRows.forEach((wo: any) => {
+            if (wo?.id) woIds.add(String(wo.id));
+            const bills = Array.isArray(wo?.work_order_billings) ? wo.work_order_billings : [];
+            bills.forEach((b: any) => {
+              const type = String(b?.item_type || '').toUpperCase();
+              if (type === 'PART' && b?.goods_id) goodsIds.add(String(b.goods_id));
+              if (type === 'JOB' && b?.job_type_id) jobTypeIds.add(String(b.job_type_id));
+            });
+          });
+
+          const partHppByWoGoods: Record<string, number> = {};
+          const partHppAvgStockMap: Record<string, number> = {};
+          if (goodsIds.size > 0) {
+            const { data: poCostItems, error: poCostErr } = await supabase
+              .from('purchase_order_items')
+              .select('goods_id, quantity, unit_price, purchase_orders!inner(work_order_id, status)')
+              .in('purchase_orders.status', ['RECEIVED_PART', 'RECEIVED_FULL'])
+              .in('goods_id', Array.from(goodsIds))
+              .not('unit_price', 'is', null)
+              .limit(50000);
+            if (poCostErr) throw poCostErr;
+
+            const woAgg = new Map<string, { sumQty: number; sumValue: number }>();
+            const stockAgg = new Map<string, { sumQty: number; sumValue: number }>();
+            (poCostItems || []).forEach((it: any) => {
+              const gid = String(it?.goods_id || '').trim();
+              const qty = Number(it?.quantity || 0);
+              const price = Number(it?.unit_price || 0);
+              if (!gid || qty <= 0 || price <= 0) return;
+
+              const woId = String(it?.purchase_orders?.work_order_id || '').trim();
+              if (woId && woIds.has(woId)) {
+                const key = `${woId}:${gid}`;
+                const cur = woAgg.get(key) || { sumQty: 0, sumValue: 0 };
+                cur.sumQty += qty;
+                cur.sumValue += qty * price;
+                woAgg.set(key, cur);
+                return;
+              }
+
+              if (!woId) {
+                const cur = stockAgg.get(gid) || { sumQty: 0, sumValue: 0 };
+                cur.sumQty += qty;
+                cur.sumValue += qty * price;
+                stockAgg.set(gid, cur);
+              }
+            });
+
+            woAgg.forEach((v, k) => {
+              if (v.sumQty > 0) partHppByWoGoods[k] = v.sumValue / v.sumQty;
+            });
+            stockAgg.forEach((v, gid) => {
+              if (v.sumQty > 0) partHppAvgStockMap[gid] = v.sumValue / v.sumQty;
+            });
+          }
+
+          const jobCostMap: Record<string, number> = {};
+          if (jobTypeIds.size > 0) {
+            const { data: jobs, error: jobErr } = await supabase
+              .from('job_types')
+              .select('id, hpp')
+              .in('id', Array.from(jobTypeIds));
+            if (jobErr) throw jobErr;
+            (jobs || []).forEach((j: any) => {
+              jobCostMap[String(j.id)] = Number((j as any)?.hpp || 0);
+            });
+          }
+
+          const woMetrics = completedRows
+            .map((wo: any) => {
+              const bills = Array.isArray(wo?.work_order_billings) ? wo.work_order_billings : [];
+              let rev = 0;
+              let hpp = 0;
+              bills.forEach((b: any) => {
+                const qty = Number(b?.qty || 0);
+                if (qty <= 0) return;
+                const type = String(b?.item_type || '').toUpperCase();
+                const totalPrice = Number(b?.total_price || 0) || Number(b?.unit_price || 0) * qty;
+                rev += totalPrice;
+                if (type === 'PART' && b?.goods_id) {
+                  const woKey = `${String(wo.id)}:${String(b.goods_id)}`;
+                  const unitHpp =
+                    partHppByWoGoods[woKey] !== undefined
+                      ? partHppByWoGoods[woKey] || 0
+                      : partHppAvgStockMap[String(b.goods_id)] !== undefined
+                        ? partHppAvgStockMap[String(b.goods_id)] || 0
+                        : 0;
+                  hpp += unitHpp * qty;
+                } else if (type === 'JOB' && b?.job_type_id) {
+                  const unitHpp = jobCostMap[String(b.job_type_id)] || 0;
+                  hpp += unitHpp * qty;
+                }
+              });
+
+              const entryDateRaw = (wo?.vehicle_entries as any)?.entry_date;
+              const endRaw = wo?.completed_at || wo?.work_date;
+              const entryDate = entryDateRaw ? new Date(entryDateRaw) : null;
+              const endDate = endRaw ? new Date(endRaw) : null;
+              const cycleDays =
+                entryDate && endDate && Number.isFinite(entryDate.getTime()) && Number.isFinite(endDate.getTime())
+                  ? Math.max(0, (endDate.getTime() - entryDate.getTime()) / (1000 * 3600 * 24))
+                  : null;
+
+              const profit = rev - hpp;
+              const margin = rev > 0 ? profit / rev : 0;
+              return { rev, hpp, profit, margin, cycleDays };
+            })
+            .filter((m) => Number.isFinite(m.rev) && Number.isFinite(m.hpp));
+
+          const revenue30 = woMetrics.reduce((s, m) => s + (m.rev || 0), 0);
+          const hpp30 = woMetrics.reduce((s, m) => s + (m.hpp || 0), 0);
+          const grossProfit30 = revenue30 - hpp30;
+          const avgProfitPerWo = woMetrics.length > 0 ? woMetrics.reduce((s, m) => s + (m.profit || 0), 0) / woMetrics.length : 0;
+
+          const marginRows = woMetrics.filter((m) => m.rev > 0);
+          const avgMarginPct = marginRows.length > 0 ? (marginRows.reduce((s, m) => s + (m.margin || 0), 0) / marginRows.length) * 100 : 0;
+
+          const cycleRows = woMetrics.filter((m) => typeof m.cycleDays === 'number');
+          const avgCycleTimeDays = cycleRows.length > 0 ? cycleRows.reduce((s, m) => s + (m.cycleDays as number), 0) / cycleRows.length : 0;
+
+          const entryCount = entryIds30.length;
+          const woCount = Number(woFromEntriesCount || 0);
+          const estimateConversionPct = entryCount > 0 ? (woCount / entryCount) * 100 : 0;
+
+          const invoiceRows30 = Array.isArray(last30Invoices) ? last30Invoices : [];
+          const customerNames = Array.from(
+            new Set(
+              invoiceRows30
+                .map((r: any) => String(r?.customer_name || '').trim())
+                .filter((x) => x.length > 0)
+            )
+          );
+
+          const { data: prevInvoicesByCustomer, error: prevInvErr } = customerNames.length
+            ? await supabase
+                .from('sales_invoices')
+                .select('customer_name')
+                .lt('invoice_date', start30Date)
+                .in('customer_name', customerNames)
+                .limit(50000)
+            : { data: [], error: null };
+          if (prevInvErr) warn('Gagal ambil histori pelanggan (untuk segmentasi baru/berulang)', prevInvErr);
+
+          const returningSet = new Set<string>(
+            (prevInvoicesByCustomer || [])
+              .map((r: any) => String(r?.customer_name || '').trim())
+              .filter((x: string) => x.length > 0)
+          );
+          const returningCustomers = returningSet.size;
+          const newCustomers = Math.max(0, customerNames.length - returningCustomers);
+
+          const revenueByCustomer = new Map<string, number>();
+          invoiceRows30.forEach((r: any) => {
+            const name = String(r?.customer_name || '').trim();
+            if (!name) return;
+            const amt = Number(r?.total_amount || 0);
+            revenueByCustomer.set(name, (revenueByCustomer.get(name) || 0) + amt);
+          });
+          const top5 = Array.from(revenueByCustomer.entries())
+            .map(([name, total]) => ({ name, total }))
+            .sort((a, b) => b.total - a.total)
+            .slice(0, 5);
+
+          setProfitability({
+            revenue30,
+            hpp30,
+            grossProfit30,
+            avgMarginPct,
+            avgProfitPerWo,
+            avgCycleTimeDays,
+            estimateConversionPct,
+            newCustomers,
+            returningCustomers,
+          });
+          setTopCustomers(top5);
+
+          const totalRevenue = (Array.isArray(revenueData) ? revenueData : [])?.reduce((sum, inv: any) => {
+            const totalAmount = Number(inv.total_amount || 0);
+            const paidAmount = Number(inv.paid_amount || 0);
+            const status = String(inv.status || '').toUpperCase();
+            if (status === 'PAID') return sum + totalAmount;
+            return sum + Math.min(paidAmount, totalAmount);
+          }, 0) || 0;
+
+          const totalAR = (Array.isArray(arData) ? arData : [])?.reduce((sum, inv: any) => {
+            const totalAmount = Number(inv.total_amount || 0);
+            const paidAmount = Number(inv.paid_amount || 0);
+            const remaining = totalAmount - paidAmount;
+            if (remaining <= 0) return sum;
+            return sum + remaining;
+          }, 0) || 0;
+          const totalAP = (Array.isArray(apData) ? apData : [])?.reduce((sum, inv: any) => {
+            const totalAmount = Number(inv.total_amount || 0);
+            const paidAmount = Number(inv.paid_amount || 0);
+            const remaining = totalAmount - paidAmount;
+            if (remaining <= 0) return sum;
+            return sum + remaining;
+          }, 0) || 0;
+
+          setStats({
+            poPendingCount: poPendingCount || 0,
+            lowStockItems: lowStockCount || 0,
+            outOfStockItems: outOfStockCount || 0,
+            monthlyRevenue: totalRevenue,
+            outstandingAR: totalAR,
+            outstandingAP: totalAP,
+          });
+        } else {
+          setStats({
+            monthlyRevenue: 0,
+            outstandingAR: 0,
+            outstandingAP: 0,
+            poPendingCount: 0,
+            lowStockItems: 0,
+            outOfStockItems: 0,
+          });
+          setProfitability({
+            revenue30: 0,
+            hpp30: 0,
+            grossProfit30: 0,
+            avgMarginPct: 0,
+            avgProfitPerWo: 0,
+            avgCycleTimeDays: 0,
+            estimateConversionPct: 0,
+            newCustomers: 0,
+            returningCustomers: 0,
+          });
+          setTopCustomers([]);
+          setFastMovingItems([]);
+          setLeadTimeData([]);
+          setMonthlyProgress([]);
+          setMonthlyPoData([]);
+          setCriticalStockItems([]);
         }
 
-        // Process PO Monthly Data
-        const poByMonthKey: { [key: string]: number } = {};
-        const monthShortFormatter = new Intl.DateTimeFormat('id-ID', { month: 'short' });
-        
-        poItemsRows.forEach((item: any) => {
-          const itemDate = new Date(item.created_at);
-          const total = Number(item.quantity || 0) * Number(item.unit_price || 0);
-          const monthKey = `${itemDate.getFullYear()}-${String(itemDate.getMonth() + 1).padStart(2, '0')}`;
-          poByMonthKey[monthKey] = (poByMonthKey[monthKey] || 0) + total;
-        });
-
-        const poBuckets = Array.from({ length: 6 }, (_, i) => {
-          const d = new Date();
-          d.setDate(1);
-          d.setMonth(d.getMonth() - 5 + i);
-          const monthKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-          const monthLabel = `${monthShortFormatter.format(d)} ${String(d.getFullYear()).slice(2)}`;
-          return { monthKey, monthLabel };
-        });
-
-        const sortedPoData = poBuckets.map(({ monthKey, monthLabel }) => ({
-          monthKey,
-          monthLabel,
-          total: poByMonthKey[monthKey] || 0,
-        }));
-
-        setMonthlyPoData(sortedPoData);
-        
-        // Process Lead Time Data
-        const formattedLeadTime = (Array.isArray(activeWoData) ? activeWoData : []).map((wo: any) => ({
-          license_plate: (wo.vehicle_entries as any)?.vehicles.license_plate || 'N/A',
-          entry_date: (wo.vehicle_entries as any)?.entry_date,
-          estimated_finish_date: (wo.vehicle_entries as any)?.estimated_finish_date,
-        }));
-        setLeadTimeData(formattedLeadTime);
-
-        // Kendaraan yang punya WO lebih dari 1 kali (nopol sama)
-        try {
-          if (!canViewRepeatWo) {
-            setRepeatWoVehicles([]);
-            throw new Error('skip'); // skip heavy query bila tidak ada izin
-          }
-
+        if (canViewRepeatWo) {
           const woRows: any[] = [];
           const PAGE_SIZE_WO = 1000;
           const MAX_PAGES_WO = 400; // safety cap (400k rows max)
@@ -617,280 +910,9 @@ export default function Dashboard() {
             });
 
           setRepeatWoVehicles(repeatRows);
-        } catch (e: any) {
-          const msg = String(e?.message || '');
-          if (msg !== 'skip') warn('Gagal proses kendaraan WO berulang', e);
+        } else {
+          setRepeatWoVehicles([]);
         }
-
-        // Process Monthly Progress (hanya bulan yang ada datanya)
-        const progress: { [key: string]: MonthlyProgressData } = {};
-        const monthLongFormatter = new Intl.DateTimeFormat('id-ID', { month: 'long' });
-
-        monthlyWoData.forEach((wo: any) => {
-          const entry = wo.vehicle_entries as any;
-          if (!entry || !entry.entry_date) return;
-
-          const entryDate = new Date(entry.entry_date);
-          const monthKey = `${entryDate.getFullYear()}-${String(entryDate.getMonth() + 1).padStart(2, '0')}`;
-          if (!progress[monthKey]) {
-            progress[monthKey] = {
-              monthKey,
-              monthLabel: `${monthLongFormatter.format(entryDate)} ${entryDate.getFullYear()}`,
-              totalIn: { r4: 0, r2: 0 },
-              totalWip: { r4: 0, r2: 0 },
-              totalCompleted: { r4: 0, r2: 0 },
-            };
-          }
-
-          const vehicleType = entry.vehicles.vehicle_type;
-          const isR4 = vehicleType === 'R4';
-          const isR2 = vehicleType === 'R2' || vehicleType === 'R2_KECIL';
-
-          if (isR4) progress[monthKey].totalIn.r4++;
-          if (isR2) progress[monthKey].totalIn.r2++;
-
-          if (wo.status === 'COMPLETED' || wo.status === 'CLOSED') {
-            if (isR4) progress[monthKey].totalCompleted.r4++;
-            if (isR2) progress[monthKey].totalCompleted.r2++;
-          } else { // Consider everything else as WIP
-            if (isR4) progress[monthKey].totalWip.r4++;
-            if (isR2) progress[monthKey].totalWip.r2++;
-          }
-        });
-        
-        setMonthlyProgress(
-          Object.values(progress).sort((a, b) => a.monthKey.localeCompare(b.monthKey))
-        );
-        
-        // Process Fast Moving Items
-        const itemCounts: { [key: string]: number } = {};
-        issuedItems.forEach(item => {
-          const itemName = (item.goods as any)?.name;
-          if (itemName) {
-            itemCounts[itemName] = (itemCounts[itemName] || 0) + item.quantity;
-          }
-        });
-
-        const sortedItems = Object.entries(itemCounts)
-          .map(([name, count]) => ({ name, count }))
-          .sort((a, b) => b.count - a.count)
-          .slice(0, 15);
-        
-        setFastMovingItems(sortedItems);
-        setCriticalStockItems((criticalItems as any) || []);
-
-        const completedRows = Array.isArray(completedWos) ? completedWos : [];
-        const woIds = new Set<string>();
-        const goodsIds = new Set<string>();
-        const jobTypeIds = new Set<string>();
-
-        completedRows.forEach((wo: any) => {
-          if (wo?.id) woIds.add(String(wo.id));
-          const bills = Array.isArray(wo?.work_order_billings) ? wo.work_order_billings : [];
-          bills.forEach((b: any) => {
-            const type = String(b?.item_type || '').toUpperCase();
-            if (type === 'PART' && b?.goods_id) goodsIds.add(String(b.goods_id));
-            if (type === 'JOB' && b?.job_type_id) jobTypeIds.add(String(b.job_type_id));
-          });
-        });
-
-        const partHppByWoGoods: Record<string, number> = {};
-        const partHppAvgStockMap: Record<string, number> = {};
-        if (goodsIds.size > 0) {
-          const { data: poCostItems, error: poCostErr } = await supabase
-            .from('purchase_order_items')
-            .select('goods_id, quantity, unit_price, purchase_orders!inner(work_order_id, status)')
-            .in('purchase_orders.status', ['RECEIVED_PART', 'RECEIVED_FULL'])
-            .in('goods_id', Array.from(goodsIds))
-            .not('unit_price', 'is', null)
-            .limit(50000);
-          if (poCostErr) throw poCostErr;
-
-          const woAgg = new Map<string, { sumQty: number; sumValue: number }>();
-          const stockAgg = new Map<string, { sumQty: number; sumValue: number }>();
-          (poCostItems || []).forEach((it: any) => {
-            const gid = String(it?.goods_id || '').trim();
-            const qty = Number(it?.quantity || 0);
-            const price = Number(it?.unit_price || 0);
-            if (!gid || qty <= 0 || price <= 0) return;
-
-            const woId = String(it?.purchase_orders?.work_order_id || '').trim();
-            if (woId && woIds.has(woId)) {
-              const key = `${woId}:${gid}`;
-              const cur = woAgg.get(key) || { sumQty: 0, sumValue: 0 };
-              cur.sumQty += qty;
-              cur.sumValue += qty * price;
-              woAgg.set(key, cur);
-              return;
-            }
-
-            if (!woId) {
-              const cur = stockAgg.get(gid) || { sumQty: 0, sumValue: 0 };
-              cur.sumQty += qty;
-              cur.sumValue += qty * price;
-              stockAgg.set(gid, cur);
-            }
-          });
-
-          woAgg.forEach((v, k) => {
-            if (v.sumQty > 0) partHppByWoGoods[k] = v.sumValue / v.sumQty;
-          });
-          stockAgg.forEach((v, gid) => {
-            if (v.sumQty > 0) partHppAvgStockMap[gid] = v.sumValue / v.sumQty;
-          });
-        }
-
-        const jobCostMap: Record<string, number> = {};
-        if (jobTypeIds.size > 0) {
-          const { data: jobs, error: jobErr } = await supabase
-            .from('job_types')
-            .select('id, hpp')
-            .in('id', Array.from(jobTypeIds));
-          if (jobErr) throw jobErr;
-          (jobs || []).forEach((j: any) => {
-            jobCostMap[String(j.id)] = Number((j as any)?.hpp || 0);
-          });
-        }
-
-        const woMetrics = completedRows
-          .map((wo: any) => {
-            const bills = Array.isArray(wo?.work_order_billings) ? wo.work_order_billings : [];
-            let rev = 0;
-            let hpp = 0;
-            bills.forEach((b: any) => {
-              const qty = Number(b?.qty || 0);
-              if (qty <= 0) return;
-              const type = String(b?.item_type || '').toUpperCase();
-              const totalPrice = Number(b?.total_price || 0) || Number(b?.unit_price || 0) * qty;
-              rev += totalPrice;
-              if (type === 'PART' && b?.goods_id) {
-                const woKey = `${String(wo.id)}:${String(b.goods_id)}`;
-                const unitHpp =
-                  partHppByWoGoods[woKey] !== undefined
-                    ? partHppByWoGoods[woKey] || 0
-                    : partHppAvgStockMap[String(b.goods_id)] !== undefined
-                      ? partHppAvgStockMap[String(b.goods_id)] || 0
-                      : 0;
-                hpp += unitHpp * qty;
-              } else if (type === 'JOB' && b?.job_type_id) {
-                const unitHpp = jobCostMap[String(b.job_type_id)] || 0;
-                hpp += unitHpp * qty;
-              }
-            });
-
-            const entryDateRaw = (wo?.vehicle_entries as any)?.entry_date;
-            const endRaw = wo?.completed_at || wo?.work_date;
-            const entryDate = entryDateRaw ? new Date(entryDateRaw) : null;
-            const endDate = endRaw ? new Date(endRaw) : null;
-            const cycleDays =
-              entryDate && endDate && Number.isFinite(entryDate.getTime()) && Number.isFinite(endDate.getTime())
-                ? Math.max(0, (endDate.getTime() - entryDate.getTime()) / (1000 * 3600 * 24))
-                : null;
-
-            const profit = rev - hpp;
-            const margin = rev > 0 ? profit / rev : 0;
-            return { rev, hpp, profit, margin, cycleDays };
-          })
-          .filter((m) => Number.isFinite(m.rev) && Number.isFinite(m.hpp));
-
-        const revenue30 = woMetrics.reduce((s, m) => s + (m.rev || 0), 0);
-        const hpp30 = woMetrics.reduce((s, m) => s + (m.hpp || 0), 0);
-        const grossProfit30 = revenue30 - hpp30;
-        const avgProfitPerWo = woMetrics.length > 0 ? woMetrics.reduce((s, m) => s + (m.profit || 0), 0) / woMetrics.length : 0;
-
-        const marginRows = woMetrics.filter((m) => m.rev > 0);
-        const avgMarginPct = marginRows.length > 0 ? (marginRows.reduce((s, m) => s + (m.margin || 0), 0) / marginRows.length) * 100 : 0;
-
-        const cycleRows = woMetrics.filter((m) => typeof m.cycleDays === 'number');
-        const avgCycleTimeDays = cycleRows.length > 0 ? cycleRows.reduce((s, m) => s + (m.cycleDays as number), 0) / cycleRows.length : 0;
-
-        const entryCount = entryIds30.length;
-        const woCount = Number(woFromEntriesCount || 0);
-        const estimateConversionPct = entryCount > 0 ? (woCount / entryCount) * 100 : 0;
-
-        const invoiceRows30 = Array.isArray(last30Invoices) ? last30Invoices : [];
-        const customerNames = Array.from(
-          new Set(
-            invoiceRows30
-              .map((r: any) => String(r?.customer_name || '').trim())
-              .filter((x) => x.length > 0)
-          )
-        );
-
-        const { data: prevInvoicesByCustomer, error: prevInvErr } = customerNames.length
-          ? await supabase
-              .from('sales_invoices')
-              .select('customer_name')
-              .lt('invoice_date', start30Date)
-              .in('customer_name', customerNames)
-              .limit(50000)
-          : { data: [], error: null };
-        if (prevInvErr) warn('Gagal ambil histori pelanggan (untuk segmentasi baru/berulang)', prevInvErr);
-
-        const returningSet = new Set<string>(
-          (prevInvoicesByCustomer || [])
-            .map((r: any) => String(r?.customer_name || '').trim())
-            .filter((x: string) => x.length > 0)
-        );
-        const returningCustomers = returningSet.size;
-        const newCustomers = Math.max(0, customerNames.length - returningCustomers);
-
-        const revenueByCustomer = new Map<string, number>();
-        invoiceRows30.forEach((r: any) => {
-          const name = String(r?.customer_name || '').trim();
-          if (!name) return;
-          const amt = Number(r?.total_amount || 0);
-          revenueByCustomer.set(name, (revenueByCustomer.get(name) || 0) + amt);
-        });
-        const top5 = Array.from(revenueByCustomer.entries())
-          .map(([name, total]) => ({ name, total }))
-          .sort((a, b) => b.total - a.total)
-          .slice(0, 5);
-
-        setProfitability({
-          revenue30,
-          hpp30,
-          grossProfit30,
-          avgMarginPct,
-          avgProfitPerWo,
-          avgCycleTimeDays,
-          estimateConversionPct,
-          newCustomers,
-          returningCustomers,
-        });
-        setTopCustomers(top5);
-
-        const totalRevenue = (Array.isArray(revenueData) ? revenueData : [])?.reduce((sum, inv: any) => {
-          const totalAmount = Number(inv.total_amount || 0);
-          const paidAmount = Number(inv.paid_amount || 0);
-          const status = String(inv.status || '').toUpperCase();
-          if (status === 'PAID') return sum + totalAmount;
-          return sum + Math.min(paidAmount, totalAmount);
-        }, 0) || 0;
-
-        const totalAR = (Array.isArray(arData) ? arData : [])?.reduce((sum, inv: any) => {
-          const totalAmount = Number(inv.total_amount || 0);
-          const paidAmount = Number(inv.paid_amount || 0);
-          const remaining = totalAmount - paidAmount;
-          if (remaining <= 0) return sum;
-          return sum + remaining;
-        }, 0) || 0;
-        const totalAP = (Array.isArray(apData) ? apData : [])?.reduce((sum, inv: any) => {
-          const totalAmount = Number(inv.total_amount || 0);
-          const paidAmount = Number(inv.paid_amount || 0);
-          const remaining = totalAmount - paidAmount;
-          if (remaining <= 0) return sum;
-          return sum + remaining;
-        }, 0) || 0;
-
-        setStats({
-          poPendingCount: poPendingCount || 0,
-          lowStockItems: lowStockCount || 0,
-          outOfStockItems: outOfStockCount || 0,
-          monthlyRevenue: totalRevenue,
-          outstandingAR: totalAR,
-          outstandingAP: totalAP,
-        });
 
       } catch (error: any) {
         console.error("Error fetching dashboard stats:", error);
@@ -901,7 +923,7 @@ export default function Dashboard() {
     }
 
     fetchStats();
-  }, []);
+  }, [canViewMainDashboard, canViewRepeatWo]);
 
   return (
     <div className="space-y-6">
@@ -922,6 +944,8 @@ export default function Dashboard() {
         </Card>
       ) : null}
       
+      {canViewMainDashboard && (
+      <>
       {/* Stat Cards Row */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7">
         <StatCard 
@@ -1126,71 +1150,6 @@ export default function Dashboard() {
         </Card>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-1 lg:grid-cols-7">
-        {canViewRepeatWo && (
-        <Card className="lg:col-span-7">
-          <CardHeader>
-            <div className="flex items-center justify-between gap-3">
-              <CardTitle>Unit dengan WO Berulang (Nopol Sama)</CardTitle>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={exportRepeatWoToExcel}
-                disabled={repeatWoVehicles.length === 0}
-                className="print:hidden"
-              >
-                <Download className="mr-2 h-4 w-4" /> Export
-              </Button>
-            </div>
-          </CardHeader>
-          <CardContent>
-            {loading ? (
-              <p className="text-muted-foreground">Memuat data...</p>
-            ) : repeatWoVehicles.length > 0 ? (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>No. Polisi</TableHead>
-                    <TableHead>Group</TableHead>
-                    <TableHead>Kendaraan</TableHead>
-                    <TableHead>No. WO</TableHead>
-                    <TableHead className="text-right">Estimasi Total</TableHead>
-                    <TableHead className="text-right">Jumlah WO</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {repeatWoVehicles.map((row) => {
-                    const woLabel = row.wo_numbers.join(', ');
-                    return (
-                      <TableRow key={row.license_plate}>
-                        <TableCell className="font-medium">{row.license_plate}</TableCell>
-                        <TableCell className="text-xs font-medium">{row.group}</TableCell>
-                        <TableCell className="text-xs">
-                          <div className="font-medium truncate max-w-[260px]">{row.vehicle_name}</div>
-                          <div className="text-[10px] text-slate-400">
-                            {row.latest_entry_number ? `Entry: ${row.latest_entry_number}` : '-'}
-                            {row.latest_entry_date ? ` • ${formatDate(row.latest_entry_date)}` : ''}
-                          </div>
-                        </TableCell>
-                        <TableCell className="text-xs">
-                          <div className="max-w-[360px] whitespace-normal break-words leading-snug">{woLabel || '-'}</div>
-                        </TableCell>
-                        <TableCell className="text-right text-xs font-bold">{formatCurrencyPrecise(row.total_estimation)}</TableCell>
-                        <TableCell className="text-right font-bold">{row.wo_count}</TableCell>
-                      </TableRow>
-                    );
-                  })}
-                </TableBody>
-              </Table>
-            ) : (
-              <p className="text-muted-foreground">Belum ada unit dengan WO lebih dari 1 kali.</p>
-            )}
-          </CardContent>
-        </Card>
-        )}
-      </div>
-
       {/* Bottom Tables Row */}
       <div className="grid gap-4 md:grid-cols-1 lg:grid-cols-7">
         <Card className="lg:col-span-2">
@@ -1294,6 +1253,73 @@ export default function Dashboard() {
           </CardContent>
         </Card>
       </div>
+      </>
+      )}
+
+      {canViewRepeatWo && (
+      <div className="grid gap-4 md:grid-cols-1 lg:grid-cols-7">
+        <Card className="lg:col-span-7">
+          <CardHeader>
+            <div className="flex items-center justify-between gap-3">
+              <CardTitle>Unit dengan WO Berulang (Nopol Sama)</CardTitle>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={exportRepeatWoToExcel}
+                disabled={repeatWoVehicles.length === 0}
+                className="print:hidden"
+              >
+                <Download className="mr-2 h-4 w-4" /> Export
+              </Button>
+            </div>
+          </CardHeader>
+          <CardContent>
+            {loading ? (
+              <p className="text-muted-foreground">Memuat data...</p>
+            ) : repeatWoVehicles.length > 0 ? (
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>No. Polisi</TableHead>
+                    <TableHead>Group</TableHead>
+                    <TableHead>Kendaraan</TableHead>
+                    <TableHead>No. WO</TableHead>
+                    <TableHead className="text-right">Estimasi Total</TableHead>
+                    <TableHead className="text-right">Jumlah WO</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {repeatWoVehicles.map((row) => {
+                    const woLabel = row.wo_numbers.join(', ');
+                    return (
+                      <TableRow key={row.license_plate}>
+                        <TableCell className="font-medium">{row.license_plate}</TableCell>
+                        <TableCell className="text-xs font-medium">{row.group}</TableCell>
+                        <TableCell className="text-xs">
+                          <div className="font-medium truncate max-w-[260px]">{row.vehicle_name}</div>
+                          <div className="text-[10px] text-slate-400">
+                            {row.latest_entry_number ? `Entry: ${row.latest_entry_number}` : '-'}
+                            {row.latest_entry_date ? ` • ${formatDate(row.latest_entry_date)}` : ''}
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-xs">
+                          <div className="max-w-[360px] whitespace-normal break-words leading-snug">{woLabel || '-'}</div>
+                        </TableCell>
+                        <TableCell className="text-right text-xs font-bold">{formatCurrencyPrecise(row.total_estimation)}</TableCell>
+                        <TableCell className="text-right font-bold">{row.wo_count}</TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            ) : (
+              <p className="text-muted-foreground">Belum ada unit dengan WO lebih dari 1 kali.</p>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+      )}
     </div>
   );
 }
