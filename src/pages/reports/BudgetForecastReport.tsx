@@ -376,6 +376,7 @@ export default function BudgetForecastReport() {
     monthIndex: number;
     rows: Array<{
       entry_id: string;
+      entry_number: string;
       entry_date: string;
       wo_number: string;
       status: string;
@@ -595,6 +596,7 @@ export default function BudgetForecastReport() {
 
       const outRows: Array<{
         entry_id: string;
+        entry_number: string;
         entry_date: string;
         wo_number: string;
         status: string;
@@ -633,6 +635,7 @@ export default function BudgetForecastReport() {
         total += totalEst;
         outRows.push({
           entry_id: String(entry.id),
+          entry_number: String((entry as any).entry_number || '-'),
           entry_date: String(entry.entry_date || ''),
           wo_number: String(woInfo?.wo_number || '-'),
           status: String(woInfo?.status || ''),
@@ -730,6 +733,7 @@ export default function BudgetForecastReport() {
     }
     const rows = detail.rows.map((r, idx) => ({
       No: idx + 1,
+      'No. Entry': r.entry_number,
       Tanggal: r.entry_date,
       'No. WO': r.wo_number,
       Status: r.status,
@@ -1389,6 +1393,7 @@ export default function BudgetForecastReport() {
                   <thead className="bg-slate-50">
                     <tr>
                       <th className="text-left px-3 py-2">Tanggal</th>
+                      <th className="text-left px-3 py-2">No. Entry</th>
                       <th className="text-left px-3 py-2">WO</th>
                       <th className="text-left px-3 py-2">Status</th>
                       <th className="text-left px-3 py-2">Nopol</th>
@@ -1401,6 +1406,7 @@ export default function BudgetForecastReport() {
                     {detail.rows.map((r) => (
                       <tr key={r.entry_id} className="border-t">
                         <td className="px-3 py-2 whitespace-nowrap">{String(r.entry_date || '')}</td>
+                        <td className="px-3 py-2 whitespace-nowrap">{r.entry_number}</td>
                         <td className="px-3 py-2 whitespace-nowrap">{r.wo_number}</td>
                         <td className="px-3 py-2 whitespace-nowrap">{r.status}</td>
                         <td className="px-3 py-2 whitespace-nowrap">{r.license_plate}</td>
@@ -1416,7 +1422,7 @@ export default function BudgetForecastReport() {
                       </tr>
                     ))}
                     <tr className="border-t bg-slate-100 font-semibold">
-                      <td className="px-3 py-2 text-right" colSpan={4}>
+                      <td className="px-3 py-2 text-right" colSpan={5}>
                         TOTAL
                       </td>
                       <td className="px-3 py-2 text-right tabular-nums">
