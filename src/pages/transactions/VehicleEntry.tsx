@@ -586,7 +586,9 @@ export default function VehicleEntryPage() {
 
   const VEHICLE_ENTRY_ATTACHMENT_BUCKET = 'vehicle-entry-attachments';
   const MAX_ATTACHMENT_BYTES = 20_000_000;
-  const TARGET_IMAGE_BYTES = 650_000;
+  // Target kompres gambar (lebih kecil = upload & backup lebih ringan).
+  // Sebelumnya 650KB, diturunkan agar gambar tersimpan lebih kecil namun masih aman dibaca.
+  const TARGET_IMAGE_BYTES = 350_000;
 
   const sanitizeFileName = (name: string) => {
     const cleaned = String(name || 'attachment').replace(/[^\w.\-()]+/g, '_');
@@ -685,6 +687,9 @@ export default function VehicleEntryPage() {
       if (out.size > TARGET_IMAGE_BYTES) out = await encode(1400, 0.65);
       if (out.size > TARGET_IMAGE_BYTES) out = await encode(1200, 0.6);
       if (out.size > TARGET_IMAGE_BYTES) out = await encode(1000, 0.55);
+      if (out.size > TARGET_IMAGE_BYTES) out = await encode(900, 0.5);
+      if (out.size > TARGET_IMAGE_BYTES) out = await encode(800, 0.45);
+      if (out.size > TARGET_IMAGE_BYTES) out = await encode(700, 0.4);
       return out;
     } finally {
       (bitmap as any).close?.();
