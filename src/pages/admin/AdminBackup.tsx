@@ -53,6 +53,7 @@ type BackupPayload = {
 };
 
 const ATTACHMENT_TABLE = 'vehicle_entry_attachments';
+const FINALIZATION_STEP_COUNT = 3;
 
 function getPublicStoragePath(url: string, bucket: string) {
   const raw = String(url || '').trim();
@@ -170,7 +171,11 @@ function downloadBlob(filename: string, blob: Blob) {
   document.body.appendChild(a);
   a.click();
   a.remove();
-  URL.revokeObjectURL(url);
+  window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+}
+
+async function waitForUiPaint() {
+  await new Promise<void>((resolve) => window.setTimeout(resolve, 0));
 }
 
 function bytesToBase64(bytes: Uint8Array) {
@@ -484,7 +489,7 @@ export default function AdminBackup() {
 
     try {
       const hasAttachmentStep = includeAttachmentFiles && pickedTables.some((table) => Boolean(getTableOption(table)?.getStorageRefs));
-      setTotal(pickedTables.length + (hasAttachmentStep ? 1 : 0));
+      setTotal(pickedTables.length + (hasAttachmentStep ? 1 : 0) + FINALIZATION_STEP_COUNT);
 
       for (let i = 0; i < pickedTables.length; i++) {
         const table = pickedTables[i];
@@ -514,6 +519,10 @@ export default function AdminBackup() {
         setDone(pickedTables.length + 1);
       }
 
+      const afterDataStep = pickedTables.length + (hasAttachmentStep ? 1 : 0);
+
+      setCurrentTable('Menyusun file backup');
+      await waitForUiPaint();
       const payload: BackupPayload = {
         format: 'otosmart-backup-v2',
         compression: typeof CompressionStream === 'undefined' ? 'none' : 'gzip',
@@ -527,17 +536,25 @@ export default function AdminBackup() {
           skipped: attachmentAssetSkipped,
         },
       };
-
       const compression = payload.compression;
       const payloadText = compression === 'gzip' ? JSON.stringify(payload) : JSON.stringify(payload, null, 2);
+      setDone(afterDataStep + 1);
+
+      setCurrentTable(compression === 'gzip' ? 'Mengompresi file backup' : 'Menyiapkan file backup');
+      await waitForUiPaint();
       const finalBlob = compression === 'gzip'
         ? await gzipText(payloadText).then((r) => r.blob)
-        : new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json;charset=utf-8' });
+        : new Blob([payloadText], { type: 'application/json;charset=utf-8' });
+      setDone(afterDataStep + 2);
+
+      setCurrentTable('Memulai download file backup');
+      await waitForUiPaint();
       const safeTime = exportedAt.replace(/[:.]/g, '-');
       downloadBlob(
         compression === 'gzip' ? `backup-${safeTime}.otobak.gz` : `backup-${safeTime}.json`,
         finalBlob
       );
+      setDone(afterDataStep + 3);
 
       await logActivity({
         action: 'backup_export',
