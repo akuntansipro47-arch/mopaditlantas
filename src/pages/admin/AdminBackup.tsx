@@ -10,6 +10,7 @@ import { useAuth } from '@/context/AuthContext';
 import { logActivity } from '@/lib/activityLog';
 import { supabase } from '@/lib/supabase';
 import { Download, Loader2, Upload } from 'lucide-react';
+import { gzip, gunzip } from 'fflate';
 
 type StorageRef = {
   source_table: string;
@@ -197,7 +198,21 @@ function base64ToBytes(base64: string) {
 }
 
 async function blobToBase64(blob: Blob) {
-  return bytesToBase64(new Uint8Array(await blob.arrayBuffer()));
+  // Lebih cepat dibanding manual arrayBuffer->btoa untuk file besar
+  return await new Promise<string>((resolve, reject) => {
+    const r = new FileReader();
+    r.onerror = () => reject(new Error('Gagal membaca file lampiran'));
+    r.onload = () => {
+      try {
+        const res = String(r.result || '');
+        const idx = res.indexOf(',');
+        resolve(idx >= 0 ? res.slice(idx + 1) : res);
+      } catch (e) {
+        reject(e);
+      }
+    };
+    r.readAsDataURL(blob);
+  });
 }
 
 function base64ToBlob(base64: string, mimeType?: string | null) {
@@ -205,32 +220,20 @@ function base64ToBlob(base64: string, mimeType?: string | null) {
 }
 
 async function gzipText(text: string) {
-  if (typeof CompressionStream === 'undefined') {
-    return { blob: new Blob([text], { type: 'application/json;charset=utf-8' }), compression: 'none' as const };
-  }
-
-  const stream = new CompressionStream('gzip');
-  const writer = stream.writable.getWriter();
-  await writer.write(new TextEncoder().encode(text));
-  await writer.close();
-
-  return {
-    blob: await new Response(stream.readable).blob(),
-    compression: 'gzip' as const,
-  };
+  // fflate gzip (lebih cepat) + menghasilkan gzip standard
+  const input = new TextEncoder().encode(text);
+  const out = await new Promise<Uint8Array>((resolve, reject) => {
+    gzip(input, { level: 6 }, (err, data) => (err ? reject(err) : resolve(data)));
+  });
+  return { blob: new Blob([out], { type: 'application/gzip' }), compression: 'gzip' as const };
 }
 
 async function unzipToText(blob: Blob) {
-  if (typeof DecompressionStream === 'undefined') {
-    throw new Error('Browser ini belum mendukung file backup terkompres. Gunakan browser terbaru berbasis Chromium.');
-  }
-
-  const stream = new DecompressionStream('gzip');
-  const writer = stream.writable.getWriter();
-  await writer.write(await blob.arrayBuffer());
-  await writer.close();
-
-  return await new Response(stream.readable).text();
+  const buf = new Uint8Array(await blob.arrayBuffer());
+  const out = await new Promise<Uint8Array>((resolve, reject) => {
+    gunzip(buf, (err, data) => (err ? reject(err) : resolve(data)));
+  });
+  return new TextDecoder().decode(out);
 }
 
 async function readBackupFile(file: File) {
@@ -356,18 +359,18 @@ async function fetchAttachmentAssets(
 ) {
   const assets: BackupAsset[] = [];
   const skipped: Record<string, string> = {};
+  const concurrency = 4; // aman: cukup cepat tapi tidak "nembak" rate limit
+  let completed = 0;
+  let success = 0;
 
-  for (let i = 0; i < refs.length; i++) {
-    const ref = refs[i];
+  const worker = async (ref: StorageRef) => {
     const bucket = String(ref.bucket || '');
     const path = String(ref.path || '');
-    const label = `${i + 1}/${refs.length}`;
-    onProgress?.(`Mengemas lampiran ${label}`);
-
     try {
       const { data, error } = await supabase.storage.from(bucket).download(path);
       if (error) throw error;
-      assets.push({
+      const base64 = await blobToBase64(data);
+      const item: BackupAsset = {
         id: String(ref.asset_id || `${bucket}:${path}`),
         source_table: ref.source_table,
         bucket,
@@ -375,11 +378,21 @@ async function fetchAttachmentAssets(
         file_name: ref.file_name ? String(ref.file_name) : null,
         mime_type: ref.mime_type ? String(ref.mime_type) : null,
         size_bytes: data.size,
-        data_base64: await blobToBase64(data),
-      });
+        data_base64: base64,
+      };
+      assets.push(item);
+      success += 1;
     } catch (e: any) {
       skipped[`${ref.source_table}:${bucket}:${path}`] = String(e?.message || e);
+    } finally {
+      completed += 1;
+      onProgress?.(`Mengemas lampiran ${completed}/${refs.length} (ok: ${success})`);
     }
+  };
+
+  for (let i = 0; i < refs.length; i += concurrency) {
+    const batch = refs.slice(i, i + concurrency);
+    await Promise.all(batch.map(worker));
   }
 
   return { assets, skipped };
@@ -525,7 +538,7 @@ export default function AdminBackup() {
       await waitForUiPaint();
       const payload: BackupPayload = {
         format: 'otosmart-backup-v2',
-        compression: typeof CompressionStream === 'undefined' ? 'none' : 'gzip',
+        compression: 'gzip',
         exported_at: exportedAt,
         exported_by: { id: user.id, username: user.username, role: user.role },
         tables: output,
