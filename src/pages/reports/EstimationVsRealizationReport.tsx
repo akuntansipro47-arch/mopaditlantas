@@ -274,6 +274,22 @@ export default function EstimationVsRealizationReport() {
             realJob = estJob;
           }
 
+          // Fallback paling aman: WO sudah COMPLETED/CLOSED tapi tidak ada sumber realisasi sama sekali
+          // (tidak ada billing, tidak ada GI/PO terdeteksi). Agar laporan konsisten dengan status,
+          // isi realisasi mengikuti estimasi.
+          if (status === 'COMPLETED' || status === 'CLOSED') {
+            const hasAnyBill = billsAll.length > 0;
+            const hasAnyGi = woId ? Object.keys(goodsIssuedByWo[woId] || {}).length > 0 : false;
+            const hasAnyPo = woId
+              ? Object.keys(poLastPriceByWoGoods).some((k) => k.startsWith(`${woId}:`))
+              : false;
+            const noRealSource = !hasAnyBill && !hasAnyGi && !hasAnyPo;
+            if (noRealSource && realJob === 0 && realPart === 0 && totalEst > 0) {
+              realJob = estJob;
+              realPart = estPart;
+            }
+          }
+
           const totalReal = realJob + realPart;
           const variance = totalReal - totalEst;
           const percentage = totalEst > 0 ? (variance / totalEst) * 100 : 0;
