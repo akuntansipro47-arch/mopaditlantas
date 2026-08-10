@@ -138,6 +138,7 @@ export default function EstimationVsRealizationReport() {
 
       // Step 4: Fetch goods_issues per WO untuk tahu barang apa saja yang keluar
       const goodsIssuedByWoGoods: Record<string, number> = {};
+      const goodsIssuedByWo: Record<string, Record<string, number>> = {};
       if (allWoIds.length > 0) {
         const { data: giData } = await supabase
           .from('goods_issue_items')
@@ -150,6 +151,8 @@ export default function EstimationVsRealizationReport() {
           if (!woId || !goodsId || qty <= 0) return;
           const key = `${woId}:${goodsId}`;
           goodsIssuedByWoGoods[key] = (goodsIssuedByWoGoods[key] || 0) + qty;
+          if (!goodsIssuedByWo[woId]) goodsIssuedByWo[woId] = {};
+          goodsIssuedByWo[woId][goodsId] = (goodsIssuedByWo[woId][goodsId] || 0) + qty;
         });
       }
 
@@ -234,34 +237,42 @@ export default function EstimationVsRealizationReport() {
             }
           });
 
-          // Handle sparepart yang keluar (GI) tapi TIDAK ada di billing FINAL
-          entryParts.forEach((p: any) => {
-            if (!woId) return;
-            const goodsId = String(p.goods_id || '').trim();
-            const partName = String(p.item_name || '').trim();
-            if (!goodsId) return;
+          // Handle sparepart yang keluar (GI) tapi TIDAK ada di billing FINAL.
+          // Penting: beberapa WO sudah COMPLETED tapi billing belum diinput, sementara GI sudah ada.
+          if (woId) {
+            const issued = goodsIssuedByWo[woId] || {};
+            Object.entries(issued).forEach(([goodsId, giQtyRaw]) => {
+              const giQty = Number(giQtyRaw || 0);
+              if (!goodsId || giQty <= 0) return;
 
-            // Cek apakah sudah masuk di billing (yang dipakai untuk realisasi)
-            const billed = bills.some((b: any) => {
-              const bName = String(b.item_name || '').replace(/^Penggantian\s+/i, '').trim();
-              return isNameMatch(bName, partName) && String(b.goods_id || '').trim() === goodsId;
+              // Jika sudah ada di billing realisasi, skip (menghindari double count)
+              const billed = bills.some((b: any) => String(b.goods_id || '').trim() === String(goodsId).trim());
+              if (billed) return;
+
+              const poKey = `${woId}:${goodsId}`;
+              const poPrice = poLastPriceByWoGoods[poKey];
+
+              // Fallback estimasi by goods_id (kalau ada di entryParts)
+              const matchedByGoods = entryParts.find((p: any) => String(p.goods_id || '').trim() === String(goodsId).trim());
+              const estPrice = Number(matchedByGoods?.estimated_price || 0);
+
+              if (poPrice !== undefined) {
+                realPart += poPrice * giQty;
+              } else if (estPrice > 0) {
+                realPart += estPrice * giQty;
+              } else {
+                // Tidak ada PO & tidak ada estimasi: tetap 0 (datanya memang belum lengkap)
+                realPart += 0;
+              }
             });
-            if (billed) return;
+          }
 
-            // Belum di billing — cek apakah ada di goods issued
-            const giKey = `${woId}:${goodsId}`;
-            const giQty = goodsIssuedByWoGoods[giKey];
-            if (!giQty) return;
-
-            // Ada di GI — pakai harga PO terakhir, fallback estimasi
-            const poKey = `${woId}:${goodsId}`;
-            const poPrice = poLastPriceByWoGoods[poKey];
-            if (poPrice !== undefined) {
-              realPart += poPrice * giQty;
-            } else {
-              realPart += (p.estimated_price || 0) * giQty;
-            }
-          });
+          // Jika WO sudah selesai tapi tidak ada billing JOB sama sekali,
+          // gunakan estimasi jasa sebagai fallback agar realisasi tidak kosong.
+          // (Kalau billing ada, tetap pakai billing.)
+          if ((status === 'COMPLETED' || status === 'CLOSED') && realJob === 0 && billsAll.length === 0 && estJob > 0) {
+            realJob = estJob;
+          }
 
           const totalReal = realJob + realPart;
           const variance = totalReal - totalEst;
