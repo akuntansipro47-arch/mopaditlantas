@@ -5,30 +5,25 @@ import { hasMenuAccess } from '@/lib/permissions';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { ShoppingCart, ArchiveX, TrendingUp, CircleDollarSign, Landmark, Percent, Timer, Users, Download } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import { formatDate } from '@/lib/utils';
+import { formatDate, formatCurrency } from '@/lib/utils';
+import { isWorkOrderActive, isWorkOrderDone, isWorkOrderCancelled, normalizeWorkOrderStatus } from '@/lib/workOrderRules';
 import * as XLSX from 'xlsx';
 import { Button } from '@/components/ui/button';
 
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 
-// Fungsi untuk format mata uang
-const formatCurrency = (value: number) => {
-  return new Intl.NumberFormat('id-ID', {
-    style: 'currency',
-    currency: 'IDR',
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0,
-  }).format(value);
-};
-
+// Precise currency formatter: reuse `formatCurrency` for integers,
+// otherwise format with two decimals.
 const formatCurrencyPrecise = (value: number) => {
-  const rounded = Math.round((Number(value || 0) + Number.EPSILON) * 100) / 100;
+  const v = Number(value || 0);
+  const rounded = Math.round((v + Number.EPSILON) * 100) / 100;
   const isInt = Number.isFinite(rounded) && Math.round(rounded) === rounded;
+  if (isInt) return formatCurrency(rounded);
   return new Intl.NumberFormat('id-ID', {
     style: 'currency',
     currency: 'IDR',
-    minimumFractionDigits: isInt ? 0 : 2,
+    minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   }).format(rounded);
 };
@@ -301,7 +296,7 @@ export default function Dashboard() {
               vehicles ( license_plate )
             )
           `)
-            .not('status', 'in', '("COMPLETED", "CLOSED")');
+            .in('status', ['OPEN', 'IN_PROGRESS']);
           if (activeWoError) warn('Gagal ambil lead time WIP', activeWoError);
 
           const { data: completedWos, error: completedWoErr } = await supabase
@@ -441,10 +436,11 @@ export default function Dashboard() {
             if (isR4) progress[monthKey].totalIn.r4++;
             if (isR2) progress[monthKey].totalIn.r2++;
 
-            if (wo.status === 'COMPLETED' || wo.status === 'CLOSED') {
+            const woStatus = normalizeWorkOrderStatus(wo.status);
+            if (isWorkOrderDone(woStatus)) {
               if (isR4) progress[monthKey].totalCompleted.r4++;
               if (isR2) progress[monthKey].totalCompleted.r2++;
-            } else {
+            } else if (isWorkOrderActive(woStatus)) {
               if (isR4) progress[monthKey].totalWip.r4++;
               if (isR2) progress[monthKey].totalWip.r2++;
             }

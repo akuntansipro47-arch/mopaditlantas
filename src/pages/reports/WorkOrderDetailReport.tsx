@@ -7,15 +7,17 @@ import { Input } from '@/components/ui/input';
 import { supabase } from '@/lib/supabase';
 import { toast } from 'sonner';
 import * as XLSX from 'xlsx';
-import { format } from 'date-fns';
+import { formatDate, toDateInputValue } from '@/lib/utils';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { matchesFreeSearch } from '@/lib/utils';
+import { getWorkOrderStatusBadgeClass, getWorkOrderStatusLabel, isWorkOrderDone, normalizeWorkOrderStatus } from '@/lib/workOrderRules';
 
 type ReportData = {
     wo_id: string;
     vehicle_entry_id: string;
     entry_date: string;
     wo_number: string;
+    status: string;
     po_payment_summary: string;
     plate_number: string;
     brand_type: string | null;
@@ -45,9 +47,10 @@ type ReportItem = {
 const WorkOrderDetailReport = () => {
     const [reportData, setReportData] = useState<ReportData[]>([]);
     const [loading, setLoading] = useState(false);
-    const [startDate, setStartDate] = useState(format(new Date(), 'yyyy-MM-dd'));
-    const [endDate, setEndDate] = useState(format(new Date(), 'yyyy-MM-dd'));
+    const [startDate, setStartDate] = useState(toDateInputValue(new Date()));
+    const [endDate, setEndDate] = useState(toDateInputValue(new Date()));
     const [statusFilter, setStatusFilter] = useState('semua');
+    const [woStatusFilter, setWoStatusFilter] = useState('semua');
     const [vehicleGroupFilter, setVehicleGroupFilter] = useState('semua');
     const [searchTerm, setSearchTerm] = useState('');
     const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -124,7 +127,7 @@ const WorkOrderDetailReport = () => {
             // Step 1: Fetch base Work Orders
             const { data: woData, error: woError } = await supabase
                 .from('work_orders')
-                .select('id, wo_number, work_date, vehicle_entry_id')
+                .select('id, wo_number, work_date, status, vehicle_entry_id')
                 .gte('work_date', startDate)
                 .lte('work_date', endDate)
                 .order('work_date', { ascending: true });
@@ -436,6 +439,7 @@ const WorkOrderDetailReport = () => {
             // Step 5: Create helper maps
             const vehicleEntryMap = new Map(vehicleEntriesData?.map(e => [e.id, e]));
             const vehicleMap = new Map(vehiclesData?.map(v => [v.id, v]));
+            const woStatusMap = new Map(woData.map((wo: any) => [String(wo.id), normalizeWorkOrderStatus(wo.status)]));
             const woIdsByVeId = new Map<string, string[]>();
             woData.forEach((wo) => {
                 const veId = wo.vehicle_entry_id ? String(wo.vehicle_entry_id) : '';
@@ -563,6 +567,20 @@ const WorkOrderDetailReport = () => {
                             : isPart
                                 ? getPartHppInfo(woId, goodsId)
                                 : getJobHppInfo(woId, jobTypeId ? String(jobTypeId) : null, itemName);
+                        const woStatus = woStatusMap.get(String(woId)) || 'OPEN';
+                        const hasPoWo = Boolean(hppInfo.po_info) && hppInfo.po_info !== 'Belum ada PO WO';
+                        const finalPoInfo =
+                            isPart && isWorkOrderDone(woStatus) && !hasPoWo
+                                ? 'WO selesai: fallback estimasi'
+                                : hppInfo.po_info;
+                        const source: ReportItem['source'] =
+                            woStatus === 'OPEN' || woStatus === 'CANCELLED'
+                                ? 'ESTIMATE_ONLY'
+                                : woStatus === 'IN_PROGRESS'
+                                    ? (isPart && hasPoWo ? 'REALIZED' : 'ESTIMATE_ONLY')
+                                    : isWorkOrderDone(woStatus)
+                                        ? 'REALIZED'
+                                        : 'ESTIMATE_ONLY';
                         const totalHpp = (hppInfo.hpp || 0) * qty;
     
                         const reportItem: ReportItem = {
@@ -571,8 +589,8 @@ const WorkOrderDetailReport = () => {
                             value_only: isValueOnly,
                             qty, unit_price: sellingPrice, total_price: totalSellingPrice,
                             hpp: hppInfo.hpp, total_hpp: totalHpp, profit: totalSellingPrice - totalHpp,
-                            po_info: hppInfo.po_info,
-                            source: 'ESTIMATE_ONLY',
+                            po_info: finalPoInfo,
+                            source,
                         };
     
                         if (!reportItemsByWo.has(woId)) reportItemsByWo.set(woId, []);
@@ -596,13 +614,14 @@ const WorkOrderDetailReport = () => {
                 return {
                     wo_id: wo.id,
                     vehicle_entry_id: wo.vehicle_entry_id,
-                    entry_date: vehicleEntry ? format(new Date(vehicleEntry.entry_date), 'dd-MM-yyyy') : '',
+                    entry_date: vehicleEntry ? formatDate(vehicleEntry.entry_date) : '',
                     wo_number: wo.wo_number,
+                    status: String(wo.status || ''),
                     po_payment_summary: woPoPaymentSummary.get(String(wo.id)) || '',
                     plate_number: vehicle?.license_plate || 'N/A',
                     brand_type: vehicle?.brand_type || null,
                     vehicle_type: vehicle?.vehicle_type || null,
-                    service_group: vehicle?.vehicle_type || null,
+                    service_group: null,
                     customer_name: vehicle?.owner_name || 'N/A',
                     total_realized,
                     total_hpp,
@@ -636,6 +655,15 @@ const WorkOrderDetailReport = () => {
     const filteredReportData = useMemo(() => {
         let filtered = reportData;
 
+        if (woStatusFilter !== 'semua') {
+            filtered = filtered.filter((entry) => {
+                const status = normalizeWorkOrderStatus(entry.status);
+                if (woStatusFilter === 'aktif') return status === 'OPEN' || status === 'IN_PROGRESS';
+                if (woStatusFilter === 'selesai') return isWorkOrderDone(status);
+                return status === normalizeWorkOrderStatus(woStatusFilter);
+            });
+        }
+
         if (vehicleGroupFilter !== 'semua') {
             filtered = filtered.filter(entry => {
                 const group = getVehicleGroupLabel(entry.vehicle_type, entry.service_group);
@@ -649,6 +677,7 @@ const WorkOrderDetailReport = () => {
                     const filteredItems = entry.items.filter((item) =>
                         matchesFreeSearch(searchTerm, [
                             entry.wo_number,
+                            entry.status,
                             entry.entry_date,
                             entry.plate_number,
                             entry.brand_type,
@@ -687,7 +716,7 @@ const WorkOrderDetailReport = () => {
         }
 
         return filtered;
-    }, [reportData, statusFilter, vehicleGroupFilter, searchTerm]);
+    }, [reportData, statusFilter, woStatusFilter, vehicleGroupFilter, searchTerm]);
 
     const totals = useMemo(() => {
         let totalPagu = 0;
@@ -706,6 +735,7 @@ const WorkOrderDetailReport = () => {
             entry.items.map(item => ({
                 'Tgl Masuk': entry.entry_date,
                 'No. WO': entry.wo_number,
+                'Status WO': getWorkOrderStatusLabel(entry.status),
                 'No. Polisi': entry.plate_number,
                 'Customer': entry.customer_name,
                 'Grup Kendaraan': getVehicleGroupLabel(entry.vehicle_type, entry.service_group),
@@ -765,7 +795,7 @@ const WorkOrderDetailReport = () => {
                             </div>
                         </div>
                         <div className="space-y-1">
-                            <label htmlFor="status-filter" className="text-sm font-medium">Status</label>
+                            <label htmlFor="status-filter" className="text-sm font-medium">Sumber</label>
                             <Select value={statusFilter} onValueChange={setStatusFilter}>
                                 <SelectTrigger className="w-[220px]" id="status-filter">
                                     <SelectValue placeholder="Pilih Status" />
@@ -773,6 +803,24 @@ const WorkOrderDetailReport = () => {
                                 <SelectContent>
                                     <SelectItem value="semua">Semua (Estimasi vs Realisasi)</SelectItem>
                                     <SelectItem value="realisasi">Realisasi Saja</SelectItem>
+                                </SelectContent>
+                            </Select>
+                        </div>
+                        <div className="space-y-1">
+                            <label htmlFor="wo-status-filter" className="text-sm font-medium">Status WO</label>
+                            <Select value={woStatusFilter} onValueChange={setWoStatusFilter}>
+                                <SelectTrigger className="w-[200px]" id="wo-status-filter">
+                                    <SelectValue placeholder="Pilih Status WO" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="semua">Semua Status WO</SelectItem>
+                                    <SelectItem value="aktif">Aktif (Open / Progress)</SelectItem>
+                                    <SelectItem value="OPEN">Open</SelectItem>
+                                    <SelectItem value="IN_PROGRESS">In Progress</SelectItem>
+                                    <SelectItem value="selesai">Selesai (Completed / Closed)</SelectItem>
+                                    <SelectItem value="COMPLETED">Completed</SelectItem>
+                                    <SelectItem value="CLOSED">Closed</SelectItem>
+                                    <SelectItem value="CANCELLED">Cancelled</SelectItem>
                                 </SelectContent>
                             </Select>
                         </div>
@@ -873,6 +921,9 @@ const WorkOrderDetailReport = () => {
                                                         <TableCell rowSpan={entry.items.length} className="sticky left-0 bg-white z-10 font-medium align-top w-[200px]">
                                                             <div className="flex flex-col gap-1">
                                                                 <div>{entry.wo_number}</div>
+                                                                <div className={`w-fit rounded px-2 py-0.5 text-[10px] font-semibold ${getWorkOrderStatusBadgeClass(entry.status)}`}>
+                                                                    {getWorkOrderStatusLabel(entry.status)}
+                                                                </div>
                                                                 {entry.po_payment_summary ? (
                                                                     <div className="text-xs text-muted-foreground whitespace-normal">{entry.po_payment_summary}</div>
                                                                 ) : null}

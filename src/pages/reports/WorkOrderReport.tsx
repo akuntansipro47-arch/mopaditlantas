@@ -7,6 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Download, Calendar, Search } from 'lucide-react';
 import { formatCurrency, formatDate, matchesFreeSearch } from '@/lib/utils';
+import { getWorkOrderStatusBadgeClass, getWorkOrderStatusLabel, isWorkOrderActive, isWorkOrderDone, isWorkOrderCancelled, normalizeWorkOrderStatus } from '@/lib/workOrderRules';
 import * as XLSX from 'xlsx';
 
 export default function WorkOrderReport() {
@@ -34,7 +35,16 @@ export default function WorkOrderReport() {
           vehicle_entries (
             nota_dinas_number,
             service_group,
-            vehicles (license_plate, brand_type)
+            vehicle_entry_jobs (
+              estimated_price,
+              job_types (selling_price)
+            ),
+            vehicle_entry_spareparts (
+              qty,
+              estimated_price,
+              value_only
+            ),
+            vehicles (license_plate, brand_type, vehicle_type)
           ),
           billings:work_order_billings (
             item_type,
@@ -50,15 +60,11 @@ export default function WorkOrderReport() {
         .order('work_date', { ascending: false });
 
       if (statusFilter === 'ACTIVE') {
-        // "Sedang Dikerjakan" means OPEN (Not Started) or IN_PROGRESS (Started)
         query = query.in('status', ['OPEN', 'IN_PROGRESS']);
       } else if (statusFilter === 'ARCHIVED') {
-        // "Arsip" usually means COMPLETED or CLOSED
         query = query.in('status', ['COMPLETED', 'CLOSED']);
       } else if (statusFilter !== 'ALL') {
-        // Specific status filter
         if (statusFilter === 'COMPLETED') {
-             // For user convenience, "Selesai" often implies both COMPLETED and CLOSED
              query = query.in('status', ['COMPLETED', 'CLOSED']);
         } else {
              query = query.eq('status', statusFilter);
@@ -72,7 +78,30 @@ export default function WorkOrderReport() {
           throw error;
       }
       
-      setData(result || []);
+      const resultRows = Array.isArray(result) ? result : [];
+      const woIds = resultRows.map((row: any) => row.id).filter(Boolean);
+      const poPartTotalByWo: Record<string, number> = {};
+
+      if (woIds.length > 0) {
+        const { data: poItems } = await supabase
+          .from('purchase_order_items')
+          .select('line_type, quantity, unit_price, purchase_orders!inner(work_order_id, status)')
+          .in('purchase_orders.work_order_id', woIds)
+          .not('unit_price', 'is', null);
+
+        (poItems || []).forEach((item: any) => {
+          const woId = String(item.purchase_orders?.work_order_id || '').trim();
+          const poStatus = normalizeWorkOrderStatus(item.purchase_orders?.status);
+          const lineType = String(item.line_type || 'PART').toUpperCase();
+          const qty = Number(item.quantity || 0);
+          const unitPrice = Number(item.unit_price || 0);
+          if (!woId || lineType === 'JASA' || qty <= 0 || unitPrice <= 0) return;
+          if (poStatus === 'CANCELLED') return;
+          poPartTotalByWo[woId] = (poPartTotalByWo[woId] || 0) + (qty * unitPrice);
+        });
+      }
+
+      setData(resultRows.map((row: any) => ({ ...row, po_part_total: poPartTotalByWo[String(row.id)] || 0 })));
     } catch (error) {
       console.error('Error fetching WO report:', error);
     } finally {
@@ -94,22 +123,57 @@ export default function WorkOrderReport() {
     ])
   );
 
+    const getJobEstimate = (j: any) => {
+      const epRaw = (j as any)?.estimated_price;
+      const ep = Number(epRaw);
+      const sp = Number(j?.job_types?.selling_price || 0);
+      if (Number.isFinite(ep) && ep > 0) return ep;
+      if ((!Number.isFinite(ep) || epRaw === null || epRaw === undefined) && sp > 0) return sp;
+      if (Number.isFinite(ep) && ep === 0 && sp > 0) return sp;
+      return Number.isFinite(ep) ? ep : 0;
+    };
+
   const calculateTotalEstimate = (wo: any) => {
+    const jobs = Array.isArray(wo.vehicle_entries?.vehicle_entry_jobs) ? wo.vehicle_entries.vehicle_entry_jobs : [];
+    const parts = Array.isArray(wo.vehicle_entries?.vehicle_entry_spareparts) ? wo.vehicle_entries.vehicle_entry_spareparts : [];
+
+    const estJob = jobs.reduce((sum: number, j: any) => sum + getJobEstimate(j), 0);
+
+    const estPart = parts.reduce((sum: number, p: any) => {
+      if (Boolean(p?.value_only)) return sum;
+      return sum + (Number(p?.estimated_price || 0) * Number(p?.qty || 0));
+    }, 0);
+
+    const totalEntryEstimate = estJob + estPart;
+    if (totalEntryEstimate > 0) return totalEntryEstimate;
+
     if (wo.billings && wo.billings.length > 0) {
       return wo.billings
         .filter((b: any) => b.is_info_only === true)
-        .reduce((sum: number, b: any) => sum + (b.total_price || 0), 0);
+        .reduce((sum: number, b: any) => sum + (Number(b.total_price || 0) || Number(b.unit_price || 0) * Number(b.qty || 0)), 0);
     }
     return 0;
   };
 
   const calculateTotalFinal = (wo: any) => {
-      if (wo.billings && wo.billings.length > 0) {
-          return wo.billings
-            .filter((b: any) => b.is_info_only !== true)
-            .reduce((sum: number, b: any) => sum + (b.total_price || 0), 0);
-      }
-      return 0;
+      const status = normalizeWorkOrderStatus(wo.status);
+      const totalEstimate = calculateTotalEstimate(wo);
+      const jobs = Array.isArray(wo.vehicle_entries?.vehicle_entry_jobs) ? wo.vehicle_entries.vehicle_entry_jobs : [];
+      const estJob = jobs.reduce((sum: number, j: any) => sum + getJobEstimate(j), 0);
+
+      const bills = Array.isArray(wo.billings) ? wo.billings : [];
+      const finalPartFromBilling = bills
+        .filter((b: any) => b.is_info_only !== true && String(b.item_type || '').toUpperCase() === 'PART')
+        .reduce((sum: number, b: any) => sum + (Number(b.total_price || 0) || Number(b.unit_price || 0) * Number(b.qty || 0)), 0);
+
+      const actualPart = Number(wo.po_part_total || 0) > 0 ? Number(wo.po_part_total || 0) : finalPartFromBilling;
+
+      if (isWorkOrderCancelled(status) || status === 'OPEN') return 0;
+      if (status === 'IN_PROGRESS') return actualPart;
+      if (isWorkOrderDone(status)) return estJob + (actualPart > 0 ? actualPart : Math.max(0, totalEstimate - estJob));
+      return bills
+        .filter((b: any) => b.is_info_only !== true)
+        .reduce((sum: number, b: any) => sum + (Number(b.total_price || 0) || Number(b.unit_price || 0) * Number(b.qty || 0)), 0);
   };
 
   const getVehicleGroupLabel = (wo: any) => {
@@ -231,9 +295,8 @@ export default function WorkOrderReport() {
                     </TableCell>
                     <TableCell>{wo.mechanics?.name}</TableCell>
                     <TableCell>
-                      <span className={`px-2 py-1 rounded text-xs font-semibold 
-                        ${wo.status === 'COMPLETED' ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'}`}>
-                        {wo.status}
+                      <span className={`px-2 py-1 rounded text-xs font-semibold ${getWorkOrderStatusBadgeClass(wo.status)}`}>
+                        {getWorkOrderStatusLabel(wo.status)}
                       </span>
                     </TableCell>
                     <TableCell className="text-right">{formatCurrency(calculateTotalEstimate(wo))}</TableCell>
