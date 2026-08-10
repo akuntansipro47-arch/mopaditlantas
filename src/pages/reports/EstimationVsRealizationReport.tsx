@@ -113,26 +113,39 @@ export default function EstimationVsRealizationReport() {
         .map((wo: any) => wo?.id)
         .filter(Boolean);
 
-      // Step 3: Fetch received PO items per WO (RECEIVED_FULL only)
+      // Step 3: Fetch PO items per WO
       const poLastPriceByWoGoods: Record<string, number> = {};
+      const poPartTotalByWo: Record<string, number> = {};
       if (allWoIds.length > 0) {
-        const { data: receivedPoItems } = await supabase
+        const { data: poItems } = await supabase
           .from('purchase_order_items')
-          .select('goods_id, unit_price, purchase_orders!inner(id, work_order_id, status, created_at)')
+          .select('goods_id, line_type, quantity, unit_price, purchase_orders!inner(id, work_order_id, status, created_at)')
           .in('purchase_orders.work_order_id', allWoIds)
-          .in('purchase_orders.status', ['RECEIVED_PART', 'RECEIVED_FULL'])
           .not('unit_price', 'is', null)
           .order('purchase_orders.created_at', { ascending: false });
 
-        (receivedPoItems || []).forEach((item: any) => {
+        (poItems || []).forEach((item: any) => {
           const woId = String(item.purchase_orders?.work_order_id || '').trim();
+          const poStatus = String(item.purchase_orders?.status || '').toUpperCase();
           const goodsId = String(item.goods_id || '').trim();
+          const lineType = String(item.line_type || 'PART').toUpperCase();
+          const qty = Number(item.quantity || 0);
           const price = Number(item.unit_price || 0);
-          if (!woId || !goodsId || price <= 0) return;
-          // Karena data sudah di-order by created_at DESC, item pertama adalah yang TERBARU.
-          // Jadi jangan ditimpa oleh data yang lebih lama.
-          const k = `${woId}:${goodsId}`;
-          if (poLastPriceByWoGoods[k] === undefined) poLastPriceByWoGoods[k] = price;
+          if (!woId || price <= 0) return;
+          if (poStatus === 'CANCELLED' || poStatus === 'RETURNED_FULL') return;
+
+          // Total PO PART per WO: dipakai untuk WO yang statusnya COMPLETE/CLOSED
+          if (lineType !== 'JASA' && qty > 0) {
+            poPartTotalByWo[woId] = (poPartTotalByWo[woId] || 0) + (price * qty);
+          }
+
+          // Harga PO terbaru per barang: dipakai untuk WO non-complete / fallback
+          if (goodsId && ['RECEIVED_PART', 'RECEIVED_FULL'].includes(poStatus)) {
+            // Karena data sudah di-order by created_at DESC, item pertama adalah yang TERBARU.
+            // Jadi jangan ditimpa oleh data yang lebih lama.
+            const k = `${woId}:${goodsId}`;
+            if (poLastPriceByWoGoods[k] === undefined) poLastPriceByWoGoods[k] = price;
+          }
         });
       }
 
@@ -175,7 +188,8 @@ export default function EstimationVsRealizationReport() {
         const wos = Array.isArray(entry.work_orders) ? entry.work_orders : [];
 
         const buildRow = (woInfo: any | null) => {
-          // Realization Calculation (berbasis WO)
+          // Hitung kandidat realisasi dari berbagai sumber lebih dulu,
+          // lalu finalnya ditetapkan dengan rule per status WO.
           let realJob = 0;
           let realPart = 0;
 
@@ -278,16 +292,41 @@ export default function EstimationVsRealizationReport() {
           // (tidak ada billing, tidak ada GI/PO terdeteksi). Agar laporan konsisten dengan status,
           // isi realisasi mengikuti estimasi.
           if (status === 'COMPLETED' || status === 'CLOSED') {
-            const hasAnyBill = billsAll.length > 0;
-            const hasAnyGi = woId ? Object.keys(goodsIssuedByWo[woId] || {}).length > 0 : false;
-            const hasAnyPo = woId
-              ? Object.keys(poLastPriceByWoGoods).some((k) => k.startsWith(`${woId}:`))
-              : false;
-            const noRealSource = !hasAnyBill && !hasAnyGi && !hasAnyPo;
-            if (noRealSource && realJob === 0 && realPart === 0 && totalEst > 0) {
+            // Ditentukan lagi di switch rule di bawah.
+          }
+
+          const calculatedJob = realJob;
+          const calculatedPart = realPart;
+          const poPartTotal = Number(poPartTotalByWo[woId] || 0);
+
+          // Rule final per status WO:
+          // OPEN       : belum ada realisasi
+          // IN_PROGRESS: jasa belum final, part mengikuti barang yang sudah keluar/terdeteksi
+          // COMPLETED  : jasa = estimasi, part = nilai PO by WO
+          // CLOSED     : sama seperti COMPLETED
+          // CANCELLED  : tidak dihitung realisasi
+          switch (status) {
+            case 'OPEN':
+              realJob = 0;
+              realPart = 0;
+              break;
+            case 'IN_PROGRESS':
+              realJob = 0;
+              realPart = calculatedPart;
+              break;
+            case 'COMPLETED':
+            case 'CLOSED':
               realJob = estJob;
-              realPart = estPart;
-            }
+              realPart = poPartTotal > 0 ? poPartTotal : calculatedPart > 0 ? calculatedPart : estPart;
+              break;
+            case 'CANCELLED':
+              realJob = 0;
+              realPart = 0;
+              break;
+            default:
+              realJob = calculatedJob;
+              realPart = calculatedPart;
+              break;
           }
 
           const totalReal = realJob + realPart;
@@ -487,6 +526,7 @@ export default function EstimationVsRealizationReport() {
                                                     item.status === 'COMPLETED' ? 'bg-green-100 text-green-700' :
                                                     item.status === 'CLOSED' ? 'bg-slate-100 text-slate-700' :
                                                     item.status === 'IN_PROGRESS' ? 'bg-blue-100 text-blue-700' :
+                                                    item.status === 'CANCELLED' ? 'bg-red-100 text-red-700' :
                                                     'bg-yellow-100 text-yellow-700'
                                                 }`}>
                                                     {item.status}
