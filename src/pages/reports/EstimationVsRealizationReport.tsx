@@ -41,26 +41,6 @@ export default function EstimationVsRealizationReport() {
     return aa.includes(bb) || bb.includes(aa);
   };
 
-  const pickWorkOrder = (workOrders: any[] | null | undefined) => {
-    const arr = Array.isArray(workOrders) ? workOrders : [];
-    if (arr.length === 0) return null;
-    const statusRank = (s: any) => {
-      const v = String(s || '').toUpperCase();
-      if (v === 'CLOSED') return 3;
-      if (v === 'COMPLETED') return 2;
-      if (v === 'IN_PROGRESS') return 1;
-      if (v === 'OPEN') return 0;
-      return -1;
-    };
-    return [...arr].sort((a, b) => {
-      const sr = statusRank(b.status) - statusRank(a.status);
-      if (sr !== 0) return sr;
-      const ta = new Date(a.work_date || a.created_at || 0).getTime();
-      const tb = new Date(b.work_date || b.created_at || 0).getTime();
-      return tb - ta;
-    })[0];
-  };
-
   const getVehicleGroupLabel = (entry: any) => {
     const sg = String(entry.service_group || '').toUpperCase();
     if (sg.includes('R2_KECIL') || sg.includes('R2 KECIL') || sg.includes('KECIL')) return 'R2 Kecil';
@@ -100,9 +80,12 @@ export default function EstimationVsRealizationReport() {
             work_order_billings (
               item_type,
               item_name,
+              goods_id,
+              job_type_id,
               qty,
               unit_price,
-              total_price
+              total_price,
+              is_info_only
             )
           ),
           vehicle_entry_jobs (
@@ -110,9 +93,11 @@ export default function EstimationVsRealizationReport() {
             job_types (selling_price)
           ),
           vehicle_entry_spareparts (
+            goods_id,
             item_name,
             qty,
-            estimated_price
+            estimated_price,
+            value_only
           ),
           vehicles (license_plate, brand_type, vehicle_type)
         `)
@@ -135,7 +120,7 @@ export default function EstimationVsRealizationReport() {
           .from('purchase_order_items')
           .select('goods_id, unit_price, purchase_orders!inner(id, work_order_id, status, created_at)')
           .in('purchase_orders.work_order_id', allWoIds)
-          .eq('purchase_orders.status', 'RECEIVED_FULL')
+          .in('purchase_orders.status', ['RECEIVED_PART', 'RECEIVED_FULL'])
           .not('unit_price', 'is', null)
           .order('purchase_orders.created_at', { ascending: false });
 
@@ -144,8 +129,10 @@ export default function EstimationVsRealizationReport() {
           const goodsId = String(item.goods_id || '').trim();
           const price = Number(item.unit_price || 0);
           if (!woId || !goodsId || price <= 0) return;
-          // Selalu timpa dengan yang lebih baru (karena sudah di-order by created_at DESC)
-          poLastPriceByWoGoods[`${woId}:${goodsId}`] = price;
+          // Karena data sudah di-order by created_at DESC, item pertama adalah yang TERBARU.
+          // Jadi jangan ditimpa oleh data yang lebih lama.
+          const k = `${woId}:${goodsId}`;
+          if (poLastPriceByWoGoods[k] === undefined) poLastPriceByWoGoods[k] = price;
         });
       }
 
@@ -167,8 +154,8 @@ export default function EstimationVsRealizationReport() {
       }
 
       // Step 5: Process Data
-      const processedData = (woData || []).map((entry: any) => {
-        // Estimation Calculation
+      const processedData = (woData || []).flatMap((entry: any) => {
+        // Estimation Calculation (berbasis Vehicle Entry)
         let estJob = 0;
         let estPart = 0;
 
@@ -181,16 +168,25 @@ export default function EstimationVsRealizationReport() {
         });
 
         const totalEst = estJob + estPart;
+        const entryParts = Array.isArray(entry.vehicle_entry_spareparts) ? entry.vehicle_entry_spareparts : [];
+        const wos = Array.isArray(entry.work_orders) ? entry.work_orders : [];
 
-        // Realization Calculation
-        let realJob = 0;
-        let realPart = 0;
-        let woInfo: any = null;
+        const buildRow = (woInfo: any | null) => {
+          // Realization Calculation (berbasis WO)
+          let realJob = 0;
+          let realPart = 0;
 
-        if (entry.work_orders && entry.work_orders.length > 0) {
-          woInfo = pickWorkOrder(entry.work_orders);
-          const bills = Array.isArray(woInfo?.work_order_billings) ? woInfo.work_order_billings : [];
-          const entryParts = Array.isArray(entry.vehicle_entry_spareparts) ? entry.vehicle_entry_spareparts : [];
+          const woId = String(woInfo?.id || '').trim();
+          const status = String(woInfo?.status || entry.status || '').toUpperCase();
+          const billsAll = Array.isArray(woInfo?.work_order_billings) ? woInfo.work_order_billings : [];
+
+          // Default: realisasi pakai billing FINAL (bukan info_only)
+          // Jika WO sudah COMPLETED/CLOSED tapi ternyata hanya ada info_only (data tidak konsisten),
+          // fallback pakai semua billing supaya kolom realisasi tidak kosong.
+          let bills = billsAll.filter((b: any) => b?.is_info_only !== true);
+          if ((status === 'COMPLETED' || status === 'CLOSED') && bills.length === 0 && billsAll.length > 0) {
+            bills = billsAll;
+          }
 
           bills.forEach((b: any) => {
             const total = Number(b.total_price || 0);
@@ -206,11 +202,10 @@ export default function EstimationVsRealizationReport() {
 
             if (type === 'PART') {
               const goodsId = String(b.goods_id || '').trim();
-              const woId = String(woInfo?.id || '').trim();
               const billName = String(b.item_name || '').replace(/^Penggantian\s+/i, '').trim();
 
               if (woId && goodsId) {
-                // Prioritas 1: harga PO terakhir (RECEIVED_FULL) untuk unit ini
+                // Prioritas 1: harga PO terakhir (RECEIVED_PART/RECEIVED_FULL) untuk WO ini
                 const poKey = `${woId}:${goodsId}`;
                 if (poLastPriceByWoGoods[poKey] !== undefined) {
                   realPart += poLastPriceByWoGoods[poKey] * qty;
@@ -228,7 +223,7 @@ export default function EstimationVsRealizationReport() {
                 return;
               }
 
-              // Prioritas 3: fallback ke estimasi
+              // Prioritas 3: fallback ke estimasi Vehicle Entry (match by name)
               const matched = entryParts.find((p: any) => isNameMatch(String(p.item_name || ''), billName));
               const ep = Number(matched?.estimated_price || 0);
               const q = Number(matched?.qty || qty || 0);
@@ -236,20 +231,17 @@ export default function EstimationVsRealizationReport() {
                 realPart += ep * q;
                 return;
               }
-
-              realPart += 0;
             }
           });
 
-          // Handle sparepart yang keluar tapi TIDAK ada di billing (issuedFromGi)
-          // Qty keluar × harga PO terakhir (RECEIVED_FULL)
+          // Handle sparepart yang keluar (GI) tapi TIDAK ada di billing FINAL
           entryParts.forEach((p: any) => {
+            if (!woId) return;
             const goodsId = String(p.goods_id || '').trim();
             const partName = String(p.item_name || '').trim();
-            if (!woInfo?.id || !goodsId) return;
-            const woId = String(woInfo.id).trim();
+            if (!goodsId) return;
 
-            // Cek apakah sudah masuk di billing
+            // Cek apakah sudah masuk di billing (yang dipakai untuk realisasi)
             const billed = bills.some((b: any) => {
               const bName = String(b.item_name || '').replace(/^Penggantian\s+/i, '').trim();
               return isNameMatch(bName, partName) && String(b.goods_id || '').trim() === goodsId;
@@ -261,24 +253,22 @@ export default function EstimationVsRealizationReport() {
             const giQty = goodsIssuedByWoGoods[giKey];
             if (!giQty) return;
 
-            // Ada di GI — pakai harga PO terakhir
+            // Ada di GI — pakai harga PO terakhir, fallback estimasi
             const poKey = `${woId}:${goodsId}`;
             const poPrice = poLastPriceByWoGoods[poKey];
             if (poPrice !== undefined) {
               realPart += poPrice * giQty;
             } else {
-              // Fallback: harga estimasi
               realPart += (p.estimated_price || 0) * giQty;
             }
           });
-        }
 
-        const totalReal = realJob + realPart;
-        const variance = totalReal - totalEst;
-        const percentage = totalEst > 0 ? (variance / totalEst) * 100 : 0;
+          const totalReal = realJob + realPart;
+          const variance = totalReal - totalEst;
+          const percentage = totalEst > 0 ? (variance / totalEst) * 100 : 0;
 
-        return {
-            id: entry.id,
+          return {
+            id: `${entry.id}:${woInfo?.id || 'NO_WO'}`,
             date: entry.entry_date,
             wo_number: woInfo ? woInfo.wo_number : '-',
             status: woInfo ? woInfo.status : entry.status,
@@ -296,8 +286,13 @@ export default function EstimationVsRealizationReport() {
             total_real: totalReal,
 
             variance: variance,
-            percentage: percentage
+            percentage: percentage,
+          };
         };
+
+        // 1 entry bisa punya banyak WO: tampilkan per WO agar korelasi konsisten
+        if (wos.length === 0) return [buildRow(null)];
+        return wos.map((wo: any) => buildRow(wo));
       });
 
       setData(processedData);
@@ -329,7 +324,7 @@ export default function EstimationVsRealizationReport() {
       item.real_job,
       item.real_part,
       item.total_real,
-      item.diff,
+      item.variance,
     ]);
     const matchGroup = groupFilter === 'ALL' ? true : getGroupKey(item.group) === groupFilter;
     return matchSearch && matchGroup;
