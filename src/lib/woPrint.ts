@@ -33,6 +33,40 @@ export async function getSpkPrintMode(woId: string): Promise<WoPrintMode> {
   }
 }
 
+export async function hasWoBeenPrinted(woId: string): Promise<boolean> {
+  const id = String(woId || '').trim();
+  if (!id) return false;
+
+  try {
+    const [counterResult, activityResult] = await Promise.all([
+      supabase
+        .from('document_print_counters' as any)
+        .select('doc_id')
+        .eq('doc_type', 'SPK')
+        .eq('doc_id', id)
+        .limit(1),
+      supabase
+        .from('activity_logs' as any)
+        .select('id')
+        .eq('entity_type', 'work_orders')
+        .eq('entity_id', id)
+        .in('action', ['WO_PRINT', 'WO_REPRINT'])
+        .limit(1),
+    ]);
+
+    if (!counterResult.error && Array.isArray(counterResult.data) && counterResult.data.length > 0) {
+      return true;
+    }
+    if (!activityResult.error && Array.isArray(activityResult.data) && activityResult.data.length > 0) {
+      return true;
+    }
+  } catch {
+    return false;
+  }
+
+  return false;
+}
+
 export type EnsureCanPrintResult = {
   mode: WoPrintMode;
   action: 'WO_PRINT' | 'WO_REPRINT';

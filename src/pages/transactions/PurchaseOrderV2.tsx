@@ -26,6 +26,7 @@ import { formatCurrency, formatDate, generateTransactionNumber, matchesFreeSearc
 import { useRealtimeRefetch } from '@/hooks/useRealtimeRefetch';
 import { useAuth } from '@/context/AuthContext';
 import { logActivity } from '@/lib/activityLog';
+import { hasWoBeenPrinted } from '@/lib/woPrint';
 
 type PO = Database['public']['Tables']['purchase_orders']['Row'];
 type POItem = Database['public']['Tables']['purchase_order_items']['Row'];
@@ -62,6 +63,7 @@ export default function PurchaseOrderV2() {
   const [goodsList, setGoodsList] = useState<Goods[]>([]);
   const [jobTypes, setJobTypes] = useState<any[]>([]);
   const [workOrders, setWorkOrders] = useState<any[]>([]); // To link PO to WO if needed
+  const [woPrintMap, setWoPrintMap] = useState<Record<string, boolean>>({});
 
   const [poType, setPoType] = useState<'WO' | 'STOCK'>('WO');
 
@@ -359,8 +361,20 @@ export default function PurchaseOrderV2() {
       if (wErr) {
         toast.error('Gagal memuat Work Order: ' + wErr.message);
         setWorkOrders([]);
+        setWoPrintMap({});
       } else {
-        setWorkOrders(w || []);
+        const workOrderList = w || [];
+        setWorkOrders(workOrderList);
+
+        const ids = workOrderList.map((wo: any) => String(wo.id)).filter(Boolean);
+        if (ids.length > 0) {
+          const entries = await Promise.all(
+            ids.map(async (woId: string) => [woId, await hasWoBeenPrinted(woId)] as const)
+          );
+          setWoPrintMap(Object.fromEntries(entries));
+        } else {
+          setWoPrintMap({});
+        }
       }
     }
   }
@@ -464,6 +478,26 @@ export default function PurchaseOrderV2() {
     if (type === 'STOCK') {
       setFormData(prev => ({ ...prev, work_order_id: 'NONE' }));
     }
+  };
+
+  const ensureWoHasBeenPrinted = async (woId: string | null | undefined) => {
+    const id = String(woId || '').trim();
+    if (!id) {
+      toast.error('Silakan pilih Work Order terlebih dahulu.');
+      return false;
+    }
+
+    const isPrinted = woPrintMap[id] ?? (await hasWoBeenPrinted(id));
+    if (!isPrinted) {
+      toast.error('PO berdasarkan WO hanya bisa dibuat setelah WO/ SPK dicetak. Cetak SPK Work Order terlebih dahulu.');
+      return false;
+    }
+
+    if (id && !woPrintMap[id]) {
+      setWoPrintMap(prev => ({ ...prev, [id]: true }));
+    }
+
+    return true;
   };
 
   const buildItemsFromWo = (wo: any) => {
@@ -704,6 +738,12 @@ export default function PurchaseOrderV2() {
       const built = wo ? buildItemsFromWo(wo) : [];
       if (!wo || built.length === 0) {
         toast.error('Item estimasi WO kosong / semua item N/A. Tidak bisa buat PO dari WO ini.');
+        return;
+      }
+
+      const isPrinted = woPrintMap[woId] ?? (await hasWoBeenPrinted(woId));
+      if (!isPrinted) {
+        toast.error('PO berdasarkan WO hanya bisa dibuat setelah WO/ SPK dicetak. Cetak SPK Work Order terlebih dahulu.');
         return;
       }
     }
@@ -1161,77 +1201,91 @@ export default function PurchaseOrderV2() {
                                licensePlate.includes(searchLower)
                              );
                           })
-                          .map((wo: any) => (
-                          <CommandItem
-                            key={wo.id}
-                            onSelect={() => {
-                              setFormData({ ...formData, work_order_id: wo.id });
-                              setWoSearchOpen(false);
-                              const next = buildItemsFromWo(wo);
-                              if (next.length === 0) {
-                                toast.error('Item estimasi WO kosong / semua item N/A. Tidak bisa buat PO dari WO ini.');
-                                setPoItems([{ line_type: 'PART', goods_id: '', job_type_id: '', service_name: '', brand: '', quantity: 1, unit_price: 0 }]);
-                                return;
-                              }
-                              setPoItems(next);
-                            }}
-                            className="cursor-pointer p-3 hover:bg-slate-100 border-b last:border-0 aria-selected:bg-slate-100"
-                          >
-                            <div className="flex flex-col w-full gap-1">
-                              <div className="flex justify-between items-center">
-                                <span className="font-bold text-sm">{wo.wo_number}</span>
-                                <span className={`text-[10px] px-2 py-0.5 rounded font-medium ${
-                                    wo.status === 'OPEN' ? 'bg-green-100 text-green-700' : 'bg-blue-100 text-blue-700'
-                                }`}>
-                                    {wo.status}
-                                </span>
-                              </div>
-                              <div className="flex justify-between items-center text-xs text-muted-foreground">
-                                <span className="font-medium text-slate-700">{wo.vehicle_entries?.vehicles?.license_plate || '-'}</span>
-                                <span>{wo.vehicle_entries?.vehicles?.brand_type || '-'}</span>
-                              </div>
-                              {Array.isArray(wo.vehicle_entries?.vehicle_entry_jobs) && wo.vehicle_entries.vehicle_entry_jobs.length > 0 && (
-                                <div className="mt-1 text-[11px] text-slate-700">
-                                  <div className="font-semibold text-[10px] text-slate-500 uppercase">Pekerjaan</div>
-                                  <div className="space-y-0.5">
-                                    {wo.vehicle_entries.vehicle_entry_jobs.slice(0, 3).map((j: any, idx: number) => (
-                                      <div key={idx} className="flex items-start gap-2">
-                                        <span className="px-1.5 py-0.5 rounded bg-slate-200 text-slate-700 text-[10px] font-bold shrink-0">
-                                          {j.job_types?.job_group || '-'}
-                                        </span>
-                                        <span className="truncate">{j.job_types?.job_name || '-'}</span>
-                                      </div>
-                                    ))}
-                                    {wo.vehicle_entries.vehicle_entry_jobs.length > 3 && (
-                                      <div className="text-[10px] text-slate-500 italic">
-                                        +{wo.vehicle_entries.vehicle_entry_jobs.length - 3} pekerjaan lainnya
-                                      </div>
-                                    )}
+                          .map((wo: any) => {
+                            const isPrinted = Boolean(woPrintMap[String(wo.id)]);
+                            return (
+                              <CommandItem
+                                key={wo.id}
+                                onSelect={async () => {
+                                  if (!isPrinted) {
+                                    toast.error('WO belum dicetak. Cetak SPK terlebih dahulu sebelum membuat PO.');
+                                    return;
+                                  }
+
+                                  setFormData({ ...formData, work_order_id: wo.id });
+                                  setWoSearchOpen(false);
+                                  const next = buildItemsFromWo(wo);
+                                  if (next.length === 0) {
+                                    toast.error('Item estimasi WO kosong / semua item N/A. Tidak bisa buat PO dari WO ini.');
+                                    setPoItems([{ line_type: 'PART', goods_id: '', job_type_id: '', service_name: '', brand: '', quantity: 1, unit_price: 0 }]);
+                                    return;
+                                  }
+                                  setPoItems(next);
+                                }}
+                                className="cursor-pointer p-3 hover:bg-slate-100 border-b last:border-0 aria-selected:bg-slate-100"
+                              >
+                                <div className="flex flex-col w-full gap-1">
+                                  <div className="flex justify-between items-center">
+                                    <span className="font-bold text-sm">{wo.wo_number}</span>
+                                    <span className={`text-[10px] px-2 py-0.5 rounded font-medium ${
+                                        wo.status === 'OPEN' ? 'bg-green-100 text-green-700' : 'bg-blue-100 text-blue-700'
+                                    }`}>
+                                        {wo.status}
+                                    </span>
                                   </div>
-                                </div>
-                              )}
-                              {Array.isArray(wo.vehicle_entries?.vehicle_entry_spareparts) && wo.vehicle_entries.vehicle_entry_spareparts.length > 0 && (
-                                <div className="mt-1 text-[11px] text-slate-700">
-                                  <div className="font-semibold text-[10px] text-slate-500 uppercase">Sparepart</div>
-                                  <div className="space-y-0.5">
-                                    {wo.vehicle_entries.vehicle_entry_spareparts.slice(0, 3).map((p: any, idx: number) => (
-                                      <div key={idx} className="flex justify-between gap-2">
-                                        <span className="truncate">{p.item_name}</span>
-                                        <span className="text-slate-500">x{p.qty || 1}</span>
-                                      </div>
-                                    ))}
-                                    {wo.vehicle_entries.vehicle_entry_spareparts.length > 3 && (
-                                      <div className="text-[10px] text-slate-500 italic">
-                                        +{wo.vehicle_entries.vehicle_entry_spareparts.length - 3} sparepart lainnya
-                                      </div>
-                                    )}
+                                  <div className="flex justify-between items-center text-xs text-muted-foreground">
+                                    <span className="font-medium text-slate-700">{wo.vehicle_entries?.vehicles?.license_plate || '-'}</span>
+                                    <span>{wo.vehicle_entries?.vehicles?.brand_type || '-'}</span>
                                   </div>
+                                  <div className="flex items-center justify-between text-[10px]">
+                                    <span className={isPrinted ? 'text-emerald-600 font-medium' : 'text-amber-600 font-medium'}>
+                                      {isPrinted ? 'Sudah dicetak' : 'Belum dicetak'}
+                                    </span>
+                                    {!isPrinted && <span className="text-[10px] text-amber-600">PO tidak aktif</span>}
+                                  </div>
+                                  {Array.isArray(wo.vehicle_entries?.vehicle_entry_jobs) && wo.vehicle_entries.vehicle_entry_jobs.length > 0 && (
+                                    <div className="mt-1 text-[11px] text-slate-700">
+                                      <div className="font-semibold text-[10px] text-slate-500 uppercase">Pekerjaan</div>
+                                      <div className="space-y-0.5">
+                                        {wo.vehicle_entries.vehicle_entry_jobs.slice(0, 3).map((j: any, idx: number) => (
+                                          <div key={idx} className="flex items-start gap-2">
+                                            <span className="px-1.5 py-0.5 rounded bg-slate-200 text-slate-700 text-[10px] font-bold shrink-0">
+                                              {j.job_types?.job_group || '-'}
+                                            </span>
+                                            <span className="truncate">{j.job_types?.job_name || '-'}</span>
+                                          </div>
+                                        ))}
+                                        {wo.vehicle_entries.vehicle_entry_jobs.length > 3 && (
+                                          <div className="text-[10px] text-slate-500 italic">
+                                            +{wo.vehicle_entries.vehicle_entry_jobs.length - 3} pekerjaan lainnya
+                                          </div>
+                                        )}
+                                      </div>
+                                    </div>
+                                  )}
+                                  {Array.isArray(wo.vehicle_entries?.vehicle_entry_spareparts) && wo.vehicle_entries.vehicle_entry_spareparts.length > 0 && (
+                                    <div className="mt-1 text-[11px] text-slate-700">
+                                      <div className="font-semibold text-[10px] text-slate-500 uppercase">Sparepart</div>
+                                      <div className="space-y-0.5">
+                                        {wo.vehicle_entries.vehicle_entry_spareparts.slice(0, 3).map((p: any, idx: number) => (
+                                          <div key={idx} className="flex justify-between gap-2">
+                                            <span className="truncate">{p.item_name}</span>
+                                            <span className="text-slate-500">x{p.qty || 1}</span>
+                                          </div>
+                                        ))}
+                                        {wo.vehicle_entries.vehicle_entry_spareparts.length > 3 && (
+                                          <div className="text-[10px] text-slate-500 italic">
+                                            +{wo.vehicle_entries.vehicle_entry_spareparts.length - 3} sparepart lainnya
+                                          </div>
+                                        )}
+                                      </div>
+                                    </div>
+                                  )}
                                 </div>
-                              )}
-                            </div>
-                            {formData.work_order_id === wo.id && <Check className="ml-2 h-4 w-4 text-green-600" />}
-                          </CommandItem>
-                        ))}
+                                {formData.work_order_id === wo.id && <Check className="ml-2 h-4 w-4 text-green-600" />}
+                              </CommandItem>
+                            );
+                          })}
                       </CommandGroup>
                     </CommandList>
                   </Command>

@@ -1,12 +1,9 @@
 import { createClient } from '@supabase/supabase-js';
 import { createDemoSupabase, isDemoMode } from '@/lib/demoSupabase';
 
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
-
-if (!supabaseUrl || !supabaseAnonKey) {
-  throw new Error('Missing Supabase environment variables');
-}
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || 'https://example.supabase.co';
+const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || 'demo-anon-key';
+const hasSupabaseEnv = Boolean(import.meta.env.VITE_SUPABASE_URL && import.meta.env.VITE_SUPABASE_ANON_KEY);
 
 export const SUPABASE_URL = supabaseUrl;
 
@@ -29,13 +26,19 @@ const fetchWithRetry: typeof fetch = async (input, init) => {
   return await fetch(input, init);
 };
 
-const realSupabase = createClient(supabaseUrl, supabaseAnonKey, {
-  global: {
-    fetch: fetchWithRetry,
-  },
-});
+const realSupabase = hasSupabaseEnv
+  ? createClient(supabaseUrl, supabaseAnonKey, {
+      global: {
+        fetch: fetchWithRetry,
+      },
+    })
+  : demoSupabaseFactory();
 
 const demoSupabase = createDemoSupabase();
+
+function demoSupabaseFactory() {
+  return createDemoSupabase();
+}
 
 function pickClient() {
   return isDemoMode() ? demoSupabase : realSupabase;
