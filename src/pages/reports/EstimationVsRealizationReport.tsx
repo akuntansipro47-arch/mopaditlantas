@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -17,6 +17,7 @@ export default function EstimationVsRealizationReport() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [groupFilter, setGroupFilter] = useState('ALL');
+  const [showSelisihDetail, setShowSelisihDetail] = useState(false);
   const [dateFilter, setDateFilter] = useState({
     startDate: new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0],
     endDate: new Date().toISOString().split('T')[0]
@@ -396,6 +397,77 @@ export default function EstimationVsRealizationReport() {
     return matchSearch && matchGroup;
   });
 
+  type SelisihAuditRow = {
+    entryId: string;
+    date: string;
+    license_plate: string;
+    brand: string;
+    nota_dinas: string;
+    group: string;
+    wo_numbers: string[];
+    wo_count: number;
+    est: number;
+    real: number;
+    leak: number; // kontribusi selisih akibat double-count estimasi
+  };
+
+  const selisihAudit = useMemo(() => {
+    const map = new Map<string, SelisihAuditRow>();
+
+    (filteredData as any[]).forEach((item) => {
+      const entryId = String(item?.id || '').split(':')[0]; // id = `${entry.id}:${woId||NO_WO}`
+      if (!entryId) return;
+
+      const woNumber = String(item?.wo_number || '-');
+      const est = Number(item?.total_est || 0);
+      const real = Number(item?.total_real || 0);
+
+      const prev = map.get(entryId);
+      if (!prev) {
+        map.set(entryId, {
+          entryId,
+          date: String(item?.date || ''),
+          license_plate: String(item?.license_plate || '-'),
+          brand: String(item?.brand || '-'),
+          nota_dinas: String(item?.nota_dinas || '-'),
+          group: String(item?.group || '-'),
+          wo_numbers: woNumber && woNumber !== '-' ? [woNumber] : [],
+          wo_count: woNumber && woNumber !== '-' ? 1 : 0,
+          est,
+          real,
+          leak: 0,
+        });
+        return;
+      }
+
+      // Estimasi tetap 1x per entry (ambil dari record pertama).
+      // Realisasi dijumlah antar WO.
+      prev.real += real;
+
+      if (woNumber && woNumber !== '-' && !prev.wo_numbers.includes(woNumber)) {
+        prev.wo_numbers.push(woNumber);
+      }
+      prev.wo_count = prev.wo_numbers.length;
+      map.set(entryId, prev);
+    });
+
+    const rows = Array.from(map.values())
+      .map((r) => ({
+        ...r,
+        leak: r.wo_count > 1 ? r.est * (r.wo_count - 1) : 0,
+      }))
+      .filter((r) => r.leak > 0);
+
+    rows.sort((a, b) => b.leak - a.leak);
+
+    const totalLeak = rows.reduce((acc, r) => acc + r.leak, 0);
+
+    return {
+      totalLeak,
+      rows,
+    };
+  }, [filteredData]);
+
   const exportToExcel = () => {
     const exportData = filteredData.map((item, index) => ({
       'No': index + 1,
@@ -419,6 +491,25 @@ export default function EstimationVsRealizationReport() {
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Laporan Estimasi vs Realisasi");
     XLSX.writeFile(wb, `Laporan_Estimasi_Vs_Realisasi_${dateFilter.startDate}_${dateFilter.endDate}.xlsx`);
+  };
+
+  const exportSelisihAuditToExcel = () => {
+    const rows = selisihAudit.rows.map((r, idx) => ({
+      'No': idx + 1,
+      'Tanggal': formatDate(r.date),
+      'Nopol': r.license_plate,
+      'Group': r.group,
+      'Nota Dinas': r.nota_dinas,
+      'Jumlah WO': r.wo_count,
+      'WO': r.wo_numbers.join(', '),
+      'Estimasi Entry': r.est,
+      'Realisasi Entry (Akumulasi WO)': r.real,
+      'Selisih Double-count Estimasi': r.leak,
+    }));
+    const ws = XLSX.utils.json_to_sheet(rows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Detail Selisih');
+    XLSX.writeFile(wb, `Detail_Selisih_Estimasi_${dateFilter.startDate}_${dateFilter.endDate}.xlsx`);
   };
 
   // Catatan penting:
@@ -470,6 +561,11 @@ export default function EstimationVsRealizationReport() {
             <Button variant="outline" onClick={exportToExcel}>
                 <FileDown className="mr-2 h-4 w-4" /> Export Excel
             </Button>
+            {selisihAudit.rows.length > 0 && (
+              <Button variant="outline" onClick={exportSelisihAuditToExcel}>
+                <FileDown className="mr-2 h-4 w-4" /> Export Detail Selisih
+              </Button>
+            )}
             <Button variant="outline" onClick={() => window.print()}>
                 <Printer className="mr-2 h-4 w-4" /> Print
             </Button>
@@ -603,6 +699,61 @@ export default function EstimationVsRealizationReport() {
                     </Table>
                 </div>
             </div>
+
+            {selisihAudit.rows.length > 0 && (
+              <div className="mt-4 print:hidden">
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="text-sm text-slate-700">
+                    Selisih akibat estimasi terhitung ganda (entry punya >1 WO):{' '}
+                    <span className="font-bold text-red-700">{formatCurrency(selisihAudit.totalLeak)}</span>
+                  </div>
+                  <Button variant="outline" onClick={() => setShowSelisihDetail((v) => !v)}>
+                    {showSelisihDetail ? 'Tutup Detail' : 'Lihat Detail Selisih'}
+                  </Button>
+                </div>
+
+                {showSelisihDetail && (
+                  <div className="mt-3 rounded-md border overflow-hidden">
+                    <div className="max-h-[420px] overflow-auto">
+                      <Table>
+                        <TableHeader className="sticky top-0 bg-white z-10 shadow-sm">
+                          <TableRow className="bg-slate-50">
+                            <TableHead className="w-[50px]">No</TableHead>
+                            <TableHead>Tanggal</TableHead>
+                            <TableHead>Nopol</TableHead>
+                            <TableHead>Group</TableHead>
+                            <TableHead>Nota Dinas</TableHead>
+                            <TableHead className="text-center">Jml WO</TableHead>
+                            <TableHead>WO</TableHead>
+                            <TableHead className="text-right">Estimasi Entry</TableHead>
+                            <TableHead className="text-right text-red-700">Kontribusi Selisih</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {selisihAudit.rows.map((r, idx) => (
+                            <TableRow key={r.entryId} className="hover:bg-slate-50/50">
+                              <TableCell className="text-center">{idx + 1}</TableCell>
+                              <TableCell className="text-sm">{formatDate(r.date)}</TableCell>
+                              <TableCell className="text-sm font-medium">{r.license_plate}</TableCell>
+                              <TableCell>
+                                <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-slate-100 text-slate-700">
+                                  {r.group}
+                                </span>
+                              </TableCell>
+                              <TableCell className="text-sm">{r.nota_dinas}</TableCell>
+                              <TableCell className="text-center font-semibold">{r.wo_count}</TableCell>
+                              <TableCell className="text-xs text-slate-600 whitespace-normal">{r.wo_numbers.join(', ')}</TableCell>
+                              <TableCell className="text-right font-medium">{formatCurrency(r.est)}</TableCell>
+                              <TableCell className="text-right font-bold text-red-700">{formatCurrency(r.leak)}</TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
         </CardContent>
       </Card>
     </div>
