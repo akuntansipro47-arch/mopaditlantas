@@ -704,7 +704,7 @@ export default function EstimationVsRealizationReport() {
               <div className="mt-4 print:hidden">
                 <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                   <div className="text-sm text-slate-700">
-                    Selisih akibat estimasi terhitung ganda (entry punya >1 WO):{' '}
+                    Selisih akibat estimasi terhitung ganda (entry punya lebih dari 1 WO):{' '}
                     <span className="font-bold text-red-700">{formatCurrency(selisihAudit.totalLeak)}</span>
                   </div>
                   <Button variant="outline" onClick={() => setShowSelisihDetail((v) => !v)}>
