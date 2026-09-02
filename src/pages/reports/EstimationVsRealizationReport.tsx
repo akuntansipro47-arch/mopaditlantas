@@ -424,7 +424,7 @@ export default function EstimationVsRealizationReport() {
   // Catatan penting:
   // Data ditampilkan per WO (1 entry bisa punya beberapa WO), tapi total harus dihitung per entry
   // agar nilai estimasi tidak terhitung ganda.
-  const perEntryTotals = filteredData.reduce((acc, curr) => {
+  const perEntryTotals: Map<string, { est: number; real: number }> = filteredData.reduce((acc: Map<string, { est: number; real: number }>, curr: any) => {
     const entryId = String(curr.id || '').split(':')[0]; // id = `${entry.id}:${woId||NO_WO}`
     if (!entryId) return acc;
 
@@ -444,8 +444,8 @@ export default function EstimationVsRealizationReport() {
     return acc;
   }, new Map<string, { est: number; real: number }>());
 
-  const grandTotal = Array.from(perEntryTotals.values()).reduce(
-    (acc, curr) => {
+  const grandTotal: { est: number; real: number; var: number } = Array.from(perEntryTotals.values()).reduce(
+    (acc: { est: number; real: number; var: number }, curr: { est: number; real: number }) => {
       const variance = curr.real - curr.est;
       return {
         est: acc.est + curr.est,
