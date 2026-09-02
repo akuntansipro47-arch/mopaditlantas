@@ -421,11 +421,40 @@ export default function EstimationVsRealizationReport() {
     XLSX.writeFile(wb, `Laporan_Estimasi_Vs_Realisasi_${dateFilter.startDate}_${dateFilter.endDate}.xlsx`);
   };
 
-  const grandTotal = filteredData.reduce((acc, curr) => ({
-      est: acc.est + curr.total_est,
-      real: acc.real + curr.total_real,
-      var: acc.var + curr.variance
-  }), { est: 0, real: 0, var: 0 });
+  // Catatan penting:
+  // Data ditampilkan per WO (1 entry bisa punya beberapa WO), tapi total harus dihitung per entry
+  // agar nilai estimasi tidak terhitung ganda.
+  const perEntryTotals = filteredData.reduce((acc, curr) => {
+    const entryId = String(curr.id || '').split(':')[0]; // id = `${entry.id}:${woId||NO_WO}`
+    if (!entryId) return acc;
+
+    const prev = acc.get(entryId);
+    if (!prev) {
+      acc.set(entryId, {
+        est: Number(curr.total_est || 0),
+        real: Number(curr.total_real || 0),
+      });
+      return acc;
+    }
+
+    // Estimasi sama untuk seluruh WO di entry ini, jadi cukup ambil sekali (yang pertama).
+    // Realisasi dijumlah antar WO dalam entry yang sama.
+    prev.real += Number(curr.total_real || 0);
+    acc.set(entryId, prev);
+    return acc;
+  }, new Map<string, { est: number; real: number }>());
+
+  const grandTotal = Array.from(perEntryTotals.values()).reduce(
+    (acc, curr) => {
+      const variance = curr.real - curr.est;
+      return {
+        est: acc.est + curr.est,
+        real: acc.real + curr.real,
+        var: acc.var + variance,
+      };
+    },
+    { est: 0, real: 0, var: 0 },
+  );
 
   return (
     <div className="space-y-6">
@@ -563,7 +592,7 @@ export default function EstimationVsRealizationReport() {
                         {filteredData.length > 0 && (
                             <TableBody>
                                 <TableRow className="bg-slate-100 border-t-2 border-slate-300 font-bold sticky bottom-0 shadow-inner z-10">
-                                    <TableCell colSpan={5} className="text-right text-slate-700">GRAND TOTAL</TableCell>
+                                    <TableCell colSpan={5} className="text-right text-slate-700">GRAND TOTAL (Per Entry)</TableCell>
                                     <TableCell className="text-right text-orange-800">{formatCurrency(grandTotal.est)}</TableCell>
                                     <TableCell className="text-right text-green-800">{formatCurrency(grandTotal.real)}</TableCell>
                                     <TableCell className={`text-right ${grandTotal.var >= 0 ? 'text-green-700' : 'text-red-700'}`}>{formatCurrency(grandTotal.var)}</TableCell>
