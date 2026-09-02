@@ -255,7 +255,10 @@ export default function BudgetMonitoringReport() {
       const sums: Record<GroupKey, number[]> = { R2: emptyMonths(), R4: emptyMonths() };
       const sumsAll = emptyMonths();
       const startDate = `${selectedYear}-01-01`;
-      const endDate = `${selectedYear}-12-31`;
+      // Pakai end-date eksklusif agar aman untuk kolom bertipe timestamp.
+      // Jika entry_date = '2026-12-31T10:00:00', filter lte '2026-12-31' bisa ter-skip.
+      // Dengan lt '2027-01-01', semua data tahun 2026 pasti masuk.
+      const endExclusive = `${selectedYear + 1}-01-01`;
       const pageSize = 500;
       let from = 0;
 
@@ -277,7 +280,7 @@ export default function BudgetMonitoringReport() {
             )
           `)
           .gte('entry_date', startDate)
-          .lte('entry_date', endDate)
+          .lt('entry_date', endExclusive)
           .range(from, from + pageSize - 1)
           .order('entry_date', { ascending: true })
           .order('id', { ascending: true });
