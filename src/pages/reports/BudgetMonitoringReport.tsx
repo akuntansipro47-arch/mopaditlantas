@@ -207,6 +207,7 @@ export default function BudgetMonitoringReport() {
     R2: emptyMonths(),
     R4: emptyMonths(),
   });
+  const [realisasiAllMonths, setRealisasiAllMonths] = useState<number[]>(emptyMonths());
 
   useEffect(() => {
     void loadSheet();
@@ -252,6 +253,7 @@ export default function BudgetMonitoringReport() {
     setLoadingRealisasi(true);
     try {
       const sums: Record<GroupKey, number[]> = { R2: emptyMonths(), R4: emptyMonths() };
+      const sumsAll = emptyMonths();
       const startDate = `${selectedYear}-01-01`;
       const endDate = `${selectedYear}-12-31`;
       const pageSize = 500;
@@ -284,9 +286,6 @@ export default function BudgetMonitoringReport() {
         const list = Array.isArray(data) ? data : [];
 
         for (const entry of list as any[]) {
-          const groupKey = getGroupKey(entry);
-          if (!groupKey) continue;
-
           const dateStr = String(entry?.entry_date || '').slice(0, 10);
           const month = Number(dateStr.slice(5, 7));
           const monthIndex = Number.isFinite(month) && month >= 1 && month <= 12 ? month - 1 : -1;
@@ -307,7 +306,15 @@ export default function BudgetMonitoringReport() {
 
           const total = estJob + estPart;
           if (!Number.isFinite(total) || total === 0) continue;
-          sums[groupKey][monthIndex] += total;
+
+          // Total seluruh estimasi (untuk sinkron dengan report "Realisasi vs Estimasi")
+          sumsAll[monthIndex] += total;
+
+          // Total per group yang terpetakan ke R2/R4 (untuk tabel monitoring)
+          const groupKey = getGroupKey(entry);
+          if (groupKey) {
+            sums[groupKey][monthIndex] += total;
+          }
         }
 
         if (list.length < pageSize) break;
@@ -315,9 +322,11 @@ export default function BudgetMonitoringReport() {
       }
 
       setRealisasiByGroup(sums);
+      setRealisasiAllMonths(sumsAll);
     } catch (error: any) {
       toast.error('Gagal memuat realisasi otomatis: ' + String(error?.message || error));
       setRealisasiByGroup({ R2: emptyMonths(), R4: emptyMonths() });
+      setRealisasiAllMonths(emptyMonths());
     } finally {
       setLoadingRealisasi(false);
     }
@@ -421,6 +430,17 @@ export default function BudgetMonitoringReport() {
     realisasi: totals.R2.realisasi + totals.R4.realisasi,
     balance: totals.R2.balance + totals.R4.balance,
   }), [totals]);
+
+  const grandTotalsAll = useMemo(() => {
+    const totalAll = realisasiAllMonths.reduce((acc, v) => acc + (Number(v) || 0), 0);
+    const totalMapped = grandTotals.realisasi;
+    const totalUnmapped = totalAll - totalMapped;
+    return {
+      totalAll,
+      totalMapped,
+      totalUnmapped,
+    };
+  }, [realisasiAllMonths, grandTotals.realisasi]);
 
   function exportToExcel() {
     const aoa: Array<Array<string | number>> = [];
@@ -741,7 +761,12 @@ export default function BudgetMonitoringReport() {
         <Card className="border-blue-100 bg-blue-50 shadow-sm">
           <CardContent className="p-4">
             <div className="text-xs font-medium uppercase tracking-wide text-blue-700">Total Realisasi</div>
-            <div className="mt-2 text-2xl font-bold tabular-nums text-blue-700">{formatCurrency(grandTotals.realisasi)}</div>
+            <div className="mt-2 text-2xl font-bold tabular-nums text-blue-700">{formatCurrency(grandTotalsAll.totalAll)}</div>
+            {Math.abs(grandTotalsAll.totalUnmapped) > 0.0001 && (
+              <div className="mt-1 text-[11px] text-blue-700/80">
+                Tidak terpetakan ke R2/R4: {formatCurrency(grandTotalsAll.totalUnmapped)}
+              </div>
+            )}
           </CardContent>
         </Card>
         <Card className={cn('shadow-sm', grandTotals.balance < 0 ? 'border-red-100 bg-red-50' : 'border-emerald-100 bg-emerald-50')}>
@@ -764,6 +789,9 @@ export default function BudgetMonitoringReport() {
           <p><span className="font-semibold text-slate-800">Manual:</span> `Pagu`, `Pajak`, dan `Lainnya`.</p>
           <p><span className="font-semibold text-slate-800">Otomatis:</span> `After Pajak`, `Nilai Pagu Digunakan`, `Realisasi`, dan `Balance`.</p>
           <p><span className="font-semibold text-slate-800">Termin 1:</span> memakai total estimasi `Januari–Maret {selectedYear}` untuk `R2` dan `R4`.</p>
+          <p className="md:col-span-3">
+            <span className="font-semibold text-slate-800">Catatan:</span> “Total Realisasi” di atas mengikuti total estimasi seluruh `vehicle_entries` (sinkron dengan laporan “Realisasi vs Estimasi”). Jika ada data yang tidak bisa dipetakan ke `R2/R4`, nilainya ditampilkan sebagai “Tidak terpetakan”.
+          </p>
         </CardContent>
       </Card>
 
