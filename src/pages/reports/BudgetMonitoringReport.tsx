@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Input } from '@/components/ui/input';
 import { Download, Loader2, RefreshCw, Save } from 'lucide-react';
-import { formatCurrency } from '@/lib/utils';
+import { cn, formatCurrency } from '@/lib/utils';
 import * as XLSX from 'xlsx';
 import { toast } from 'sonner';
 import { useAuth } from '@/context/AuthContext';
@@ -29,20 +29,12 @@ type MonitoringSheet = {
   rows: MonitoringRow[];
 };
 
-const MONTHS = [
-  'Januari',
-  'Februari',
-  'Maret',
-  'April',
-  'Mei',
-  'Juni',
-  'Juli',
-  'Agustus',
-  'September',
-  'Oktober',
-  'November',
-  'Desember',
-];
+type ComputedMonitoringRow = MonitoringRow & {
+  afterPajak: number;
+  nilaiPaguDigunakan: number;
+  realisasi: number;
+  balance: number;
+};
 
 const STORAGE_PROJECT = 'PAGU_MONITORING';
 
@@ -96,7 +88,7 @@ function normalizeRow(row: any): MonitoringRow | null {
 
 function normalizeSheet(data: any, year: number): MonitoringSheet {
   const rows = Array.isArray(data?.rows)
-    ? data.rows.map(normalizeRow).filter(Boolean) as MonitoringRow[]
+    ? (data.rows.map(normalizeRow).filter(Boolean) as MonitoringRow[])
     : [];
   return {
     kind: 'pagu-monitoring-v1',
@@ -110,11 +102,44 @@ function emptyMonths() {
 }
 
 function parseNumber(input: string) {
-  const raw = String(input || '').trim();
+  const raw = String(input || '').trim().replace(/\s+/g, '');
   if (!raw) return 0;
-  const normalized = raw.replace(/[^0-9,-]/g, '').replace(',', '.');
+
+  const sanitized = raw.replace(/[^0-9,.-]/g, '');
+  if (!sanitized) return 0;
+
+  const lastComma = sanitized.lastIndexOf(',');
+  const lastDot = sanitized.lastIndexOf('.');
+  const decimalIndex = Math.max(lastComma, lastDot);
+
+  let normalized = sanitized;
+  if (decimalIndex >= 0) {
+    const integerPart = sanitized.slice(0, decimalIndex).replace(/[.,]/g, '');
+    const decimalPart = sanitized.slice(decimalIndex + 1).replace(/[.,]/g, '');
+    normalized = `${integerPart}.${decimalPart}`;
+  } else {
+    normalized = sanitized.replace(/[.,]/g, '');
+  }
+
+  if (sanitized.startsWith('-') && !normalized.startsWith('-')) {
+    normalized = `-${normalized}`;
+  }
+
   const out = Number(normalized);
   return Number.isFinite(out) ? out : 0;
+}
+
+function formatPlainNumber(amount: number) {
+  const safe = Number.isFinite(amount) ? amount : 0;
+  const hasDecimals = Math.abs(safe % 1) > 0;
+  return new Intl.NumberFormat('id-ID', {
+    minimumFractionDigits: hasDecimals ? 1 : 0,
+    maximumFractionDigits: hasDecimals ? 2 : 0,
+  }).format(safe);
+}
+
+function formatInputNumber(amount: number) {
+  return amount === 0 ? '' : formatPlainNumber(amount);
 }
 
 function getTerminNumber(termin: string) {
@@ -143,6 +168,28 @@ function getJobEstimation(job: any) {
   if ((!Number.isFinite(estimatedPrice) || estimatedPriceRaw === null || estimatedPriceRaw === undefined) && sellingPrice > 0) return sellingPrice;
   if (Number.isFinite(estimatedPrice) && estimatedPrice === 0 && sellingPrice > 0) return sellingPrice;
   return Number.isFinite(estimatedPrice) ? estimatedPrice : 0;
+}
+
+type NumberInputCellProps = {
+  value: number;
+  onChange: (value: string) => void;
+  className?: string;
+};
+
+function NumberInputCell({ value, onChange, className }: NumberInputCellProps) {
+  return (
+    <Input
+      type="text"
+      inputMode="decimal"
+      value={formatInputNumber(value)}
+      onChange={(e) => onChange(e.target.value)}
+      placeholder="0"
+      className={cn(
+        'h-9 min-w-[140px] rounded-lg border-slate-200 bg-white text-right font-semibold tabular-nums shadow-sm',
+        className,
+      )}
+    />
+  );
 }
 
 export default function BudgetMonitoringReport() {
@@ -213,8 +260,7 @@ export default function BudgetMonitoringReport() {
       while (true) {
         const { data, error } = await supabase
           .from('vehicle_entries')
-          .select(
-            `
+          .select(`
             id,
             entry_date,
             service_group,
@@ -227,8 +273,7 @@ export default function BudgetMonitoringReport() {
               qty,
               estimated_price
             )
-          `
-          )
+          `)
           .gte('entry_date', startDate)
           .lte('entry_date', endDate)
           .range(from, from + pageSize - 1)
@@ -315,7 +360,7 @@ export default function BudgetMonitoringReport() {
     }
   }
 
-  const computedRows = useMemo(() => {
+  const computedRows = useMemo<ComputedMonitoringRow[]>(() => {
     return rows.map((row) => {
       const afterPajak = Number(row.pagu || 0) - Number(row.pajak || 0);
       const nilaiPaguDigunakan = afterPajak - Number(row.lainnya || 0);
@@ -332,26 +377,23 @@ export default function BudgetMonitoringReport() {
         realisasi = Number(realisasiByGroup[row.groupKey]?.[monthIndex] || 0);
       }
 
-      const balance = nilaiPaguDigunakan - realisasi;
       return {
         ...row,
         afterPajak,
         nilaiPaguDigunakan,
         realisasi,
-        balance,
+        balance: nilaiPaguDigunakan - realisasi,
       };
     });
   }, [rows, realisasiByGroup]);
 
-  const groupedRows = useMemo(() => {
-    return {
-      R2: computedRows.filter((row) => row.groupKey === 'R2'),
-      R4: computedRows.filter((row) => row.groupKey === 'R4'),
-    };
-  }, [computedRows]);
+  const groupedRows = useMemo(() => ({
+    R2: computedRows.filter((row) => row.groupKey === 'R2'),
+    R4: computedRows.filter((row) => row.groupKey === 'R4'),
+  }), [computedRows]);
 
   const totals = useMemo(() => {
-    const calc = (groupRows: typeof computedRows) => groupRows.reduce(
+    const calc = (groupRows: ComputedMonitoringRow[]) => groupRows.reduce(
       (acc, row) => ({
         pagu: acc.pagu + row.pagu,
         pajak: acc.pajak + row.pajak,
@@ -370,10 +412,20 @@ export default function BudgetMonitoringReport() {
     };
   }, [groupedRows]);
 
+  const grandTotals = useMemo(() => ({
+    pagu: totals.R2.pagu + totals.R4.pagu,
+    pajak: totals.R2.pajak + totals.R4.pajak,
+    afterPajak: totals.R2.afterPajak + totals.R4.afterPajak,
+    lainnya: totals.R2.lainnya + totals.R4.lainnya,
+    nilaiPaguDigunakan: totals.R2.nilaiPaguDigunakan + totals.R4.nilaiPaguDigunakan,
+    realisasi: totals.R2.realisasi + totals.R4.realisasi,
+    balance: totals.R2.balance + totals.R4.balance,
+  }), [totals]);
+
   function exportToExcel() {
     const aoa: Array<Array<string | number>> = [];
 
-    const pushSection = (title: GroupKey, sectionRows: typeof computedRows, startRow: number) => {
+    const pushSection = (title: GroupKey, sectionRows: ComputedMonitoringRow[]) => {
       aoa.push([]);
       aoa.push(['No.', 'Group', 'Periode', 'Termin', 'Pagu', 'Pajak', 'After Pajak', 'Lainnya', 'Nilai Pagu Digunakan', 'Realisasi', 'Balance']);
       sectionRows.forEach((row) => {
@@ -393,15 +445,11 @@ export default function BudgetMonitoringReport() {
       });
       const total = totals[title];
       aoa.push(['Total', '', '', '', total.pagu, total.pajak, total.afterPajak, total.lainnya, total.nilaiPaguDigunakan, total.realisasi, total.balance]);
-
-      return startRow + sectionRows.length + 3;
     };
 
     aoa.push([`MONITORING PAGU ANGGARAN ${selectedYear}`]);
-    let currentRow = 2;
-    currentRow = pushSection('R2', groupedRows.R2, currentRow);
-    currentRow = pushSection('R4', groupedRows.R4, currentRow + 1);
-
+    pushSection('R2', groupedRows.R2);
+    pushSection('R4', groupedRows.R4);
     aoa.push([]);
     aoa.push(['Penjelasan']);
     aoa.push(['', 'Kolom Pagu = input manual']);
@@ -436,85 +484,122 @@ export default function BudgetMonitoringReport() {
   const renderDesktopTable = (groupKey: GroupKey) => {
     const groupRows = groupedRows[groupKey];
     const total = totals[groupKey];
+
     return (
-      <div className="hidden md:block rounded-md border overflow-hidden">
+      <div className="hidden md:block rounded-xl border border-slate-200 overflow-hidden">
         <Table>
-          <TableHeader className="bg-slate-100">
+          <TableHeader className="bg-slate-50">
             <TableRow>
               <TableHead className="w-[60px]">No.</TableHead>
               <TableHead className="w-[90px]">Group</TableHead>
               <TableHead>Periode</TableHead>
               <TableHead className="w-[110px]">Termin</TableHead>
-              <TableHead className="text-right">Pagu</TableHead>
-              <TableHead className="text-right">Pajak</TableHead>
-              <TableHead className="text-right">After Pajak</TableHead>
-              <TableHead className="text-right">Lainnya</TableHead>
-              <TableHead className="text-right">Nilai Pagu Digunakan</TableHead>
-              <TableHead className="text-right">Realisasi</TableHead>
-              <TableHead className="text-right">Balance</TableHead>
+              <TableHead className="min-w-[160px] text-right bg-amber-50/70">
+                <div className="flex flex-col items-end">
+                  <span>Pagu</span>
+                  <span className="text-[10px] font-normal text-slate-500">Manual</span>
+                </div>
+              </TableHead>
+              <TableHead className="min-w-[160px] text-right bg-amber-50/70">
+                <div className="flex flex-col items-end">
+                  <span>Pajak</span>
+                  <span className="text-[10px] font-normal text-slate-500">Manual</span>
+                </div>
+              </TableHead>
+              <TableHead className="min-w-[150px] text-right bg-blue-50/80">
+                <div className="flex flex-col items-end">
+                  <span>After Pajak</span>
+                  <span className="text-[10px] font-normal text-slate-500">Otomatis</span>
+                </div>
+              </TableHead>
+              <TableHead className="min-w-[160px] text-right bg-amber-50/70">
+                <div className="flex flex-col items-end">
+                  <span>Lainnya</span>
+                  <span className="text-[10px] font-normal text-slate-500">Manual</span>
+                </div>
+              </TableHead>
+              <TableHead className="min-w-[170px] text-right bg-blue-50/80">
+                <div className="flex flex-col items-end">
+                  <span>Nilai Pagu Digunakan</span>
+                  <span className="text-[10px] font-normal text-slate-500">Otomatis</span>
+                </div>
+              </TableHead>
+              <TableHead className="min-w-[160px] text-right bg-emerald-50/80">
+                <div className="flex flex-col items-end">
+                  <span>Realisasi</span>
+                  <span className="text-[10px] font-normal text-slate-500">Otomatis</span>
+                </div>
+              </TableHead>
+              <TableHead className="min-w-[160px] text-right bg-violet-50/80">
+                <div className="flex flex-col items-end">
+                  <span>Balance</span>
+                  <span className="text-[10px] font-normal text-slate-500">Otomatis</span>
+                </div>
+              </TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {groupRows.map((row) => (
-              <TableRow key={row.id}>
-                <TableCell>{row.no}</TableCell>
-                <TableCell className="font-medium">{row.groupKey}</TableCell>
+              <TableRow key={row.id} className="odd:bg-white even:bg-slate-50/40">
+                <TableCell className="font-medium text-slate-700">{row.no}</TableCell>
+                <TableCell className="font-semibold text-slate-900">{row.groupKey}</TableCell>
                 <TableCell>{row.period}</TableCell>
-                <TableCell>{row.termin}</TableCell>
-                <TableCell className="text-right">
+                <TableCell>
+                  <span className="inline-flex rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-700">
+                    {row.termin}
+                  </span>
+                </TableCell>
+                <TableCell className="text-right bg-amber-50/35">
                   {canEdit ? (
-                    <Input
-                      type="number"
-                      value={String(row.pagu || '')}
-                      onChange={(e) => updateNumericCell(row.id, 'pagu', e.target.value)}
-                      className="h-8 text-right"
-                    />
+                    <NumberInputCell value={row.pagu} onChange={(value) => updateNumericCell(row.id, 'pagu', value)} className="bg-amber-50/70" />
                   ) : (
-                    formatCurrency(row.pagu)
+                    <span className="tabular-nums font-semibold">{formatPlainNumber(row.pagu)}</span>
                   )}
                 </TableCell>
-                <TableCell className="text-right">
+                <TableCell className="text-right bg-amber-50/35">
                   {canEdit ? (
-                    <Input
-                      type="number"
-                      value={String(row.pajak || '')}
-                      onChange={(e) => updateNumericCell(row.id, 'pajak', e.target.value)}
-                      className="h-8 text-right"
-                    />
+                    <NumberInputCell value={row.pajak} onChange={(value) => updateNumericCell(row.id, 'pajak', value)} className="bg-amber-50/70" />
                   ) : (
-                    formatCurrency(row.pajak)
+                    <span className="tabular-nums font-semibold">{formatPlainNumber(row.pajak)}</span>
                   )}
                 </TableCell>
-                <TableCell className="text-right font-medium">{formatCurrency(row.afterPajak)}</TableCell>
-                <TableCell className="text-right">
+                <TableCell className="text-right bg-blue-50/45">
+                  <span className="tabular-nums font-semibold text-slate-900">{formatPlainNumber(row.afterPajak)}</span>
+                </TableCell>
+                <TableCell className="text-right bg-amber-50/35">
                   {canEdit ? (
-                    <Input
-                      type="number"
-                      value={String(row.lainnya || '')}
-                      onChange={(e) => updateNumericCell(row.id, 'lainnya', e.target.value)}
-                      className="h-8 text-right"
-                    />
+                    <NumberInputCell value={row.lainnya} onChange={(value) => updateNumericCell(row.id, 'lainnya', value)} className="bg-amber-50/70" />
                   ) : (
-                    formatCurrency(row.lainnya)
+                    <span className="tabular-nums font-semibold">{formatPlainNumber(row.lainnya)}</span>
                   )}
                 </TableCell>
-                <TableCell className="text-right font-medium">{formatCurrency(row.nilaiPaguDigunakan)}</TableCell>
-                <TableCell className="text-right">{formatCurrency(row.realisasi)}</TableCell>
-                <TableCell className={`text-right font-bold ${row.balance < 0 ? 'text-red-600' : 'text-emerald-600'}`}>
-                  {formatCurrency(row.balance)}
+                <TableCell className="text-right bg-blue-50/45">
+                  <span className="tabular-nums font-semibold text-slate-900">{formatPlainNumber(row.nilaiPaguDigunakan)}</span>
+                </TableCell>
+                <TableCell className="text-right bg-emerald-50/45">
+                  <span className="tabular-nums font-semibold text-emerald-700">{formatPlainNumber(row.realisasi)}</span>
+                </TableCell>
+                <TableCell className={cn(
+                  'text-right bg-violet-50/45 font-bold',
+                  row.balance < 0 ? 'text-red-600' : 'text-emerald-700',
+                )}>
+                  <span className="tabular-nums">{formatPlainNumber(row.balance)}</span>
                 </TableCell>
               </TableRow>
             ))}
-            <TableRow className="bg-slate-50 font-bold">
+            <TableRow className="bg-slate-900/95 font-bold text-white hover:bg-slate-900/95">
               <TableCell colSpan={4}>Total {groupKey}</TableCell>
-              <TableCell className="text-right">{formatCurrency(total.pagu)}</TableCell>
-              <TableCell className="text-right">{formatCurrency(total.pajak)}</TableCell>
-              <TableCell className="text-right">{formatCurrency(total.afterPajak)}</TableCell>
-              <TableCell className="text-right">{formatCurrency(total.lainnya)}</TableCell>
-              <TableCell className="text-right">{formatCurrency(total.nilaiPaguDigunakan)}</TableCell>
-              <TableCell className="text-right">{formatCurrency(total.realisasi)}</TableCell>
-              <TableCell className={`text-right ${total.balance < 0 ? 'text-red-600' : 'text-emerald-600'}`}>
-                {formatCurrency(total.balance)}
+              <TableCell className="text-right tabular-nums">{formatPlainNumber(total.pagu)}</TableCell>
+              <TableCell className="text-right tabular-nums">{formatPlainNumber(total.pajak)}</TableCell>
+              <TableCell className="text-right tabular-nums">{formatPlainNumber(total.afterPajak)}</TableCell>
+              <TableCell className="text-right tabular-nums">{formatPlainNumber(total.lainnya)}</TableCell>
+              <TableCell className="text-right tabular-nums">{formatPlainNumber(total.nilaiPaguDigunakan)}</TableCell>
+              <TableCell className="text-right tabular-nums">{formatPlainNumber(total.realisasi)}</TableCell>
+              <TableCell className={cn(
+                'text-right tabular-nums',
+                total.balance < 0 ? 'text-red-300' : 'text-emerald-300',
+              )}>
+                {formatPlainNumber(total.balance)}
               </TableCell>
             </TableRow>
           </TableBody>
@@ -526,10 +611,11 @@ export default function BudgetMonitoringReport() {
   const renderMobileCards = (groupKey: GroupKey) => {
     const groupRows = groupedRows[groupKey];
     const total = totals[groupKey];
+
     return (
       <div className="space-y-3 md:hidden">
         {groupRows.map((row) => (
-          <div key={row.id} className="rounded-lg border bg-white p-4 space-y-3">
+          <div key={row.id} className="rounded-xl border border-slate-200 bg-white p-4 space-y-4 shadow-sm">
             <div className="flex items-start justify-between gap-3">
               <div>
                 <div className="text-sm font-semibold text-slate-900">{row.termin}</div>
@@ -541,62 +627,71 @@ export default function BudgetMonitoringReport() {
             </div>
 
             <div className="grid grid-cols-1 gap-3">
-              <div>
-                <div className="text-xs text-slate-500">Pagu</div>
+              <div className="rounded-lg border border-amber-100 bg-amber-50/60 p-3">
+                <div className="text-[11px] font-medium uppercase tracking-wide text-amber-700">Pagu • Manual</div>
                 {canEdit ? (
-                  <Input type="number" value={String(row.pagu || '')} onChange={(e) => updateNumericCell(row.id, 'pagu', e.target.value)} className="mt-1 h-9 text-right" />
+                  <NumberInputCell value={row.pagu} onChange={(value) => updateNumericCell(row.id, 'pagu', value)} className="mt-2 bg-white" />
                 ) : (
-                  <div className="mt-1 text-sm font-medium">{formatCurrency(row.pagu)}</div>
+                  <div className="mt-2 text-sm font-semibold tabular-nums">{formatPlainNumber(row.pagu)}</div>
                 )}
               </div>
-              <div>
-                <div className="text-xs text-slate-500">Pajak</div>
+
+              <div className="rounded-lg border border-amber-100 bg-amber-50/60 p-3">
+                <div className="text-[11px] font-medium uppercase tracking-wide text-amber-700">Pajak • Manual</div>
                 {canEdit ? (
-                  <Input type="number" value={String(row.pajak || '')} onChange={(e) => updateNumericCell(row.id, 'pajak', e.target.value)} className="mt-1 h-9 text-right" />
+                  <NumberInputCell value={row.pajak} onChange={(value) => updateNumericCell(row.id, 'pajak', value)} className="mt-2 bg-white" />
                 ) : (
-                  <div className="mt-1 text-sm font-medium">{formatCurrency(row.pajak)}</div>
+                  <div className="mt-2 text-sm font-semibold tabular-nums">{formatPlainNumber(row.pajak)}</div>
                 )}
               </div>
-              <div>
-                <div className="text-xs text-slate-500">After Pajak</div>
-                <div className="mt-1 text-sm font-medium">{formatCurrency(row.afterPajak)}</div>
+
+              <div className="rounded-lg border border-blue-100 bg-blue-50/60 p-3">
+                <div className="text-[11px] font-medium uppercase tracking-wide text-blue-700">After Pajak • Otomatis</div>
+                <div className="mt-2 text-sm font-semibold tabular-nums">{formatPlainNumber(row.afterPajak)}</div>
               </div>
-              <div>
-                <div className="text-xs text-slate-500">Lainnya</div>
+
+              <div className="rounded-lg border border-amber-100 bg-amber-50/60 p-3">
+                <div className="text-[11px] font-medium uppercase tracking-wide text-amber-700">Lainnya • Manual</div>
                 {canEdit ? (
-                  <Input type="number" value={String(row.lainnya || '')} onChange={(e) => updateNumericCell(row.id, 'lainnya', e.target.value)} className="mt-1 h-9 text-right" />
+                  <NumberInputCell value={row.lainnya} onChange={(value) => updateNumericCell(row.id, 'lainnya', value)} className="mt-2 bg-white" />
                 ) : (
-                  <div className="mt-1 text-sm font-medium">{formatCurrency(row.lainnya)}</div>
+                  <div className="mt-2 text-sm font-semibold tabular-nums">{formatPlainNumber(row.lainnya)}</div>
                 )}
               </div>
-              <div>
-                <div className="text-xs text-slate-500">Nilai Pagu Digunakan</div>
-                <div className="mt-1 text-sm font-medium">{formatCurrency(row.nilaiPaguDigunakan)}</div>
+
+              <div className="rounded-lg border border-blue-100 bg-blue-50/60 p-3">
+                <div className="text-[11px] font-medium uppercase tracking-wide text-blue-700">Nilai Pagu Digunakan • Otomatis</div>
+                <div className="mt-2 text-sm font-semibold tabular-nums">{formatPlainNumber(row.nilaiPaguDigunakan)}</div>
               </div>
-              <div>
-                <div className="text-xs text-slate-500">Realisasi</div>
-                <div className="mt-1 text-sm font-medium">{formatCurrency(row.realisasi)}</div>
+
+              <div className="rounded-lg border border-emerald-100 bg-emerald-50/60 p-3">
+                <div className="text-[11px] font-medium uppercase tracking-wide text-emerald-700">Realisasi • Otomatis</div>
+                <div className="mt-2 text-sm font-semibold tabular-nums text-emerald-700">{formatPlainNumber(row.realisasi)}</div>
               </div>
-              <div>
-                <div className="text-xs text-slate-500">Balance</div>
-                <div className={`mt-1 text-sm font-semibold ${row.balance < 0 ? 'text-red-600' : 'text-emerald-600'}`}>
-                  {formatCurrency(row.balance)}
+
+              <div className="rounded-lg border border-violet-100 bg-violet-50/60 p-3">
+                <div className="text-[11px] font-medium uppercase tracking-wide text-violet-700">Balance • Otomatis</div>
+                <div className={cn(
+                  'mt-2 text-sm font-semibold tabular-nums',
+                  row.balance < 0 ? 'text-red-600' : 'text-emerald-600',
+                )}>
+                  {formatPlainNumber(row.balance)}
                 </div>
               </div>
             </div>
           </div>
         ))}
 
-        <div className="rounded-lg border bg-slate-50 p-4 space-y-2">
+        <div className="rounded-xl border border-slate-900 bg-slate-900 p-4 space-y-2 text-white">
           <div className="text-sm font-semibold">Total {groupKey}</div>
           <div className="grid grid-cols-1 gap-1 text-sm">
-            <div>Pagu: <span className="font-medium">{formatCurrency(total.pagu)}</span></div>
-            <div>Pajak: <span className="font-medium">{formatCurrency(total.pajak)}</span></div>
-            <div>After Pajak: <span className="font-medium">{formatCurrency(total.afterPajak)}</span></div>
-            <div>Lainnya: <span className="font-medium">{formatCurrency(total.lainnya)}</span></div>
-            <div>Nilai Pagu Digunakan: <span className="font-medium">{formatCurrency(total.nilaiPaguDigunakan)}</span></div>
-            <div>Realisasi: <span className="font-medium">{formatCurrency(total.realisasi)}</span></div>
-            <div>Balance: <span className={`font-semibold ${total.balance < 0 ? 'text-red-600' : 'text-emerald-600'}`}>{formatCurrency(total.balance)}</span></div>
+            <div>Pagu: <span className="font-medium tabular-nums">{formatPlainNumber(total.pagu)}</span></div>
+            <div>Pajak: <span className="font-medium tabular-nums">{formatPlainNumber(total.pajak)}</span></div>
+            <div>After Pajak: <span className="font-medium tabular-nums">{formatPlainNumber(total.afterPajak)}</span></div>
+            <div>Lainnya: <span className="font-medium tabular-nums">{formatPlainNumber(total.lainnya)}</span></div>
+            <div>Nilai Pagu Digunakan: <span className="font-medium tabular-nums">{formatPlainNumber(total.nilaiPaguDigunakan)}</span></div>
+            <div>Realisasi: <span className="font-medium tabular-nums">{formatPlainNumber(total.realisasi)}</span></div>
+            <div>Balance: <span className={cn('font-semibold tabular-nums', total.balance < 0 ? 'text-red-300' : 'text-emerald-300')}>{formatPlainNumber(total.balance)}</span></div>
           </div>
         </div>
       </div>
@@ -608,19 +703,21 @@ export default function BudgetMonitoringReport() {
       <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
         <div>
           <h2 className="text-2xl font-bold tracking-tight sm:text-3xl">Monitoring Pagu Anggaran</h2>
-          <p className="text-sm text-slate-500 mt-1">
-            Rumus: `After Pajak = Pagu - Pajak`, `Nilai Pagu Digunakan = After Pajak - Lainnya`, `Balance = Nilai Pagu Digunakan - Realisasi`.
+          <p className="mt-1 max-w-3xl text-sm text-slate-500">
+            Tampilan dibedakan antara kolom manual dan otomatis agar lebih presisi dibaca, dengan separator angka konsisten format Indonesia.
           </p>
         </div>
+
         <div className="flex flex-wrap gap-2">
           <Input
-            type="number"
+            type="text"
+            inputMode="numeric"
             value={String(selectedYear)}
             onChange={(e) => setSelectedYear(Number(parseNumber(e.target.value)) || currentYear)}
-            className="w-28"
+            className="w-28 rounded-lg"
           />
           <Button variant="outline" onClick={() => { void loadSheet(); void loadRealisasi(); }} disabled={loadingSheet || loadingRealisasi}>
-            <RefreshCw className={`mr-2 h-4 w-4 ${(loadingSheet || loadingRealisasi) ? 'animate-spin' : ''}`} />
+            <RefreshCw className={cn('mr-2 h-4 w-4', (loadingSheet || loadingRealisasi) && 'animate-spin')} />
             Refresh
           </Button>
           <Button variant="outline" onClick={exportToExcel}>
@@ -634,14 +731,39 @@ export default function BudgetMonitoringReport() {
         </div>
       </div>
 
+      <div className="grid gap-3 md:grid-cols-3">
+        <Card className="border-slate-900 bg-slate-900 text-white shadow-sm">
+          <CardContent className="p-4">
+            <div className="text-xs font-medium uppercase tracking-wide opacity-80">Total Pagu Digunakan</div>
+            <div className="mt-2 text-2xl font-bold tabular-nums">{formatCurrency(grandTotals.nilaiPaguDigunakan)}</div>
+          </CardContent>
+        </Card>
+        <Card className="border-blue-100 bg-blue-50 shadow-sm">
+          <CardContent className="p-4">
+            <div className="text-xs font-medium uppercase tracking-wide text-blue-700">Total Realisasi</div>
+            <div className="mt-2 text-2xl font-bold tabular-nums text-blue-700">{formatCurrency(grandTotals.realisasi)}</div>
+          </CardContent>
+        </Card>
+        <Card className={cn('shadow-sm', grandTotals.balance < 0 ? 'border-red-100 bg-red-50' : 'border-emerald-100 bg-emerald-50')}>
+          <CardContent className="p-4">
+            <div className={cn('text-xs font-medium uppercase tracking-wide', grandTotals.balance < 0 ? 'text-red-700' : 'text-emerald-700')}>
+              Total Balance
+            </div>
+            <div className={cn('mt-2 text-2xl font-bold tabular-nums', grandTotals.balance < 0 ? 'text-red-700' : 'text-emerald-700')}>
+              {formatCurrency(grandTotals.balance)}
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
       <Card>
         <CardHeader className="pb-3">
           <CardTitle className="text-lg">Catatan Perhitungan</CardTitle>
         </CardHeader>
-        <CardContent className="space-y-2 text-sm text-slate-600">
-          <p>Kolom `Pagu`, `Pajak`, dan `Lainnya` diinput manual.</p>
-          <p>Kolom `Realisasi` otomatis diambil dari total estimasi `jasa + part` berdasarkan `entry_date`.</p>
-          <p>Termin 1 untuk `R2` dan `R4` dijumlah dari estimasi `Januari–Maret {selectedYear}`.</p>
+        <CardContent className="grid gap-2 text-sm text-slate-600 md:grid-cols-3">
+          <p><span className="font-semibold text-slate-800">Manual:</span> `Pagu`, `Pajak`, dan `Lainnya`.</p>
+          <p><span className="font-semibold text-slate-800">Otomatis:</span> `After Pajak`, `Nilai Pagu Digunakan`, `Realisasi`, dan `Balance`.</p>
+          <p><span className="font-semibold text-slate-800">Termin 1:</span> memakai total estimasi `Januari–Maret {selectedYear}` untuk `R2` dan `R4`.</p>
         </CardContent>
       </Card>
 
@@ -656,7 +778,14 @@ export default function BudgetMonitoringReport() {
           {(['R2', 'R4'] as const).map((groupKey) => (
             <Card key={groupKey}>
               <CardHeader className="pb-3">
-                <CardTitle className="text-lg">Group {groupKey}</CardTitle>
+                <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+                  <CardTitle className="text-lg">Group {groupKey}</CardTitle>
+                  <div className="flex flex-wrap gap-2 text-xs">
+                    <span className="rounded-full border border-amber-100 bg-amber-50 px-3 py-1 font-semibold text-amber-700">Kolom Manual</span>
+                    <span className="rounded-full border border-blue-100 bg-blue-50 px-3 py-1 font-semibold text-blue-700">Kolom Hitung</span>
+                    <span className="rounded-full border border-emerald-100 bg-emerald-50 px-3 py-1 font-semibold text-emerald-700">Realisasi</span>
+                  </div>
+                </div>
               </CardHeader>
               <CardContent className="space-y-4">
                 {renderMobileCards(groupKey)}
