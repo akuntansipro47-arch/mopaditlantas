@@ -27,6 +27,7 @@ import { useRealtimeRefetch } from '@/hooks/useRealtimeRefetch';
 import { useAuth } from '@/context/AuthContext';
 import { logActivity } from '@/lib/activityLog';
 import { hasWoBeenPrinted } from '@/lib/woPrint';
+import { hasMenuAccess } from '@/lib/permissions';
 
 type PO = Database['public']['Tables']['purchase_orders']['Row'];
 type POItem = Database['public']['Tables']['purchase_order_items']['Row'];
@@ -48,6 +49,8 @@ const normalizeText = (v: string) =>
 
 export default function PurchaseOrderV2() {
   const { user } = useAuth();
+  const canEditPurchaseOrder = hasMenuAccess(user, 'trans_po_edit');
+  const canDeletePurchaseOrder = hasMenuAccess(user, 'trans_po_delete');
   const [pos, setPos] = useState<POWithDetails[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -573,6 +576,26 @@ export default function PurchaseOrderV2() {
   };
 
   const handleEdit = async (po: POWithDetails, readOnly: boolean = false) => {
+    if (!readOnly && !canEditPurchaseOrder) {
+      toast.error('Anda tidak memiliki izin untuk mengedit PO.');
+      return;
+    }
+
+    const editCount = Number((po as any).edit_count || 0);
+    if (!readOnly && editCount >= 2) {
+      const { error } = await supabase
+        .from('purchase_orders')
+        .update({ status: 'CANCELLED' })
+        .eq('id', po.id);
+      if (error) {
+        toast.error('PO sudah melewati batas edit, tetapi gagal dibatalkan: ' + error.message);
+        return;
+      }
+      toast.error('PO sudah diedit 2 kali dan otomatis dibatalkan. PO harus dihapus.');
+      fetchPOs();
+      return;
+    }
+
     const returns = Array.isArray((po as any).purchase_returns) ? (po as any).purchase_returns : [];
     const hasReturn =
       returns.length > 0 &&
@@ -804,6 +827,7 @@ export default function PurchaseOrderV2() {
           work_order_id: poType === 'WO' && formData.work_order_id !== 'NONE' ? formData.work_order_id : null,
           total_amount: calculateTotal(),
           po_date: formData.po_date,
+          edit_count: Number((pos.find((p) => String(p.id) === String(editingId)) as any)?.edit_count || 0) + 1,
           ...(isReturnEditMode ? { status: 'ISSUED' as any } : {}),
         };
 
@@ -933,6 +957,11 @@ export default function PurchaseOrderV2() {
   };
 
   const handleDelete = async (id: string) => {
+    if (!canDeletePurchaseOrder) {
+      toast.error('Anda tidak memiliki izin untuk menghapus PO.');
+      return;
+    }
+
     const poToDelete = pos.find(p => p.id === id);
     if (poToDelete && (poToDelete.status === 'RECEIVED_FULL' || poToDelete.status === 'RECEIVED_PART' || poToDelete.status === 'RETURNED_FULL')) {
        toast.error('PO yang sudah diterima (sebagian/penuh) tidak dapat dihapus. Gunakan menu Retur Pembelian.');
@@ -1685,14 +1714,14 @@ export default function PurchaseOrderV2() {
                             <Button
                               variant="default"
                               size="sm"
-                              disabled={!canEdit}
+                              disabled={!canEdit || !canEditPurchaseOrder}
                               className="bg-yellow-600 hover:bg-yellow-700 text-white disabled:opacity-60"
                               onClick={() => handleEdit(item, false)}
-                              title={canEdit ? 'Edit PO' : 'PO tidak dapat diedit'}
+                              title={!canEditPurchaseOrder ? 'Tidak memiliki izin edit PO' : canEdit ? 'Edit PO' : 'PO tidak dapat diedit'}
                             >
                               <Pencil className="h-4 w-4 mr-1" /> Edit
                             </Button>
-                            <Button variant="destructive" size="sm" onClick={() => handleDelete(item.id)} title="Hapus PO">
+                            <Button variant="destructive" size="sm" disabled={!canDeletePurchaseOrder} onClick={() => handleDelete(item.id)} title={!canDeletePurchaseOrder ? 'Tidak memiliki izin hapus PO' : 'Hapus PO'}>
                               <Trash2 className="h-4 w-4" />
                             </Button>
                           </div>

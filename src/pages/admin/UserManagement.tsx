@@ -51,6 +51,8 @@ const PERMISSION_GROUPS: Array<{ title: string; items: Array<{ key: string; labe
       { key: 'trans_wo_reprint', label: 'Reprint SPK (WO)' },
       { key: 'trans_purchase_request', label: 'Purchase Request / Request Item' },
       { key: 'trans_po', label: 'Purchase Order' },
+      { key: 'trans_po_edit', label: 'Purchase Order - Edit' },
+      { key: 'trans_po_delete', label: 'Purchase Order - Hapus' },
       { key: 'trans_receive', label: 'Penerimaan Barang' },
       { key: 'trans_issue', label: 'Barang Keluar' },
       { key: 'trans_po_return', label: 'Retur Pembelian' },
