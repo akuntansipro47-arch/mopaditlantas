@@ -279,7 +279,27 @@ const WorkOrderV2 = () => {
         toast.success("Work Order berhasil dihapus.");
         fetchWOs();
       } catch (error: any) {
-        toast.error("Gagal menghapus Work Order: " + error.message);
+        const msg = String(error?.message || '');
+        if (msg.includes('purchase_orders_work_order_id_fkey') || msg.includes('purchase_orders')) {
+          toast.error(
+            'Gagal menghapus WO: WO masih terhubung dengan Purchase Order (PO). ' +
+              'Solusi: jalankan migrasi FK agar `purchase_orders.work_order_id` menjadi ON DELETE SET NULL, ' +
+              'atau hapus/lepaskan PO yang terkait terlebih dahulu.'
+          );
+        } else if (msg.includes('purchase_requests_work_order_id_fkey') || msg.includes('purchase_requests')) {
+          toast.error(
+            'Gagal menghapus WO: WO masih punya Purchase Request (PR). ' +
+              'Solusi: hapus PR terkait terlebih dahulu atau jalankan migrasi FK agar PR ikut terhapus saat WO dihapus.'
+          );
+        } else if (msg.includes('sales_invoices_work_order_id_fkey') || msg.includes('sales_invoices')) {
+          toast.error(
+            'Gagal menghapus WO: WO masih terhubung dengan Sales Invoice. ' +
+              'Solusi: jalankan migrasi FK agar `sales_invoices.work_order_id` menjadi ON DELETE SET NULL, ' +
+              'atau lepas relasi invoice terlebih dahulu.'
+          );
+        } else {
+          toast.error("Gagal menghapus Work Order: " + msg);
+        }
       }
     }
   };

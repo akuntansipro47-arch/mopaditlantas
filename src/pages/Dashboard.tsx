@@ -240,12 +240,28 @@ export default function Dashboard() {
             .in('status', ['UNPAID', 'PARTIAL']);
           if (arError) warn('Gagal ambil piutang', arError);
 
-          // Outstanding AP (Utang)
+          // Outstanding AP (Utang) - Match SupplierPayableReport logic
           const { data: apData, error: apError } = await supabase
             .from('purchase_invoices')
-            .select('total_amount, paid_amount, status')
-            .in('status', ['UNPAID', 'PARTIAL']);
+            .select(`
+              id, total_amount, status,
+              purchase_orders!inner (status)
+            `)
+            .in('status', ['UNPAID', 'PARTIAL'])
+            .in('purchase_orders.status', ['RECEIVED_FULL', 'RECEIVED_PART']);
           if (apError) warn('Gagal ambil utang', apError);
+
+          // Get actual payments for AP invoices
+          const apInvoiceIds = (Array.isArray(apData) ? apData : []).map((i: any) => i.id).filter(Boolean);
+          let apPayments: any[] = [];
+          if (apInvoiceIds.length > 0) {
+            const { data: apPayData, error: apPayError } = await supabase
+              .from('purchase_payments')
+              .select('invoice_id, amount')
+              .in('invoice_id', apInvoiceIds as any);
+            if (apPayError) warn('Gagal ambil pembayaran utang', apPayError);
+            apPayments = apPayData || [];
+          }
 
           // Low Stock Items
           const { count: lowStockCount, error: lowStockError } = await supabase
@@ -663,10 +679,20 @@ export default function Dashboard() {
             if (remaining <= 0) return sum;
             return sum + remaining;
           }, 0) || 0;
+          // Calculate AP using actual payments (like SupplierPayableReport)
+          const paymentByInvoice: Record<string, number> = {};
+          (apPayments || []).forEach((p: any) => {
+            const id = p.invoice_id;
+            if (!id) return;
+            const amt = Number(p.amount || 0);
+            if (!paymentByInvoice[id]) paymentByInvoice[id] = 0;
+            paymentByInvoice[id] += amt;
+          });
+
           const totalAP = (Array.isArray(apData) ? apData : [])?.reduce((sum, inv: any) => {
             const totalAmount = Number(inv.total_amount || 0);
-            const paidAmount = Number(inv.paid_amount || 0);
-            const remaining = totalAmount - paidAmount;
+            const paid = paymentByInvoice[inv.id] || 0;
+            const remaining = totalAmount - paid;
             if (remaining <= 0) return sum;
             return sum + remaining;
           }, 0) || 0;
