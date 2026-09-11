@@ -8,7 +8,7 @@ import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { toast } from 'sonner';
 import { formatCurrency, formatDate } from '@/lib/utils';
-import { Search, Plus, Trash2, Save, RefreshCw, Calendar as CalendarIcon, Download } from 'lucide-react';
+import { Search, Plus, Trash2, Save, RefreshCw, Calendar as CalendarIcon, Download, Upload, FileSpreadsheet } from 'lucide-react';
 import { Label } from "@/components/ui/label";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
@@ -17,9 +17,11 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import * as XLSX from 'xlsx';
 import { useRealtimeRefetch } from '@/hooks/useRealtimeRefetch';
+import { useAuth } from '@/context/AuthContext';
+import { hasMenuAccess } from '@/lib/permissions';
 
 import {
-  Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle,
+  Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter,
 } from "@/components/ui/dialog";
 
 // Types
@@ -40,9 +42,19 @@ type JournalEntryItem = {
 };
 
 export default function CashBankV2() {
+  const { user } = useAuth();
+  const canImportCashBank = hasMenuAccess(user, 'finance_cashbank_import');
+  
   const [activeTab, setActiveTab] = useState('deposit');
   const [accounts, setAccounts] = useState<COA[]>([]);
   const [loading, setLoading] = useState(true);
+
+  // --- Import State ---
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+  const [importType, setImportType] = useState<'DEPOSIT' | 'PAYMENT' | null>(null);
+  const [importFile, setImportFile] = useState<File | null>(null);
+  const [importPreview, setImportPreview] = useState<any[]>([]);
+  const [isImporting, setIsImporting] = useState(false);
 
   // --- Deposit State ---
   const [depositHeader, setDepositHeader] = useState({
@@ -505,6 +517,185 @@ export default function CashBankV2() {
     );
   };
 
+  // --- Import Functions ---
+  const openImportModal = (type: 'DEPOSIT' | 'PAYMENT') => {
+    if (!canImportCashBank) {
+      toast.error('Anda tidak memiliki izin untuk melakukan import data.');
+      return;
+    }
+    setImportType(type);
+    setImportFile(null);
+    setImportPreview([]);
+    setIsImportModalOpen(true);
+  };
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.name.endsWith('.xlsx') && !file.name.endsWith('.xls')) {
+      toast.error('File harus berformat Excel (.xlsx atau .xls)');
+      return;
+    }
+
+    setImportFile(file);
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const data = e.target?.result;
+        const workbook = XLSX.read(data, { type: 'binary' });
+        const sheetName = workbook.SheetNames[0];
+        const sheet = workbook.Sheets[sheetName];
+        const jsonData = XLSX.utils.sheet_to_json(sheet);
+        setImportPreview(jsonData);
+        toast.success(`Berhasil memuat ${jsonData.length} baris data`);
+      } catch (error) {
+        toast.error('Gagal membaca file Excel');
+      }
+    };
+    reader.readAsBinaryString(file);
+  };
+
+  const downloadImportTemplate = () => {
+    const templateData = importType === 'DEPOSIT' ? [
+      {
+        'Tanggal': '2024-01-15',
+        'No. Voucher': 'DEP-001',
+        'Kode Akun Kas/Bank': '1-1001',
+        'Kode Akun Sumber': '4-1001',
+        'Jumlah': 1000000,
+        'Keterangan': 'Contoh penerimaan'
+      }
+    ] : [
+      {
+        'Tanggal': '2024-01-15',
+        'No. Voucher': 'PAY-001',
+        'Kode Akun Kas/Bank': '1-1001',
+        'Kode Akun Biaya': '6-1001',
+        'Jumlah': 500000,
+        'Keterangan': 'Contoh pengeluaran'
+      }
+    ];
+
+    const ws = XLSX.utils.json_to_sheet(templateData);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Template');
+    XLSX.writeFile(wb, `Template_Import_${importType === 'DEPOSIT' ? 'Penerimaan' : 'Pengeluaran'}.xlsx`);
+  };
+
+  const processImport = async () => {
+    if (!importFile || importPreview.length === 0) {
+      toast.error('Pilih file Excel terlebih dahulu');
+      return;
+    }
+
+    if (!importType) return;
+
+    setIsImporting(true);
+    let successCount = 0;
+    let errorCount = 0;
+
+    try {
+      for (const row of importPreview) {
+        try {
+          const entryDate = row['Tanggal'] || row['tanggal'] || row['Date'] || new Date().toISOString().split('T')[0];
+          const voucherNo = row['No. Voucher'] || row['no_voucher'] || row['Voucher No'] || '';
+          const cashBankCode = row['Kode Akun Kas/Bank'] || row['kode_akun_kas_bank'] || row['Cash Bank Account'] || '';
+          const detailCode = importType === 'DEPOSIT' 
+            ? (row['Kode Akun Sumber'] || row['kode_akun_sumber'] || row['Source Account'] || '')
+            : (row['Kode Akun Biaya'] || row['kode_akun_biaya'] || row['Expense Account'] || '');
+          const amount = parseFloat(row['Jumlah'] || row['jumlah'] || row['Amount'] || '0');
+          const memo = row['Keterangan'] || row['keterangan'] || row['Description'] || '';
+
+          if (!cashBankCode || !detailCode || amount <= 0) {
+            errorCount++;
+            continue;
+          }
+
+          const cashBankAccount = accounts.find(a => a.account_code === cashBankCode);
+          const detailAccount = accounts.find(a => a.account_code === detailCode);
+
+          if (!cashBankAccount || !detailAccount) {
+            errorCount++;
+            continue;
+          }
+
+          const { data: entry, error: entryError } = await supabase
+            .from('journal_entries')
+            .insert([{
+              entry_date: entryDate,
+              voucher_no: voucherNo || (importType === 'DEPOSIT' ? `DEP-${Date.now().toString().slice(-6)}` : `PAY-${Date.now().toString().slice(-6)}`),
+              description: memo,
+              entry_type: importType,
+              total_amount: amount
+            }])
+            .select()
+            .single();
+
+          if (entryError) throw entryError;
+
+          const itemsPayload = [];
+          
+          if (importType === 'DEPOSIT') {
+            // DEBIT (Cash/Bank Account)
+            itemsPayload.push({
+              journal_entry_id: entry.id,
+              account_id: cashBankAccount.id,
+              debit: amount,
+              credit: 0,
+              description: memo
+            });
+            // CREDIT (Source Account)
+            itemsPayload.push({
+              journal_entry_id: entry.id,
+              account_id: detailAccount.id,
+              debit: 0,
+              credit: amount,
+              description: memo
+            });
+          } else {
+            // CREDIT (Cash/Bank Account)
+            itemsPayload.push({
+              journal_entry_id: entry.id,
+              account_id: cashBankAccount.id,
+              debit: 0,
+              credit: amount,
+              description: memo
+            });
+            // DEBIT (Expense Account)
+            itemsPayload.push({
+              journal_entry_id: entry.id,
+              account_id: detailAccount.id,
+              debit: amount,
+              credit: 0,
+              description: memo
+            });
+          }
+
+          const { error: itemsError } = await supabase
+            .from('journal_entry_items')
+            .insert(itemsPayload);
+
+          if (itemsError) throw itemsError;
+
+          successCount++;
+        } catch (error) {
+          errorCount++;
+          console.error('Error importing row:', error);
+        }
+      }
+
+      toast.success(`Import selesai: ${successCount} berhasil, ${errorCount} gagal`);
+      setIsImportModalOpen(false);
+      fetchHistory();
+    } catch (error: any) {
+      toast.error('Gagal melakukan import: ' + error.message);
+    } finally {
+      setIsImporting(false);
+    }
+  };
+
   const filteredAccounts = allAccounts.filter(acc => 
     acc.account_code.toLowerCase().includes(searchQuery.toLowerCase()) ||
     acc.account_name.toLowerCase().includes(searchQuery.toLowerCase())
@@ -566,6 +757,145 @@ export default function CashBankV2() {
     </Dialog>
   );
 
+  // Import Modal
+  const ImportModal = () => (
+    <Dialog open={isImportModalOpen} onOpenChange={setIsImportModalOpen}>
+      <DialogContent className="max-w-4xl max-h-[90vh] overflow-auto">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <FileSpreadsheet className="h-5 w-5" />
+            Import {importType === 'DEPOSIT' ? 'Penerimaan' : 'Pengeluaran'} dari Excel
+          </DialogTitle>
+          <DialogDescription>
+            Import data transaksi {importType === 'DEPOSIT' ? 'penerimaan' : 'pengeluaran'} dari file Excel.
+          </DialogDescription>
+        </DialogHeader>
+        
+        <div className="space-y-6">
+          {/* Template Download */}
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+            <div className="flex items-start gap-3">
+              <FileSpreadsheet className="h-5 w-5 text-blue-600 mt-0.5" />
+              <div className="flex-1">
+                <h4 className="font-semibold text-blue-900 mb-1">Template Excel</h4>
+                <p className="text-sm text-blue-700 mb-3">
+                  Download template untuk format yang benar. Pastikan kode akun sesuai dengan data di sistem.
+                </p>
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  onClick={downloadImportTemplate}
+                  className="border-blue-300 text-blue-700 hover:bg-blue-100"
+                >
+                  <Download className="h-4 w-4 mr-2" />
+                  Download Template {importType === 'DEPOSIT' ? 'Penerimaan' : 'Pengeluaran'}
+                </Button>
+              </div>
+            </div>
+          </div>
+
+          {/* File Upload */}
+          <div className="space-y-2">
+            <Label>Upload File Excel</Label>
+            <div className="flex items-center gap-4">
+              <Input
+                type="file"
+                accept=".xlsx,.xls"
+                onChange={handleFileUpload}
+                disabled={isImporting}
+                className="flex-1"
+              />
+              {importFile && (
+                <div className="text-sm text-green-600 flex items-center gap-1">
+                  <FileSpreadsheet className="h-4 w-4" />
+                  {importFile.name}
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Preview */}
+          {importPreview.length > 0 && (
+            <div className="space-y-2">
+              <Label>Preview Data ({importPreview.length} baris)</Label>
+              <div className="border rounded-md max-h-[300px] overflow-auto">
+                <Table>
+                  <TableHeader className="bg-slate-100 sticky top-0">
+                    <TableRow>
+                      {Object.keys(importPreview[0] || {}).map((key, idx) => (
+                        <TableHead key={idx} className="font-semibold text-xs">
+                          {key}
+                        </TableHead>
+                      ))}
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {importPreview.slice(0, 10).map((row, idx) => (
+                      <TableRow key={idx}>
+                        {Object.values(row).map((value, cellIdx) => (
+                          <TableCell key={cellIdx} className="text-xs">
+                            {String(value)}
+                          </TableCell>
+                        ))}
+                      </TableRow>
+                    ))}
+                    {importPreview.length > 10 && (
+                      <TableRow>
+                        <TableCell colSpan={Object.keys(importPreview[0]).length} className="text-center text-xs text-gray-500">
+                          ... dan {importPreview.length - 10} baris lainnya
+                        </TableCell>
+                      </TableRow>
+                    )}
+                  </TableBody>
+                </Table>
+              </div>
+            </div>
+          )}
+
+          {/* Account Codes Reference */}
+          <div className="bg-slate-50 border rounded-lg p-4">
+            <h4 className="font-semibold mb-2 text-sm">Referensi Kode Akun Kas/Bank:</h4>
+            <div className="max-h-[150px] overflow-auto text-xs">
+              {cashBankAccounts.map(acc => (
+                <div key={acc.id} className="py-1 border-b last:border-0">
+                  <span className="font-mono font-bold text-blue-700">{acc.account_code}</span>
+                  <span className="ml-2">{acc.account_name}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        <DialogFooter>
+          <Button 
+            variant="outline" 
+            onClick={() => setIsImportModalOpen(false)}
+            disabled={isImporting}
+          >
+            Batal
+          </Button>
+          <Button 
+            onClick={processImport}
+            disabled={!importFile || importPreview.length === 0 || isImporting}
+            className="bg-blue-600 hover:bg-blue-700"
+          >
+            {isImporting ? (
+              <>
+                <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                Memproses...
+              </>
+            ) : (
+              <>
+                <Upload className="h-4 w-4 mr-2" />
+                Import Data
+              </>
+            )}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+
   const filteredHistory = history.filter(t => {
     const search = historySearch.toLowerCase();
     return (
@@ -577,6 +907,7 @@ export default function CashBankV2() {
   return (
     <div className="space-y-6">
       {AccountSearchModal()}
+      {ImportModal()}
       <div className="flex items-center justify-between">
         <h2 className="text-3xl font-bold tracking-tight">Kas & Bank (Jurnal)</h2>
         {editingId && (
@@ -604,8 +935,23 @@ export default function CashBankV2() {
         <TabsContent value="deposit" className="space-y-4 mt-4">
           <Card className="border-t-4 border-t-green-500">
             <CardHeader>
-              <CardTitle>Penerimaan Kas/Bank</CardTitle>
-              <CardDescription>Catat penerimaan uang masuk (Deposit).</CardDescription>
+              <div className="flex justify-between items-start">
+                <div>
+                  <CardTitle>Penerimaan Kas/Bank</CardTitle>
+                  <CardDescription>Catat penerimaan uang masuk (Deposit).</CardDescription>
+                </div>
+                {canImportCashBank && (
+                  <Button 
+                    variant="outline" 
+                    size="sm" 
+                    onClick={() => openImportModal('DEPOSIT')}
+                    className="border-green-200 text-green-700 hover:bg-green-50"
+                  >
+                    <Upload className="h-4 w-4 mr-2" />
+                    Import Excel
+                  </Button>
+                )}
+              </div>
             </CardHeader>
             <CardContent className="space-y-6">
               {/* Header Inputs */}
@@ -740,8 +1086,23 @@ export default function CashBankV2() {
         <TabsContent value="payment" className="space-y-4 mt-4">
           <Card className="border-t-4 border-t-red-500">
             <CardHeader>
-              <CardTitle>Pengeluaran Kas/Bank</CardTitle>
-              <CardDescription>Catat pembayaran atau biaya keluar (Payment).</CardDescription>
+              <div className="flex justify-between items-start">
+                <div>
+                  <CardTitle>Pengeluaran Kas/Bank</CardTitle>
+                  <CardDescription>Catat pembayaran atau biaya keluar (Payment).</CardDescription>
+                </div>
+                {canImportCashBank && (
+                  <Button 
+                    variant="outline" 
+                    size="sm" 
+                    onClick={() => openImportModal('PAYMENT')}
+                    className="border-red-200 text-red-700 hover:bg-red-50"
+                  >
+                    <Upload className="h-4 w-4 mr-2" />
+                    Import Excel
+                  </Button>
+                )}
+              </div>
             </CardHeader>
             <CardContent className="space-y-6">
               {/* Header Inputs */}

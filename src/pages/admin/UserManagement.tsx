@@ -65,6 +65,7 @@ const PERMISSION_GROUPS: Array<{ title: string; items: Array<{ key: string; labe
       { key: 'finance_payments', label: 'Pembayaran Hutang' },
       { key: 'finance_sales', label: 'Pembayaran Piutang' },
       { key: 'finance_cash', label: 'Kas & Bank' },
+      { key: 'finance_cashbank_import', label: 'Kas & Bank - Import Excel' },
       { key: 'finance_journal', label: 'Jurnal Umum' },
       { key: 'finance_gl', label: 'Buku Besar' },
     ],
