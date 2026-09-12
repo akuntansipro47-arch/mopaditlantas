@@ -597,9 +597,40 @@ export default function CashBankV2() {
     let errorCount = 0;
 
     try {
+      // Helper function to parse various date formats from Excel
+      const parseExcelDate = (dateValue: any): string => {
+        if (!dateValue) return new Date().toISOString().split('T')[0];
+        
+        // If it's already a string in ISO format (YYYY-MM-DD)
+        if (typeof dateValue === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(dateValue)) {
+          return dateValue;
+        }
+        
+        // If it's Excel's serial date number (float)
+        if (typeof dateValue === 'number') {
+          const date = XLSX.SSF.parse_date_code(dateValue);
+          if (date) {
+            return `${date.y}-${String(date.m).padStart(2, '0')}-${String(date.d).padStart(2, '0')}`;
+          }
+        }
+        
+        // Try to parse any other date format
+        try {
+          const parsedDate = new Date(dateValue);
+          if (!isNaN(parsedDate.getTime())) {
+            return parsedDate.toISOString().split('T')[0];
+          }
+        } catch (e) {
+          // fallback to today
+        }
+        
+        return new Date().toISOString().split('T')[0];
+      };
+
       for (const row of importPreview) {
         try {
-          const entryDate = row['Tanggal'] || row['tanggal'] || row['Date'] || new Date().toISOString().split('T')[0];
+          const rawDate = row['Tanggal'] || row['tanggal'] || row['Date'] || '';
+          const entryDate = parseExcelDate(rawDate);
           const voucherNo = row['No. Voucher'] || row['no_voucher'] || row['Voucher No'] || '';
           const cashBankCode = row['Kode Akun Kas/Bank'] || row['kode_akun_kas_bank'] || row['Cash Bank Account'] || '';
           const detailCode = importType === 'DEPOSIT' 
