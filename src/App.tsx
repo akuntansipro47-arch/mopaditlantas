@@ -29,7 +29,7 @@ import PurchaseOrderReturn from "@/pages/transactions/PurchaseOrderReturn";
 // Keuangan
 import PurchasePayment from "@/pages/finance/PurchasePayment";
 import SalesInvoiceDisabled from "@/pages/finance/SalesInvoiceDisabled";
-import CashBank from "@/pages/finance/CashBank";
+import CashBank from "@/pages/finance/CashBankV2";
 import ManualJournalEntry from "@/pages/finance/ManualJournalEntry";
 import GeneralLedger from "@/pages/finance/GeneralLedger";
 
