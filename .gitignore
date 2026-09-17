@@ -31,3 +31,5 @@ dist-ssr
 =======
 *.sw?
 >>>>>>> 38e4dd144e7828ab5f6bba3b96d2ebfdf731b8c3
+.vercel
+.env*

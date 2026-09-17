@@ -78,3 +78,39 @@ export function matchesFreeSearch(rawQuery: unknown, parts: unknown[]) {
   );
   return tokens.every((t) => haystack.includes(t));
 }
+
+export function parseLocalizedNumber(value: unknown): number {
+  if (typeof value === 'number') return value;
+  if (typeof value !== 'string') return 0;
+
+  let cleaned = value.trim();
+  if (!cleaned) return 0;
+
+  const hasDot = cleaned.includes('.');
+  const hasComma = cleaned.includes(',');
+
+  if (hasDot && hasComma) {
+    if (cleaned.lastIndexOf('.') < cleaned.lastIndexOf(',')) {
+      cleaned = cleaned.replace(/\./g, '').replace(',', '.');
+    } else {
+      cleaned = cleaned.replace(/,/g, '');
+    }
+  } else if (hasDot) {
+    const parts = cleaned.split('.');
+    if (parts.length > 2) {
+      cleaned = cleaned.replace(/\./g, '');
+    } else if (parts.length === 2 && parts[1].length === 3 && parts[0].length > 3) {
+      cleaned = cleaned.replace(/\./g, '');
+    }
+  } else if (hasComma) {
+    const parts = cleaned.split(',');
+    if (parts.length > 2) {
+      cleaned = cleaned.replace(/,/g, '');
+    } else if (parts.length === 2 && parts[1].length === 3 && parts[0].length > 3) {
+      cleaned = cleaned.replace(',', '.');
+    }
+  }
+
+  const parsed = parseFloat(cleaned);
+  return Number.isNaN(parsed) ? 0 : parsed;
+}

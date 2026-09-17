@@ -7,8 +7,8 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { toast } from 'sonner';
-import { formatCurrency, formatDate } from '@/lib/utils';
-import { Search, Plus, Trash2, Save, RefreshCw, Calendar as CalendarIcon, Download, Upload, FileSpreadsheet } from 'lucide-react';
+import { formatCurrency, formatDate, parseLocalizedNumber } from '@/lib/utils';
+import { Search, Plus, Trash2, Save, RefreshCw, Calendar as CalendarIcon, Download, Upload, FileSpreadsheet, AlertCircle } from 'lucide-react';
 import { Label } from "@/components/ui/label";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
@@ -55,6 +55,8 @@ export default function CashBankV2() {
   const [importFile, setImportFile] = useState<File | null>(null);
   const [importPreview, setImportPreview] = useState<any[]>([]);
   const [isImporting, setIsImporting] = useState(false);
+  const [importErrorLog, setImportErrorLog] = useState<string[]>([]);
+  const [isErrorLogOpen, setIsErrorLogOpen] = useState(false);
 
   // --- Deposit State ---
   const [depositHeader, setDepositHeader] = useState({
@@ -548,8 +550,12 @@ export default function CashBankV2() {
         const sheetName = workbook.SheetNames[0];
         const sheet = workbook.Sheets[sheetName];
         const jsonData = XLSX.utils.sheet_to_json(sheet);
-        setImportPreview(jsonData);
-        toast.success(`Berhasil memuat ${jsonData.length} baris data`);
+        const nonEmptyRows = jsonData.filter((row: any) => {
+          const values = Object.values(row || {});
+          return values.some(v => v !== undefined && v !== null && String(v).trim() !== '');
+        });
+        setImportPreview(nonEmptyRows);
+        toast.success(`Berhasil memuat ${nonEmptyRows.length} baris data dari ${jsonData.length} baris total`);
       } catch (error) {
         toast.error('Gagal membaca file Excel');
       }
@@ -595,21 +601,42 @@ export default function CashBankV2() {
     setIsImporting(true);
     let successCount = 0;
     let errorCount = 0;
+    const errorLog: string[] = [];
 
     try {
-      for (const row of importPreview) {
+      for (let i = 0; i < importPreview.length; i++) {
+        const row = importPreview[i];
+        const rowNum = i + 2;
+
         try {
-          const entryDate = row['Tanggal'] || row['tanggal'] || row['Date'] || new Date().toISOString().split('T')[0];
-          const voucherNo = row['No. Voucher'] || row['no_voucher'] || row['Voucher No'] || '';
-          const cashBankCode = row['Kode Akun Kas/Bank'] || row['kode_akun_kas_bank'] || row['Cash Bank Account'] || '';
-          const detailCode = importType === 'DEPOSIT' 
-            ? (row['Kode Akun Sumber'] || row['kode_akun_sumber'] || row['Source Account'] || '')
-            : (row['Kode Akun Biaya'] || row['kode_akun_biaya'] || row['Expense Account'] || '');
-          const amount = parseFloat(row['Jumlah'] || row['jumlah'] || row['Amount'] || '0');
-          const memo = row['Keterangan'] || row['keterangan'] || row['Description'] || '';
+          const normalizedRow: Record<string, any> = {};
+          for (const key of Object.keys(row || {})) {
+            const trimmedKey = (key || '').trim();
+            let value = (row as any)[key];
+            if (typeof value === 'string') value = value.trim();
+            normalizedRow[trimmedKey] = value;
+            if (trimmedKey) normalizedRow[trimmedKey.toLowerCase()] = value;
+          }
+
+          const allValues = Object.values(normalizedRow).filter(v => v !== undefined && v !== null && v !== '');
+          if (allValues.length === 0) continue;
+
+          const entryDate = normalizedRow['Tanggal'] || normalizedRow['tanggal'] || normalizedRow['date'] || new Date().toISOString().split('T')[0];
+          const voucherNo = normalizedRow['No. Voucher'] || normalizedRow['no_voucher'] || normalizedRow['voucher no'] || '';
+          const cashBankCode = normalizedRow['Kode Akun Kas/Bank'] || normalizedRow['kode akun kas/bank'] || normalizedRow['kas/bank account'] || normalizedRow['cash bank account'] || '';
+          const detailCode = importType === 'DEPOSIT'
+            ? (normalizedRow['Kode Akun Sumber'] || normalizedRow['kode akun sumber'] || normalizedRow['source account'] || '')
+            : (normalizedRow['Kode Akun Biaya'] || normalizedRow['kode akun biaya'] || normalizedRow['expense account'] || '');
+          const amount = parseLocalizedNumber(normalizedRow['Jumlah'] ?? normalizedRow['jumlah'] ?? normalizedRow['Amount'] ?? 0);
+          const memo = normalizedRow['Keterangan'] || normalizedRow['keterangan'] || normalizedRow['description'] || '';
 
           if (!cashBankCode || !detailCode || amount <= 0) {
+            const missingFields: string[] = [];
+            if (!cashBankCode) missingFields.push('Kode Akun Kas/Bank');
+            if (!detailCode) missingFields.push(importType === 'DEPOSIT' ? 'Kode Akun Sumber' : 'Kode Akun Biaya');
+            if (amount <= 0) missingFields.push('Jumlah (harus > 0)');
             errorCount++;
+            errorLog.push(`Baris ${rowNum}: Data tidak lengkap - kolom ${missingFields.join(', ')} kosong atau tidak valid`);
             continue;
           }
 
@@ -617,7 +644,11 @@ export default function CashBankV2() {
           const detailAccount = accounts.find(a => a.account_code === detailCode);
 
           if (!cashBankAccount || !detailAccount) {
+            const missingAccounts: string[] = [];
+            if (!cashBankAccount) missingAccounts.push(`Kode Akun Kas/Bank '${cashBankCode}'`);
+            if (!detailAccount) missingAccounts.push(`Kode Akun ${importType === 'DEPOSIT' ? 'Sumber' : 'Biaya'} '${detailCode}'`);
             errorCount++;
+            errorLog.push(`Baris ${rowNum}: Akun tidak ditemukan - ${missingAccounts.join(', ')}. Pastikan kode akun ada di Chart of Accounts.`);
             continue;
           }
 
@@ -635,10 +666,9 @@ export default function CashBankV2() {
 
           if (entryError) throw entryError;
 
-          const itemsPayload = [];
-          
+          const itemsPayload: any[] = [];
+
           if (importType === 'DEPOSIT') {
-            // DEBIT (Cash/Bank Account)
             itemsPayload.push({
               journal_entry_id: entry.id,
               account_id: cashBankAccount.id,
@@ -646,7 +676,6 @@ export default function CashBankV2() {
               credit: 0,
               description: memo
             });
-            // CREDIT (Source Account)
             itemsPayload.push({
               journal_entry_id: entry.id,
               account_id: detailAccount.id,
@@ -655,7 +684,6 @@ export default function CashBankV2() {
               description: memo
             });
           } else {
-            // CREDIT (Cash/Bank Account)
             itemsPayload.push({
               journal_entry_id: entry.id,
               account_id: cashBankAccount.id,
@@ -663,7 +691,6 @@ export default function CashBankV2() {
               credit: amount,
               description: memo
             });
-            // DEBIT (Expense Account)
             itemsPayload.push({
               journal_entry_id: entry.id,
               account_id: detailAccount.id,
@@ -680,13 +707,18 @@ export default function CashBankV2() {
           if (itemsError) throw itemsError;
 
           successCount++;
-        } catch (error) {
+        } catch (error: any) {
           errorCount++;
+          errorLog.push(`Baris ${rowNum}: ${error?.message || String(error)}`);
           console.error('Error importing row:', error);
         }
       }
 
       toast.success(`Import selesai: ${successCount} berhasil, ${errorCount} gagal`);
+      if (errorLog.length > 0) {
+        setImportErrorLog(errorLog);
+        setIsErrorLogOpen(true);
+      }
       setIsImportModalOpen(false);
       fetchHistory();
     } catch (error: any) {
@@ -896,6 +928,34 @@ export default function CashBankV2() {
     </Dialog>
   );
 
+  const ImportErrorLogDialog = () => (
+    <Dialog open={isErrorLogOpen} onOpenChange={setIsErrorLogOpen}>
+      <DialogContent className="max-w-2xl max-h-[80vh] overflow-auto">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2 text-red-600">
+            <AlertCircle className="h-5 w-5" />
+            Detail Error Import
+          </DialogTitle>
+          <DialogDescription>
+            Beberapa baris gagal diimpor. Periksa dan perbaiki file Excel Anda, lalu coba import kembali.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-2">
+          {importErrorLog.map((error, idx) => (
+            <div key={idx} className="bg-red-50 border border-red-200 rounded p-3 text-sm">
+              <span className="font-medium text-red-800">{error}</span>
+            </div>
+          ))}
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => setIsErrorLogOpen(false)}>
+            Tutup
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+
   const filteredHistory = history.filter(t => {
     const search = historySearch.toLowerCase();
     return (
@@ -908,6 +968,7 @@ export default function CashBankV2() {
     <div className="space-y-6">
       {AccountSearchModal()}
       {ImportModal()}
+      {ImportErrorLogDialog()}
       <div className="flex items-center justify-between">
         <h2 className="text-3xl font-bold tracking-tight">Kas & Bank (Jurnal)</h2>
         {editingId && (
