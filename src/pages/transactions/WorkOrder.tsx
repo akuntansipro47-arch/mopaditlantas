@@ -89,8 +89,15 @@ export default function WorkOrder() {
     }
   }, [formData.vehicle_entry_id, entries]);
 
+  useEffect(() => {
+    if (isVehicleSearchOpen) {
+      fetchMasterData();
+    }
+  }, [isVehicleSearchOpen]);
+
   async function fetchMasterData() {
-    const { data: e } = await supabase
+    console.log('Fetching master data for Work Order...');
+    const { data: e, error } = await supabase
       .from('vehicle_entries')
       .select(`
         *, 
@@ -100,8 +107,16 @@ export default function WorkOrder() {
           job_types (*)
         )
       `)
-      .eq('status', 'OPEN');
-    setEntries(e as any || []);
+      .eq('status', 'OPEN')
+      .order('entry_date', { ascending: false });
+    
+    if (error) {
+      console.error('Error fetching vehicle entries:', error);
+      toast.error('Gagal mengambil data kendaraan masuk');
+    } else {
+      console.log('Fetched vehicle entries with OPEN status:', e?.length, 'entries');
+      setEntries(e as any || []);
+    }
 
     const { data: m } = await supabase.from('mechanics').select('*');
     setMechanics(m || []);
@@ -494,6 +509,36 @@ export default function WorkOrder() {
           });
         }
       } else {
+        if (formData.vehicle_entry_id) {
+          const { data: veCheck, error: veCheckError } = await supabase
+            .from('vehicle_entries')
+            .select('status, entry_number')
+            .eq('id', formData.vehicle_entry_id)
+            .single();
+          if (veCheckError || veCheck?.status !== 'OPEN') {
+            toast.error('Kendaraan masuk yang dipilih sudah tidak berstatus OPEN. Tidak bisa membuat Work Order.');
+            setLoading(false);
+            return;
+          }
+
+          // Aturan: 1 estimasi (entry) hanya boleh punya 1 WO aktif.
+          // Nopol boleh punya banyak WO asal entry/estimasinya berbeda.
+          const { data: activeWo } = await supabase
+            .from('work_orders')
+            .select('id, wo_number, status')
+            .in('status', ['OPEN', 'IN_PROGRESS'])
+            .eq('vehicle_entry_id', formData.vehicle_entry_id)
+            .limit(1);
+          const dup = (activeWo || [])[0] as any;
+          if (dup) {
+            toast.error(
+              `Estimasi ${(veCheck as any)?.entry_number || ''} sudah memiliki WO aktif (${dup.wo_number}, status ${dup.status}). ` +
+                'Selesaikan atau hapus WO tersebut dulu — satu estimasi hanya boleh punya satu WO aktif.'
+            );
+            setLoading(false);
+            return;
+          }
+        }
         let insertError: any = null;
         let createdWoNumber: string | null = null;
         let createdWoId: string | null = null;
@@ -554,7 +599,12 @@ export default function WorkOrder() {
       fetchWOs();
       fetchMasterData();
     } catch (error: any) {
-      toast.error('Gagal menyimpan WO: ' + error.message);
+      const errMsg = String(error?.message || '');
+      if (error?.code === '23505' && errMsg.includes('work_orders_one_active_wo_per_entry')) {
+        toast.error('Gagal menyimpan WO: estimasi (entry) ini sudah memiliki WO aktif. Satu estimasi hanya boleh punya satu WO aktif.');
+      } else {
+        toast.error('Gagal menyimpan WO: ' + error.message);
+      }
     } finally {
       setLoading(false);
     }
@@ -635,6 +685,10 @@ export default function WorkOrder() {
                               <div 
                                 key={e.id}
                                 onClick={() => {
+                                  if (e.status !== 'OPEN') {
+                                    toast.error('Kendaraan masuk tidak berstatus OPEN. Tidak bisa dipilih.');
+                                    return;
+                                  }
                                   handleSelectChange('vehicle_entry_id', e.id);
                                   setIsVehicleSearchOpen(false);
                                   setVehicleSearchQuery('');

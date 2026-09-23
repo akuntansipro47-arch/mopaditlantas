@@ -30,6 +30,7 @@ interface VehicleEntry {
   id: string;
   complaint: string;
   vehicles: Vehicle | null;
+  status: string;
 }
 
 interface Mechanic {
@@ -216,6 +217,39 @@ const WorkOrderV2 = () => {
       return;
     }
 
+    const { data: veStatus, error: veStatusError } = await supabase
+      .from('vehicle_entries')
+      .select('status, vehicles ( license_plate )')
+      .eq('id', currentWo.vehicle_entry_id)
+      .single();
+    if (veStatusError || veStatus?.status !== 'OPEN') {
+      toast.error('Kendaraan masuk yang dipilih sudah tidak berstatus OPEN. Tidak bisa membuat Work Order.');
+      return;
+    }
+
+    // Aturan: 1 estimasi (entry) hanya boleh punya 1 WO aktif.
+    // Nopol boleh punya banyak WO asal entry/estimasinya berbeda.
+    if (currentWo.vehicle_entry_id) {
+      let dupQuery = supabase
+        .from('work_orders')
+        .select('id, wo_number, status')
+        .in('status', ['OPEN', 'IN_PROGRESS'])
+        .eq('vehicle_entry_id', currentWo.vehicle_entry_id)
+        .limit(1);
+      if (isEditing && currentWo.id) {
+        dupQuery = dupQuery.neq('id', currentWo.id);
+      }
+      const { data: activeWo } = await dupQuery;
+      const dup = (activeWo || [])[0] as any;
+      if (dup) {
+        toast.error(
+          `Estimasi ini sudah memiliki WO aktif (${dup.wo_number}, status ${dup.status}). ` +
+            'Satu estimasi hanya boleh punya satu WO aktif.'
+        );
+        return;
+      }
+    }
+
     const status = String(currentWo.status || 'OPEN');
     const isDone = status === 'COMPLETED' || status === 'CLOSED';
 
@@ -261,7 +295,12 @@ const WorkOrderV2 = () => {
       setIsDialogOpen(false);
       resetForm();
     } catch (error: any) {
-      toast.error("Gagal menyimpan Work Order: " + error.message);
+      const msg = String(error?.message || '');
+      if (error?.code === '23505' && msg.includes('work_orders_one_active_wo_per_entry')) {
+        toast.error('Gagal menyimpan Work Order: estimasi (entry) ini sudah memiliki WO aktif. Satu estimasi hanya boleh punya satu WO aktif.');
+      } else {
+        toast.error("Gagal menyimpan Work Order: " + error.message);
+      }
     }
   };
 
@@ -581,6 +620,10 @@ const WorkOrderV2 = () => {
                   <CommandItem
                     key={entry.id}
                     onSelect={() => {
+                      if (entry.status !== 'OPEN') {
+                        toast.error('Kendaraan masuk tidak berstatus OPEN. Tidak bisa dipilih.');
+                        return;
+                      }
                       handleSelectChange('vehicle_entry_id', entry.id);
                       setIsEntrySearchOpen(false);
                     }}
