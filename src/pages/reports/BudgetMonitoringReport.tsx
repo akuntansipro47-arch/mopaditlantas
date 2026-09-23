@@ -105,28 +105,45 @@ function parseNumber(input: string) {
   const raw = String(input || '').trim().replace(/\s+/g, '');
   if (!raw) return 0;
 
-  const sanitized = raw.replace(/[^0-9,.-]/g, '');
-  if (!sanitized) return 0;
+  const negative = raw.startsWith('-');
+  const body = raw.replace(/[^0-9.,]/g, '');
+  if (!body) return 0;
 
-  const lastComma = sanitized.lastIndexOf(',');
-  const lastDot = sanitized.lastIndexOf('.');
-  const decimalIndex = Math.max(lastComma, lastDot);
+  const lastComma = body.lastIndexOf(',');
+  const lastDot = body.lastIndexOf('.');
+  let integerPart = '';
+  let decimalPart = '';
 
-  let normalized = sanitized;
-  if (decimalIndex >= 0) {
-    const integerPart = sanitized.slice(0, decimalIndex).replace(/[.,]/g, '');
-    const decimalPart = sanitized.slice(decimalIndex + 1).replace(/[.,]/g, '');
-    normalized = `${integerPart}.${decimalPart}`;
+  if (lastComma >= 0 && lastDot >= 0) {
+    // Kedua pemisah dipakai: yang paling kanan = desimal, sisanya pemisah ribuan.
+    // Contoh: "1.234.567,89" maupun "1,234,567.89"
+    const decimalIndex = Math.max(lastComma, lastDot);
+    integerPart = body.slice(0, decimalIndex).replace(/[.,]/g, '');
+    decimalPart = body.slice(decimalIndex + 1).replace(/[.,]/g, '');
+  } else if (lastComma >= 0 || lastDot >= 0) {
+    // Hanya satu jenis pemisah: koma (,) ATAU titik (.) diterima sebagai pemisah ribuan
+    // maupun desimal, sesuai jumlah digit di sebelah kanannya.
+    const separator = lastComma >= 0 ? ',' : '.';
+    const segments = body.split(separator);
+    const tail = segments[segments.length - 1];
+
+    if (tail.length === 1 || tail.length === 2) {
+      // Pemisah terakhir = desimal, pemisah sebelumnya = ribuan.
+      // Contoh: "80783783,7" -> 80783783.7 atau "305,000,000,5" -> 305000000.5
+      integerPart = segments.slice(0, -1).join('').replace(/[.,]/g, '');
+      decimalPart = tail;
+    } else {
+      // Contoh: "305,000,000" / "305.000.000" / "305000000" -> 305000000
+      integerPart = body.replace(/[.,]/g, '');
+    }
   } else {
-    normalized = sanitized.replace(/[.,]/g, '');
+    integerPart = body;
   }
 
-  if (sanitized.startsWith('-') && !normalized.startsWith('-')) {
-    normalized = `-${normalized}`;
-  }
-
+  const normalized = `${integerPart || '0'}${decimalPart ? `.${decimalPart}` : ''}`;
   const out = Number(normalized);
-  return Number.isFinite(out) ? out : 0;
+  if (!Number.isFinite(out)) return 0;
+  return negative ? -out : out;
 }
 
 function formatPlainNumber(amount: number) {
@@ -177,12 +194,28 @@ type NumberInputCellProps = {
 };
 
 function NumberInputCell({ value, onChange, className }: NumberInputCellProps) {
+  // Selama fokus, tampilkan teks mentah yang diketik user (draft).
+  // Format ribuan (305.000.000) hanya dipakai saat tidak sedang mengetik,
+  // sehingga angka dengan lebih dari 3 digit tidak terpotong/diubah jadi desimal.
+  const [draft, setDraft] = useState<string | null>(null);
+  const display = draft ?? formatInputNumber(value);
+
   return (
     <Input
       type="text"
       inputMode="decimal"
-      value={formatInputNumber(value)}
-      onChange={(e) => onChange(e.target.value)}
+      value={display}
+      onChange={(e) => {
+        // Hanya buang karakter non-numerik; koma (,) dan titik (.) dibiarkan,
+        // jadi user bebas menulis "305,000,000", "305.000.000" atau "80783783,7".
+        const sanitized = e.target.value.replace(/[^0-9.,-]/g, '');
+        setDraft(sanitized);
+        onChange(sanitized);
+      }}
+      onBlur={() => {
+        if (draft !== null) onChange(draft);
+        setDraft(null);
+      }}
       placeholder="0"
       className={cn(
         'h-9 min-w-[140px] rounded-lg border-slate-200 bg-white text-right font-semibold tabular-nums shadow-sm',
