@@ -105,6 +105,11 @@ export default function WorkOrder() {
         vehicle_entry_jobs (
           *,
           job_types (*)
+        ),
+        work_orders (
+          id,
+          status,
+          wo_number
         )
       `)
       .eq('status', 'OPEN')
@@ -521,19 +526,25 @@ export default function WorkOrder() {
             return;
           }
 
-          // Aturan: 1 estimasi (entry) hanya boleh punya 1 WO aktif.
+          // Aturan: 1 estimasi (entry) = maksimal 1 WO. Selain WO aktif,
+          // estimasi yang WO-nya sudah COMPLETED/CLOSED juga tidak boleh
+          // dibuatkan WO baru (perbaikan estimasi dilakukan lewat Re-open WO).
           // Nopol boleh punya banyak WO asal entry/estimasinya berbeda.
-          const { data: activeWo } = await supabase
+          const { data: existingWo } = await supabase
             .from('work_orders')
             .select('id, wo_number, status')
-            .in('status', ['OPEN', 'IN_PROGRESS'])
-            .eq('vehicle_entry_id', formData.vehicle_entry_id)
-            .limit(1);
-          const dup = (activeWo || [])[0] as any;
+            .eq('vehicle_entry_id', formData.vehicle_entry_id);
+          const dup = ((existingWo || []) as any[]).find(
+            (w) => String(w?.status || '').trim().toUpperCase() !== 'CANCELLED'
+          );
           if (dup) {
+            const dupStatus = String(dup?.status || '').toUpperCase();
+            const isDone = dupStatus === 'COMPLETED' || dupStatus === 'CLOSED';
             toast.error(
-              `Estimasi ${(veCheck as any)?.entry_number || ''} sudah memiliki WO aktif (${dup.wo_number}, status ${dup.status}). ` +
-                'Selesaikan atau hapus WO tersebut dulu — satu estimasi hanya boleh punya satu WO aktif.'
+              isDone
+                ? `Estimasi ${(veCheck as any)?.entry_number || ''} sudah memiliki WO ${dup.wo_number} berstatus ${dupStatus} (selesai/ditutup). Estimasi yang sudah selesai tidak bisa dibuatkan WO baru — gunakan Re-open WO bila memang perlu dikerjakan ulang.`
+                : `Estimasi ${(veCheck as any)?.entry_number || ''} sudah memiliki WO aktif (${dup.wo_number}, status ${dupStatus}). ` +
+                  'Selesaikan atau hapus WO tersebut dulu — satu estimasi hanya boleh punya satu WO.'
             );
             setLoading(false);
             return;
@@ -571,10 +582,13 @@ export default function WorkOrder() {
         if (insertError) throw insertError;
         
         if (formData.vehicle_entry_id) {
-           await supabase
+           const { error: markErr } = await supabase
              .from('vehicle_entries')
              .update({ status: 'PROCESSED' } as any)
              .eq('id', formData.vehicle_entry_id);
+           if (markErr) {
+             console.warn('Gagal menandai entry kendaraan sebagai PROCESSED:', markErr);
+           }
         }
 
         toast.success('WO berhasil dibuat');
@@ -616,6 +630,22 @@ export default function WorkOrder() {
     (!dateFilter.startDate || String(w.work_date || '').slice(0, 10) >= dateFilter.startDate) &&
     (!dateFilter.endDate || String(w.work_date || '').slice(0, 10) <= dateFilter.endDate)
   );
+
+  // Picker "Cari Kendaraan Masuk": selain status OPEN di DB, entry juga harus
+  // benar-benar belum punya WO. Status CLOSED/PROCESSED di modul Estimasi adalah
+  // turunan dari status WO (bukan kolom DB), jadi kolom status bisa tetap 'OPEN'
+  // padahal WO-nya sudah IN_PROGRESS / COMPLETED / CLOSED.
+  const selectableEntries = entries.filter((e) => {
+    const linkedWos: any[] = Array.isArray((e as any).work_orders) ? ((e as any).work_orders as any[]) : [];
+    const hasWo = linkedWos.some((w) => String(w?.status || '').trim().toUpperCase() !== 'CANCELLED');
+    if (hasWo) return false;
+    const q = vehicleSearchQuery.trim().toLowerCase();
+    if (!q) return true;
+    return (
+      (e.vehicles?.license_plate || '').toLowerCase().includes(q) ||
+      (e.vehicles?.brand_type || '').toLowerCase().includes(q)
+    );
+  });
 
   return (
     <div className="space-y-6">
@@ -676,11 +706,7 @@ export default function WorkOrder() {
                           className="mb-4"
                         />
                         <div className="max-h-[300px] overflow-y-auto space-y-2">
-                          {entries
-                            .filter(e => 
-                              e.vehicles?.license_plate.toLowerCase().includes(vehicleSearchQuery.toLowerCase()) ||
-                              e.vehicles?.brand_type.toLowerCase().includes(vehicleSearchQuery.toLowerCase())
-                            )
+                          {selectableEntries
                             .map(e => (
                               <div 
                                 key={e.id}
@@ -701,11 +727,18 @@ export default function WorkOrder() {
                             ))
                           }
                           {entries.length === 0 && <p className="text-center text-sm text-muted-foreground">Tidak ada kendaraan masuk status OPEN.</p>}
+                          {entries.length > 0 && selectableEntries.length === 0 && (
+                            <p className="text-center text-sm text-muted-foreground">
+                              {vehicleSearchQuery.trim()
+                                ? 'Tidak ada kendaraan yang cocok dengan pencarian.'
+                                : 'Semua kendaraan masuk sudah memiliki WO (berjalan atau sudah selesai).'}
+                            </p>
+                          )}
                         </div>
                       </div>
                     </DialogContent>
                   </Dialog>
-                  <p className="text-xs text-muted-foreground">Hanya menampilkan kendaraan masuk yang belum diproses.</p>
+                  <p className="text-xs text-muted-foreground">Hanya menampilkan estimasi (Nota Dinas) yang statusnya OPEN dan belum memiliki WO.</p>
                 </div>
 
                 {selectedEntryDetails && (

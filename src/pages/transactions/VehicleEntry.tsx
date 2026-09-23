@@ -1367,8 +1367,9 @@ export default function VehicleEntryPage() {
 
     try {
       const oldSnapshot = { jobs: [] as any[], parts: [] as any[] };
+      let entryHasWo = false;
       if (isEditing && currentId) {
-        const [oldJobsRes, oldPartsRes] = await Promise.all([
+        const [oldJobsRes, oldPartsRes, linkedWoRes] = await Promise.all([
           supabase
             .from('vehicle_entry_jobs' as any)
             .select('job_type_id, notes, estimated_price, value_only, job_types (job_name)')
@@ -1376,6 +1377,10 @@ export default function VehicleEntryPage() {
           supabase
             .from('vehicle_entry_spareparts' as any)
             .select('goods_id, item_code, item_name, qty, estimated_price, value_only, job_type_id')
+            .eq('vehicle_entry_id', currentId),
+          supabase
+            .from('work_orders' as any)
+            .select('id, status')
             .eq('vehicle_entry_id', currentId),
         ]);
         oldSnapshot.jobs = ((oldJobsRes as any)?.data || []).map((j: any) => ({
@@ -1397,6 +1402,11 @@ export default function VehicleEntryPage() {
           value_only: Boolean(p.value_only),
           job_type_id: p.job_type_id || null,
         }));
+        // WO yang masih aktif atau sudah selesai mengunci status entry
+        // supaya tidak kembali OPEN dan muncul di picker "Buat WO Baru".
+        entryHasWo = ((linkedWoRes as any)?.data || []).some(
+          (w: any) => String(w?.status || '').trim().toUpperCase() !== 'CANCELLED'
+        );
       }
 
       const entryPayload = {
@@ -1406,7 +1416,10 @@ export default function VehicleEntryPage() {
         nota_dinas_number: formData.nota_dinas_number,
         service_group: formData.service_group,
         notes: formData.notes,
-        status: 'OPEN',
+        // Jangan paksa selalu 'OPEN' saat edit. Entry yang sudah punya WO
+        // (aktif maupun selesai) harus tetap PROCESSED agar tidak muncul
+        // lagi di picker "Buat WO Baru". Entry baru / yang belum punya WO: OPEN.
+        status: entryHasWo ? 'PROCESSED' : 'OPEN',
       };
 
       let targetId = currentId;
