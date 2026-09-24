@@ -8,7 +8,7 @@ import { Input } from '@/components/ui/input';
 import { Card, CardContent } from '@/components/ui/card';
 import { toast } from 'sonner';
 import { formatCurrency, formatDate } from '@/lib/utils';
-import { FilePlus2, Loader2, Printer, Search, Wallet } from 'lucide-react';
+import { FilePlus2, Loader2, Pencil, Printer, Search, Trash2, Wallet } from 'lucide-react';
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
@@ -22,6 +22,7 @@ import {
   ensureSalesInvoiceForCompletedWorkOrder,
   formatLocalInvoiceDate,
   type CompletedWorkOrderInvoiceSource,
+  type SalesInvoiceRecord,
 } from '@/lib/salesInvoice';
 
 type CompletedWorkOrderOption = CompletedWorkOrderInvoiceSource;
@@ -77,6 +78,29 @@ function getWorkOrderVehicleLabel(workOrder: CompletedWorkOrderOption): string {
   return [vehicle?.license_plate, vehicle?.brand_type].filter(Boolean).join(' - ') || '-';
 }
 
+/** Ubah tanggal dari database (bisa DATE atau timestamptz) menjadi nilai input type="date". */
+function toDateInputValue(value?: string | null): string {
+  if (!value) return '';
+  return String(value).slice(0, 10);
+}
+
+function getInvoiceStatusLabel(status?: string | null): string {
+  if (status === 'PAID') return 'LUNAS';
+  if (status === 'PARTIAL') return 'SEBAGIAN';
+  return 'BELUM LUNAS';
+}
+
+function getErrorMessageText(error: unknown): string {
+  if (error && typeof error === 'object' && 'code' in error && String((error as { code?: unknown }).code) === '23505') {
+    return 'Nomor invoice sudah dipakai oleh invoice lain.';
+  }
+  if (error instanceof Error) return error.message;
+  if (error && typeof error === 'object' && 'message' in error) {
+    return String((error as { message?: unknown }).message);
+  }
+  return String(error || 'Kesalahan tidak diketahui');
+}
+
 /** Migration 20260924 adds work_orders.completed_at; production may not have run it yet. */
 function isMissingCompletedAtError(error: unknown): boolean {
   if (!error || typeof error !== 'object') return false;
@@ -100,6 +124,21 @@ export default function SalesInvoice() {
   const [completedAtMissing, setCompletedAtMissing] = useState(false);
   const [selectedWorkOrder, setSelectedWorkOrder] = useState<CompletedWorkOrderOption | null>(null);
   const [invoiceForm, setInvoiceForm] = useState<InvoiceFormState>(EMPTY_INVOICE_FORM);
+
+  // Edit Invoice Dialog
+  const [isEditOpen, setIsEditOpen] = useState(false);
+  const [editInvoice, setEditInvoice] = useState<SalesInvoiceRecord | null>(null);
+  const [editWorkOrderNumber, setEditWorkOrderNumber] = useState('');
+  const [editForm, setEditForm] = useState({
+    invoiceNumber: '',
+    invoiceDate: '',
+    dueDate: '',
+    customerName: '',
+  });
+  const [isSavingEdit, setIsSavingEdit] = useState(false);
+
+  // Delete Invoice
+  const [deletingInvoiceId, setDeletingInvoiceId] = useState<string | null>(null);
   
   // Filters
   const [dateFilter] = useState({
@@ -325,6 +364,136 @@ export default function SalesInvoice() {
       toast.error('Gagal menyimpan invoice: ' + message);
     } finally {
       setIsSavingInvoice(false);
+    }
+  }
+
+  function handleEditClick(invoice: SalesInvoiceRecord) {
+    setEditInvoice(invoice);
+    setEditForm({
+      invoiceNumber: invoice?.invoice_number || '',
+      invoiceDate: toDateInputValue(invoice?.invoice_date),
+      dueDate: toDateInputValue(invoice?.due_date) || toDateInputValue(invoice?.invoice_date),
+      customerName: invoice?.customer_name || '',
+    });
+    setEditWorkOrderNumber('');
+    setIsEditOpen(true);
+
+    if (invoice?.work_order_id) {
+      void (async () => {
+        try {
+          const { data } = await supabase
+            .from('work_orders')
+            .select('wo_number')
+            .eq('id', invoice.work_order_id)
+            .maybeSingle();
+          if (data?.wo_number) setEditWorkOrderNumber(String(data.wo_number));
+        } catch {
+          // Nomor WO hanya pelengkap, kegagalan memuatnya tidak menghalangi edit.
+        }
+      })();
+    }
+  }
+
+  function closeEditDialog() {
+    setIsEditOpen(false);
+    setEditInvoice(null);
+  }
+
+  async function handleSaveEdit() {
+    if (!editInvoice) return;
+
+    const invoiceNumber = editForm.invoiceNumber.trim();
+    const customerName = editForm.customerName.trim();
+    if (!invoiceNumber) {
+      toast.error('Nomor invoice tidak boleh kosong.');
+      return;
+    }
+    if (!editForm.invoiceDate || !editForm.dueDate) {
+      toast.error('Tanggal invoice dan tanggal jatuh tempo wajib diisi.');
+      return;
+    }
+    if (editForm.dueDate < editForm.invoiceDate) {
+      toast.error('Tanggal jatuh tempo tidak boleh lebih awal dari tanggal invoice.');
+      return;
+    }
+
+    setIsSavingEdit(true);
+    try {
+      const { data: duplicated, error: duplicateError } = await supabase
+        .from('sales_invoices')
+        .select('id')
+        .eq('invoice_number', invoiceNumber)
+        .neq('id', editInvoice.id)
+        .limit(1);
+      if (duplicateError) throw duplicateError;
+      if (duplicated && duplicated.length > 0) {
+        toast.error(`Nomor invoice ${invoiceNumber} sudah dipakai oleh invoice lain.`);
+        return;
+      }
+
+      const { error } = await supabase
+        .from('sales_invoices')
+        .update({
+          invoice_number: invoiceNumber,
+          invoice_date: editForm.invoiceDate,
+          due_date: editForm.dueDate,
+          customer_name: customerName || null,
+        })
+        .eq('id', editInvoice.id);
+      if (error) throw error;
+
+      toast.success(`Invoice ${invoiceNumber} berhasil diperbarui.`);
+      closeEditDialog();
+      await fetchInvoices();
+    } catch (error: unknown) {
+      toast.error('Gagal menyimpan perubahan invoice: ' + getErrorMessageText(error));
+    } finally {
+      setIsSavingEdit(false);
+    }
+  }
+
+  async function handleDeleteInvoice(invoice: SalesInvoiceRecord) {
+    if (!invoice || deletingInvoiceId) return;
+
+    const paidAmount = Number(invoice.paid_amount || 0);
+    if (invoice.status === 'PAID' || paidAmount > 0) {
+      toast.error(
+        `Invoice ${invoice.invoice_number} sudah menerima pembayaran ${formatCurrency(paidAmount)} dan tidak dapat dihapus.`,
+      );
+      return;
+    }
+
+    setDeletingInvoiceId(invoice.id);
+    try {
+      const { data: receipts, error: receiptError } = await supabase
+        .from('sales_receipts')
+        .select('id, amount, receipt_number')
+        .eq('invoice_id', invoice.id);
+      if (receiptError) throw receiptError;
+      if (receipts && receipts.length > 0) {
+        toast.error(
+          `Invoice ${invoice.invoice_number} memiliki ${receipts.length} penerimaan pembayaran dan tidak dapat dihapus.`,
+        );
+        return;
+      }
+
+      const confirmed = window.confirm(
+        `Yakin ingin menghapus invoice "${invoice.invoice_number}"?\n\n` +
+          `Pelanggan: ${invoice.customer_name || '-'}\n` +
+          `Total: ${formatCurrency(Number(invoice.total_amount || 0))}\n\n` +
+          'Data yang dihapus tidak dapat dikembalikan dan Work Order akan kembali tersedia untuk dibuat invoice baru.',
+      );
+      if (!confirmed) return;
+
+      const { error } = await supabase.from('sales_invoices').delete().eq('id', invoice.id);
+      if (error) throw error;
+
+      toast.success(`Invoice ${invoice.invoice_number} berhasil dihapus.`);
+      await fetchInvoices();
+    } catch (error: unknown) {
+      toast.error('Gagal menghapus invoice: ' + getErrorMessageText(error));
+    } finally {
+      setDeletingInvoiceId(null);
     }
   }
 
@@ -643,14 +812,37 @@ export default function SalesInvoice() {
                                                         size="sm"
                                                         variant="outline"
                                                         onClick={() => window.open(`/print/invoice/${inv.id}`, '_blank')}
+                                                        title="Cetak Faktur"
                                                     >
                                                         <Printer className="mr-2 h-4 w-4" /> Faktur
                                                     </Button>
                                                     {inv.status !== 'PAID' && remaining > 0 && (
-                                                        <Button size="sm" onClick={() => handlePayClick(inv)}>
+                                                        <Button size="sm" onClick={() => handlePayClick(inv)} title="Terima Pembayaran">
                                                             <Wallet className="mr-2 h-4 w-4" /> Terima
                                                         </Button>
                                                     )}
+                                                    <Button
+                                                        size="sm"
+                                                        variant="outline"
+                                                        onClick={() => handleEditClick(inv)}
+                                                        title="Edit Invoice"
+                                                        aria-label="Edit Invoice"
+                                                    >
+                                                        <Pencil className="h-4 w-4" />
+                                                    </Button>
+                                                    <Button
+                                                        size="sm"
+                                                        variant="ghost"
+                                                        className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                                                        onClick={() => void handleDeleteInvoice(inv)}
+                                                        disabled={deletingInvoiceId === inv.id}
+                                                        title="Hapus Invoice"
+                                                        aria-label="Hapus Invoice"
+                                                    >
+                                                        {deletingInvoiceId === inv.id
+                                                            ? <Loader2 className="h-4 w-4 animate-spin" />
+                                                            : <Trash2 className="h-4 w-4" />}
+                                                    </Button>
                                                 </div>
                                             </TableCell>
                                         </TableRow>
@@ -914,6 +1106,137 @@ export default function SalesInvoice() {
               >
                 {isSavingInvoice ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
                 Simpan Invoice
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={isEditOpen}
+        onOpenChange={(open) => {
+          setIsEditOpen(open);
+          if (!open) setEditInvoice(null);
+        }}
+      >
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Edit Invoice / Faktur Penjualan</DialogTitle>
+            <DialogDescription>
+              Perbaiki nomor, tanggal, jatuh tempo, dan pelanggan faktur. Total tagihan mengikuti billing
+              final Work Order.
+            </DialogDescription>
+          </DialogHeader>
+
+          <form
+            onSubmit={(event) => {
+              event.preventDefault();
+              void handleSaveEdit();
+            }}
+          >
+            <div className="grid gap-4 py-2 sm:grid-cols-2">
+              <div className="space-y-2">
+                <Label>No. Work Order</Label>
+                <Input
+                  readOnly
+                  className="bg-slate-50"
+                  value={
+                    editInvoice?.work_order_id
+                      ? (editWorkOrderNumber || 'Memuat...')
+                      : '-'
+                  }
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Status Pembayaran</Label>
+                <Input
+                  readOnly
+                  className="bg-slate-50"
+                  value={getInvoiceStatusLabel(editInvoice?.status)}
+                />
+              </div>
+              <div className="space-y-2 sm:col-span-2">
+                <Label htmlFor="edit-invoice-number">No. Invoice / Faktur</Label>
+                <Input
+                  id="edit-invoice-number"
+                  maxLength={50}
+                  value={editForm.invoiceNumber}
+                  onChange={(event) =>
+                    setEditForm((current) => ({ ...current, invoiceNumber: event.target.value }))
+                  }
+                  required
+                />
+              </div>
+              <div className="space-y-2 sm:col-span-2">
+                <Label htmlFor="edit-customer-name">Pelanggan</Label>
+                <Input
+                  id="edit-customer-name"
+                  maxLength={200}
+                  value={editForm.customerName}
+                  onChange={(event) =>
+                    setEditForm((current) => ({ ...current, customerName: event.target.value }))
+                  }
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="edit-invoice-date">Tanggal Invoice / Faktur</Label>
+                <Input
+                  id="edit-invoice-date"
+                  type="date"
+                  value={editForm.invoiceDate}
+                  onChange={(event) =>
+                    setEditForm((current) => ({ ...current, invoiceDate: event.target.value }))
+                  }
+                  required
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="edit-due-date">Jatuh Tempo</Label>
+                <Input
+                  id="edit-due-date"
+                  type="date"
+                  min={editForm.invoiceDate || undefined}
+                  value={editForm.dueDate}
+                  onChange={(event) =>
+                    setEditForm((current) => ({ ...current, dueDate: event.target.value }))
+                  }
+                  required
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Total Tagihan</Label>
+                <Input
+                  readOnly
+                  className="bg-slate-50"
+                  value={formatCurrency(Number(editInvoice?.total_amount || 0))}
+                />
+                <p className="text-xs text-muted-foreground">Mengikuti billing final Work Order.</p>
+              </div>
+              <div className="space-y-2">
+                <Label>Sudah Dibayar</Label>
+                <Input
+                  readOnly
+                  className="bg-slate-50"
+                  value={formatCurrency(Number(editInvoice?.paid_amount || 0))}
+                />
+                <p className="text-xs text-muted-foreground">Diperbarui melalui menu Terima.</p>
+              </div>
+            </div>
+
+            {Number(editInvoice?.paid_amount || 0) > 0 || editInvoice?.status === 'PAID' ? (
+              <p className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+                Invoice ini sudah memiliki pembayaran. Perubahan hanya memengaruhi data faktur, bukan
+                jumlah yang sudah diterima.
+              </p>
+            ) : null}
+
+            <DialogFooter className="mt-4">
+              <Button type="button" variant="outline" onClick={closeEditDialog}>
+                Batal
+              </Button>
+              <Button type="submit" disabled={isSavingEdit}>
+                {isSavingEdit ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                Simpan Perubahan
               </Button>
             </DialogFooter>
           </form>

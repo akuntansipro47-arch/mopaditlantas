@@ -274,4 +274,37 @@ with check (true);
 grant select, insert, update, delete on public.sales_invoices to anon, authenticated;
 grant select, insert, update, delete on public.sales_receipts to anon, authenticated;
 
+-- 6) Perlindungan hapus invoice.
+-- sales_receipts memakai ON DELETE CASCADE, sehingga hapus invoice bisa ikut
+-- menghapus riwayat penerimaan dan meninggalkan jurnal kas menggantung.
+-- Trigger ini memblokir hapus invoice yang sudah menerima pembayaran.
+create or replace function public.prevent_paid_sales_invoice_delete()
+returns trigger
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_receipt_count integer := 0;
+begin
+  select count(*)
+    into v_receipt_count
+  from public.sales_receipts
+  where invoice_id = old.id;
+
+  if v_receipt_count > 0 or coalesce(old.paid_amount, 0) > 0 or upper(btrim(coalesce(old.status, ''))) = 'PAID' then
+    raise exception 'Invoice % memiliki penerimaan pembayaran dan tidak dapat dihapus', old.invoice_number
+      using errcode = '23514';
+  end if;
+
+  return old;
+end;
+$$;
+
+drop trigger if exists trg_prevent_paid_sales_invoice_delete on public.sales_invoices;
+create trigger trg_prevent_paid_sales_invoice_delete
+before delete on public.sales_invoices
+for each row
+execute function public.prevent_paid_sales_invoice_delete();
+
 commit;
