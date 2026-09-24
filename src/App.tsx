@@ -28,7 +28,7 @@ import PurchaseOrderReturn from "@/pages/transactions/PurchaseOrderReturn";
 
 // Keuangan
 import PurchasePayment from "@/pages/finance/PurchasePayment";
-import SalesInvoiceDisabled from "@/pages/finance/SalesInvoiceDisabled";
+import SalesInvoice from "@/pages/finance/SalesInvoice";
 import CashBank from "@/pages/finance/CashBankV2";
 import ManualJournalEntry from "@/pages/finance/ManualJournalEntry";
 import GeneralLedger from "@/pages/finance/GeneralLedger";
@@ -49,6 +49,7 @@ import PrintGoodsReceipt from "@/pages/print/PrintGoodsReceipt";
 import PrintPO from "@/pages/print/PrintPO";
 import PrintPODotMatrix from "@/pages/print/PrintPODotMatrix";
 import PrintSPKDotMatrix from "@/pages/print/PrintSPKDotMatrix";
+import PrintInvoice from "@/pages/print/PrintInvoice";
 
 export default function App() {
   const guardByPermission = (
@@ -110,7 +111,7 @@ export default function App() {
 
               {/* Keuangan */}
               <Route path="/finance/payments" element={guardByPermission(<PurchasePayment />, ['finance_payments'])} />
-              <Route path="/finance/sales" element={guardByPermission(<SalesInvoiceDisabled />, ['finance_sales'])} />
+              <Route path="/finance/sales" element={guardByPermission(<SalesInvoice />, ['finance_sales'])} />
               <Route path="/finance/cash-bank" element={guardByPermission(<CashBank />, ['finance_cash'])} />
               <Route path="/finance/journal-entry" element={guardByPermission(<ManualJournalEntry />, ['finance_journal'])} />
               <Route path="/finance/general-ledger" element={guardByPermission(<GeneralLedger />, ['finance_gl'])} />
@@ -167,6 +168,10 @@ export default function App() {
             <Route
               path="/print/po-dot/:id"
               element={guardByPermission(<PrintPODotMatrix />, ['trans_po', 'report_po', 'report_podetail', 'report_po_detail_new'])}
+            />
+            <Route
+              path="/print/invoice/:id"
+              element={guardByPermission(<PrintInvoice />, ['finance_sales'])}
             />
           </Route>
         </Routes>

@@ -10,6 +10,7 @@ import { Calendar, Download, Printer, Search } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import * as XLSX from 'xlsx';
 import ReportPrintHeader from '@/components/reports/ReportPrintHeader';
+import { getWorkOrderStatusLabel } from '@/lib/workOrderRules';
 
 export default function VehicleExitReport() {
   const [rows, setRows] = useState<any[]>([]);
@@ -131,7 +132,7 @@ export default function VehicleExitReport() {
       'Tipe Kendaraan': r.vehicle_entries?.vehicles?.brand_type || '-',
       'Group': getVehicleGroupLabel(r),
       'Mekanik': r.mechanics?.name || '-',
-      'Status WO': r.status || '-',
+      'Status WO': getWorkOrderStatusLabel(r.status),
     }));
     const ws = XLSX.utils.json_to_sheet(dataToExport);
     const wb = XLSX.utils.book_new();

@@ -11,6 +11,7 @@ import * as XLSX from 'xlsx';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import ReportPrintHeader from '@/components/reports/ReportPrintHeader';
+import { getWorkOrderStatusBadgeClass, getWorkOrderStatusLabel, isWorkOrderDone, normalizeWorkOrderStatus } from '@/lib/workOrderRules';
 
 export default function EstimationVsRealizationReport() {
   const [data, setData] = useState<any[]>([]);
@@ -135,7 +136,7 @@ export default function EstimationVsRealizationReport() {
           if (!woId || price <= 0) return;
           if (poStatus === 'CANCELLED' || poStatus === 'RETURNED_FULL') return;
 
-          // Total PO PART per WO: dipakai untuk WO yang statusnya COMPLETE/CLOSED
+          // Total PO PART per WO: dipakai untuk WO yang statusnya COMPLETED
           if (lineType !== 'JASA' && qty > 0) {
             poPartTotalByWo[woId] = (poPartTotalByWo[woId] || 0) + (price * qty);
           }
@@ -195,14 +196,14 @@ export default function EstimationVsRealizationReport() {
           let realPart = 0;
 
           const woId = String(woInfo?.id || '').trim();
-          const status = String(woInfo?.status || entry.status || '').toUpperCase();
+          const status = normalizeWorkOrderStatus(woInfo?.status || entry.status);
           const billsAll = Array.isArray(woInfo?.work_order_billings) ? woInfo.work_order_billings : [];
 
           // Default: realisasi pakai billing FINAL (bukan info_only)
-          // Jika WO sudah COMPLETED/CLOSED tapi ternyata hanya ada info_only (data tidak konsisten),
+          // Jika WO sudah COMPLETED tapi ternyata hanya ada info_only (data tidak konsisten),
           // fallback pakai semua billing supaya kolom realisasi tidak kosong.
           let bills = billsAll.filter((b: any) => b?.is_info_only !== true);
-          if ((status === 'COMPLETED' || status === 'CLOSED') && bills.length === 0 && billsAll.length > 0) {
+          if (isWorkOrderDone(status) && bills.length === 0 && billsAll.length > 0) {
             bills = billsAll;
           }
 
@@ -285,14 +286,14 @@ export default function EstimationVsRealizationReport() {
           // Jika WO sudah selesai tapi tidak ada billing JOB sama sekali,
           // gunakan estimasi jasa sebagai fallback agar realisasi tidak kosong.
           // (Kalau billing ada, tetap pakai billing.)
-          if ((status === 'COMPLETED' || status === 'CLOSED') && realJob === 0 && billsAll.length === 0 && estJob > 0) {
+          if (isWorkOrderDone(status) && realJob === 0 && billsAll.length === 0 && estJob > 0) {
             realJob = estJob;
           }
 
-          // Fallback paling aman: WO sudah COMPLETED/CLOSED tapi tidak ada sumber realisasi sama sekali
+          // Fallback paling aman: WO sudah COMPLETED tapi tidak ada sumber realisasi sama sekali
           // (tidak ada billing, tidak ada GI/PO terdeteksi). Agar laporan konsisten dengan status,
           // isi realisasi mengikuti estimasi.
-          if (status === 'COMPLETED' || status === 'CLOSED') {
+          if (isWorkOrderDone(status)) {
             // Ditentukan lagi di switch rule di bawah.
           }
 
@@ -304,7 +305,6 @@ export default function EstimationVsRealizationReport() {
           // OPEN       : belum ada realisasi
           // IN_PROGRESS: jasa belum final, part mengikuti barang yang sudah keluar/terdeteksi
           // COMPLETED  : jasa = estimasi, part = nilai PO by WO
-          // CLOSED     : sama seperti COMPLETED
           // CANCELLED  : tidak dihitung realisasi
           switch (status) {
             case 'OPEN':
@@ -316,7 +316,6 @@ export default function EstimationVsRealizationReport() {
               realPart = calculatedPart;
               break;
             case 'COMPLETED':
-            case 'CLOSED':
               realJob = estJob;
               realPart = poPartTotal > 0 ? poPartTotal : calculatedPart > 0 ? calculatedPart : estPart;
               break;
@@ -647,14 +646,8 @@ export default function EstimationVsRealizationReport() {
                                         <TableCell>
                                             <div className="flex flex-col gap-1">
                                                 <span className="font-medium text-slate-900">{item.wo_number}</span>
-                                                <Badge variant="outline" className={`w-fit text-[10px] px-1.5 py-0 border-0 ${
-                                                    item.status === 'COMPLETED' ? 'bg-green-100 text-green-700' :
-                                                    item.status === 'CLOSED' ? 'bg-slate-100 text-slate-700' :
-                                                    item.status === 'IN_PROGRESS' ? 'bg-blue-100 text-blue-700' :
-                                                    item.status === 'CANCELLED' ? 'bg-red-100 text-red-700' :
-                                                    'bg-yellow-100 text-yellow-700'
-                                                }`}>
-                                                    {item.status}
+                                                <Badge variant="outline" className={`w-fit border-0 px-1.5 py-0 text-[10px] ${getWorkOrderStatusBadgeClass(item.status)}`}>
+                                                    {getWorkOrderStatusLabel(item.status)}
                                                 </Badge>
                                             </div>
                                         </TableCell>

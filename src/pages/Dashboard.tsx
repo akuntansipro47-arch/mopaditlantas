@@ -322,6 +322,7 @@ export default function Dashboard() {
             wo_number,
             status,
             work_date,
+            completed_at,
             vehicle_entry_id,
             vehicle_entries (
               entry_date
@@ -335,8 +336,8 @@ export default function Dashboard() {
               total_price
             )
           `)
-            .gte('work_date', start30Date)
-            .in('status', ['CLOSED', 'COMPLETED']);
+            .gte('completed_at', start30Date)
+            .in('status', ['COMPLETED', 'CLOSED']);
           if (completedWoErr) warn('Gagal ambil WO selesai (30 hari)', completedWoErr);
 
           const { data: last30Invoices, error: invoices30Err } = await supabase

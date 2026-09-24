@@ -815,12 +815,11 @@ const WorkOrderDetailReport = () => {
                                 <SelectContent>
                                     <SelectItem value="semua">Semua Status WO</SelectItem>
                                     <SelectItem value="aktif">Aktif (Open / Progress)</SelectItem>
-                                    <SelectItem value="OPEN">Open</SelectItem>
-                                    <SelectItem value="IN_PROGRESS">In Progress</SelectItem>
-                                    <SelectItem value="selesai">Selesai (Completed / Closed)</SelectItem>
-                                    <SelectItem value="COMPLETED">Completed</SelectItem>
-                                    <SelectItem value="CLOSED">Closed</SelectItem>
-                                    <SelectItem value="CANCELLED">Cancelled</SelectItem>
+                                    <SelectItem value="OPEN">OPEN</SelectItem>
+                                    <SelectItem value="IN_PROGRESS">PROGRESS</SelectItem>
+                                    <SelectItem value="selesai">Selesai (Completed)</SelectItem>
+                                    <SelectItem value="COMPLETED">COMPLETED</SelectItem>
+                                    <SelectItem value="CANCELLED">CANCELLED</SelectItem>
                                 </SelectContent>
                             </Select>
                         </div>

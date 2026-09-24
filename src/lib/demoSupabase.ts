@@ -255,7 +255,7 @@ function ensureDemoSeed() {
     vehicle_entry_id: e2.id,
     work_date: dateOnly(d(13)),
     completed_at: ts(d(12)),
-    status: 'CLOSED',
+    status: 'COMPLETED',
     created_at: ts(d(18)),
   });
   writeTable('work_orders', [wo1, wo2]);

@@ -104,7 +104,7 @@ CREATE TABLE IF NOT EXISTS work_orders (
     vehicle_entry_id UUID REFERENCES vehicle_entries(id),
     mechanic_id UUID REFERENCES mechanics(id),
     work_date DATE NOT NULL,
-    status VARCHAR(30) DEFAULT 'OPEN' CHECK (status IN ('OPEN', 'IN_PROGRESS', 'COMPLETED', 'CLOSED')),
+    status VARCHAR(30) DEFAULT 'OPEN' CHECK (status IN ('OPEN', 'IN_PROGRESS', 'COMPLETED')),
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 

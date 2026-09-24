@@ -7,7 +7,7 @@ import {
 } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Plus, Search, Eye, Trash2, ClipboardCheck, Play, CheckCircle, RefreshCw, Printer } from 'lucide-react';
+import { Plus, Search, Eye, Trash2, Play, CheckCircle, RefreshCw, Printer } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { toast } from 'sonner';
 import {
@@ -25,11 +25,14 @@ import { useAuth } from '@/context/AuthContext';
 import { incrementDocumentPrintCounter } from '@/lib/printCounter';
 import { logActivity } from '@/lib/activityLog';
 import { ensureCanPrintSpk, logSpkPrintActivity } from '@/lib/woPrint';
+import { getWorkOrderStatusLabel, normalizeWorkOrderStatus } from '@/lib/workOrderRules';
+import { ensureSalesInvoiceForCompletedWorkOrder, formatLocalInvoiceDate } from '@/lib/salesInvoice';
 
 type WO = Database['public']['Tables']['work_orders']['Row'];
 type VehicleEntry = Database['public']['Tables']['vehicle_entries']['Row'];
 type Vehicle = Database['public']['Tables']['vehicles']['Row'];
 type Mechanic = Database['public']['Tables']['mechanics']['Row'];
+type WorkOrderStatus = 'OPEN' | 'IN_PROGRESS' | 'COMPLETED';
 
 export type WOWithDetails = WO & {
   vehicle_entries: (VehicleEntry & { vehicles: Vehicle | null }) | null;
@@ -143,7 +146,11 @@ export default function WorkOrder() {
         .order('created_at', { ascending: false });
 
       if (error) throw error;
-      setWos(data as any || []);
+      const normalizedRows = ((data || []) as WOWithDetails[]).map((row) => {
+        const status = normalizeWorkOrderStatus(row?.status);
+        return status === 'UNKNOWN' ? row : { ...row, status };
+      });
+      setWos(normalizedRows);
     } catch (error: any) {
       toast.error('Gagal mengambil data WO: ' + error.message);
     } finally {
@@ -386,28 +393,40 @@ export default function WorkOrder() {
     await handleStatusChange(wo.id, 'IN_PROGRESS');
   };
 
-  const handleStatusChange = async (id: string, newStatus: string) => {
+  const handleStatusChange = async (id: string, newStatus: WorkOrderStatus) => {
     try {
-      const isDone = newStatus === 'COMPLETED' || newStatus === 'CLOSED';
+      const completedAt = newStatus === 'COMPLETED' ? new Date().toISOString() : null;
       const { error } = await supabase
         .from('work_orders')
-        .update({ status: newStatus, completed_at: isDone ? new Date().toISOString() : null } as any)
+        .update({ status: newStatus, completed_at: completedAt } as any)
         .eq('id', id);
-      
-      if (error) {
-        const msg = String((error as any)?.message || '');
-        if (msg.toLowerCase().includes('completed_at')) {
-          const { error: retryErr } = await supabase
-            .from('work_orders')
-            .update({ status: newStatus } as any)
-            .eq('id', id);
-          if (retryErr) throw retryErr;
+
+      if (error) throw error;
+
+      if (newStatus === 'COMPLETED') {
+        const workOrder = wos.find((item) => String(item.id) === String(id));
+        if (!workOrder) {
+          toast.warning(`WO selesai, tetapi invoice belum dapat dibuat karena data WO tidak ditemukan.`);
         } else {
-          throw error;
+          try {
+            const invoiceResult = await ensureSalesInvoiceForCompletedWorkOrder({
+              ...workOrder,
+              status: 'COMPLETED',
+              completed_at: completedAt,
+            });
+            toast.success(
+              `WO selesai. Invoice ${invoiceResult.invoice?.invoice_number || ''} siap dengan tanggal ${invoiceResult.invoice?.invoice_date || (completedAt ? formatLocalInvoiceDate(completedAt) : '-')}.`,
+            );
+          } catch (invoiceError: any) {
+            toast.warning(
+              `WO berhasil diselesaikan, tetapi invoice otomatis gagal: ${invoiceError?.message || invoiceError}`,
+            );
+          }
         }
+      } else {
+        toast.success(`Status WO diubah menjadi ${getWorkOrderStatusLabel(newStatus)}`);
       }
-      
-      toast.success(`Status WO diubah menjadi ${newStatus}`);
+
       await fetchWOs();
     } catch (error: any) {
       toast.error('Gagal update status: ' + error.message);
@@ -526,9 +545,9 @@ export default function WorkOrder() {
             return;
           }
 
-          // Aturan: 1 estimasi (entry) = maksimal 1 WO. Selain WO aktif,
-          // estimasi yang WO-nya sudah COMPLETED/CLOSED juga tidak boleh
-          // dibuatkan WO baru (perbaikan estimasi dilakukan lewat Re-open WO).
+          // Aturan: 1 estimasi (entry) = maksimal 1 WO. Estimasi yang WO-nya
+          // sudah COMPLETED juga tidak boleh dibuatkan WO baru (perbaikan
+          // estimasi dilakukan lewat Re-open WO).
           // Nopol boleh punya banyak WO asal entry/estimasinya berbeda.
           const { data: existingWo } = await supabase
             .from('work_orders')
@@ -539,10 +558,10 @@ export default function WorkOrder() {
           );
           if (dup) {
             const dupStatus = String(dup?.status || '').toUpperCase();
-            const isDone = dupStatus === 'COMPLETED' || dupStatus === 'CLOSED';
+            const isDone = normalizeWorkOrderStatus(dupStatus) === 'COMPLETED';
             toast.error(
               isDone
-                ? `Estimasi ${(veCheck as any)?.entry_number || ''} sudah memiliki WO ${dup.wo_number} berstatus ${dupStatus} (selesai/ditutup). Estimasi yang sudah selesai tidak bisa dibuatkan WO baru — gunakan Re-open WO bila memang perlu dikerjakan ulang.`
+                ? `Estimasi ${(veCheck as any)?.entry_number || ''} sudah memiliki WO ${dup.wo_number} berstatus ${normalizeWorkOrderStatus(dupStatus)}. Estimasi yang sudah selesai tidak bisa dibuatkan WO baru — gunakan Re-open WO bila memang perlu dikerjakan ulang.`
                 : `Estimasi ${(veCheck as any)?.entry_number || ''} sudah memiliki WO aktif (${dup.wo_number}, status ${dupStatus}). ` +
                   'Selesaikan atau hapus WO tersebut dulu — satu estimasi hanya boleh punya satu WO.'
             );
@@ -632,9 +651,8 @@ export default function WorkOrder() {
   );
 
   // Picker "Cari Kendaraan Masuk": selain status OPEN di DB, entry juga harus
-  // benar-benar belum punya WO. Status CLOSED/PROCESSED di modul Estimasi adalah
-  // turunan dari status WO (bukan kolom DB), jadi kolom status bisa tetap 'OPEN'
-  // padahal WO-nya sudah IN_PROGRESS / COMPLETED / CLOSED.
+  // benar-benar belum punya WO. Status PROCESSED di modul Estimasi adalah
+  // turunan dari keberadaan WO (bukan status Work Order).
   const selectableEntries = entries.filter((e) => {
     const linkedWos: any[] = Array.isArray((e as any).work_orders) ? ((e as any).work_orders as any[]) : [];
     const hasWo = linkedWos.some((w) => String(w?.status || '').trim().toUpperCase() !== 'CANCELLED');
@@ -871,12 +889,11 @@ export default function WorkOrder() {
                       <TableCell>{item.mechanics?.name || '-'}</TableCell>
                       <TableCell>
                         <div className="flex items-center gap-2">
-                        <Badge variant={
-                          item.status === 'OPEN' ? 'secondary' : 
-                          item.status === 'IN_PROGRESS' ? 'default' : 
-                          (item.status === 'COMPLETED' || item.status === 'CLOSED') ? 'outline' : 'destructive'
-                        } className={(item.status === 'COMPLETED' || item.status === 'CLOSED') ? 'bg-green-100 text-green-800 border-transparent' : ''}>
-                          {item.status.replace('_', ' ')}
+                        <Badge
+                          variant={item.status === 'OPEN' ? 'secondary' : item.status === 'IN_PROGRESS' ? 'default' : 'outline'}
+                          className={item.status === 'COMPLETED' ? 'bg-green-100 text-green-800 border-transparent' : ''}
+                        >
+                          {getWorkOrderStatusLabel(item.status)}
                         </Badge>
                         </div>
                       </TableCell>
@@ -892,12 +909,12 @@ export default function WorkOrder() {
                               <CheckCircle className="h-4 w-4 mr-1" /> Selesai
                             </Button>
                           )}
-                          { (item.status === 'COMPLETED' || item.status === 'CLOSED') && (
+                          {item.status === 'COMPLETED' && (
                             <Button size="sm" variant="outline" className="h-8 bg-blue-50 hover:bg-blue-100 text-blue-700 border-blue-200" onClick={() => window.open(`/print/surat-jalan/${item.id}`, '_blank')}>
                               <Printer className="h-4 w-4 mr-1" /> Surat Jalan
                             </Button>
                           )}
-                          { (item.status === 'COMPLETED' || item.status === 'CLOSED') && (
+                          {item.status === 'COMPLETED' && (
                             <Button size="sm" variant="secondary" className="h-8" onClick={() => handleReopenWO(item)}>
                               <RefreshCw className="h-4 w-4 mr-1" /> Re-open
                             </Button>
@@ -917,7 +934,7 @@ export default function WorkOrder() {
                           >
                             <Eye className="h-4 w-4 mr-1" /> Edit
                           </Button>
-                          {item.status !== 'COMPLETED' && item.status !== 'CLOSED' && (
+                          {item.status !== 'COMPLETED' && (
                             <Button
                               variant="destructive"
                               size="icon"

@@ -10,6 +10,7 @@ import { formatCurrency, formatDate } from '@/lib/utils';
 import { Download, Printer, RefreshCw, Search } from 'lucide-react';
 import ReportPrintHeader from '@/components/reports/ReportPrintHeader';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { getWorkOrderStatusBadgeClass, getWorkOrderStatusLabel } from '@/lib/workOrderRules';
 
 export default function WOUnitMasukReport() {
   const [loading, setLoading] = useState(true);
@@ -365,13 +366,8 @@ export default function WOUnitMasukReport() {
                         </TableCell>
                         <TableCell>
                           {r.wo_number !== '-' ? (
-                            <span className={`text-xs px-2 py-0.5 rounded font-medium ${
-                              r.wo_status === 'CLOSED' ? 'bg-green-100 text-green-800' :
-                              r.wo_status === 'COMPLETED' ? 'bg-blue-100 text-blue-800' :
-                              r.wo_status === 'IN_PROGRESS' ? 'bg-amber-100 text-amber-800' :
-                              'bg-slate-100 text-slate-600'
-                            }`}>
-                              {r.wo_status}
+                            <span className={`rounded px-2 py-0.5 text-xs font-medium ${getWorkOrderStatusBadgeClass(r.wo_status)}`}>
+                              {getWorkOrderStatusLabel(r.wo_status)}
                             </span>
                           ) : '-'}
                         </TableCell>

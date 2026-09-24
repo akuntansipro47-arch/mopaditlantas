@@ -22,6 +22,7 @@ import {
 import { useRealtimeRefetch } from '@/hooks/useRealtimeRefetch';
 import { useAuth } from '@/context/AuthContext';
 import { logActivity } from '@/lib/activityLog';
+import { isWorkOrderDone, normalizeWorkOrderStatus } from '@/lib/workOrderRules';
 
 type EstimationChangeRow = {
   id: string;
@@ -2498,11 +2499,10 @@ export default function VehicleEntryPage() {
                         <div className="flex flex-col gap-1">
                           {(() => {
                             const statusWeight = (s?: string | null) => {
-                              const v = String(s || '').toUpperCase();
-                              if (v === 'CLOSED') return 4;
-                              if (v === 'COMPLETED') return 3;
-                              if (v === 'IN_PROGRESS') return 2;
-                              if (v === 'OPEN') return 1;
+                              const status = normalizeWorkOrderStatus(s);
+                              if (status === 'COMPLETED') return 4;
+                              if (status === 'IN_PROGRESS') return 2;
+                              if (status === 'OPEN') return 1;
                               return 0;
                             };
                             const woList = Array.isArray(item.work_orders) ? item.work_orders : [];
@@ -2511,18 +2511,18 @@ export default function VehicleEntryPage() {
                               return statusWeight(cur?.status) > statusWeight(best?.status) ? cur : best;
                             }, null as any);
 
-                            const woStatus = String(woBest?.status || '').toUpperCase();
+                            const woStatus = normalizeWorkOrderStatus(woBest?.status);
                             const woNumber = woBest?.wo_number || '-';
-                            const isLocked = woStatus === 'COMPLETED' || woStatus === 'CLOSED';
+                            const isLocked = isWorkOrderDone(woStatus);
 
-                            const entryDisplayStatus = isLocked ? 'CLOSED' : woBest ? 'PROCESSED' : 'OPEN';
+                            const entryDisplayStatus = isLocked ? 'SELESAI' : woBest ? 'PROCESSED' : 'OPEN';
 
                             return (
                               <>
                           {/* Entry Status */}
                           <span className={`px-2 py-1 rounded-full text-xs font-semibold w-fit ${
                             entryDisplayStatus === 'OPEN' ? 'bg-green-100 text-green-800' : 
-                            entryDisplayStatus === 'CLOSED' ? 'bg-gray-100 text-gray-800' : 'bg-blue-100 text-blue-800'
+                            entryDisplayStatus === 'SELESAI' ? 'bg-gray-100 text-gray-800' : 'bg-blue-100 text-blue-800'
                           }`}>
                             {entryDisplayStatus}
                           </span>
@@ -2534,9 +2534,7 @@ export default function VehicleEntryPage() {
                             }`}>
                               {woStatus === 'COMPLETED'
                                 ? `WO ${woNumber} (Selesai)`
-                                : woStatus === 'CLOSED'
-                                  ? `WO ${woNumber} (Close)`
-                                  : `WO ${woNumber} (Proses)`}
+                                : `WO ${woNumber} (Proses)`}
                             </span>
                           ) : (
                             <span className="text-xs text-muted-foreground italic pl-1">Belum WO</span>
@@ -2549,11 +2547,10 @@ export default function VehicleEntryPage() {
                       <TableCell className="text-right pr-6">
                         {(() => {
                           const statusWeight = (s?: string | null) => {
-                            const v = String(s || '').toUpperCase();
-                            if (v === 'CLOSED') return 4;
-                            if (v === 'COMPLETED') return 3;
-                            if (v === 'IN_PROGRESS') return 2;
-                            if (v === 'OPEN') return 1;
+                            const status = normalizeWorkOrderStatus(s);
+                            if (status === 'COMPLETED') return 4;
+                            if (status === 'IN_PROGRESS') return 2;
+                            if (status === 'OPEN') return 1;
                             return 0;
                           };
                           const woList = Array.isArray(item.work_orders) ? item.work_orders : [];
@@ -2562,8 +2559,8 @@ export default function VehicleEntryPage() {
                             return statusWeight(cur?.status) > statusWeight(best?.status) ? cur : best;
                           }, null as any);
 
-                          const woStatus = String(woBest?.status || '').toUpperCase();
-                          const isLocked = woStatus === 'COMPLETED' || woStatus === 'CLOSED';
+                          const woStatus = normalizeWorkOrderStatus(woBest?.status);
+                          const isLocked = isWorkOrderDone(woStatus);
                           const canEditThis = !isLocked || isSuperAdmin;
                           return (
                             <div className="flex justify-end gap-3">

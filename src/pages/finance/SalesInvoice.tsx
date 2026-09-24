@@ -5,10 +5,10 @@ import {
 } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { toast } from 'sonner';
 import { formatCurrency, formatDate } from '@/lib/utils';
-import { Search, Wallet, RefreshCw, Edit, Printer } from 'lucide-react';
+import { Search, Wallet, RefreshCw, Printer } from 'lucide-react';
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
@@ -17,6 +17,10 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  ensureSalesInvoiceForCompletedWorkOrder,
+  type CompletedWorkOrderInvoiceSource,
+} from '@/lib/salesInvoice';
 
 export default function SalesInvoice() {
   const [activeTab, setActiveTab] = useState('invoices');
@@ -27,7 +31,7 @@ export default function SalesInvoice() {
   const [isSyncing, setIsSyncing] = useState(false);
   
   // Filters
-  const [dateFilter, setDateFilter] = useState({
+  const [dateFilter] = useState({
     startDate: new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0],
     endDate: new Date().toISOString().split('T')[0]
   });
@@ -104,72 +108,66 @@ export default function SalesInvoice() {
   async function handleSyncWOs() {
     setIsSyncing(true);
     try {
-        // 1. Get COMPLETED WOs
-        const { data: wos } = await supabase
+        const { data: wos, error: woError } = await supabase
             .from('work_orders')
             .select(`
-                id, wo_number, work_date, 
+                id, wo_number, work_date, completed_at, status, vehicle_entry_id,
                 vehicle_entries (
-                    id, 
-                    vehicles (license_plate, brand_type)
+                    id,
+                    vehicle_id,
+                    vehicles (id, license_plate, brand_type, owner_name)
                 )
             `)
-            .eq('status', 'COMPLETED');
+            .in('status', ['COMPLETED', 'CLOSED']);
+
+        if (woError) throw woError;
         
         if (!wos || wos.length === 0) {
-            toast.info("Tidak ada WO selesai yang perlu disinkronisasi.");
+            toast.info('Tidak ada Work Order COMPLETED yang perlu diproses.');
             return;
         }
 
-        // 2. Get Existing Invoices
-        const { data: existingInvoices } = await supabase
+        const { data: existingInvoices, error: existingError } = await supabase
             .from('sales_invoices')
             .select('work_order_id');
-        
-        const existingWoIds = new Set(existingInvoices?.map(inv => inv.work_order_id));
+        if (existingError) throw existingError;
 
-        // 3. Filter Missing
-        const missingWos = wos.filter(w => !existingWoIds.has(w.id));
+        const existingWoIds = new Set(
+            (existingInvoices || [])
+                .map((invoice) => String(invoice.work_order_id || ''))
+                .filter(Boolean),
+        );
+        const missingWos = (wos as CompletedWorkOrderInvoiceSource[]).filter(
+          (wo) => !existingWoIds.has(String(wo.id)),
+        );
 
         if (missingWos.length === 0) {
-            toast.success("Semua WO sudah dibuatkan invoice.");
+            toast.success('Semua Work Order COMPLETED sudah memiliki invoice.');
             return;
         }
 
-        // 4. Calculate Total & Create Invoices
-        let count = 0;
+        let created = 0;
+        const failures: string[] = [];
         for (const wo of missingWos) {
-            // Get Billings Total
-            const { data: billings } = await supabase
-                .from('work_order_billings')
-                .select('total_price')
-                .eq('work_order_id', wo.id);
-            
-            const total = billings?.reduce((sum, item) => sum + (item.total_price || 0), 0) || 0;
-
-            if (total > 0) {
-                const vehicle = (wo.vehicle_entries as any)?.vehicles;
-                const customerName = vehicle ? `${vehicle.license_plate} - ${vehicle.brand_type}` : 'Umum';
-
-                await supabase.from('sales_invoices').insert({
-                    invoice_number: `INV-${wo.wo_number}`,
-                    work_order_id: wo.id,
-                    customer_name: customerName,
-                    vehicle_id: (wo.vehicle_entries as any)?.vehicle_id,
-                    invoice_date: new Date().toISOString().split('T')[0], // Invoice date = Sync date
-                    due_date: new Date().toISOString().split('T')[0], // Due immediately
-                    total_amount: total,
-                    status: 'UNPAID'
-                });
-                count++;
+            try {
+                const result = await ensureSalesInvoiceForCompletedWorkOrder(wo);
+                if (result.created) created += 1;
+            } catch (error: unknown) {
+                const message = error instanceof Error ? error.message : String(error);
+                failures.push(`${wo.wo_number}: ${message}`);
             }
         }
 
-        toast.success(`Berhasil membuat ${count} invoice baru.`);
-        fetchInvoices();
+        await fetchInvoices();
+        if (created > 0) {
+            toast.success(`Berhasil membuat ${created} invoice dari Work Order COMPLETED.`);
+        }
+        if (failures.length > 0) {
+            toast.error(`${failures.length} invoice gagal dibuat. ${failures.slice(0, 3).join(' | ')}`);
+        }
 
     } catch (error: any) {
-        toast.error("Gagal sinkronisasi: " + error.message);
+        toast.error("Gagal memproses invoice Work Order: " + error.message);
     } finally {
         setIsSyncing(false);
     }
@@ -237,7 +235,16 @@ export default function SalesInvoice() {
     setLoading(true);
     try {
       const amount = Number(paymentData.amount);
-      
+      const outstanding = Number(selectedInvoice.total_amount || 0) - Number(selectedInvoice.paid_amount || 0);
+      if (!Number.isFinite(amount) || amount <= 0) {
+        toast.error('Jumlah diterima harus lebih besar dari nol.');
+        return;
+      }
+      if (amount > outstanding) {
+        toast.error('Jumlah diterima tidak boleh melebihi sisa tagihan.');
+        return;
+      }
+
       // 1. Create Receipt
       const { data: receipt, error: payError } = await supabase
         .from('sales_receipts')
@@ -258,10 +265,11 @@ export default function SalesInvoice() {
       // 2. Update Invoice
       const newPaidAmount = (selectedInvoice.paid_amount || 0) + amount;
       const newStatus = newPaidAmount >= selectedInvoice.total_amount ? 'PAID' : 'PARTIAL';
-      await supabase
+      const { error: invoiceUpdateError } = await supabase
         .from('sales_invoices')
         .update({ paid_amount: newPaidAmount, status: newStatus })
         .eq('id', selectedInvoice.id);
+      if (invoiceUpdateError) throw invoiceUpdateError;
 
       // 3. Create Journal Entry (GL)
       // Dr: Kas/Bank
@@ -373,11 +381,16 @@ export default function SalesInvoice() {
   return (
     <div className="space-y-6">
       {AccountSelector()}
-      <div className="flex items-center justify-between">
-        <h2 className="text-3xl font-bold tracking-tight">Pembayaran Piutang (Invoice)</h2>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h2 className="text-3xl font-bold tracking-tight">Invoice / Faktur Penjualan</h2>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Invoice dibuat otomatis dari Work Order COMPLETED. Tanggal invoice mengikuti tanggal WO diproses selesai.
+          </p>
+        </div>
         <Button variant="outline" onClick={handleSyncWOs} disabled={isSyncing}>
             <RefreshCw className={`mr-2 h-4 w-4 ${isSyncing ? 'animate-spin' : ''}`} />
-            Sinkronisasi WO Selesai
+            Proses WO Selesai
         </Button>
       </div>
 
@@ -401,6 +414,7 @@ export default function SalesInvoice() {
                       <SelectContent>
                           <SelectItem value="ALL">Semua Status</SelectItem>
                           <SelectItem value="UNPAID">Belum Lunas</SelectItem>
+                          <SelectItem value="PARTIAL">Sebagian</SelectItem>
                           <SelectItem value="PAID">Lunas</SelectItem>
                       </SelectContent>
                   </Select>
@@ -439,16 +453,25 @@ export default function SalesInvoice() {
                                             <TableCell className="text-right font-bold text-red-600">{formatCurrency(remaining)}</TableCell>
                                             <TableCell className="text-center">
                                                 <span className={`px-2 py-1 rounded text-xs font-semibold 
-                                                    ${inv.status === 'PAID' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
-                                                    {inv.status === 'PAID' ? 'LUNAS' : 'BELUM LUNAS'}
+                                                    ${inv.status === 'PAID' ? 'bg-green-100 text-green-800' : inv.status === 'PARTIAL' ? 'bg-amber-100 text-amber-800' : 'bg-red-100 text-red-800'}`}>
+                                                    {inv.status === 'PAID' ? 'LUNAS' : inv.status === 'PARTIAL' ? 'SEBAGIAN' : 'BELUM LUNAS'}
                                                 </span>
                                             </TableCell>
                                             <TableCell className="text-right">
-                                                {inv.status !== 'PAID' && (
-                                                    <Button size="sm" onClick={() => handlePayClick(inv)}>
-                                                        <Wallet className="mr-2 h-4 w-4" /> Terima
+                                                <div className="flex justify-end gap-2">
+                                                    <Button
+                                                        size="sm"
+                                                        variant="outline"
+                                                        onClick={() => window.open(`/print/invoice/${inv.id}`, '_blank')}
+                                                    >
+                                                        <Printer className="mr-2 h-4 w-4" /> Faktur
                                                     </Button>
-                                                )}
+                                                    {inv.status !== 'PAID' && remaining > 0 && (
+                                                        <Button size="sm" onClick={() => handlePayClick(inv)}>
+                                                            <Wallet className="mr-2 h-4 w-4" /> Terima
+                                                        </Button>
+                                                    )}
+                                                </div>
                                             </TableCell>
                                         </TableRow>
                                     );

@@ -7,11 +7,53 @@ interface InvoicePrintProps {
   id: string;
 }
 
+type InvoiceData = {
+  id: string;
+  invoice_number: string;
+  work_order_id?: string | null;
+  invoice_date: string;
+  due_date?: string | null;
+  total_amount?: number | string | null;
+};
+
+type WorkOrderPrintData = {
+  wo_number: string;
+  mechanics?: { name?: string | null } | null;
+  vehicle_entries?: {
+    entry_date?: string | null;
+    nota_dinas_number?: string | null;
+    vehicles?: {
+      license_plate?: string | null;
+      brand_type?: string | null;
+      chassis_number?: string | null;
+      engine_number?: string | null;
+    } | null;
+  } | null;
+};
+
+type BillingData = {
+  item_name: string;
+  item_type: string;
+  qty: number | string;
+  unit_price: number | string;
+  total_price: number | string;
+  is_info_only?: boolean | null;
+};
+
+type AgencyData = {
+  logo_url?: string | null;
+  name?: string | null;
+  address?: string | null;
+  phone?: string | null;
+  email?: string | null;
+};
+
 export default function InvoicePrint({ id }: InvoicePrintProps) {
-  const [wo, setWo] = useState<any>(null);
-  const [billings, setBillings] = useState<any[]>([]);
+  const [invoice, setInvoice] = useState<InvoiceData | null>(null);
+  const [wo, setWo] = useState<WorkOrderPrintData | null>(null);
+  const [billings, setBillings] = useState<BillingData[]>([]);
   const [loading, setLoading] = useState(true);
-  const [agency, setAgency] = useState<any>(null);
+  const [agency, setAgency] = useState<AgencyData | null>(null);
 
   useEffect(() => {
     fetchData();
@@ -23,6 +65,15 @@ export default function InvoicePrint({ id }: InvoicePrintProps) {
       const { data: agencyData } = await supabase.from('agency_profile').select('*').single();
       setAgency(agencyData);
 
+      const { data: invoiceData, error: invoiceError } = await supabase
+        .from('sales_invoices')
+        .select('*')
+        .eq('id', id)
+        .single();
+      if (invoiceError) throw invoiceError;
+      if (!invoiceData?.work_order_id) throw new Error('Invoice belum terhubung dengan Work Order.');
+      setInvoice(invoiceData);
+
       const { data: woData, error: woError } = await supabase
         .from('work_orders')
         .select(`
@@ -33,7 +84,7 @@ export default function InvoicePrint({ id }: InvoicePrintProps) {
             vehicles (*)
           )
         `)
-        .eq('id', id)
+        .eq('id', invoiceData.work_order_id)
         .single();
       
       if (woError) throw woError;
@@ -42,10 +93,10 @@ export default function InvoicePrint({ id }: InvoicePrintProps) {
       const { data: billingData, error: billingError } = await supabase
         .from('work_order_billings')
         .select('*')
-        .eq('work_order_id', id);
+        .eq('work_order_id', invoiceData.work_order_id);
 
       if (billingError) throw billingError;
-      setBillings(billingData || []);
+      setBillings((billingData || []).filter((billing) => billing?.is_info_only !== true));
 
       // Auto print after loading
       setTimeout(() => {
@@ -63,9 +114,9 @@ export default function InvoicePrint({ id }: InvoicePrintProps) {
     return <div className="flex justify-center items-center h-screen"><Loader2 className="animate-spin h-8 w-8" /></div>;
   }
 
-  if (!wo) return <div>Data Invoice tidak ditemukan.</div>;
+  if (!invoice || !wo) return <div>Data Invoice tidak ditemukan.</div>;
 
-  const totalAmount = billings.reduce((sum, item) => sum + item.total_price, 0);
+  const totalAmount = Number(invoice.total_amount || 0);
 
   return (
     <div className="printable-area p-2 max-w-[215mm] mx-auto bg-white min-h-screen font-sans text-[10px] leading-tight">
@@ -87,12 +138,12 @@ export default function InvoicePrint({ id }: InvoicePrintProps) {
           </div>
           <div className="text-right">
             <div className="mb-1">
-              <span className="font-bold block text-sm">{wo.wo_number}</span>
-              <span className="text-gray-500 text-[9px]">NO. WO</span>
+              <span className="font-bold block text-sm">{invoice.invoice_number}</span>
+              <span className="text-gray-500 text-[9px]">NO. INVOICE</span>
             </div>
             <div>
-              <span className="block text-[10px] font-medium">{formatDate(new Date().toISOString())}</span>
-              <span className="text-gray-500 text-[9px]">TANGGAL CETAK</span>
+              <span className="block text-[10px] font-medium">{formatDate(invoice.invoice_date)}</span>
+              <span className="text-gray-500 text-[9px]">TANGGAL INVOICE</span>
             </div>
           </div>
         </div>
@@ -128,8 +179,16 @@ export default function InvoicePrint({ id }: InvoicePrintProps) {
           <table className="w-full text-[10px]">
             <tbody>
               <tr>
+                <td className="w-20 text-gray-600">No. WO</td>
+                <td className="font-medium">: {wo.wo_number}</td>
+              </tr>
+              <tr>
                 <td className="w-20 text-gray-600">Mekanik</td>
                 <td className="font-medium">: {wo.mechanics?.name}</td>
+              </tr>
+              <tr>
+                <td className="text-gray-600">Jatuh Tempo</td>
+                <td>: {formatDate(invoice.due_date)}</td>
               </tr>
               <tr>
                 <td className="text-gray-600">Tgl. Masuk</td>
@@ -168,8 +227,8 @@ export default function InvoicePrint({ id }: InvoicePrintProps) {
                   </span>
                 </td>
                 <td className="py-1 px-2 text-center align-top">{item.qty}</td>
-                <td className="py-1 px-2 text-right align-top">{formatCurrency(item.unit_price)}</td>
-                <td className="py-1 px-2 text-right align-top font-bold">{formatCurrency(item.total_price)}</td>
+                <td className="py-1 px-2 text-right align-top">{formatCurrency(Number(item.unit_price))}</td>
+                <td className="py-1 px-2 text-right align-top font-bold">{formatCurrency(Number(item.total_price))}</td>
               </tr>
             ))}
           </tbody>

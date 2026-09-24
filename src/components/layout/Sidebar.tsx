@@ -15,6 +15,7 @@ import {
   Users,
   UserCog,
   FileInput,
+  FileText,
   ShoppingCart,
   PackageCheck,
   ClipboardCheck,
@@ -119,6 +120,7 @@ const navigation: NavItem[] = [
     key: 'finance',
     children: [
       { name: 'Pembayaran Hutang', href: '/finance/payments', icon: Wallet, key: 'finance_payments' },
+      { name: 'Invoice / Faktur Penjualan', href: '/finance/sales', icon: FileText, key: 'finance_sales' },
       { name: 'Kas & Bank', href: '/finance/cash-bank', icon: Wallet, key: 'finance_cash' },
       { name: 'Jurnal Umum', href: '/finance/journal-entry', icon: ClipboardList, key: 'finance_journal' },
       { name: 'Buku Besar', href: '/finance/general-ledger', icon: Wallet, key: 'finance_gl' },

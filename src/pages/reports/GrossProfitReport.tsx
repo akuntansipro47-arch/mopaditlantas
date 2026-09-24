@@ -77,7 +77,7 @@ export default function GrossProfitReport() {
             .select(`
                 id, wo_number, vehicle_entry_id
             `)
-            .in('status', ['COMPLETED', 'CLOSED']); // Fetch CLOSED too!
+            .in('status', ['COMPLETED', 'CLOSED']);
         
         if (!wos || wos.length === 0) {
              toast.info("Tidak ada WO Completed.");

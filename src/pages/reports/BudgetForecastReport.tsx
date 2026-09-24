@@ -423,8 +423,7 @@ export default function BudgetForecastReport() {
     if (arr.length === 0) return null;
     const statusRank = (s: any) => {
       const v = String(s || '').toUpperCase();
-      if (v === 'CLOSED') return 3;
-      if (v === 'COMPLETED') return 2;
+      if (v === 'COMPLETED' || v === 'CLOSED') return 2;
       if (v === 'IN_PROGRESS') return 1;
       if (v === 'OPEN') return 0;
       return -1;

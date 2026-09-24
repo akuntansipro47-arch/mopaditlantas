@@ -16,6 +16,7 @@ import {
 import * as XLSX from 'xlsx';
 import ReportPrintHeader from '@/components/reports/ReportPrintHeader';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { getWorkOrderStatusLabel, isWorkOrderActive, isWorkOrderDone } from '@/lib/workOrderRules';
 
 export default function VehicleEntryReport() {
   const [entries, setEntries] = useState<any[]>([]);
@@ -94,7 +95,7 @@ export default function VehicleEntryReport() {
       // Filter Logic:
       // 1. OPEN (Belum WO): Entry status is OPEN AND no WO exists.
       // 2. WO_PROCESS: WO exists AND (status is OPEN or IN_PROGRESS)
-      // 3. WO_COMPLETED: WO exists AND (status is COMPLETED or CLOSED)
+      // 3. WO_COMPLETED: WO exists AND status is COMPLETED
 
       if (statusFilter === 'OPEN') {
           finalData = finalData.filter((e: any) => {
@@ -110,7 +111,7 @@ export default function VehicleEntryReport() {
               // OR Entry is OPEN but WO exists (which means it IS in process, despite entry status lag)
               
               if (wo) {
-                  return (wo.status === 'OPEN' || wo.status === 'IN_PROGRESS');
+                  return isWorkOrderActive(wo.status);
               }
               // Fallback: If entry is PROCESSED but no WO found, treat as Process to avoid it disappearing
               return e.status === 'PROCESSED';
@@ -118,7 +119,7 @@ export default function VehicleEntryReport() {
       } else if (statusFilter === 'WO_COMPLETED') {
           finalData = finalData.filter((e: any) => {
               const wo = e.work_orders?.[0];
-              return wo && (wo.status === 'COMPLETED' || wo.status === 'CLOSED');
+              return Boolean(wo && isWorkOrderDone(wo.status));
           });
       }
 
@@ -443,11 +444,11 @@ export default function VehicleEntryReport() {
                             {/* WO Status */}
                             {item.work_orders?.[0] ? (
                                 <span className={`px-2 py-1 rounded-full text-[10px] font-bold border w-fit ${
-                                    item.work_orders[0].status === 'COMPLETED' || item.work_orders[0].status === 'CLOSED'
+                                    isWorkOrderDone(item.work_orders[0].status)
                                     ? 'bg-green-50 text-green-700 border-green-200'
                                     : 'bg-purple-50 text-purple-700 border-purple-200'
                                 }`}>
-                                    WO: {item.work_orders[0].status}
+                                    WO: {getWorkOrderStatusLabel(item.work_orders[0].status)}
                                 </span>
                             ) : (
                                 <span className="text-[10px] text-gray-400 italic">Belum ada WO</span>

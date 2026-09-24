@@ -41,11 +41,11 @@ export default function DebugSync() {
   const fetchProblematicWOs = async () => {
     setLoading(true);
     try {
-      // 1. Get all CLOSED/COMPLETED WOs
+      // 1. Get all COMPLETED WOs
       const { data: allWos } = await supabase
         .from('work_orders')
         .select('id, wo_number, work_date, status, grand_total')
-        .in('status', ['CLOSED', 'COMPLETED'])
+        .in('status', ['COMPLETED', 'CLOSED'])
         .order('work_date', { ascending: false });
 
       if (!allWos) return;
@@ -406,7 +406,7 @@ export default function DebugSync() {
         <CardContent>
           <div className="mb-4 flex justify-between items-center">
             <p className="text-muted-foreground">
-                Menampilkan WO yang statusnya CLOSED/COMPLETED tapi belum memiliki Jurnal Otomatis.
+                Menampilkan WO yang statusnya COMPLETED tapi belum memiliki Jurnal Otomatis.
             </p>
             <Button onClick={fetchProblematicWOs} disabled={loading}>
                 <RefreshCw className={`mr-2 h-4 w-4 ${loading ? 'animate-spin' : ''}`} /> Scan Ulang

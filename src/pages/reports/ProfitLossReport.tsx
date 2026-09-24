@@ -51,7 +51,7 @@ export default function ProfitLossReport() {
       `)
       .gte('work_date', startDate)
       .lte('work_date', endDate)
-      .in('status', ['CLOSED', 'COMPLETED']);
+      .in('status', ['COMPLETED', 'CLOSED']);
     if (woErr) throw woErr;
 
     const goodsIds = new Set<string>();

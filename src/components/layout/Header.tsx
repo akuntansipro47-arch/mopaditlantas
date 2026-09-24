@@ -26,7 +26,7 @@ export function Header({ onMenuClick, sidebarOpen = false }: HeaderProps) {
     pathname.startsWith('/transactions/issue') ? 'Transaksi • Barang Keluar' :
     pathname.startsWith('/transactions/wo') ? 'Transaksi • Work Order' :
     pathname.startsWith('/finance/payments') ? 'Keuangan • Pembayaran Hutang' :
-    pathname.startsWith('/finance/sales') ? 'Keuangan • Pembayaran Piutang' :
+    pathname.startsWith('/finance/sales') ? 'Keuangan • Invoice / Faktur Penjualan' :
     pathname.startsWith('/finance/cash-bank') ? 'Keuangan • Kas & Bank' :
     pathname.startsWith('/finance/journal-entry') ? 'Keuangan • Jurnal Umum' :
     pathname.startsWith('/finance/general-ledger') ? 'Keuangan • Buku Besar' :

@@ -7,7 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Download, Calendar, Search } from 'lucide-react';
 import { formatCurrency, formatDate, matchesFreeSearch } from '@/lib/utils';
-import { getWorkOrderStatusBadgeClass, getWorkOrderStatusLabel, isWorkOrderActive, isWorkOrderDone, isWorkOrderCancelled, normalizeWorkOrderStatus } from '@/lib/workOrderRules';
+import { getWorkOrderStatusBadgeClass, getWorkOrderStatusLabel, isWorkOrderDone, isWorkOrderCancelled, normalizeWorkOrderStatus } from '@/lib/workOrderRules';
 import * as XLSX from 'xlsx';
 
 export default function WorkOrderReport() {
@@ -63,12 +63,10 @@ export default function WorkOrderReport() {
         query = query.in('status', ['OPEN', 'IN_PROGRESS']);
       } else if (statusFilter === 'ARCHIVED') {
         query = query.in('status', ['COMPLETED', 'CLOSED']);
+      } else if (statusFilter === 'COMPLETED') {
+        query = query.in('status', ['COMPLETED', 'CLOSED']);
       } else if (statusFilter !== 'ALL') {
-        if (statusFilter === 'COMPLETED') {
-             query = query.in('status', ['COMPLETED', 'CLOSED']);
-        } else {
-             query = query.eq('status', statusFilter);
-        }
+        query = query.eq('status', statusFilter);
       }
 
       const { data: result, error } = await query;
@@ -91,7 +89,7 @@ export default function WorkOrderReport() {
 
         (poItems || []).forEach((item: any) => {
           const woId = String(item.purchase_orders?.work_order_id || '').trim();
-          const poStatus = normalizeWorkOrderStatus(item.purchase_orders?.status);
+          const poStatus = String(item.purchase_orders?.status || '').trim().toUpperCase();
           const lineType = String(item.line_type || 'PART').toUpperCase();
           const qty = Number(item.quantity || 0);
           const unitPrice = Number(item.unit_price || 0);
@@ -195,7 +193,7 @@ export default function WorkOrderReport() {
     const dataForExport = filteredData.map(wo => ({
         'No. WO': wo.wo_number,
         'Tanggal': formatDate(wo.work_date),
-        'Status': wo.status,
+        'Status': getWorkOrderStatusLabel(wo.status),
         'Mekanik': wo.mechanics?.name || '-',
         'No. Polisi': wo.vehicle_entries?.vehicles?.license_plate || '-',
         'Nama Kendaraan': wo.vehicle_entries?.vehicles?.brand_type || '-',
@@ -242,11 +240,11 @@ export default function WorkOrderReport() {
             <SelectContent>
               <SelectItem value="ALL">Semua Status</SelectItem>
               <SelectItem value="ACTIVE">Aktif (Open / Progress)</SelectItem>
-              <SelectItem value="ARCHIVED">Selesai / Ditutup (Arsip)</SelectItem>
-              <SelectItem value="OPEN">Belum Mulai (Open)</SelectItem>
-              <SelectItem value="IN_PROGRESS">Sedang Dikerjakan</SelectItem>
-              <SelectItem value="COMPLETED">Selesai (Completed/Closed)</SelectItem>
-              <SelectItem value="CANCELLED">Dibatalkan</SelectItem>
+              <SelectItem value="ARCHIVED">Selesai (Arsip)</SelectItem>
+              <SelectItem value="OPEN">OPEN</SelectItem>
+              <SelectItem value="IN_PROGRESS">PROGRESS</SelectItem>
+              <SelectItem value="COMPLETED">COMPLETED</SelectItem>
+              <SelectItem value="CANCELLED">CANCELLED</SelectItem>
             </SelectContent>
           </Select>
            <Button variant="outline" onClick={exportToExcel}><Download className="mr-2 h-4 w-4" /> Export</Button>
