@@ -156,6 +156,11 @@ begin
   from public.work_order_billings wob
   where wob.work_order_id = p_work_order_id;
 
+  if v_total_amount <= 0 then
+    raise exception 'Rincian tagihan final WO % belum tersedia', p_work_order_id
+      using errcode = '22023';
+  end if;
+
   v_invoice_date := coalesce(
     (v_work_order.completed_at at time zone 'Asia/Jakarta')::date,
     v_work_order.work_date,

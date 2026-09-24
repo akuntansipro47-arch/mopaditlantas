@@ -127,6 +127,10 @@ export async function ensureSalesInvoiceForCompletedWorkOrder(
     .filter((billing) => billing?.is_info_only !== true)
     .reduce((sum, billing) => sum + (Number(billing?.total_price || 0) || 0), 0);
 
+  if (totalAmount <= 0) {
+    throw new Error('Rincian tagihan final WO belum tersedia. Siapkan billing final sebelum membuat invoice.');
+  }
+
   const entry = Array.isArray(workOrder.vehicle_entries)
     ? workOrder.vehicle_entries[0]
     : workOrder.vehicle_entries;
