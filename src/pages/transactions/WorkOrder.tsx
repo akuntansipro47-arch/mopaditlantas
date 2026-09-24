@@ -26,7 +26,6 @@ import { incrementDocumentPrintCounter } from '@/lib/printCounter';
 import { logActivity } from '@/lib/activityLog';
 import { ensureCanPrintSpk, logSpkPrintActivity } from '@/lib/woPrint';
 import { getWorkOrderStatusLabel, normalizeWorkOrderStatus } from '@/lib/workOrderRules';
-import { ensureSalesInvoiceForCompletedWorkOrder, formatLocalInvoiceDate } from '@/lib/salesInvoice';
 
 type WO = Database['public']['Tables']['work_orders']['Row'];
 type VehicleEntry = Database['public']['Tables']['vehicle_entries']['Row'];
@@ -403,30 +402,7 @@ export default function WorkOrder() {
 
       if (error) throw error;
 
-      if (newStatus === 'COMPLETED') {
-        const workOrder = wos.find((item) => String(item.id) === String(id));
-        if (!workOrder) {
-          toast.warning(`WO selesai, tetapi invoice belum dapat dibuat karena data WO tidak ditemukan.`);
-        } else {
-          try {
-            const invoiceResult = await ensureSalesInvoiceForCompletedWorkOrder({
-              ...workOrder,
-              status: 'COMPLETED',
-              completed_at: completedAt,
-            });
-            toast.success(
-              `WO selesai. Invoice ${invoiceResult.invoice?.invoice_number || ''} siap dengan tanggal ${invoiceResult.invoice?.invoice_date || (completedAt ? formatLocalInvoiceDate(completedAt) : '-')}.`,
-            );
-          } catch (invoiceError: any) {
-            toast.warning(
-              `WO berhasil diselesaikan, tetapi invoice otomatis gagal: ${invoiceError?.message || invoiceError}`,
-            );
-          }
-        }
-      } else {
-        toast.success(`Status WO diubah menjadi ${getWorkOrderStatusLabel(newStatus)}`);
-      }
-
+      toast.success(`Status WO diubah menjadi ${getWorkOrderStatusLabel(newStatus)}`);
       await fetchWOs();
     } catch (error: any) {
       toast.error('Gagal update status: ' + error.message);

@@ -84,9 +84,9 @@ async function findExistingInvoice(workOrderId: string) {
 /**
  * Creates a sales invoice for a completed Work Order exactly once.
  *
- * The database migration installs an idempotent RPC and an AFTER UPDATE trigger.
- * The direct insert fallback keeps the feature usable while that migration is
- * being applied and still uses the same deterministic, unique invoice number.
+ * The database migration installs an idempotent RPC. The direct insert
+ * fallback keeps the feature usable while that migration is being applied and
+ * still uses the same deterministic, unique invoice number.
  */
 export async function ensureSalesInvoiceForCompletedWorkOrder(
   workOrder: CompletedWorkOrderInvoiceSource,

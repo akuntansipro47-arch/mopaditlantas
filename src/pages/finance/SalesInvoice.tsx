@@ -385,7 +385,7 @@ export default function SalesInvoice() {
         <div>
           <h2 className="text-3xl font-bold tracking-tight">Invoice / Faktur Penjualan</h2>
           <p className="mt-1 text-sm text-muted-foreground">
-            Invoice dibuat otomatis dari Work Order COMPLETED. Tanggal invoice mengikuti tanggal WO diproses selesai.
+            Invoice hanya dapat dibuat dari Work Order COMPLETED. Tanggal invoice otomatis mengikuti tanggal WO diproses selesai.
           </p>
         </div>
         <Button variant="outline" onClick={handleSyncWOs} disabled={isSyncing}>

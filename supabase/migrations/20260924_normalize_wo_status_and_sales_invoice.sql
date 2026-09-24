@@ -1,4 +1,4 @@
--- 1) Normalisasi lifecycle Work Order dan otomatiskan invoice penjualan.
+-- 1) Normalisasi lifecycle Work Order dan implementasi invoice penjualan.
 -- Rule baru: OPEN -> IN_PROGRESS (label UI: PROGRESS) -> COMPLETED.
 -- CLOSE/CLOSED adalah status legacy dan dipetakan ke COMPLETED.
 
@@ -200,33 +200,7 @@ $$;
 revoke all on function public.create_sales_invoice_from_work_order(uuid) from public;
 grant execute on function public.create_sales_invoice_from_work_order(uuid) to anon, authenticated;
 
--- 4) Transisi WO menjadi COMPLETED otomatis memanggil pembuatan invoice.
-create or replace function public.handle_completed_work_order_invoice()
-returns trigger
-language plpgsql
-security definer
-set search_path = public, pg_temp
-as $$
-begin
-  if new.status = 'COMPLETED' then
-    if tg_op = 'INSERT' then
-      perform public.create_sales_invoice_from_work_order(new.id);
-    elsif old.status is distinct from 'COMPLETED' then
-      perform public.create_sales_invoice_from_work_order(new.id);
-    end if;
-  end if;
-
-  return new;
-end;
-$$;
-
-drop trigger if exists trg_completed_work_order_invoice on public.work_orders;
-create trigger trg_completed_work_order_invoice
-after insert or update of status on public.work_orders
-for each row
-execute function public.handle_completed_work_order_invoice();
-
--- Invoice WO lama tidak dibuat otomatis dalam migration agar tidak membuat
+-- 4) Invoice WO lama tidak dibuat otomatis dalam migration agar tidak membuat
 -- record keuangan tanpa persetujuan. Gunakan tombol "Proses WO Selesai" pada
 -- modul Invoice / Faktur Penjualan untuk memproses WO COMPLETED yang belum
 -- memiliki invoice.
@@ -251,7 +225,7 @@ begin
 end;
 $$;
 
--- 6) Aplikasi memakai custom login dan request Supabase datang sebagai anon.
+-- 5) Aplikasi memakai custom login dan request Supabase datang sebagai anon.
 -- Policy ini mengikuti model akses aplikasi yang sudah berjalan, sehingga modul
 -- invoice/penerimaan dapat memakai RLS tanpa Supabase Auth session.
 drop policy if exists "Enable all access for authenticated users" on public.sales_invoices;
