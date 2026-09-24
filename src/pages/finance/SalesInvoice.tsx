@@ -8,7 +8,7 @@ import { Input } from '@/components/ui/input';
 import { Card, CardContent } from '@/components/ui/card';
 import { toast } from 'sonner';
 import { formatCurrency, formatDate } from '@/lib/utils';
-import { FilePlus2, Loader2, Pencil, Printer, Search, Trash2, Wallet } from 'lucide-react';
+import { FilePlus2, Loader2, Pencil, Printer, RotateCcw, Search, Trash2, Wallet } from 'lucide-react';
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
@@ -101,6 +101,19 @@ function getErrorMessageText(error: unknown): string {
   return String(error || 'Kesalahan tidak diketahui');
 }
 
+/**
+ * Invoice dianggap sudah menerima pembayaran jika ada nilai bayar atau status
+ * LUNAS/SEBAGIAN. Invoice posisi ini tidak boleh diedit maupun dihapus sampai
+ * pembayarannya dibatalkan.
+ */
+function invoiceHasPayment(invoice?: SalesInvoiceRecord | null): boolean {
+  if (!invoice) return false;
+  const status = String(invoice.status || '').trim().toUpperCase();
+  return Number(invoice.paid_amount || 0) > 0 || status === 'PAID' || status === 'PARTIAL';
+}
+
+const PAYMENT_LOCK_HINT = 'Batalkan pembayaran terlebih dahulu.';
+
 /** Migration 20260924 adds work_orders.completed_at; production may not have run it yet. */
 function isMissingCompletedAtError(error: unknown): boolean {
   if (!error || typeof error !== 'object') return false;
@@ -139,6 +152,7 @@ export default function SalesInvoice() {
 
   // Delete Invoice
   const [deletingInvoiceId, setDeletingInvoiceId] = useState<string | null>(null);
+  const [cancellingInvoiceId, setCancellingInvoiceId] = useState<string | null>(null);
   
   // Filters
   const [dateFilter] = useState({
@@ -367,7 +381,30 @@ export default function SalesInvoice() {
     }
   }
 
-  function handleEditClick(invoice: SalesInvoiceRecord) {
+  async function handleEditClick(invoice: SalesInvoiceRecord) {
+    if (invoiceHasPayment(invoice)) {
+      toast.error(
+        `Invoice ${invoice.invoice_number} sudah menerima pembayaran dan tidak dapat diedit. ${PAYMENT_LOCK_HINT}`,
+      );
+      return;
+    }
+
+    const { data: receipts, error: receiptError } = await supabase
+      .from('sales_receipts')
+      .select('id')
+      .eq('invoice_id', invoice.id)
+      .limit(1);
+    if (receiptError) {
+      toast.error('Gagal memeriksa pembayaran invoice: ' + getErrorMessageText(receiptError));
+      return;
+    }
+    if (receipts && receipts.length > 0) {
+      toast.error(
+        `Invoice ${invoice.invoice_number} memiliki ${receipts.length} penerimaan pembayaran dan tidak dapat diedit. ${PAYMENT_LOCK_HINT}`,
+      );
+      return;
+    }
+
     setEditInvoice(invoice);
     setEditForm({
       invoiceNumber: invoice?.invoice_number || '',
@@ -401,6 +438,13 @@ export default function SalesInvoice() {
 
   async function handleSaveEdit() {
     if (!editInvoice) return;
+
+    if (invoiceHasPayment(editInvoice)) {
+      toast.error(
+        `Invoice ${editInvoice.invoice_number} sudah menerima pembayaran dan tidak dapat diedit. ${PAYMENT_LOCK_HINT}`,
+      );
+      return;
+    }
 
     const invoiceNumber = editForm.invoiceNumber.trim();
     const customerName = editForm.customerName.trim();
@@ -458,7 +502,7 @@ export default function SalesInvoice() {
     const paidAmount = Number(invoice.paid_amount || 0);
     if (invoice.status === 'PAID' || paidAmount > 0) {
       toast.error(
-        `Invoice ${invoice.invoice_number} sudah menerima pembayaran ${formatCurrency(paidAmount)} dan tidak dapat dihapus.`,
+        `Invoice ${invoice.invoice_number} sudah menerima pembayaran ${formatCurrency(paidAmount)} dan tidak dapat dihapus. ${PAYMENT_LOCK_HINT}`,
       );
       return;
     }
@@ -472,7 +516,7 @@ export default function SalesInvoice() {
       if (receiptError) throw receiptError;
       if (receipts && receipts.length > 0) {
         toast.error(
-          `Invoice ${invoice.invoice_number} memiliki ${receipts.length} penerimaan pembayaran dan tidak dapat dihapus.`,
+          `Invoice ${invoice.invoice_number} memiliki ${receipts.length} penerimaan pembayaran dan tidak dapat dihapus. ${PAYMENT_LOCK_HINT}`,
         );
         return;
       }
@@ -494,6 +538,70 @@ export default function SalesInvoice() {
       toast.error('Gagal menghapus invoice: ' + getErrorMessageText(error));
     } finally {
       setDeletingInvoiceId(null);
+    }
+  }
+
+  /**
+   * Membatalkan seluruh pembayaran invoice: menghapus jurnal penerimaan dan
+   * data sales_receipts, lalu mengembalikan invoice ke UNPAID sehingga invoice
+   * kembali boleh diedit/dihapus.
+   */
+  async function handleCancelPayment(invoice: SalesInvoiceRecord) {
+    if (!invoice || cancellingInvoiceId) return;
+
+    setCancellingInvoiceId(invoice.id);
+    try {
+      const { data: receipts, error: receiptError } = await supabase
+        .from('sales_receipts')
+        .select('id, amount, receipt_number, payment_date')
+        .eq('invoice_id', invoice.id)
+        .order('payment_date', { ascending: true });
+      if (receiptError) throw receiptError;
+
+      if (!receipts || receipts.length === 0) {
+        toast.error(`Invoice ${invoice.invoice_number} tidak memiliki penerimaan pembayaran.`);
+        return;
+      }
+
+      const totalReceived = receipts.reduce((sum, receipt) => sum + Number(receipt?.amount || 0), 0);
+      const confirmed = window.confirm(
+        `Yakin ingin membatalkan seluruh pembayaran invoice "${invoice.invoice_number}"?\n\n` +
+          `Jumlah diterima: ${formatCurrency(totalReceived)} (${receipts.length} penerimaan)\n\n` +
+          'Jurnal penerimaan akan dihapus dan invoice kembali berstatus BELUM LUNAS,\n' +
+          'sehingga invoice dapat diedit dan dihapus kembali.',
+      );
+      if (!confirmed) return;
+
+      // 1. Hapus jurnal penerimaan (reference = id sales_receipts, items cascade).
+      const receiptIds = receipts.map((receipt) => receipt.id).filter(Boolean);
+      const { error: journalError } = await supabase
+        .from('journal_entries')
+        .delete()
+        .in('reference', receiptIds);
+      if (journalError) throw journalError;
+
+      // 2. Hapus penerimaan pembayaran.
+      const { error: receiptDeleteError } = await supabase
+        .from('sales_receipts')
+        .delete()
+        .in('id', receiptIds);
+      if (receiptDeleteError) throw receiptDeleteError;
+
+      // 3. Kembalikan invoice ke belum lunas.
+      const { error: invoiceResetError } = await supabase
+        .from('sales_invoices')
+        .update({ paid_amount: 0, status: 'UNPAID' })
+        .eq('id', invoice.id);
+      if (invoiceResetError) throw invoiceResetError;
+
+      toast.success(
+        `Pembayaran invoice ${invoice.invoice_number} dibatalkan. Invoice kembali BELUM LUNAS dan dapat diedit/dihapus.`,
+      );
+      await fetchInvoices();
+    } catch (error: unknown) {
+      toast.error('Gagal membatalkan pembayaran: ' + getErrorMessageText(error));
+    } finally {
+      setCancellingInvoiceId(null);
     }
   }
 
@@ -792,6 +900,7 @@ export default function SalesInvoice() {
                             ) : (
                                 filteredInvoices.map(inv => {
                                     const remaining = inv.total_amount - (inv.paid_amount || 0);
+                                    const hasPayment = invoiceHasPayment(inv);
                                     return (
                                         <TableRow key={inv.id}>
                                             <TableCell className="font-medium">{inv.invoice_number}</TableCell>
@@ -821,11 +930,30 @@ export default function SalesInvoice() {
                                                             <Wallet className="mr-2 h-4 w-4" /> Terima
                                                         </Button>
                                                     )}
+                                                    {hasPayment && (
+                                                        <Button
+                                                            size="sm"
+                                                            variant="outline"
+                                                            className="border-amber-300 text-amber-700 hover:bg-amber-50"
+                                                            onClick={() => void handleCancelPayment(inv)}
+                                                            disabled={cancellingInvoiceId === inv.id}
+                                                            title="Batalkan pembayaran agar invoice kembali dapat diedit/dihapus"
+                                                            aria-label="Batalkan Pembayaran"
+                                                        >
+                                                            {cancellingInvoiceId === inv.id
+                                                                ? <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                                                : <RotateCcw className="mr-2 h-4 w-4" />}
+                                                            Batal Bayar
+                                                        </Button>
+                                                    )}
                                                     <Button
                                                         size="sm"
                                                         variant="outline"
-                                                        onClick={() => handleEditClick(inv)}
-                                                        title="Edit Invoice"
+                                                        disabled={hasPayment}
+                                                        onClick={() => void handleEditClick(inv)}
+                                                        title={hasPayment
+                                                            ? `Invoice sudah menerima pembayaran. ${PAYMENT_LOCK_HINT}`
+                                                            : 'Edit Invoice'}
                                                         aria-label="Edit Invoice"
                                                     >
                                                         <Pencil className="h-4 w-4" />
@@ -835,8 +963,10 @@ export default function SalesInvoice() {
                                                         variant="ghost"
                                                         className="text-red-600 hover:text-red-700 hover:bg-red-50"
                                                         onClick={() => void handleDeleteInvoice(inv)}
-                                                        disabled={deletingInvoiceId === inv.id}
-                                                        title="Hapus Invoice"
+                                                        disabled={deletingInvoiceId === inv.id || hasPayment}
+                                                        title={hasPayment
+                                                            ? `Invoice sudah menerima pembayaran. ${PAYMENT_LOCK_HINT}`
+                                                            : 'Hapus Invoice'}
                                                         aria-label="Hapus Invoice"
                                                     >
                                                         {deletingInvoiceId === inv.id
@@ -1225,8 +1355,8 @@ export default function SalesInvoice() {
 
             {Number(editInvoice?.paid_amount || 0) > 0 || editInvoice?.status === 'PAID' ? (
               <p className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900">
-                Invoice ini sudah memiliki pembayaran. Perubahan hanya memengaruhi data faktur, bukan
-                jumlah yang sudah diterima.
+                Invoice ini sudah menerima pembayaran sehingga tidak dapat diedit maupun dihapus.
+                Batalkan pembayaran terlebih dahulu melalui tombol Batal Bayar.
               </p>
             ) : null}
 
