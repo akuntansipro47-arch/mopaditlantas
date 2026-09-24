@@ -77,6 +77,14 @@ function getWorkOrderVehicleLabel(workOrder: CompletedWorkOrderOption): string {
   return [vehicle?.license_plate, vehicle?.brand_type].filter(Boolean).join(' - ') || '-';
 }
 
+/** Migration 20260924 adds work_orders.completed_at; production may not have run it yet. */
+function isMissingCompletedAtError(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false;
+  const code = 'code' in error ? String((error as { code?: unknown }).code || '') : '';
+  const message = 'message' in error ? String((error as { message?: unknown }).message || '') : '';
+  return code === '42703' || (/completed_at/i.test(message) && /does not exist/i.test(message));
+}
+
 export default function SalesInvoice() {
   const [activeTab, setActiveTab] = useState('invoices');
   const [invoices, setInvoices] = useState<any[]>([]);
@@ -88,6 +96,8 @@ export default function SalesInvoice() {
   const [isSavingInvoice, setIsSavingInvoice] = useState(false);
   const [workOrderSearch, setWorkOrderSearch] = useState('');
   const [completedWorkOrders, setCompletedWorkOrders] = useState<CompletedWorkOrderOption[]>([]);
+  const [invoicedWorkOrderIds, setInvoicedWorkOrderIds] = useState<Set<string>>(new Set());
+  const [completedAtMissing, setCompletedAtMissing] = useState(false);
   const [selectedWorkOrder, setSelectedWorkOrder] = useState<CompletedWorkOrderOption | null>(null);
   const [invoiceForm, setInvoiceForm] = useState<InvoiceFormState>(EMPTY_INVOICE_FORM);
   
@@ -119,6 +129,7 @@ export default function SalesInvoice() {
     fetchInvoices();
     fetchCashBankAccounts();
     fetchArAccount();
+    void detectMissingCompletedAt();
   }, []);
 
   useEffect(() => {
@@ -166,44 +177,81 @@ export default function SalesInvoice() {
     }
   }
 
+  async function detectMissingCompletedAt() {
+    try {
+      const { error } = await supabase.from('work_orders').select('id, completed_at').limit(1);
+      setCompletedAtMissing(isMissingCompletedAtError(error));
+    } catch (error) {
+      setCompletedAtMissing(isMissingCompletedAtError(error));
+    }
+  }
+
   function resetInvoiceForm() {
     setSelectedWorkOrder(null);
     setInvoiceForm(EMPTY_INVOICE_FORM);
     setWorkOrderSearch('');
     setCompletedWorkOrders([]);
+    setInvoicedWorkOrderIds(new Set());
   }
 
   async function fetchCompletedWorkOrders() {
     setIsLoadingWorkOrders(true);
     try {
-      const [{ data: workOrders, error: workOrderError }, { data: invoices, error: invoiceError }] =
-        await Promise.all([
-          supabase
-            .from('work_orders')
-            .select(`
-              id, wo_number, work_date, completed_at, status, vehicle_entry_id,
-              vehicle_entries (
-                id,
-                vehicle_id,
-                vehicles (id, license_plate, brand_type, owner_name)
-              ),
-              work_order_billings (total_price, is_info_only)
-            `)
-            .in('status', ['COMPLETED', 'CLOSED'])
-            .order('completed_at', { ascending: false }),
-          supabase.from('sales_invoices').select('work_order_id'),
-        ]);
+      const workOrderFields = `
+        id, wo_number, work_date, completed_at, status, vehicle_entry_id,
+        vehicle_entries (
+          id,
+          vehicle_id,
+          vehicles (id, license_plate, brand_type, owner_name)
+        ),
+        work_order_billings (total_price, is_info_only)
+      `;
+      const workOrderFieldsWithoutCompletedAt = `
+        id, wo_number, work_date, status, vehicle_entry_id,
+        vehicle_entries (
+          id,
+          vehicle_id,
+          vehicles (id, license_plate, brand_type, owner_name)
+        ),
+        work_order_billings (total_price, is_info_only)
+      `;
+      // Status legacy CLOSE/CLOSED tetap diambil sampai migration dijalankan.
+      const completedStatuses = ['COMPLETED', 'CLOSED', 'CLOSE'];
+
+      let workOrderResult: { data: unknown; error: unknown } = await supabase
+        .from('work_orders')
+        .select(workOrderFields)
+        .in('status', completedStatuses)
+        .order('completed_at', { ascending: false });
+
+      if (workOrderResult.error && isMissingCompletedAtError(workOrderResult.error)) {
+        // Fallback sampai migration menambahkan kolom completed_at.
+        setCompletedAtMissing(true);
+        workOrderResult = await supabase
+          .from('work_orders')
+          .select(workOrderFieldsWithoutCompletedAt)
+          .in('status', completedStatuses)
+          .order('work_date', { ascending: false });
+      } else if (!workOrderResult.error) {
+        setCompletedAtMissing(false);
+      }
+
+      const { data: workOrders, error: workOrderError } = workOrderResult;
+      const { data: invoices, error: invoiceError } = await supabase
+        .from('sales_invoices')
+        .select('work_order_id');
 
       if (workOrderError) throw workOrderError;
-      if (invoiceError) throw invoiceError;
+      if (invoiceError) {
+        console.warn('Gagal membaca daftar invoice:', invoiceError);
+        toast.warning('Daftar invoice belum dapat dibaca, WO yang sudah diinvoice ditandai oleh database.');
+      }
 
-      const invoicedWorkOrderIds = new Set(
+      const invoicedIds = new Set<string>(
         (invoices || []).map((invoice) => String(invoice.work_order_id || '')).filter(Boolean),
       );
-      const availableWorkOrders = ((workOrders || []) as CompletedWorkOrderOption[]).filter(
-        (workOrder) => !invoicedWorkOrderIds.has(String(workOrder.id)),
-      );
-      setCompletedWorkOrders(availableWorkOrders);
+      setCompletedWorkOrders((workOrders || []) as CompletedWorkOrderOption[]);
+      setInvoicedWorkOrderIds(invoicedIds);
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error);
       toast.error('Gagal mengambil Work Order COMPLETED: ' + message);
@@ -219,6 +267,10 @@ export default function SalesInvoice() {
   }
 
   function selectWorkOrder(workOrder: CompletedWorkOrderOption) {
+    if (invoicedWorkOrderIds.has(String(workOrder.id))) {
+      toast.error(`${workOrder.wo_number} sudah memiliki invoice dan tidak dapat diproses ulang.`);
+      return;
+    }
     const invoiceDate = formatLocalInvoiceDate(workOrder.completed_at || workOrder.work_date);
     setSelectedWorkOrder(workOrder);
     setInvoiceForm({
@@ -234,6 +286,10 @@ export default function SalesInvoice() {
   async function handleSaveInvoice() {
     if (!selectedWorkOrder) {
       toast.error('Pilih Work Order COMPLETED terlebih dahulu.');
+      return;
+    }
+    if (invoicedWorkOrderIds.has(String(selectedWorkOrder.id))) {
+      toast.error(`${selectedWorkOrder.wo_number} sudah memiliki invoice.`);
       return;
     }
     if (!invoiceForm.invoiceNumber.trim()) {
@@ -442,6 +498,10 @@ export default function SalesInvoice() {
       .filter(Boolean)
       .some((value) => String(value).toLowerCase().includes(normalizedWorkOrderSearch));
   });
+  const pendingInvoiceWorkOrderCount = completedWorkOrders.filter(
+    (workOrder) => !invoicedWorkOrderIds.has(String(workOrder.id)),
+  ).length;
+  const invoicedWorkOrderCount = completedWorkOrders.length - pendingInvoiceWorkOrderCount;
 
   const filteredInvoices = invoices.filter(inv => {
     const matchSearch = inv.invoice_number.toLowerCase().includes(search.toLowerCase()) ||
@@ -501,6 +561,18 @@ export default function SalesInvoice() {
             Buat Invoice
         </Button>
       </div>
+
+      {completedAtMissing && (
+        <div className="rounded-md border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          <p className="font-semibold">Migration database belum dijalankan.</p>
+          <p className="mt-1">
+            Kolom <code>work_orders.completed_at</code> belum ada, sehingga tanggal invoice sementara memakai
+            tanggal kerja WO. Jalankan file{' '}
+            <code>supabase/migrations/20260924_normalize_wo_status_and_sales_invoice.sql</code> pada SQL
+            Editor Supabase agar tanggal selesai, status legacy, dan aturan invoice aktif.
+          </p>
+        </div>
+      )}
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
           <TabsList>
@@ -659,7 +731,13 @@ export default function SalesInvoice() {
                     />
                   </div>
                   <p className="text-xs text-muted-foreground">
-                    {completedWorkOrders.length} WO COMPLETED belum memiliki invoice.
+                    {isLoadingWorkOrders
+                      ? 'Memuat Work Order COMPLETED...'
+                      : completedWorkOrders.length === 0
+                        ? 'Belum ada Work Order berstatus COMPLETED.'
+                        : `${pendingInvoiceWorkOrderCount} WO COMPLETED belum memiliki invoice${
+                            invoicedWorkOrderCount > 0 ? ` · ${invoicedWorkOrderCount} sudah diinvoice` : ''
+                          }.`}
                   </p>
                 </div>
 
@@ -671,32 +749,42 @@ export default function SalesInvoice() {
                   ) : filteredCompletedWorkOrders.length === 0 ? (
                     <div className="rounded-md border border-dashed bg-white px-4 py-10 text-center text-sm text-muted-foreground">
                       {completedWorkOrders.length === 0
-                        ? 'Semua Work Order COMPLETED sudah memiliki invoice.'
+                        ? 'Belum ada Work Order berstatus COMPLETED.'
                         : 'Work Order tidak ditemukan.'}
                     </div>
                   ) : (
                     filteredCompletedWorkOrders.map((workOrder) => {
                       const isSelected = selectedWorkOrder?.id === workOrder.id;
+                      const isInvoiced = invoicedWorkOrderIds.has(String(workOrder.id));
                       const total = getWorkOrderTotal(workOrder);
                       return (
                         <button
                           key={workOrder.id}
                           type="button"
+                          disabled={isInvoiced}
                           onClick={() => selectWorkOrder(workOrder)}
-                          className={`w-full rounded-lg border bg-white p-3 text-left transition-colors hover:border-blue-400 hover:bg-blue-50 ${
-                            isSelected ? 'border-blue-500 bg-blue-50 ring-1 ring-blue-500' : ''
-                          }`}
+                          className={`w-full rounded-lg border bg-white p-3 text-left transition-colors ${
+                            isInvoiced
+                              ? 'cursor-not-allowed border-slate-200 opacity-70'
+                              : 'hover:border-blue-400 hover:bg-blue-50'
+                          } ${isSelected ? 'border-blue-500 bg-blue-50 ring-1 ring-blue-500' : ''}`}
                         >
                           <div className="flex items-start justify-between gap-3">
                             <div>
                               <p className="font-semibold text-slate-900">{workOrder.wo_number}</p>
                               <p className="text-sm text-slate-600">{getWorkOrderVehicleLabel(workOrder)}</p>
                             </div>
-                            <span className={`rounded px-2 py-1 text-[10px] font-semibold ${
-                              total > 0 ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
-                            }`}>
-                              {total > 0 ? formatCurrency(total) : 'Billing belum ada'}
-                            </span>
+                            {isInvoiced ? (
+                              <span className="whitespace-nowrap rounded bg-slate-200 px-2 py-1 text-[10px] font-semibold text-slate-700">
+                                Sudah diinvoice
+                              </span>
+                            ) : (
+                              <span className={`whitespace-nowrap rounded px-2 py-1 text-[10px] font-semibold ${
+                                total > 0 ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
+                              }`}>
+                                {total > 0 ? formatCurrency(total) : 'Billing belum ada'}
+                              </span>
+                            )}
                           </div>
                           <div className="mt-2 flex items-center justify-between text-xs text-slate-500">
                             <span>Selesai: {formatDate(workOrder.completed_at || workOrder.work_date)}</span>
