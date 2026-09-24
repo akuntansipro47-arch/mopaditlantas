@@ -8,7 +8,7 @@ import { Input } from '@/components/ui/input';
 import { Card, CardContent } from '@/components/ui/card';
 import { toast } from 'sonner';
 import { formatCurrency, formatDate } from '@/lib/utils';
-import { Search, Wallet, RefreshCw, Printer } from 'lucide-react';
+import { FilePlus2, Loader2, Printer, Search, Wallet } from 'lucide-react';
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
@@ -18,9 +18,64 @@ import {
 } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
+  buildInvoiceNumber,
   ensureSalesInvoiceForCompletedWorkOrder,
+  formatLocalInvoiceDate,
   type CompletedWorkOrderInvoiceSource,
 } from '@/lib/salesInvoice';
+
+type CompletedWorkOrderOption = CompletedWorkOrderInvoiceSource;
+
+type InvoiceFormState = {
+  invoiceNumber: string;
+  invoiceDate: string;
+  dueDate: string;
+  totalAmount: number;
+  customerName: string;
+  vehicleLabel: string;
+};
+
+const EMPTY_INVOICE_FORM: InvoiceFormState = {
+  invoiceNumber: '',
+  invoiceDate: '',
+  dueDate: '',
+  totalAmount: 0,
+  customerName: '',
+  vehicleLabel: '',
+};
+
+function getWorkOrderEntry(workOrder: CompletedWorkOrderOption) {
+  const entry = Array.isArray(workOrder.vehicle_entries)
+    ? workOrder.vehicle_entries[0]
+    : workOrder.vehicle_entries;
+  return entry || null;
+}
+
+function getWorkOrderVehicle(workOrder: CompletedWorkOrderOption) {
+  const entry = getWorkOrderEntry(workOrder);
+  const vehicle = Array.isArray(entry?.vehicles) ? entry?.vehicles[0] : entry?.vehicles;
+  return vehicle || null;
+}
+
+function getWorkOrderTotal(workOrder: CompletedWorkOrderOption): number {
+  return (workOrder.work_order_billings || [])
+    .filter((billing) => billing?.is_info_only !== true)
+    .reduce((sum, billing) => sum + (Number(billing?.total_price || 0) || 0), 0);
+}
+
+function getWorkOrderCustomer(workOrder: CompletedWorkOrderOption): string {
+  const vehicle = getWorkOrderVehicle(workOrder);
+  return (
+    String(vehicle?.owner_name || '').trim() ||
+    [vehicle?.license_plate, vehicle?.brand_type].filter(Boolean).join(' - ') ||
+    String(workOrder.wo_number || 'Umum')
+  );
+}
+
+function getWorkOrderVehicleLabel(workOrder: CompletedWorkOrderOption): string {
+  const vehicle = getWorkOrderVehicle(workOrder);
+  return [vehicle?.license_plate, vehicle?.brand_type].filter(Boolean).join(' - ') || '-';
+}
 
 export default function SalesInvoice() {
   const [activeTab, setActiveTab] = useState('invoices');
@@ -28,7 +83,13 @@ export default function SalesInvoice() {
   const [paymentHistory, setPaymentHistory] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
-  const [isSyncing, setIsSyncing] = useState(false);
+  const [isInvoiceFormOpen, setIsInvoiceFormOpen] = useState(false);
+  const [isLoadingWorkOrders, setIsLoadingWorkOrders] = useState(false);
+  const [isSavingInvoice, setIsSavingInvoice] = useState(false);
+  const [workOrderSearch, setWorkOrderSearch] = useState('');
+  const [completedWorkOrders, setCompletedWorkOrders] = useState<CompletedWorkOrderOption[]>([]);
+  const [selectedWorkOrder, setSelectedWorkOrder] = useState<CompletedWorkOrderOption | null>(null);
+  const [invoiceForm, setInvoiceForm] = useState<InvoiceFormState>(EMPTY_INVOICE_FORM);
   
   // Filters
   const [dateFilter] = useState({
@@ -105,71 +166,109 @@ export default function SalesInvoice() {
     }
   }
 
-  async function handleSyncWOs() {
-    setIsSyncing(true);
+  function resetInvoiceForm() {
+    setSelectedWorkOrder(null);
+    setInvoiceForm(EMPTY_INVOICE_FORM);
+    setWorkOrderSearch('');
+    setCompletedWorkOrders([]);
+  }
+
+  async function fetchCompletedWorkOrders() {
+    setIsLoadingWorkOrders(true);
     try {
-        const { data: wos, error: woError } = await supabase
+      const [{ data: workOrders, error: workOrderError }, { data: invoices, error: invoiceError }] =
+        await Promise.all([
+          supabase
             .from('work_orders')
             .select(`
-                id, wo_number, work_date, completed_at, status, vehicle_entry_id,
-                vehicle_entries (
-                    id,
-                    vehicle_id,
-                    vehicles (id, license_plate, brand_type, owner_name)
-                )
+              id, wo_number, work_date, completed_at, status, vehicle_entry_id,
+              vehicle_entries (
+                id,
+                vehicle_id,
+                vehicles (id, license_plate, brand_type, owner_name)
+              ),
+              work_order_billings (total_price, is_info_only)
             `)
-            .in('status', ['COMPLETED', 'CLOSED']);
+            .in('status', ['COMPLETED', 'CLOSED'])
+            .order('completed_at', { ascending: false }),
+          supabase.from('sales_invoices').select('work_order_id'),
+        ]);
 
-        if (woError) throw woError;
-        
-        if (!wos || wos.length === 0) {
-            toast.info('Tidak ada Work Order COMPLETED yang perlu diproses.');
-            return;
-        }
+      if (workOrderError) throw workOrderError;
+      if (invoiceError) throw invoiceError;
 
-        const { data: existingInvoices, error: existingError } = await supabase
-            .from('sales_invoices')
-            .select('work_order_id');
-        if (existingError) throw existingError;
-
-        const existingWoIds = new Set(
-            (existingInvoices || [])
-                .map((invoice) => String(invoice.work_order_id || ''))
-                .filter(Boolean),
-        );
-        const missingWos = (wos as CompletedWorkOrderInvoiceSource[]).filter(
-          (wo) => !existingWoIds.has(String(wo.id)),
-        );
-
-        if (missingWos.length === 0) {
-            toast.success('Semua Work Order COMPLETED sudah memiliki invoice.');
-            return;
-        }
-
-        let created = 0;
-        const failures: string[] = [];
-        for (const wo of missingWos) {
-            try {
-                const result = await ensureSalesInvoiceForCompletedWorkOrder(wo);
-                if (result.created) created += 1;
-            } catch (error: unknown) {
-                const message = error instanceof Error ? error.message : String(error);
-                failures.push(`${wo.wo_number}: ${message}`);
-            }
-        }
-
-        await fetchInvoices();
-        if (created > 0) {
-            toast.success(`Berhasil membuat ${created} invoice dari Work Order COMPLETED.`);
-        }
-        if (failures.length > 0) {
-            toast.error(`${failures.length} invoice gagal dibuat. ${failures.slice(0, 3).join(' | ')}`);
-        }
-
-    } catch (error: any) {
-        toast.error("Gagal memproses invoice Work Order: " + error.message);
+      const invoicedWorkOrderIds = new Set(
+        (invoices || []).map((invoice) => String(invoice.work_order_id || '')).filter(Boolean),
+      );
+      const availableWorkOrders = ((workOrders || []) as CompletedWorkOrderOption[]).filter(
+        (workOrder) => !invoicedWorkOrderIds.has(String(workOrder.id)),
+      );
+      setCompletedWorkOrders(availableWorkOrders);
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      toast.error('Gagal mengambil Work Order COMPLETED: ' + message);
     } finally {
-        setIsSyncing(false);
+      setIsLoadingWorkOrders(false);
+    }
+  }
+
+  async function openInvoiceForm() {
+    resetInvoiceForm();
+    setIsInvoiceFormOpen(true);
+    await fetchCompletedWorkOrders();
+  }
+
+  function selectWorkOrder(workOrder: CompletedWorkOrderOption) {
+    const invoiceDate = formatLocalInvoiceDate(workOrder.completed_at || workOrder.work_date);
+    setSelectedWorkOrder(workOrder);
+    setInvoiceForm({
+      invoiceNumber: buildInvoiceNumber(workOrder.wo_number),
+      invoiceDate,
+      dueDate: invoiceDate,
+      totalAmount: getWorkOrderTotal(workOrder),
+      customerName: getWorkOrderCustomer(workOrder),
+      vehicleLabel: getWorkOrderVehicleLabel(workOrder),
+    });
+  }
+
+  async function handleSaveInvoice() {
+    if (!selectedWorkOrder) {
+      toast.error('Pilih Work Order COMPLETED terlebih dahulu.');
+      return;
+    }
+    if (!invoiceForm.invoiceNumber.trim()) {
+      toast.error('Nomor invoice tidak boleh kosong.');
+      return;
+    }
+    if (!invoiceForm.invoiceDate || !invoiceForm.dueDate) {
+      toast.error('Tanggal invoice dan tanggal jatuh tempo wajib diisi.');
+      return;
+    }
+    if (invoiceForm.dueDate < invoiceForm.invoiceDate) {
+      toast.error('Tanggal jatuh tempo tidak boleh lebih awal dari tanggal invoice.');
+      return;
+    }
+    if (invoiceForm.totalAmount <= 0) {
+      toast.error('Rincian tagihan final WO belum tersedia.');
+      return;
+    }
+
+    setIsSavingInvoice(true);
+    try {
+      const result = await ensureSalesInvoiceForCompletedWorkOrder(selectedWorkOrder, {
+        invoiceNumber: invoiceForm.invoiceNumber,
+        invoiceDate: invoiceForm.invoiceDate,
+        dueDate: invoiceForm.dueDate,
+      });
+      toast.success(`Invoice ${result.invoice.invoice_number} berhasil dibuat.`);
+      setIsInvoiceFormOpen(false);
+      resetInvoiceForm();
+      await fetchInvoices();
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      toast.error('Gagal menyimpan invoice: ' + message);
+    } finally {
+      setIsSavingInvoice(false);
     }
   }
 
@@ -335,6 +434,15 @@ export default function SalesInvoice() {
     }
   };
 
+  const normalizedWorkOrderSearch = workOrderSearch.trim().toLowerCase();
+  const filteredCompletedWorkOrders = completedWorkOrders.filter((workOrder) => {
+    if (!normalizedWorkOrderSearch) return true;
+    const vehicle = getWorkOrderVehicle(workOrder);
+    return [workOrder.wo_number, vehicle?.license_plate, vehicle?.brand_type]
+      .filter(Boolean)
+      .some((value) => String(value).toLowerCase().includes(normalizedWorkOrderSearch));
+  });
+
   const filteredInvoices = invoices.filter(inv => {
     const matchSearch = inv.invoice_number.toLowerCase().includes(search.toLowerCase()) ||
                         inv.customer_name?.toLowerCase().includes(search.toLowerCase());
@@ -385,12 +493,12 @@ export default function SalesInvoice() {
         <div>
           <h2 className="text-3xl font-bold tracking-tight">Invoice / Faktur Penjualan</h2>
           <p className="mt-1 text-sm text-muted-foreground">
-            Invoice hanya dapat dibuat dari Work Order COMPLETED. Tanggal invoice otomatis mengikuti tanggal WO diproses selesai.
+            Pilih Work Order COMPLETED, lalu isi form invoice/faktur. Tanggal invoice	default mengikuti tanggal WO diproses selesai.
           </p>
         </div>
-        <Button variant="outline" onClick={handleSyncWOs} disabled={isSyncing}>
-            <RefreshCw className={`mr-2 h-4 w-4 ${isSyncing ? 'animate-spin' : ''}`} />
-            Proses WO Selesai
+        <Button onClick={openInvoiceForm}>
+            <FilePlus2 className="mr-2 h-4 w-4" />
+            Buat Invoice
         </Button>
       </div>
 
@@ -514,6 +622,215 @@ export default function SalesInvoice() {
               </Card>
           </TabsContent>
       </Tabs>
+
+      <Dialog
+        open={isInvoiceFormOpen}
+        onOpenChange={(open) => {
+          setIsInvoiceFormOpen(open);
+          if (!open) resetInvoiceForm();
+        }}
+      >
+        <DialogContent className="flex max-h-[calc(100vh-2rem)] max-w-[calc(100vw-1rem)] flex-col overflow-hidden p-3 sm:max-w-6xl sm:p-6">
+          <DialogHeader>
+            <DialogTitle>Buat Invoice / Faktur Penjualan</DialogTitle>
+            <DialogDescription>
+              Pilih Work Order berstatus COMPLETED, kemudian isi data invoice. Tanggal invoice otomatis memakai tanggal WO selesai.
+            </DialogDescription>
+          </DialogHeader>
+
+          <form
+            className="flex min-h-0 flex-1 flex-col"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void handleSaveInvoice();
+            }}
+          >
+            <div className="grid min-h-0 flex-1 gap-4 overflow-hidden md:grid-cols-[minmax(280px,0.85fr)_minmax(0,1.15fr)]">
+              <div className="flex min-h-0 flex-col rounded-lg border bg-slate-50/70 p-3">
+                <div className="mb-3 space-y-2">
+                  <Label className="font-semibold">1. Pilih No. Work Order</Label>
+                  <div className="relative">
+                    <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+                    <Input
+                      className="bg-white pl-8"
+                      placeholder="Cari No. WO / Nopol / Kendaraan..."
+                      value={workOrderSearch}
+                      onChange={(event) => setWorkOrderSearch(event.target.value)}
+                    />
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    {completedWorkOrders.length} WO COMPLETED belum memiliki invoice.
+                  </p>
+                </div>
+
+                <div className="min-h-0 flex-1 space-y-2 overflow-y-auto pr-1">
+                  {isLoadingWorkOrders ? (
+                    <div className="flex items-center justify-center gap-2 py-10 text-sm text-muted-foreground">
+                      <Loader2 className="h-4 w-4 animate-spin" /> Memuat Work Order...
+                    </div>
+                  ) : filteredCompletedWorkOrders.length === 0 ? (
+                    <div className="rounded-md border border-dashed bg-white px-4 py-10 text-center text-sm text-muted-foreground">
+                      {completedWorkOrders.length === 0
+                        ? 'Semua Work Order COMPLETED sudah memiliki invoice.'
+                        : 'Work Order tidak ditemukan.'}
+                    </div>
+                  ) : (
+                    filteredCompletedWorkOrders.map((workOrder) => {
+                      const isSelected = selectedWorkOrder?.id === workOrder.id;
+                      const total = getWorkOrderTotal(workOrder);
+                      return (
+                        <button
+                          key={workOrder.id}
+                          type="button"
+                          onClick={() => selectWorkOrder(workOrder)}
+                          className={`w-full rounded-lg border bg-white p-3 text-left transition-colors hover:border-blue-400 hover:bg-blue-50 ${
+                            isSelected ? 'border-blue-500 bg-blue-50 ring-1 ring-blue-500' : ''
+                          }`}
+                        >
+                          <div className="flex items-start justify-between gap-3">
+                            <div>
+                              <p className="font-semibold text-slate-900">{workOrder.wo_number}</p>
+                              <p className="text-sm text-slate-600">{getWorkOrderVehicleLabel(workOrder)}</p>
+                            </div>
+                            <span className={`rounded px-2 py-1 text-[10px] font-semibold ${
+                              total > 0 ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
+                            }`}>
+                              {total > 0 ? formatCurrency(total) : 'Billing belum ada'}
+                            </span>
+                          </div>
+                          <div className="mt-2 flex items-center justify-between text-xs text-slate-500">
+                            <span>Selesai: {formatDate(workOrder.completed_at || workOrder.work_date)}</span>
+                            <span className="font-medium text-emerald-700">COMPLETED</span>
+                          </div>
+                        </button>
+                      );
+                    })
+                  )}
+                </div>
+              </div>
+
+              <div className="min-h-0 overflow-y-auto rounded-lg border p-4">
+                {!selectedWorkOrder ? (
+                  <div className="flex h-full min-h-64 flex-col items-center justify-center text-center">
+                    <FilePlus2 className="mb-3 h-10 w-10 text-slate-300" />
+                    <p className="font-medium text-slate-700">Pilih Work Order terlebih dahulu</p>
+                    <p className="mt-1 max-w-sm text-sm text-muted-foreground">
+                      Data pelanggan, kendaraan, tanggal selesai, dan total tagihan akan terisi otomatis.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    <div>
+                      <h3 className="font-semibold text-slate-900">2. Data Invoice / Faktur</h3>
+                      <p className="text-xs text-muted-foreground">
+                        Periksa kembali nomor dan tanggal sebelum menyimpan.
+                      </p>
+                    </div>
+
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      <div className="space-y-2">
+                        <Label>No. Work Order</Label>
+                        <Input value={selectedWorkOrder.wo_number} readOnly className="bg-slate-50" />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Tanggal WO Selesai</Label>
+                        <Input
+                          value={formatDate(selectedWorkOrder.completed_at || selectedWorkOrder.work_date)}
+                          readOnly
+                          className="bg-slate-50"
+                        />
+                      </div>
+                      <div className="space-y-2 sm:col-span-2">
+                        <Label>Pelanggan</Label>
+                        <Input value={invoiceForm.customerName} readOnly className="bg-slate-50" />
+                      </div>
+                      <div className="space-y-2 sm:col-span-2">
+                        <Label>Kendaraan</Label>
+                        <Input value={invoiceForm.vehicleLabel} readOnly className="bg-slate-50" />
+                      </div>
+                      <div className="space-y-2 sm:col-span-2">
+                        <Label htmlFor="invoice-number">No. Invoice / Faktur</Label>
+                        <Input
+                          id="invoice-number"
+                          maxLength={50}
+                          value={invoiceForm.invoiceNumber}
+                          onChange={(event) => setInvoiceForm((current) => ({
+                            ...current,
+                            invoiceNumber: event.target.value,
+                          }))}
+                          required
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="invoice-date">Tanggal Invoice / Faktur</Label>
+                        <Input
+                          id="invoice-date"
+                          type="date"
+                          value={invoiceForm.invoiceDate}
+                          onChange={(event) => setInvoiceForm((current) => ({
+                            ...current,
+                            invoiceDate: event.target.value,
+                          }))}
+                          required
+                        />
+                        <p className="text-xs text-muted-foreground">Default: tanggal WO diproses COMPLETED.</p>
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="invoice-due-date">Jatuh Tempo</Label>
+                        <Input
+                          id="invoice-due-date"
+                          type="date"
+                          min={invoiceForm.invoiceDate || undefined}
+                          value={invoiceForm.dueDate}
+                          onChange={(event) => setInvoiceForm((current) => ({
+                            ...current,
+                            dueDate: event.target.value,
+                          }))}
+                          required
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Total Tagihan Final</Label>
+                        <Input value={formatCurrency(invoiceForm.totalAmount)} readOnly className="bg-slate-50" />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Status Awal</Label>
+                        <Input value="BELUM LUNAS" readOnly className="bg-slate-50" />
+                      </div>
+                    </div>
+
+                    {invoiceForm.totalAmount <= 0 && (
+                      <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                        Billing final WO masih kosong. Siapkan rincian final sebelum menyimpan invoice.
+                      </p>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <DialogFooter className="mt-4">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  setIsInvoiceFormOpen(false);
+                  resetInvoiceForm();
+                }}
+              >
+                Batal
+              </Button>
+              <Button
+                type="submit"
+                disabled={!selectedWorkOrder || invoiceForm.totalAmount <= 0 || isSavingInvoice}
+              >
+                {isSavingInvoice ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                Simpan Invoice
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={isPayOpen} onOpenChange={setIsPayOpen}>
         <DialogContent>

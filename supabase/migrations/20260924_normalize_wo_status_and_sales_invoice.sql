@@ -83,11 +83,18 @@ for each row
 execute function public.set_work_order_completion_timestamp();
 
 -- 3) Fungsi invoice idempotent.
--- Nomor invoice diturunkan dari nomor WO sehingga aman dari trigger ganda/race.
+-- Nomor invoice dapat diisi dari form; jika kosong memakai No. WO dan tetap idempotent.
 alter table public.sales_invoices
   alter column invoice_number type varchar(100);
 
-create or replace function public.create_sales_invoice_from_work_order(p_work_order_id uuid)
+drop function if exists public.create_sales_invoice_from_work_order(uuid);
+
+create or replace function public.create_sales_invoice_from_work_order(
+  p_work_order_id uuid,
+  p_invoice_number text default null,
+  p_invoice_date date default null,
+  p_due_date date default null
+)
 returns jsonb
 language plpgsql
 security definer
@@ -102,6 +109,7 @@ declare
   v_customer_name text;
   v_total_amount numeric(15, 2) := 0;
   v_invoice_date date;
+  v_due_date date;
   v_invoice_number varchar(100);
 begin
   select *
@@ -162,11 +170,23 @@ begin
   end if;
 
   v_invoice_date := coalesce(
+    p_invoice_date,
     (v_work_order.completed_at at time zone 'Asia/Jakarta')::date,
     v_work_order.work_date,
     current_date
   );
-  v_invoice_number := left('INV-' || coalesce(v_work_order.wo_number, v_work_order.id::text), 100);
+  v_due_date := coalesce(p_due_date, v_invoice_date);
+  if v_due_date < v_invoice_date then
+    raise exception 'Tanggal jatuh tempo tidak boleh lebih awal dari tanggal invoice'
+      using errcode = '22023';
+  end if;
+  v_invoice_number := left(
+    coalesce(
+      nullif(btrim(coalesce(p_invoice_number, '')), ''),
+      'INV-' || coalesce(v_work_order.wo_number, v_work_order.id::text)
+    ),
+    100
+  );
 
   insert into public.sales_invoices (
     invoice_number,
@@ -184,7 +204,7 @@ begin
     v_customer_name,
     v_vehicle_id,
     v_invoice_date,
-    v_invoice_date,
+    v_due_date,
     v_total_amount,
     0,
     'UNPAID'
@@ -202,12 +222,12 @@ begin
 end;
 $$;
 
-revoke all on function public.create_sales_invoice_from_work_order(uuid) from public;
-grant execute on function public.create_sales_invoice_from_work_order(uuid) to anon, authenticated;
+revoke all on function public.create_sales_invoice_from_work_order(uuid, text, date, date) from public;
+grant execute on function public.create_sales_invoice_from_work_order(uuid, text, date, date) to anon, authenticated;
 
 -- 4) Invoice WO lama tidak dibuat otomatis dalam migration agar tidak membuat
--- record keuangan tanpa persetujuan. Gunakan tombol "Proses WO Selesai" pada
--- modul Invoice / Faktur Penjualan untuk memproses WO COMPLETED yang belum
+-- record keuangan tanpa persetujuan. Gunakan tombol "Buat Invoice" pada
+-- modul Invoice / Faktur Penjualan untuk memilih dan memproses WO COMPLETED yang belum
 -- memiliki invoice.
 
 -- Tambahkan unique index hanya jika tidak ada invoice duplikat per WO.

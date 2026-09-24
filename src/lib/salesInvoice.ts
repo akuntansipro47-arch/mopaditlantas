@@ -20,8 +20,12 @@ export type CompletedWorkOrderInvoiceSource = {
   completed_at?: string | null;
   status?: string | null;
   vehicle_entry_id?: string | null;
-  vehicle_entries?: VehicleEntrySnapshot;
+  vehicle_entries?: VehicleEntrySnapshot | VehicleEntrySnapshot[];
   customer_name?: string | null;
+  work_order_billings?: Array<{
+    total_price?: number | string | null;
+    is_info_only?: boolean | null;
+  }> | null;
 };
 
 export type SalesInvoiceRecord = {
@@ -30,6 +34,7 @@ export type SalesInvoiceRecord = {
   invoice_date: string;
   work_order_id?: string | null;
   customer_name?: string | null;
+  due_date?: string | null;
   total_amount?: number | string | null;
   paid_amount?: number | string | null;
   status?: string | null;
@@ -39,6 +44,12 @@ export type SalesInvoiceRecord = {
 export type EnsureSalesInvoiceResult = {
   invoice: SalesInvoiceRecord;
   created: boolean;
+};
+
+export type SalesInvoiceInput = {
+  invoiceNumber?: string | null;
+  invoiceDate?: string | null;
+  dueDate?: string | null;
 };
 
 function getErrorMessage(error: unknown): string {
@@ -65,7 +76,7 @@ export function formatLocalInvoiceDate(value?: string | null): string {
   return `${year}-${month}-${day}`;
 }
 
-function buildInvoiceNumber(woNumber: string): string {
+export function buildInvoiceNumber(woNumber: string): string {
   return `INV-${String(woNumber || 'WO').trim()}`.slice(0, 50);
 }
 
@@ -90,6 +101,7 @@ async function findExistingInvoice(workOrderId: string) {
  */
 export async function ensureSalesInvoiceForCompletedWorkOrder(
   workOrder: CompletedWorkOrderInvoiceSource,
+  input: SalesInvoiceInput = {},
 ): Promise<EnsureSalesInvoiceResult> {
   if (!workOrder?.id || !workOrder?.wo_number) {
     throw new Error('Data Work Order tidak lengkap untuk membuat invoice.');
@@ -102,15 +114,54 @@ export async function ensureSalesInvoiceForCompletedWorkOrder(
   const existing = await findExistingInvoice(workOrder.id);
   if (existing) return { invoice: existing, created: false };
 
+  const invoiceDate =
+    String(input.invoiceDate || '').trim() ||
+    formatLocalInvoiceDate(workOrder.completed_at || workOrder.work_date);
+  const dueDate = String(input.dueDate || '').trim() || invoiceDate;
+  const invoiceNumber = (
+    String(input.invoiceNumber || '').trim() || buildInvoiceNumber(workOrder.wo_number)
+  ).slice(0, 50);
+
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(invoiceDate) || !/^\d{4}-\d{2}-\d{2}$/.test(dueDate)) {
+    throw new Error('Tanggal invoice dan jatuh tempo tidak valid.');
+  }
+  if (!invoiceNumber) {
+    throw new Error('Nomor invoice tidak boleh kosong.');
+  }
+  if (dueDate < invoiceDate) {
+    throw new Error('Tanggal jatuh tempo tidak boleh lebih awal dari tanggal invoice.');
+  }
+
   // Prefer the transactional database function. It is safe to call repeatedly
-  // and returns the existing invoice when the trigger has already created it.
+  // and keeps the invoice creation rules in one place.
   const { data: rpcInvoice, error: rpcError } = await supabase.rpc(
     'create_sales_invoice_from_work_order',
-    { p_work_order_id: workOrder.id },
+    {
+      p_work_order_id: workOrder.id,
+      p_invoice_number: invoiceNumber,
+      p_invoice_date: invoiceDate,
+      p_due_date: dueDate,
+    },
   );
 
   if (!rpcError && rpcInvoice) {
-    return { invoice: rpcInvoice as SalesInvoiceRecord, created: true };
+    let invoice = rpcInvoice as SalesInvoiceRecord;
+    const patch: Partial<SalesInvoiceRecord> = {};
+    if (String(invoice.invoice_number || '') !== invoiceNumber) patch.invoice_number = invoiceNumber;
+    if (String(invoice.invoice_date || '') !== invoiceDate) patch.invoice_date = invoiceDate;
+    if (String(invoice.due_date || '') !== dueDate) patch.due_date = dueDate;
+
+    if (Object.keys(patch).length > 0 && invoice.id) {
+      const { data: updatedInvoice, error: updateError } = await supabase
+        .from('sales_invoices')
+        .update(patch)
+        .eq('id', invoice.id)
+        .select('*')
+        .single();
+      if (updateError) throw updateError;
+      invoice = updatedInvoice as SalesInvoiceRecord;
+    }
+    return { invoice, created: true };
   }
 
   // Backward-compatible fallback when the SQL migration has not been applied.
@@ -141,15 +192,13 @@ export async function ensureSalesInvoiceForCompletedWorkOrder(
     [vehicle?.license_plate, vehicle?.brand_type].filter(Boolean).join(' - ') ||
     String(workOrder.wo_number || 'Umum');
 
-  const invoiceDate = formatLocalInvoiceDate(workOrder.completed_at || workOrder.work_date);
-  const invoiceNumber = buildInvoiceNumber(workOrder.wo_number);
   const payload = {
     invoice_number: invoiceNumber,
     work_order_id: workOrder.id,
     customer_name: customerName,
     vehicle_id: vehicle?.id || entry?.vehicle_id || null,
     invoice_date: invoiceDate,
-    due_date: invoiceDate,
+    due_date: dueDate,
     total_amount: totalAmount,
     paid_amount: 0,
     status: 'UNPAID',
@@ -177,7 +226,23 @@ export async function ensureSalesInvoiceForCompletedWorkOrder(
       .maybeSingle();
 
     if (lookupError) throw lookupError;
-    if (invoiceByNumber) return { invoice: invoiceByNumber, created: false };
+    if (invoiceByNumber) {
+      const linkedWorkOrderId = String(invoiceByNumber.work_order_id || '');
+      if (linkedWorkOrderId && linkedWorkOrderId !== String(workOrder.id)) {
+        throw new Error(`Nomor invoice ${invoiceNumber} sudah digunakan oleh Work Order lain.`);
+      }
+      if (!linkedWorkOrderId) {
+        const { data: linkedInvoice, error: linkError } = await supabase
+          .from('sales_invoices')
+          .update({ work_order_id: workOrder.id })
+          .eq('id', invoiceByNumber.id)
+          .select('*')
+          .single();
+        if (linkError) throw linkError;
+        return { invoice: linkedInvoice as SalesInvoiceRecord, created: false };
+      }
+      return { invoice: invoiceByNumber, created: false };
+    }
     throw new Error('Invoice selesai diproses tetapi data invoice belum dapat dibaca.');
   }
 
