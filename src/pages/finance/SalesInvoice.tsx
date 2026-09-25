@@ -20,7 +20,11 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   buildInvoiceNumber,
   ensureSalesInvoiceForCompletedWorkOrder,
+  ensureWorkOrderBillingsFromEstimation,
   formatLocalInvoiceDate,
+  getWorkOrderBillingTotal,
+  hasFinalBilling,
+  resolveWorkOrderInvoiceTotal,
   type CompletedWorkOrderInvoiceSource,
   type SalesInvoiceRecord,
 } from '@/lib/salesInvoice';
@@ -59,9 +63,11 @@ function getWorkOrderVehicle(workOrder: CompletedWorkOrderOption) {
 }
 
 function getWorkOrderTotal(workOrder: CompletedWorkOrderOption): number {
-  return (workOrder.work_order_billings || [])
-    .filter((billing) => billing?.is_info_only !== true)
-    .reduce((sum, billing) => sum + (Number(billing?.total_price || 0) || 0), 0);
+  return resolveWorkOrderInvoiceTotal(workOrder);
+}
+
+function getWorkOrderBillingOnlyTotal(workOrder: CompletedWorkOrderOption): number {
+  return getWorkOrderBillingTotal(workOrder);
 }
 
 function getWorkOrderCustomer(workOrder: CompletedWorkOrderOption): string {
@@ -131,6 +137,7 @@ export default function SalesInvoice() {
   const [isInvoiceFormOpen, setIsInvoiceFormOpen] = useState(false);
   const [isLoadingWorkOrders, setIsLoadingWorkOrders] = useState(false);
   const [isSavingInvoice, setIsSavingInvoice] = useState(false);
+  const [isGeneratingBilling, setIsGeneratingBilling] = useState(false);
   const [workOrderSearch, setWorkOrderSearch] = useState('');
   const [completedWorkOrders, setCompletedWorkOrders] = useState<CompletedWorkOrderOption[]>([]);
   const [invoicedWorkOrderIds, setInvoicedWorkOrderIds] = useState<Set<string>>(new Set());
@@ -255,18 +262,22 @@ export default function SalesInvoice() {
         vehicle_entries (
           id,
           vehicle_id,
-          vehicles (id, license_plate, brand_type, owner_name)
+          vehicles (id, license_plate, brand_type, owner_name),
+          vehicle_entry_jobs (estimated_price, value_only, job_types (selling_price)),
+          vehicle_entry_spareparts (qty, estimated_price, value_only)
         ),
-        work_order_billings (total_price, is_info_only)
+        work_order_billings (item_type, total_price, is_info_only)
       `;
       const workOrderFieldsWithoutCompletedAt = `
         id, wo_number, work_date, status, vehicle_entry_id,
         vehicle_entries (
           id,
           vehicle_id,
-          vehicles (id, license_plate, brand_type, owner_name)
+          vehicles (id, license_plate, brand_type, owner_name),
+          vehicle_entry_jobs (estimated_price, value_only, job_types (selling_price)),
+          vehicle_entry_spareparts (qty, estimated_price, value_only)
         ),
-        work_order_billings (total_price, is_info_only)
+        work_order_billings (item_type, total_price, is_info_only)
       `;
       // Status legacy CLOSE/CLOSED tetap diambil sampai migration dijalankan.
       const completedStatuses = ['COMPLETED', 'CLOSED', 'CLOSE'];
@@ -334,6 +345,44 @@ export default function SalesInvoice() {
       customerName: getWorkOrderCustomer(workOrder),
       vehicleLabel: getWorkOrderVehicleLabel(workOrder),
     });
+  }
+
+  async function handleGenerateBilling() {
+    if (!selectedWorkOrder) return;
+    setIsGeneratingBilling(true);
+    try {
+      const total = await ensureWorkOrderBillingsFromEstimation(String(selectedWorkOrder.id));
+      if (!(total > 0)) {
+        toast.error('Estimasi WO juga kosong. Lengkapi jasa / sparepart di Nota Dinas terlebih dahulu.');
+        return;
+      }
+      toast.success(`Billing final ${selectedWorkOrder.wo_number} berhasil dibuat: ${formatCurrency(total)}.`);
+      await fetchCompletedWorkOrders();
+      // Refresh pilihan aktif agar total form ikut ter-update.
+      const { data: refreshed } = await supabase
+        .from('work_orders')
+        .select(`
+          id, wo_number, work_date, completed_at, status, vehicle_entry_id,
+          vehicle_entries (
+            id,
+            vehicle_id,
+            vehicles (id, license_plate, brand_type, owner_name),
+            vehicle_entry_jobs (estimated_price, value_only, job_types (selling_price)),
+            vehicle_entry_spareparts (qty, estimated_price, value_only)
+          ),
+          work_order_billings (item_type, total_price, is_info_only)
+        `)
+        .eq('id', selectedWorkOrder.id)
+        .maybeSingle();
+      const next = (refreshed || selectedWorkOrder) as CompletedWorkOrderOption;
+      setSelectedWorkOrder(next);
+      setInvoiceForm((current) => ({ ...current, totalAmount: getWorkOrderTotal(next) }));
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      toast.error('Gagal membuat billing final: ' + message);
+    } finally {
+      setIsGeneratingBilling(false);
+    }
   }
 
   async function handleSaveInvoice() {
@@ -1079,6 +1128,8 @@ export default function SalesInvoice() {
                       const isSelected = selectedWorkOrder?.id === workOrder.id;
                       const isInvoiced = invoicedWorkOrderIds.has(String(workOrder.id));
                       const total = getWorkOrderTotal(workOrder);
+                      const billingOnlyTotal = getWorkOrderBillingOnlyTotal(workOrder);
+                      const usesEstimation = !isInvoiced && total > 0 && billingOnlyTotal <= 0;
                       return (
                         <button
                           key={workOrder.id}
@@ -1102,9 +1153,15 @@ export default function SalesInvoice() {
                               </span>
                             ) : (
                               <span className={`whitespace-nowrap rounded px-2 py-1 text-[10px] font-semibold ${
-                                total > 0 ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
+                                total > 0
+                                  ? usesEstimation
+                                    ? 'bg-amber-100 text-amber-800'
+                                    : 'bg-green-100 text-green-700'
+                                  : 'bg-red-100 text-red-700'
                               }`}>
-                                {total > 0 ? formatCurrency(total) : 'Billing belum ada'}
+                                {total > 0
+                                  ? `${formatCurrency(total)}${usesEstimation ? ' (estimasi)' : ''}`
+                                  : 'Billing belum ada'}
                               </span>
                             )}
                           </div>
@@ -1209,11 +1266,30 @@ export default function SalesInvoice() {
                       </div>
                     </div>
 
-                    {invoiceForm.totalAmount <= 0 && (
+                    {invoiceForm.totalAmount <= 0 ? (
                       <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-                        Billing final WO masih kosong. Siapkan rincian final sebelum menyimpan invoice.
+                        Billing final WO masih kosong dan estimasi juga kosong. Lengkapi jasa / sparepart
+                        di Nota Dinas terlebih dahulu sebelum menyimpan invoice.
                       </p>
-                    )}
+                    ) : selectedWorkOrder && !hasFinalBilling(selectedWorkOrder) ? (
+                      <div className="space-y-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                        <p>
+                          Billing final WO belum tersimpan, total di bawah dihitung dari estimasi Nota Dinas.
+                          Simpan invoice tetap bisa dilakukan (billing akan dibuat otomatis), atau buatkan
+                          billing final sekarang.
+                        </p>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          disabled={isGeneratingBilling || isSavingInvoice}
+                          onClick={() => void handleGenerateBilling()}
+                        >
+                          {isGeneratingBilling ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                          Buat Billing Final Otomatis
+                        </Button>
+                      </div>
+                    ) : null}
                   </div>
                 )}
               </div>
@@ -1232,7 +1308,7 @@ export default function SalesInvoice() {
               </Button>
               <Button
                 type="submit"
-                disabled={!selectedWorkOrder || invoiceForm.totalAmount <= 0 || isSavingInvoice}
+                disabled={!selectedWorkOrder || invoiceForm.totalAmount <= 0 || isSavingInvoice || isGeneratingBilling}
               >
                 {isSavingInvoice ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
                 Simpan Invoice
