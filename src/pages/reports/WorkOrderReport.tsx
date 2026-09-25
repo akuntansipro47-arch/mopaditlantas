@@ -7,6 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Download, Calendar, Search } from 'lucide-react';
 import { formatCurrency, formatDate, matchesFreeSearch } from '@/lib/utils';
+import { fetchAllRows } from '@/lib/pagedQuery';
 import { getWorkOrderStatusBadgeClass, getWorkOrderStatusLabel, isWorkOrderDone, isWorkOrderCancelled, normalizeWorkOrderStatus } from '@/lib/workOrderRules';
 import * as XLSX from 'xlsx';
 
@@ -27,65 +28,68 @@ export default function WorkOrderReport() {
   async function fetchData() {
     setLoading(true);
     try {
-      let query = supabase
-        .from('work_orders')
-        .select(`
-          *,
-          mechanics (name),
-          vehicle_entries (
-            nota_dinas_number,
-            service_group,
-            vehicle_entry_jobs (
-              estimated_price,
-              job_types (selling_price)
+      // Factory baru tiap halaman agar pagination stabil (server membatasi 1000 baris/request)
+      const buildWoQuery = () => {
+        let query = supabase
+          .from('work_orders')
+          .select(`
+            *,
+            mechanics (name),
+            vehicle_entries (
+              nota_dinas_number,
+              service_group,
+              vehicle_entry_jobs (
+                estimated_price,
+                job_types (selling_price)
+              ),
+              vehicle_entry_spareparts (
+                qty,
+                estimated_price,
+                value_only
+              ),
+              vehicles (license_plate, brand_type, vehicle_type)
             ),
-            vehicle_entry_spareparts (
+            billings:work_order_billings (
+              item_type,
+              item_name,
               qty,
-              estimated_price,
-              value_only
-            ),
-            vehicles (license_plate, brand_type, vehicle_type)
-          ),
-          billings:work_order_billings (
-            item_type,
-            item_name,
-            qty,
-            unit_price,
-            total_price,
-            is_info_only
-          )
-        `)
-        .gte('work_date', dateRange.start)
-        .lte('work_date', dateRange.end)
-        .order('work_date', { ascending: false });
+              unit_price,
+              total_price,
+              is_info_only
+            )
+          `)
+          .gte('work_date', dateRange.start)
+          .lte('work_date', dateRange.end)
+          .order('work_date', { ascending: false })
+          .order('id', { ascending: false });
 
-      if (statusFilter === 'ACTIVE') {
-        query = query.in('status', ['OPEN', 'IN_PROGRESS']);
-      } else if (statusFilter === 'ARCHIVED') {
-        query = query.in('status', ['COMPLETED', 'CLOSED']);
-      } else if (statusFilter === 'COMPLETED') {
-        query = query.in('status', ['COMPLETED', 'CLOSED']);
-      } else if (statusFilter !== 'ALL') {
-        query = query.eq('status', statusFilter);
-      }
+        if (statusFilter === 'ACTIVE') {
+          query = query.in('status', ['OPEN', 'IN_PROGRESS']);
+        } else if (statusFilter === 'ARCHIVED') {
+          query = query.in('status', ['COMPLETED', 'CLOSED']);
+        } else if (statusFilter === 'COMPLETED') {
+          query = query.in('status', ['COMPLETED', 'CLOSED']);
+        } else if (statusFilter !== 'ALL') {
+          query = query.eq('status', statusFilter);
+        }
 
-      const { data: result, error } = await query;
-      
-      if (error) {
-          console.error("Supabase Error:", error);
-          throw error;
-      }
-      
-      const resultRows = Array.isArray(result) ? result : [];
+        return query;
+      };
+
+      const resultRows = await fetchAllRows(buildWoQuery);
+
       const woIds = resultRows.map((row: any) => row.id).filter(Boolean);
       const poPartTotalByWo: Record<string, number> = {};
 
       if (woIds.length > 0) {
-        const { data: poItems } = await supabase
-          .from('purchase_order_items')
-          .select('line_type, quantity, unit_price, purchase_orders!inner(work_order_id, status)')
-          .in('purchase_orders.work_order_id', woIds)
-          .not('unit_price', 'is', null);
+        const poItems = await fetchAllRows(() =>
+          supabase
+            .from('purchase_order_items')
+            .select('line_type, quantity, unit_price, purchase_orders!inner(work_order_id, status)')
+            .in('purchase_orders.work_order_id', woIds)
+            .not('unit_price', 'is', null)
+            .order('id')
+        );
 
         (poItems || []).forEach((item: any) => {
           const woId = String(item.purchase_orders?.work_order_id || '').trim();

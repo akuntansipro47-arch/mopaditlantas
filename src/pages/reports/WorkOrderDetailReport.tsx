@@ -10,6 +10,7 @@ import * as XLSX from 'xlsx';
 import { formatDate, toDateInputValue } from '@/lib/utils';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { matchesFreeSearch } from '@/lib/utils';
+import { fetchAllRows } from '@/lib/pagedQuery';
 import { getWorkOrderStatusBadgeClass, getWorkOrderStatusLabel, isWorkOrderDone, normalizeWorkOrderStatus } from '@/lib/workOrderRules';
 
 type ReportData = {
@@ -47,7 +48,7 @@ type ReportItem = {
 const WorkOrderDetailReport = () => {
     const [reportData, setReportData] = useState<ReportData[]>([]);
     const [loading, setLoading] = useState(false);
-    const [startDate, setStartDate] = useState(toDateInputValue(new Date()));
+    const [startDate, setStartDate] = useState(toDateInputValue(new Date(new Date().getFullYear(), 0, 1)));
     const [endDate, setEndDate] = useState(toDateInputValue(new Date()));
     const [statusFilter, setStatusFilter] = useState('semua');
     const [woStatusFilter, setWoStatusFilter] = useState('semua');
@@ -124,16 +125,18 @@ const WorkOrderDetailReport = () => {
         const seq = ++fetchSeqRef.current;
         setLoading(true);
         try {
-            // Step 1: Fetch base Work Orders
-            const { data: woData, error: woError } = await supabase
-                .from('work_orders')
-                .select('id, wo_number, work_date, status, vehicle_entry_id')
-                .gte('work_date', startDate)
-                .lte('work_date', endDate)
-                .order('work_date', { ascending: true });
+            // Step 1: Fetch base Work Orders (pagination: server membatasi 1000 baris/request)
+            const woData = await fetchAllRows(() =>
+                supabase
+                    .from('work_orders')
+                    .select('id, wo_number, work_date, status, vehicle_entry_id')
+                    .gte('work_date', startDate)
+                    .lte('work_date', endDate)
+                    .order('work_date', { ascending: true })
+                    .order('id', { ascending: true })
+            );
 
-            if (woError) throw woError;
-            if (!woData || woData.length === 0) {
+            if (woData.length === 0) {
                 setReportData([]);
                 toast.info("Tidak ada data pada rentang tanggal yang dipilih.");
                 return;
@@ -143,37 +146,29 @@ const WorkOrderDetailReport = () => {
             const vehicleEntryIds = woData.map(wo => wo.vehicle_entry_id).filter(Boolean) as string[];
 
             // Step 2: Fetch estimation and vehicle data in parallel
-            const [
-                entriesResult,
-                estPartsResult,
-                estJobsResult,
-            ] = await Promise.allSettled([
-                supabase.from('vehicle_entries').select('id, entry_date, vehicle_id').in('id', vehicleEntryIds),
-                supabase
-                    .from('vehicle_entry_spareparts')
-                    .select('vehicle_entry_id, goods_id, item_name, qty, estimated_price, value_only')
-                    .in('vehicle_entry_id', vehicleEntryIds),
-                supabase
-                    .from('vehicle_entry_jobs')
-                    .select('vehicle_entry_id, job_type_id, estimated_price, value_only')
-                    .in('vehicle_entry_id', vehicleEntryIds),
+            const [vehicleEntriesData, estimationParts, estimationJobs] = await Promise.all([
+                fetchAllRows(() =>
+                    supabase
+                        .from('vehicle_entries')
+                        .select('id, entry_date, vehicle_id')
+                        .in('id', vehicleEntryIds)
+                        .order('id')
+                ),
+                fetchAllRows(() =>
+                    supabase
+                        .from('vehicle_entry_spareparts')
+                        .select('vehicle_entry_id, goods_id, item_name, qty, estimated_price, value_only')
+                        .in('vehicle_entry_id', vehicleEntryIds)
+                        .order('id')
+                ),
+                fetchAllRows(() =>
+                    supabase
+                        .from('vehicle_entry_jobs')
+                        .select('vehicle_entry_id, job_type_id, estimated_price, value_only')
+                        .in('vehicle_entry_id', vehicleEntryIds)
+                        .order('id')
+                ),
             ]);
-
-            // Helper to check for errors and throw them
-            const checkError = (result: PromiseSettledResult<any>, context: string) => {
-                if (result.status === 'rejected') {
-                    console.error(`Error fetching ${context}:`, result.reason);
-                    throw new Error(`Gagal mengambil data ${context}: ${result.reason.message}`);
-                }
-                if (result.value.error) {
-                    throw new Error(`Gagal mengambil data ${context}: ${result.value.error.message}`);
-                }
-                return result.value.data;
-            };
-
-            const vehicleEntriesData = checkError(entriesResult, 'entri kendaraan');
-            const estimationParts = checkError(estPartsResult, 'estimasi sparepart');
-            const estimationJobs = checkError(estJobsResult, 'estimasi jasa');
 
             // Step 3: Fetch all necessary data in parallel
             const allGoodsIds = Array.from(new Set((estimationParts || []).map((p: any) => p.goods_id).filter(Boolean)));
@@ -181,40 +176,50 @@ const WorkOrderDetailReport = () => {
             const allVehicleIds = vehicleEntriesData?.map(ve => ve.vehicle_id).filter(Boolean) || [];
 
             const [
-                { data: receivedPoItemsWo, error: receivedPoWoError },
-                { data: poItemsWoAll, error: poItemsWoAllError },
-                { data: purchaseOrdersWo, error: purchaseOrdersWoError },
-                { data: vehiclesData, error: vehiclesError },
-                { data: jobTypesData, error: jobTypesError },
+                receivedPoItemsWo,
+                poItemsWoAll,
+                purchaseOrdersWo,
+                vehiclesData,
+                jobTypesData,
             ] = await Promise.all([
-                supabase
-                    .from('purchase_order_items')
-                    .select('goods_id, job_type_id, service_name, line_type, quantity, unit_price, purchase_orders!inner(id, po_number, status, work_order_id)')
-                    .in('purchase_orders.status', ['RECEIVED_PART', 'RECEIVED_FULL'])
-                    .in('purchase_orders.work_order_id', workOrderIds)
-                    .not('unit_price', 'is', null)
-                    .limit(20000),
-                supabase
-                    .from('purchase_order_items')
-                    .select('goods_id, job_type_id, service_name, line_type, purchase_orders!inner(id, po_number, status, work_order_id)')
-                    .in('purchase_orders.work_order_id', workOrderIds)
-                    .limit(20000),
-                supabase
-                    .from('purchase_orders')
-                    .select('id, po_number, work_order_id')
-                    .in('work_order_id', workOrderIds),
-                supabase
-                    .from('vehicles')
-                    .select('id, license_plate, brand_type, vehicle_type, owner_name')
-                    .in('id', allVehicleIds),
-                supabase.from('job_types').select('id, job_name, hpp, selling_price').in('id', allJobTypeIds),
+                fetchAllRows(() =>
+                    supabase
+                        .from('purchase_order_items')
+                        .select('goods_id, job_type_id, service_name, line_type, quantity, unit_price, purchase_orders!inner(id, po_number, status, work_order_id)')
+                        .in('purchase_orders.status', ['RECEIVED_PART', 'RECEIVED_FULL'])
+                        .in('purchase_orders.work_order_id', workOrderIds)
+                        .not('unit_price', 'is', null)
+                        .order('id')
+                ),
+                fetchAllRows(() =>
+                    supabase
+                        .from('purchase_order_items')
+                        .select('goods_id, job_type_id, service_name, line_type, purchase_orders!inner(id, po_number, status, work_order_id)')
+                        .in('purchase_orders.work_order_id', workOrderIds)
+                        .order('id')
+                ),
+                fetchAllRows(() =>
+                    supabase
+                        .from('purchase_orders')
+                        .select('id, po_number, work_order_id')
+                        .in('work_order_id', workOrderIds)
+                        .order('id')
+                ),
+                fetchAllRows(() =>
+                    supabase
+                        .from('vehicles')
+                        .select('id, license_plate, brand_type, vehicle_type, owner_name')
+                        .in('id', allVehicleIds)
+                        .order('id')
+                ),
+                fetchAllRows(() =>
+                    supabase
+                        .from('job_types')
+                        .select('id, job_name, hpp, selling_price')
+                        .in('id', allJobTypeIds)
+                        .order('id')
+                ),
             ]);
-
-            if (receivedPoWoError) throw new Error(`Gagal mengambil data HPP (PO WO): ${receivedPoWoError.message}`);
-            if (poItemsWoAllError) throw new Error(`Gagal mengambil data PO WO (semua): ${poItemsWoAllError.message}`);
-            if (purchaseOrdersWoError) throw new Error(`Gagal mengambil data PO WO: ${purchaseOrdersWoError.message}`);
-            if (vehiclesError) throw new Error(`Gagal mengambil data kendaraan: ${vehiclesError.message}`);
-            if (jobTypesError) throw new Error(`Gagal mengambil data jenis pekerjaan: ${jobTypesError.message}`);
 
             const missingGoodsNames = Array.from(
                 new Set(
@@ -226,14 +231,16 @@ const WorkOrderDetailReport = () => {
 
             const goodsRows: any[] = [];
             if (allGoodsIds.length > 0) {
-                const { data, error } = await supabase.from('goods').select('id, name').in('id', allGoodsIds);
-                if (error) throw new Error(`Gagal mengambil data barang: ${error.message}`);
-                goodsRows.push(...(data || []));
+                const rows = await fetchAllRows(() =>
+                    supabase.from('goods').select('id, name').in('id', allGoodsIds).order('id')
+                );
+                goodsRows.push(...rows);
             }
             if (missingGoodsNames.length > 0) {
-                const { data, error } = await supabase.from('goods').select('id, name').in('name', missingGoodsNames);
-                if (error) throw new Error(`Gagal mengambil data barang: ${error.message}`);
-                goodsRows.push(...(data || []));
+                const rows = await fetchAllRows(() =>
+                    supabase.from('goods').select('id, name').in('name', missingGoodsNames).order('id')
+                );
+                goodsRows.push(...rows);
             }
 
             const goodsData = Array.from(new Map(goodsRows.map((g: any) => [String(g.id), g])).values());
@@ -276,11 +283,13 @@ const WorkOrderDetailReport = () => {
             const poPaymentStatusById = new Map<string, string>();
             if (poIds.length > 0) {
                 try {
-                    const { data: invoiceRows, error: invoiceErr } = await supabase
-                        .from('purchase_invoices')
-                        .select('po_id, total_amount, paid_amount')
-                        .in('po_id', poIds);
-                    if (invoiceErr) throw invoiceErr;
+                    const invoiceRows = await fetchAllRows(() =>
+                        supabase
+                            .from('purchase_invoices')
+                            .select('po_id, total_amount, paid_amount')
+                            .in('po_id', poIds)
+                            .order('id')
+                    );
 
                     const aggByPoId = new Map<string, { sumTotal: number; sumPaid: number; count: number }>();
                     (invoiceRows || []).forEach((inv: any) => {
@@ -628,7 +637,7 @@ const WorkOrderDetailReport = () => {
                     total_profit,
                     items: items,
                 };
-            }).filter(d => d.items.length > 0); // Only show WOs with items
+            }); // Semua WO tetap ditampilkan agar seragam dengan Laporan WO
 
             if (seq === fetchSeqRef.current) setReportData(finalReportData);
 
@@ -672,19 +681,25 @@ const WorkOrderDetailReport = () => {
         }
 
         if (searchTerm) {
+            const entryLevelMatch = (entry: ReportData) =>
+                matchesFreeSearch(searchTerm, [
+                    entry.wo_number,
+                    entry.status,
+                    entry.entry_date,
+                    entry.plate_number,
+                    entry.brand_type,
+                    entry.vehicle_type,
+                    entry.customer_name,
+                    getVehicleGroupLabel(entry.vehicle_type, entry.service_group),
+                    entry.po_payment_summary,
+                ]);
+
             filtered = filtered
                 .map((entry) => {
+                    const woMatch = entryLevelMatch(entry);
                     const filteredItems = entry.items.filter((item) =>
+                        woMatch ||
                         matchesFreeSearch(searchTerm, [
-                            entry.wo_number,
-                            entry.status,
-                            entry.entry_date,
-                            entry.plate_number,
-                            entry.brand_type,
-                            entry.vehicle_type,
-                            entry.customer_name,
-                            getVehicleGroupLabel(entry.vehicle_type, entry.service_group),
-                            entry.po_payment_summary,
                             item.item_type === 'JOB' ? 'Jasa' : 'Sparepart',
                             item.item_name,
                             item.value_only ? 'N/A' : '-',
@@ -703,7 +718,7 @@ const WorkOrderDetailReport = () => {
                         items: filteredItems,
                     };
                 })
-                .filter((entry) => entry.items.length > 0);
+                .filter((entry) => entry.items.length > 0 || entryLevelMatch(entry));
         }
 
         if (statusFilter === 'realisasi') {
@@ -731,27 +746,29 @@ const WorkOrderDetailReport = () => {
     }, [filteredReportData]);
 
     const handleExport = () => {
-        const dataToExport = filteredReportData.flatMap(entry =>
-            entry.items.map(item => ({
+        const dataToExport = filteredReportData.flatMap(entry => {
+            const items: Array<ReportItem | null> = entry.items.length > 0 ? entry.items : [null];
+
+            return items.map(item => ({
                 'Tgl Masuk': entry.entry_date,
                 'No. WO': entry.wo_number,
                 'Status WO': getWorkOrderStatusLabel(entry.status),
                 'No. Polisi': entry.plate_number,
                 'Customer': entry.customer_name,
                 'Grup Kendaraan': getVehicleGroupLabel(entry.vehicle_type, entry.service_group),
-                'Tipe Item': item.item_type === 'JOB' ? 'Jasa' : 'Sparepart',
-                'Nama Item': item.item_name,
-                'N/A': item.value_only ? 'N/A' : '-',
-                'Qty': item.qty,
-                'Harga Satuan': item.unit_price,
-                'Total Pagu': item.total_price,
-                        'PO (Sumber HPP)': item.po_info,
-                'HPP Satuan': item.hpp,
-                'Total HPP': item.total_hpp,
-                'Margin': item.profit,
-                'Sumber': item.source === 'REALIZED' ? 'Realisasi' : 'Estimasi',
-            }))
-        );
+                'Tipe Item': item ? (item.item_type === 'JOB' ? 'Jasa' : 'Sparepart') : '-',
+                'Nama Item': item ? item.item_name : '-',
+                'N/A': item ? (item.value_only ? 'N/A' : '-') : '-',
+                'Qty': item ? item.qty : '-',
+                'Harga Satuan': item ? item.unit_price : '-',
+                'Total Pagu': item ? item.total_price : '-',
+                'PO (Sumber HPP)': item ? item.po_info : '-',
+                'HPP Satuan': item ? item.hpp : '-',
+                'Total HPP': item ? item.total_hpp : '-',
+                'Margin': item ? item.profit : '-',
+                'Sumber': item ? (item.source === 'REALIZED' ? 'Realisasi' : 'Estimasi') : '-',
+            }));
+        });
 
         if (dataToExport.length === 0) {
             toast.warning("Tidak ada data untuk diekspor.");
@@ -910,14 +927,17 @@ const WorkOrderDetailReport = () => {
                                 </TableHeader>
                                 <TableBody>
                                     {filteredReportData.length > 0 ? (
-                                        filteredReportData.map((entry, entryIndex) => (
-                                            entry.items.map((item, itemIndex) => (
+                                        filteredReportData.map((entry) => {
+                                            // WO tanpa item tetap ditampilkan agar seragam dengan Laporan WO
+                                            const rows: Array<ReportItem | null> = entry.items.length > 0 ? entry.items : [null];
+
+                                            return rows.map((item, itemIndex) => (
                                                 <TableRow
                                                     key={`${entry.wo_id}-${itemIndex}`}
-                                                    className={item.source === 'ESTIMATE_ONLY' ? 'bg-amber-50' : ''}
+                                                    className={item && item.source === 'ESTIMATE_ONLY' ? 'bg-amber-50' : ''}
                                                 >
                                                     {itemIndex === 0 && (
-                                                        <TableCell rowSpan={entry.items.length} className="sticky left-0 bg-white z-10 font-medium align-top w-[200px]">
+                                                        <TableCell rowSpan={rows.length} className="sticky left-0 bg-white z-10 font-medium align-top w-[200px]">
                                                             <div className="flex flex-col gap-1">
                                                                 <div>{entry.wo_number}</div>
                                                                 <div className={`w-fit rounded px-2 py-0.5 text-[10px] font-semibold ${getWorkOrderStatusBadgeClass(entry.status)}`}>
@@ -929,24 +949,24 @@ const WorkOrderDetailReport = () => {
                                                             </div>
                                                         </TableCell>
                                                     )}
-                                                    {itemIndex === 0 && <TableCell rowSpan={entry.items.length} className="align-top">{entry.entry_date}</TableCell>}
-                                                    {itemIndex === 0 && <TableCell rowSpan={entry.items.length} className="align-top">{`${entry.plate_number} (${entry.brand_type || ''})`}</TableCell>}
-                                                    {itemIndex === 0 && <TableCell rowSpan={entry.items.length} className="align-top">{entry.customer_name}</TableCell>}
-                                                    {itemIndex === 0 && <TableCell rowSpan={entry.items.length} className="align-top">{getVehicleGroupLabel(entry.vehicle_type, entry.service_group)}</TableCell>}
-                                                    
-                                                    <TableCell>{item.item_type === 'JOB' ? 'Jasa' : 'Sparepart'}</TableCell>
-                                                    <TableCell>{item.item_name}</TableCell>
-                                                    <TableCell>{item.value_only ? 'N/A' : '-'}</TableCell>
-                                                    <TableCell className="text-right">{item.qty}</TableCell>
-                                                    <TableCell className="text-right">{item.unit_price.toLocaleString('id-ID')}</TableCell>
-                                                    <TableCell className="text-right">{item.total_price.toLocaleString('id-ID')}</TableCell>
-                                                    <TableCell>{item.po_info || '-'}</TableCell>
-                                                    <TableCell className="text-right">{item.hpp.toLocaleString('id-ID')}</TableCell>
-                                                    <TableCell className="text-right">{item.total_hpp.toLocaleString('id-ID')}</TableCell>
-                                                    <TableCell className="text-right">{item.profit.toLocaleString('id-ID')}</TableCell>
+                                                    {itemIndex === 0 && <TableCell rowSpan={rows.length} className="align-top">{entry.entry_date}</TableCell>}
+                                                    {itemIndex === 0 && <TableCell rowSpan={rows.length} className="align-top">{`${entry.plate_number} (${entry.brand_type || ''})`}</TableCell>}
+                                                    {itemIndex === 0 && <TableCell rowSpan={rows.length} className="align-top">{entry.customer_name}</TableCell>}
+                                                    {itemIndex === 0 && <TableCell rowSpan={rows.length} className="align-top">{getVehicleGroupLabel(entry.vehicle_type, entry.service_group)}</TableCell>}
+
+                                                    <TableCell>{item ? (item.item_type === 'JOB' ? 'Jasa' : 'Sparepart') : '-'}</TableCell>
+                                                    <TableCell>{item ? item.item_name : '-'}</TableCell>
+                                                    <TableCell>{item ? (item.value_only ? 'N/A' : '-') : '-'}</TableCell>
+                                                    <TableCell className="text-right">{item ? item.qty : '-'}</TableCell>
+                                                    <TableCell className="text-right">{item ? item.unit_price.toLocaleString('id-ID') : '-'}</TableCell>
+                                                    <TableCell className="text-right">{item ? item.total_price.toLocaleString('id-ID') : '-'}</TableCell>
+                                                    <TableCell>{item ? (item.po_info || '-') : '-'}</TableCell>
+                                                    <TableCell className="text-right">{item ? item.hpp.toLocaleString('id-ID') : '-'}</TableCell>
+                                                    <TableCell className="text-right">{item ? item.total_hpp.toLocaleString('id-ID') : '-'}</TableCell>
+                                                    <TableCell className="text-right">{item ? item.profit.toLocaleString('id-ID') : '-'}</TableCell>
                                                 </TableRow>
-                                            ))
-                                        ))
+                                            ));
+                                        })
                                     ) : (
                                         <TableRow>
                                             <TableCell colSpan={15} className="h-24 text-center">
