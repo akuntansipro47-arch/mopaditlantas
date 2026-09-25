@@ -273,25 +273,26 @@ export default function GoodsIssuePage() {
       if (!error) rows = (data as any[]) || [];
     }
 
-    if (!rows) {
-      const q = supabase
-        .from('goods_issue_items')
-        .select(`
-          goods_id,
-          quantity,
-          goods_issues!inner (
-            id,
-            issue_date,
-            issue_number,
-            work_order_id
-          )
-        `)
-        .eq('goods_issues.work_order_id', workOrderId);
-      const q2 = excludeIssueId ? q.neq('issue_id', excludeIssueId) : q;
-      const { data, error } = await q2;
-      if (error) throw error;
-      rows = (data as any[]) || [];
-    }
+     if (!rows) {
+       const q = supabase
+         .from('goods_issue_items')
+         .select(`
+           goods_id,
+           quantity,
+           value_only,
+           goods_issues!inner (
+             id,
+             issue_date,
+             issue_number,
+             work_order_id
+           )
+         `)
+         .eq('goods_issues.work_order_id', workOrderId);
+       const q2 = excludeIssueId ? q.neq('issue_id', excludeIssueId) : q;
+       const { data, error } = await q2;
+       if (error) throw error;
+       rows = (data as any[]) || [];
+     }
 
     const out: Record<string, { qty: number; lastIssueNumber: string; lastIssueDate: string; _t: number }> = {};
 
@@ -577,28 +578,34 @@ export default function GoodsIssuePage() {
     }
   };
 
-  const handleEdit = (issue: GoodsIssueWithDetails) => {
-    setEditingId(issue.id);
-    setFormData({
-      issue_date: issue.issue_date,
-      work_order_id: issue.work_order_id || '',
-    });
-    fetchIssuedSummaryForWO(String(issue.work_order_id || ''), String(issue.id)).then(setIssuedByGoodsId).catch(() => setIssuedByGoodsId({}));
-    setIssueItems(
-      issue.items.map((i) => ({
-        goods_id: i.goods_id || '',
-        quantity: i.quantity,
-        cap_quantity: null,
-        issued_quantity: 0,
-        locked: false,
-        source: 'MANUAL',
-        mismatch: false,
-        hint: '',
-        value_only: Boolean((i as any).value_only),
-      }))
-    );
-    setIsDialogOpen(true);
-  };
+   const handleEdit = async (issue: GoodsIssueWithDetails) => {
+     setEditingId(issue.id);
+     setFormData({
+       issue_date: issue.issue_date,
+       work_order_id: issue.work_order_id || '',
+     });
+     const issuedMap = await fetchIssuedSummaryForWO(String(issue.work_order_id || ''), String(issue.id)).catch(() => ({}));
+     setIssuedByGoodsId(issuedMap);
+
+     const mappedItems: IssueItemForm[] = issue.items.map((i) => {
+       const existingQty = Number(i.quantity || 0);
+       const base: IssueItemForm = {
+         goods_id: i.goods_id || '',
+         // Use existing quantity as the cap so validation can still run during edit
+         cap_quantity: existingQty,
+         quantity: existingQty,
+         issued_quantity: 0,
+         locked: false,
+         source: 'MANUAL',
+         mismatch: false,
+         hint: '',
+         value_only: Boolean((i as any).value_only),
+       };
+       return i.goods_id ? applyIssuedInfo(base, String(i.goods_id), issuedMap) : base;
+     });
+     setIssueItems(mappedItems);
+     setIsDialogOpen(true);
+   };
 
   const handlePrint = (id: string) => {
     window.open(`/print/issue/${id}`, '_blank');
@@ -848,10 +855,11 @@ export default function GoodsIssuePage() {
 
       } else {
         // --- CREATE MODE ---
+        const issue_number = `GI-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`.toUpperCase();
         const { data: newIssue, error: issueError } = await supabase
           .from('goods_issues')
           .insert([{
-            issue_number: `GI-${Date.now()}`,
+            issue_number,
             work_order_id: formData.work_order_id,
             issue_date: formData.issue_date,
           }])
@@ -878,7 +886,7 @@ export default function GoodsIssuePage() {
 
         if (itemsError) throw itemsError;
 
-        // Deduct Stock
+        // Deduct Stock - with stock validation to prevent negative stock
         for (const item of itemsToSubmit) {
           if (item.goods_id && !item.value_only) {
              const { data: currentGood } = await supabase
@@ -886,12 +894,19 @@ export default function GoodsIssuePage() {
                .select('current_stock')
                .eq('id', item.goods_id)
                .single();
-              
+
+             const currentStock = currentGood?.current_stock || 0;
+             const requestedQty = Number(item.quantity || 0);
+             if (currentStock < requestedQty) {
+               const gName = goodsList.find((g) => g.id === item.goods_id)?.name || item.goods_id;
+               throw new Error(`Stok tidak mencukupi untuk "${gName}". Tersedia: ${currentStock}, diminta: ${requestedQty}.`);
+             }
+
              if (currentGood) {
                await supabase
                  .from('goods')
-                  .update({ current_stock: (currentGood.current_stock || 0) - Number(item.quantity || 0) })
-                 .eq('id', item.goods_id);
+                    .update({ current_stock: (currentGood.current_stock || 0) - Number(item.quantity || 0) })
+                   .eq('id', item.goods_id);
              }
           }
         }
@@ -994,8 +1009,8 @@ export default function GoodsIssuePage() {
     }
   };
 
-  const filteredIssues = issues.filter(i => 
-    i.issue_number.toLowerCase().includes(search.toLowerCase()) ||
+  const filteredIssues = issues.filter(i =>
+    (i.issue_number || '').toLowerCase().includes(search.toLowerCase()) ||
     i.work_orders?.wo_number.toLowerCase().includes(search.toLowerCase()) ||
     i.work_orders?.vehicle_entries?.vehicles?.license_plate.toLowerCase().includes(search.toLowerCase())
   );

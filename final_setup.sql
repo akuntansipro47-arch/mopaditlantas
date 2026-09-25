@@ -177,6 +177,7 @@ CREATE TABLE IF NOT EXISTS goods_issue_items (
     issue_id UUID REFERENCES goods_issues(id) ON DELETE CASCADE,
     goods_id UUID REFERENCES goods(id),
     quantity INTEGER NOT NULL,
+    value_only BOOLEAN NOT NULL DEFAULT FALSE,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 

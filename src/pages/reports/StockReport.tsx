@@ -77,11 +77,11 @@ export default function StockReport() {
       // Let's change the logic:
       // Fetch ALL transactions.
       const { data: receipts } = await supabase.from('goods_receipt_items').select('goods_id, quantity_received');
-      const { data: issues } = await supabase.from('goods_issue_items').select('goods_id, quantity');
+      const { data: issues } = await supabase.from('goods_issue_items').select('goods_id, quantity, value_only');
 
       const stockMap = goods?.map(item => {
         const totalIn = receipts?.filter(r => r.goods_id === item.id).reduce((sum, r) => sum + (r.quantity_received || 0), 0) || 0;
-        const totalOut = issues?.filter(i => i.goods_id === item.id).reduce((sum, i) => sum + (i.quantity || 0), 0) || 0;
+         const totalOut = issues?.filter(i => i.goods_id === item.id && !Boolean(i.value_only)).reduce((sum, i) => sum + (i.quantity || 0), 0) || 0;
         
         // FIXED LOGIC v3: Pure Transactional Reporting
         // User requested to remove discrepancy/deficit columns if they are not from transactions.

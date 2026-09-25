@@ -157,9 +157,10 @@ export default function EstimationVsRealizationReport() {
       if (allWoIds.length > 0) {
         const { data: giData } = await supabase
           .from('goods_issue_items')
-          .select('quantity, goods_id, goods_issues!inner(work_order_id)')
+          .select('quantity, goods_id, value_only, goods_issues!inner(work_order_id)')
           .in('goods_issues.work_order_id', allWoIds);
         (giData || []).forEach((item: any) => {
+          if (Boolean(item.value_only)) return;
           const woId = String(item.goods_issues?.work_order_id || '').trim();
           const goodsId = String(item.goods_id || '').trim();
           const qty = Number(item.quantity || 0);

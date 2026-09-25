@@ -50,6 +50,7 @@ export default function GoodsIssueDetailReport() {
         .from('goods_issue_items')
         .select(`
           quantity,
+          value_only,
           goods (item_code, name, unit),
           goods_issues (
             issue_number,
@@ -70,8 +71,6 @@ export default function GoodsIssueDetailReport() {
           console.error("Supabase Error:", error);
           throw error;
       }
-      
-      console.log("Raw Items Fetched:", rawItems?.length); // Debug log
 
       // 2. Flatten and Filter in Memory
       const start = new Date(dateRange.start);
@@ -80,6 +79,7 @@ export default function GoodsIssueDetailReport() {
       end.setHours(23, 59, 59, 999);
 
       const flattened = (rawItems || [])
+        .filter((item: any) => !Boolean(item.value_only))
         .map((item: any) => {
             // Safety checks for nested objects
             const issue = item.goods_issues;
@@ -108,7 +108,6 @@ export default function GoodsIssueDetailReport() {
             return d >= start && d <= end;
         });
 
-      console.log("Filtered Items:", flattened.length); // Debug log
       setData(flattened);
     } catch (error) {
       console.error('Error fetching Issue Detail report:', error);

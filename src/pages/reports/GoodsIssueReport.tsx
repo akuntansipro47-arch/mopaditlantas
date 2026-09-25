@@ -37,6 +37,7 @@ export default function GoodsIssueReport() {
           ),
           items:goods_issue_items (
             quantity,
+            value_only,
             goods (item_code, name, unit)
           )
         `)
@@ -69,7 +70,7 @@ export default function GoodsIssueReport() {
 
   const exportToExcel = () => {
     const flattenData = filteredData.flatMap(issue => 
-      issue.items.map((item: any) => ({
+      (issue.items || []).filter((item: any) => !Boolean(item.value_only)).map((item: any) => ({
         'No. Pengeluaran': issue.issue_number,
         'Tanggal': formatDate(issue.issue_date),
         'No. WO': issue.work_orders?.wo_number,
