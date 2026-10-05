@@ -171,13 +171,40 @@ export default function WorkOrder() {
     setCurrentId(null);
   };
 
-  const handleEdit = (item: WOWithDetails) => {
+  const handleEdit = async (item: WOWithDetails) => {
     if (item.status !== 'IN_PROGRESS') {
       toast.warning('Hanya Work Order dengan status IN_PROGRESS yang dapat diedit.');
       return;
     }
+    // fetchMasterData hanya mengambil estimasi berstatus OPEN, sedangkan estimasi
+    // milik WO ini berstatus PROCESSED. Ambil manual dan suntikkan ke daftar agar
+    // detail kendaraan & keluhan tampil saat edit.
+    if (item.vehicle_entry_id && !entries.some((e) => String(e.id) === String(item.vehicle_entry_id))) {
+      const { data: currentEntry, error: currentEntryError } = await supabase
+        .from('vehicle_entries')
+        .select(`
+          *,
+          vehicles (*),
+          vehicle_entry_jobs (
+            *,
+            job_types (*)
+          ),
+          work_orders (
+            id,
+            status,
+            wo_number
+          )
+        `)
+        .eq('id', item.vehicle_entry_id)
+        .single();
+      if (currentEntryError) {
+        console.warn('Gagal mengambil estimasi milik WO:', currentEntryError);
+      } else if (currentEntry) {
+        setEntries((prev) => [currentEntry as any, ...prev]);
+      }
+    }
     setFormData({
-      work_date: item.work_date,
+      work_date: toDateInputValue(item.work_date) || toDateInputValue(),
       vehicle_entry_id: item.vehicle_entry_id || '',
       mechanic_id: item.mechanic_id || '',
     });
@@ -486,11 +513,63 @@ export default function WorkOrder() {
       };
 
       if (isEditing && currentId) {
+        const currentWo = wos.find((x) => String(x.id) === String(currentId)) as any;
+        const oldEntryId = String(currentWo?.vehicle_entry_id || '');
+        const newEntryId = String(formData.vehicle_entry_id || '');
+        const entryChanged = oldEntryId !== newEntryId;
+
+        // Bila estimasi diganti, validasi entry baru dengan aturan yang sama
+        // seperti saat membuat WO: harus OPEN dan belum punya WO aktif lain.
+        if (entryChanged && newEntryId) {
+          const { data: veCheck, error: veCheckError } = await supabase
+            .from('vehicle_entries')
+            .select('status, entry_number')
+            .eq('id', newEntryId)
+            .single();
+          if (veCheckError || veCheck?.status !== 'OPEN') {
+            toast.error('Kendaraan masuk yang dipilih sudah tidak berstatus OPEN. Tidak bisa dipakai untuk Work Order.');
+            setLoading(false);
+            return;
+          }
+          const { data: existingWo } = await supabase
+            .from('work_orders')
+            .select('id, wo_number, status')
+            .eq('vehicle_entry_id', newEntryId);
+          const dup = ((existingWo || []) as any[]).find(
+            (w) => String(w?.id) !== String(currentId) && String(w?.status || '').trim().toUpperCase() !== 'CANCELLED'
+          );
+          if (dup) {
+            toast.error(`Estimasi ${(veCheck as any)?.entry_number || ''} sudah memiliki WO aktif (${dup.wo_number}). Satu estimasi hanya boleh punya satu WO.`);
+            setLoading(false);
+            return;
+          }
+        }
+
         const { error } = await supabase
           .from('work_orders')
           .update(payload as any)
           .eq('id', currentId);
         if (error) throw error;
+
+        // Sinkronkan status estimasi bila referensi diganti: entry baru menjadi
+        // PROCESSED, entry lama dikembalikan ke OPEN (pola sama seperti hapus WO).
+        if (entryChanged) {
+          if (newEntryId) {
+            const { error: markErr } = await supabase
+              .from('vehicle_entries')
+              .update({ status: 'PROCESSED' } as any)
+              .eq('id', newEntryId);
+            if (markErr) console.warn('Gagal menandai estimasi baru sebagai PROCESSED:', markErr);
+          }
+          if (oldEntryId) {
+            const { error: reopenErr } = await supabase
+              .from('vehicle_entries')
+              .update({ status: 'OPEN' } as any)
+              .eq('id', oldEntryId);
+            if (reopenErr) console.warn('Gagal mengembalikan status estimasi lama ke OPEN:', reopenErr);
+          }
+        }
+
         toast.success('WO diperbarui');
         if (user) {
           const wo = wos.find((x) => String(x.id) === String(currentId)) as any;
@@ -632,7 +711,10 @@ export default function WorkOrder() {
   const selectableEntries = entries.filter((e) => {
     const linkedWos: any[] = Array.isArray((e as any).work_orders) ? ((e as any).work_orders as any[]) : [];
     const hasWo = linkedWos.some((w) => String(w?.status || '').trim().toUpperCase() !== 'CANCELLED');
-    if (hasWo) return false;
+    // Estimasi yang sedang dipakai WO ini tetap ditampilkan saat edit agar
+    // pengguna bisa melihat dan mempertahankan pilihan saat ini.
+    const isCurrentSelection = String(e.id) === String(formData.vehicle_entry_id);
+    if (hasWo && !isCurrentSelection) return false;
     const q = vehicleSearchQuery.trim().toLowerCase();
     if (!q) return true;
     return (
@@ -701,11 +783,13 @@ export default function WorkOrder() {
                         />
                         <div className="max-h-[300px] overflow-y-auto space-y-2">
                           {selectableEntries
-                            .map(e => (
+                            .map(e => {
+                              const isCurrentSelection = String(e.id) === String(formData.vehicle_entry_id);
+                              return (
                               <div 
                                 key={e.id}
                                 onClick={() => {
-                                  if (e.status !== 'OPEN') {
+                                  if (e.status !== 'OPEN' && !isCurrentSelection) {
                                     toast.error('Kendaraan masuk tidak berstatus OPEN. Tidak bisa dipilih.');
                                     return;
                                   }
@@ -713,12 +797,16 @@ export default function WorkOrder() {
                                   setIsVehicleSearchOpen(false);
                                   setVehicleSearchQuery('');
                                 }}
-                                className="p-3 border rounded-md hover:bg-accent cursor-pointer"
+                                className={`p-3 border rounded-md hover:bg-accent cursor-pointer ${isCurrentSelection ? 'border-primary bg-accent' : ''}`}
                               >
-                                <p className="font-semibold">{e.vehicles?.license_plate} ({e.vehicles?.brand_type})</p>
+                                <div className="flex items-center justify-between gap-2">
+                                  <p className="font-semibold">{e.vehicles?.license_plate} ({e.vehicles?.brand_type})</p>
+                                  {isCurrentSelection && <Badge variant="secondary" className="text-[10px]">Estimasi WO ini</Badge>}
+                                </div>
                                 <p className="text-sm text-muted-foreground">Tgl Masuk: {new Date(e.entry_date).toLocaleDateString('id-ID')}</p>
                               </div>
-                            ))
+                              );
+                            })
                           }
                           {entries.length === 0 && <p className="text-center text-sm text-muted-foreground">Tidak ada kendaraan masuk status OPEN.</p>}
                           {entries.length > 0 && selectableEntries.length === 0 && (
