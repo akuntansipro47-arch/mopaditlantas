@@ -366,8 +366,8 @@ export default function HarwatMonitoringReport() {
       {/* Konten */}
       {viewMode === 'kendaraan' ? (
         <div className="rounded-md border">
-          <Table>
-            <TableHeader>
+          <Table containerClassName="max-h-[70vh] overflow-y-auto">
+            <TableHeader className="[&_th]:sticky [&_th]:top-0 [&_th]:z-10 [&_th]:bg-white [&_th]:shadow-[inset_0_-1px_0_0_#e2e8f0]">
               <TableRow>
                 <TableHead className="w-10">No</TableHead>
                 <TableHead>No. Polisi</TableHead>
@@ -415,8 +415,8 @@ export default function HarwatMonitoringReport() {
         </div>
       ) : (
         <div className="rounded-md border">
-          <Table>
-            <TableHeader>
+          <Table containerClassName="max-h-[70vh] overflow-y-auto">
+            <TableHeader className="[&_th]:sticky [&_th]:top-0 [&_th]:z-10 [&_th]:bg-white [&_th]:shadow-[inset_0_-1px_0_0_#e2e8f0]">
               <TableRow>
                 <TableHead className="w-10">No</TableHead>
                 <TableHead>Termin</TableHead>
