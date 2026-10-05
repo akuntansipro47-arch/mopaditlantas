@@ -12,7 +12,7 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { cn, formatCurrency } from '@/lib/utils';
 import {
   fetchHarwatRows,
-  normalizePlate,
+  groupHarwatByVehiclePeriod,
   periodeSortKey,
   type HarwatRow,
 } from '@/lib/harwat';
@@ -82,52 +82,27 @@ function JenisBadge({ jenis }: { jenis: string }) {
 }
 
 function buildCompareRows(harwatRows: HarwatRow[]): CompareRow[] {
-  const groups = new Map<string, CompareRow>();
-  for (const r of harwatRows) {
-    const norm = normalizePlate(r.nopol);
-    if (!norm) continue;
-    const key = `${norm}|${r.jenis}|${r.termin}|${r.periode}`;
-    let g = groups.get(key);
-    if (!g) {
-      const terminTag = (r.termin.match(/\d+/) || ['0'])[0];
-      g = {
-        key,
-        jenis: r.jenis,
-        nopol: r.nopol || '-',
-        jenisKendaraan: r.jenisKendaraan || '-',
-        termin: r.termin,
-        periode: r.periode,
-        noEstimasi: `EST/${r.jenis}/${r.nopol}/T${terminTag}`,
-        totalEstimasi: 0,
-        itemCount: 0,
-        items: [],
-        noInvoice: '',
-        invoiceAuto: false,
-        tglInvoiceList: [],
-        totalInvoice: 0,
-        selisih: 0,
-        status: 'BELUM_FAKTUR',
-      };
-      groups.set(key, g);
-    }
-    g.items.push(r);
-    g.itemCount += 1;
-    g.totalEstimasi += r.jumlah;
-    g.totalInvoice += r.nilaiInvoice;
-    if (r.tglInvoice && !g.tglInvoiceList.includes(r.tglInvoice)) g.tglInvoiceList.push(r.tglInvoice);
-  }
-
-  const result: CompareRow[] = [];
-  for (const g of groups.values()) {
-    const hasInvoice = g.totalInvoice > 0 || g.tglInvoiceList.length > 0;
+  const result = groupHarwatByVehiclePeriod(harwatRows).map((g) => {
     const terminTag = (g.termin.match(/\d+/) || ['0'])[0];
-    // No. Faktur selalu digenerate oleh sistem (sheet tidak punya kolom no. faktur)
-    g.invoiceAuto = true;
-    g.noInvoice = `INV/${g.jenis}/${g.nopol}/T${terminTag}`;
-    g.selisih = g.totalInvoice - g.totalEstimasi;
-    g.status = !hasInvoice ? 'BELUM_FAKTUR' : g.totalInvoice === g.totalEstimasi ? 'SESUAI' : g.totalInvoice < g.totalEstimasi ? 'KURANG' : 'LEBIH';
-    result.push(g);
-  }
+    const hasInvoice = g.totalInvoice > 0 || g.tglInvoiceList.length > 0;
+    const selisih = g.totalInvoice - g.totalEstimasi;
+    const status: CompareStatus = !hasInvoice
+      ? 'BELUM_FAKTUR'
+      : g.totalInvoice === g.totalEstimasi
+        ? 'SESUAI'
+        : g.totalInvoice < g.totalEstimasi
+          ? 'KURANG'
+          : 'LEBIH';
+    return {
+      ...g,
+      noEstimasi: `EST/${g.jenis}/${g.nopol}/T${terminTag}`,
+      // No. Faktur selalu digenerate oleh sistem (sheet tidak punya kolom no. faktur)
+      noInvoice: `INV/${g.jenis}/${g.nopol}/T${terminTag}`,
+      invoiceAuto: true,
+      selisih,
+      status,
+    };
+  });
 
   result.sort(
     (a, b) =>

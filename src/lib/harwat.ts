@@ -101,6 +101,55 @@ export function normalizePlate(value: string | null | undefined): string {
 }
 
 // ---------------------------------------------------------------------------
+// Grouping bersama: baris Harwat per kendaraan (nopol) + periode (termin)
+// ---------------------------------------------------------------------------
+export interface HarwatVehiclePeriodGroup {
+  key: string;
+  jenis: string;
+  nopol: string;
+  jenisKendaraan: string;
+  termin: string;
+  periode: string;
+  itemCount: number;
+  items: HarwatRow[];
+  totalEstimasi: number;
+  totalInvoice: number;
+  tglInvoiceList: string[];
+}
+
+export function groupHarwatByVehiclePeriod(rows: HarwatRow[]): HarwatVehiclePeriodGroup[] {
+  const groups = new Map<string, HarwatVehiclePeriodGroup>();
+  for (const r of rows) {
+    const norm = normalizePlate(r.nopol);
+    if (!norm) continue;
+    const key = `${norm}|${r.jenis}|${r.termin}|${r.periode}`;
+    let g = groups.get(key);
+    if (!g) {
+      g = {
+        key,
+        jenis: r.jenis,
+        nopol: r.nopol || '-',
+        jenisKendaraan: r.jenisKendaraan || '-',
+        termin: r.termin,
+        periode: r.periode,
+        itemCount: 0,
+        items: [],
+        totalEstimasi: 0,
+        totalInvoice: 0,
+        tglInvoiceList: [],
+      };
+      groups.set(key, g);
+    }
+    g.items.push(r);
+    g.itemCount += 1;
+    g.totalEstimasi += r.jumlah;
+    g.totalInvoice += r.nilaiInvoice;
+    if (r.tglInvoice && !g.tglInvoiceList.includes(r.tglInvoice)) g.tglInvoiceList.push(r.tglInvoice);
+  }
+  return [...groups.values()];
+}
+
+// ---------------------------------------------------------------------------
 // Utilitas urutan periode (bulan Indonesia + nomor termin)
 // ---------------------------------------------------------------------------
 export const MONTH_ORDER = [

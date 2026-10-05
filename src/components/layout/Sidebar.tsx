@@ -27,6 +27,7 @@ import {
   Building2,
   Activity,
   Bike,
+  ArrowLeftRight,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import LogoMark from '@/components/brand/LogoMark';
@@ -152,6 +153,7 @@ const navigation: NavItem[] = [
       { name: 'Detail WO Unit Masuk (Simpel)', href: '/reports?tab=wo_unit_masuk', icon: ClipboardCheck, key: 'report_wo_unit_masuk' },
       { name: 'Monitoring Harwat R4 & R2', href: '/reports?tab=harwat', icon: Bike, key: 'report_harwat' },
       { name: 'Estimasi vs Faktur Penjualan', href: '/reports?tab=estimasi_faktur', icon: FileText, key: 'report_estimasi_faktur' },
+      { name: 'Monitoring Unit Masuk & Keluar', href: '/reports?tab=unit_masuk_keluar', icon: ArrowLeftRight, key: 'report_unit_masuk_keluar' },
       { type: 'group', name: 'Laporan Pembelian' },
       { name: 'Pembelian (PO)', href: '/reports?tab=po', icon: ShoppingCart, key: 'report_po' },
       { name: 'Barang Masuk', href: '/reports?tab=receipt', icon: PackageCheck, key: 'report_receipt' },
