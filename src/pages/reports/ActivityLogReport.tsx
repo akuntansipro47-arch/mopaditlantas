@@ -6,7 +6,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Download, RefreshCw } from 'lucide-react';
-import { formatCurrency, formatDate } from '@/lib/utils';
+import { formatCurrency, formatDate, getStartOfMonthInputValue, toDateInputValue } from '@/lib/utils';
 import * as XLSX from 'xlsx';
 import { toast } from 'sonner';
 import { logActivity } from '@/lib/activityLog';
@@ -38,8 +38,8 @@ export default function ActivityLogReport() {
   const [actionFilter, setActionFilter] = useState('');
   const [userFilter, setUserFilter] = useState('');
   const [dateRange, setDateRange] = useState({
-    start: new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0],
-    end: new Date().toISOString().split('T')[0],
+    start: getStartOfMonthInputValue(),
+    end: toDateInputValue(),
   });
   const missingTableWarnedRef = useRef(false);
 

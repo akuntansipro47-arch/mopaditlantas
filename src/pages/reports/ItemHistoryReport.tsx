@@ -5,7 +5,7 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Download, Calendar, Search, Check } from 'lucide-react';
-import { formatCurrency, formatDate } from '@/lib/utils';
+import { formatCurrency, formatDate, getStartOfMonthInputValue, toDateInputValue } from '@/lib/utils';
 import * as XLSX from 'xlsx';
 import { useAuth } from '@/context/AuthContext';
 import { toast } from 'sonner';
@@ -47,9 +47,8 @@ export default function ItemHistoryReport() {
     const [searchQuery, setSearchQuery] = useState('');
 
     const [dateRange, setDateRange] = useState({
-        // Default: A VERY wide range to ensure data visibility during testing
-        start: '2024-01-01',
-        end: new Date().toISOString().split('T')[0]
+        start: getStartOfMonthInputValue(),
+        end: toDateInputValue()
     });
     const [showAllHistory, setShowAllHistory] = useState(false); // New toggle
 

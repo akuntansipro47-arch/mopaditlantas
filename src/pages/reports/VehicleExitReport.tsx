@@ -5,7 +5,7 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { toast } from 'sonner';
-import { formatDate } from '@/lib/utils';
+import { formatDate, getStartOfMonthInputValue, toDateInputValue } from '@/lib/utils';
 import { Calendar, Download, Printer, Search } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import * as XLSX from 'xlsx';
@@ -18,8 +18,8 @@ export default function VehicleExitReport() {
   const [search, setSearch] = useState('');
   const [groupFilter, setGroupFilter] = useState('ALL');
   const [dateFilter, setDateFilter] = useState({
-    startDate: new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0],
-    endDate: new Date().toISOString().split('T')[0],
+    startDate: getStartOfMonthInputValue(),
+    endDate: toDateInputValue(),
   });
 
   useEffect(() => {

@@ -22,7 +22,7 @@ import { Textarea } from "@/components/ui/textarea";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
-import { formatCurrency, formatDate, generateTransactionNumber, matchesFreeSearch } from '@/lib/utils';
+import { formatCurrency, formatDate, generateTransactionNumber, getStartOfMonthInputValue, matchesFreeSearch, toDateInputValue } from '@/lib/utils';
 import { useRealtimeRefetch } from '@/hooks/useRealtimeRefetch';
 import { useAuth } from '@/context/AuthContext';
 import { logActivity } from '@/lib/activityLog';
@@ -106,8 +106,8 @@ export default function PurchaseOrderV2() {
 
   // Filter State
   const [dateFilter, setDateFilter] = useState({
-    startDate: new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0], // First day of current month
-    endDate: new Date().toISOString().split('T')[0] // Today
+    startDate: getStartOfMonthInputValue(), // First day of current month
+    endDate: toDateInputValue() // Today
   });
   const [statusFilter, setStatusFilter] = useState('ALL');
 

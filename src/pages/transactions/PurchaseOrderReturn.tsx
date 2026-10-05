@@ -12,7 +12,7 @@ import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
-import { formatDate, formatCurrency } from '@/lib/utils';
+import { formatCurrency, formatDate, getStartOfMonthInputValue, toDateInputValue } from '@/lib/utils';
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { logActivity } from '@/lib/activityLog';
@@ -110,8 +110,8 @@ export default function PurchaseOrderReturn() {
 
   // Date Filter State (Default to current month)
   const [dateFilter, setDateFilter] = useState({
-    startDate: new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0],
-    endDate: new Date().toISOString().split('T')[0]
+    startDate: getStartOfMonthInputValue(),
+    endDate: toDateInputValue()
   });
 
   useEffect(() => {

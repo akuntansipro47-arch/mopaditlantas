@@ -4,8 +4,8 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { supabase } from '@/lib/supabase';
+import { getStartOfMonthInputValue, toDateInputValue } from '@/lib/utils';
 import { toast } from 'sonner';
-import { format, startOfMonth, endOfMonth } from 'date-fns';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { IndirectCashFlow } from './IndirectCashFlow';
 
@@ -32,8 +32,8 @@ type CashMovement = {
 const CashFlowReport = () => {
     const [searchParams, setSearchParams] = useSearchParams();
     const [loading, setLoading] = useState(false);
-    const [startDate, setStartDate] = useState(format(startOfMonth(new Date()), 'yyyy-MM-dd'));
-    const [endDate, setEndDate] = useState(format(endOfMonth(new Date()), 'yyyy-MM-dd'));
+    const [startDate, setStartDate] = useState(getStartOfMonthInputValue());
+    const [endDate, setEndDate] = useState(toDateInputValue());
 
     const [initialBalance, setInitialBalance] = useState(0);
     const [movements, setMovements] = useState<CashMovement[]>([]);

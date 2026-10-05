@@ -17,7 +17,7 @@ import { Label } from "@/components/ui/label";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
-import { formatDate, generateTransactionNumber } from '@/lib/utils';
+import { formatDate, generateTransactionNumber, getStartOfMonthInputValue, toDateInputValue } from '@/lib/utils';
 import { Badge } from "@/components/ui/badge";
 import { useReactToPrint } from 'react-to-print';
 import PrintSPK from '@/components/ui/PrintSPK';
@@ -43,7 +43,7 @@ export default function WorkOrder() {
   const [wos, setWos] = useState<WOWithDetails[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
-  const [dateFilter, setDateFilter] = useState({ startDate: '', endDate: '' });
+  const [dateFilter, setDateFilter] = useState({ startDate: getStartOfMonthInputValue(), endDate: toDateInputValue() });
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [currentId, setCurrentId] = useState<string | null>(null);

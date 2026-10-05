@@ -8,7 +8,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { toast } from 'sonner';
-import { generateTransactionNumber } from '@/lib/utils';
+import { generateTransactionNumber, getStartOfMonthInputValue, toDateInputValue } from '@/lib/utils';
 import { logActivity } from '@/lib/activityLog';
 import { Check, Eye, Pencil, Plus, Printer, RefreshCw, Search, Trash2, XCircle } from 'lucide-react';
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
@@ -57,8 +57,8 @@ export default function PurchaseRequest() {
 
   const [listSearch, setListSearch] = useState('');
   const [dateFilter, setDateFilter] = useState({
-    startDate: new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0],
-    endDate: new Date().toISOString().split('T')[0],
+    startDate: getStartOfMonthInputValue(),
+    endDate: toDateInputValue(),
   });
 
   const [isDialogOpen, setIsDialogOpen] = useState(false);

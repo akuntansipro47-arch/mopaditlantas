@@ -5,7 +5,7 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Download, Calendar, Search, RefreshCw } from 'lucide-react';
-import { formatCurrency, formatDate, matchesFreeSearch } from '@/lib/utils';
+import { formatCurrency, formatDate, getStartOfMonthInputValue, matchesFreeSearch, toDateInputValue } from '@/lib/utils';
 import * as XLSX from 'xlsx';
 import { toast } from 'sonner';
 
@@ -21,8 +21,8 @@ export default function GoodsReceiptReport() {
   const [search, setSearch] = useState('');
   const [itemTypeFilter, setItemTypeFilter] = useState('ALL'); // Add Item Type Filter
   const [dateRange, setDateRange] = useState({
-    start: '2024-01-01',
-    end: new Date().toISOString().split('T')[0]
+    start: getStartOfMonthInputValue(),
+    end: toDateInputValue()
   });
 
   useEffect(() => {

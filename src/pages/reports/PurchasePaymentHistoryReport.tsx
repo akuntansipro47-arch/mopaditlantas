@@ -5,7 +5,7 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { toast } from 'sonner';
-import { formatCurrency, formatDate } from '@/lib/utils';
+import { formatCurrency, formatDate, getStartOfMonthInputValue, toDateInputValue } from '@/lib/utils';
 import { Calendar as CalendarIcon, Download, RefreshCw, Search } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { useRealtimeRefetch } from '@/hooks/useRealtimeRefetch';
@@ -18,8 +18,8 @@ export default function PurchasePaymentHistoryReport() {
   const [syncNote, setSyncNote] = useState('');
   const [search, setSearch] = useState('');
   const [dateRange, setDateRange] = useState({
-    start: new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0],
-    end: new Date().toISOString().split('T')[0],
+    start: getStartOfMonthInputValue(),
+    end: toDateInputValue(),
   });
 
   useEffect(() => {

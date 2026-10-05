@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { toast } from 'sonner';
-import { formatCurrency } from '@/lib/utils';
+import { formatCurrency, getStartOfMonthInputValue, toDateInputValue } from '@/lib/utils';
 import { Plus, Trash2, Save, Search, RefreshCw, Pencil } from 'lucide-react';
 import {
   Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle,
@@ -42,8 +42,8 @@ export default function ManualJournalEntry() {
   const [history, setHistory] = useState<any[]>([]);
   const [historySearch, setHistorySearch] = useState('');
   const [historyFilter, setHistoryFilter] = useState({
-    startDate: new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0],
-    endDate: new Date().toISOString().split('T')[0],
+    startDate: getStartOfMonthInputValue(),
+    endDate: toDateInputValue(),
   });
 
   useEffect(() => {

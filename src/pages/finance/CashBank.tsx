@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { toast } from 'sonner';
-import { cn, formatCurrency, formatDate } from '@/lib/utils';
+import { cn, formatCurrency, formatDate, getStartOfMonthInputValue, toDateInputValue } from '@/lib/utils';
 import { Search, Plus, Trash2, Save, RefreshCw, Calendar as CalendarIcon, Pencil } from 'lucide-react';
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -67,8 +67,8 @@ export default function CashBank() {
   const [historySearch, setHistorySearch] = useState('');
   const [historyTypeFilter, setHistoryTypeFilter] = useState<'ALL' | 'DEPOSIT' | 'PAYMENT'>('ALL');
   const [historyDateRange, setHistoryDateRange] = useState({
-    start: new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0],
-    end: new Date().toISOString().split('T')[0],
+    start: getStartOfMonthInputValue(),
+    end: toDateInputValue(),
   });
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingType, setEditingType] = useState<'DEPOSIT' | 'PAYMENT' | null>(null);

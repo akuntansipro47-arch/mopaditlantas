@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Download, Calendar, Search } from 'lucide-react';
-import { formatCurrency, formatDate } from '@/lib/utils';
+import { formatCurrency, formatDate, getStartOfMonthInputValue, toDateInputValue } from '@/lib/utils';
 import * as XLSX from 'xlsx';
 import { toast } from 'sonner';
 
@@ -48,8 +48,8 @@ export default function PurchaseDetailReport() {
   const pageSize = 200;
   const [page, setPage] = useState(1);
   const [dateRange, setDateRange] = useState({
-    start: new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0],
-    end: new Date().toISOString().split('T')[0]
+    start: getStartOfMonthInputValue(),
+    end: toDateInputValue()
   });
 
   useEffect(() => {

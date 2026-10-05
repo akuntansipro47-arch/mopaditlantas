@@ -5,7 +5,7 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Search, Printer, FileDown, RefreshCw } from 'lucide-react';
-import { formatCurrency, formatDate, matchesFreeSearch } from '@/lib/utils';
+import { formatCurrency, formatDate, getStartOfMonthInputValue, matchesFreeSearch, toDateInputValue } from '@/lib/utils';
 import * as XLSX from 'xlsx';
 
 import { Badge } from '@/components/ui/badge';
@@ -20,8 +20,8 @@ export default function EstimationVsRealizationReport() {
   const [groupFilter, setGroupFilter] = useState('ALL');
   const [showSelisihDetail, setShowSelisihDetail] = useState(false);
   const [dateFilter, setDateFilter] = useState({
-    startDate: new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0],
-    endDate: new Date().toISOString().split('T')[0]
+    startDate: getStartOfMonthInputValue(),
+    endDate: toDateInputValue()
   });
 
   useEffect(() => {

@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { toast } from 'sonner';
-import { formatDate, matchesFreeSearch } from '@/lib/utils';
+import { formatDate, getStartOfMonthInputValue, matchesFreeSearch, toDateInputValue } from '@/lib/utils';
 import { Printer, Search, Download, Calendar, Paperclip, ExternalLink } from 'lucide-react';
 import { 
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue 
@@ -30,8 +30,8 @@ export default function VehicleEntryReport() {
   
   // Date Filter
   const [dateFilter, setDateFilter] = useState({
-    startDate: new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0],
-    endDate: new Date().toISOString().split('T')[0]
+    startDate: getStartOfMonthInputValue(),
+    endDate: toDateInputValue()
   });
 
   // Status Filter

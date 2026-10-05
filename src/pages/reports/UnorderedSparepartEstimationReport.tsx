@@ -5,7 +5,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { toast } from 'sonner';
-import { formatCurrency, formatDate } from '@/lib/utils';
+import { formatCurrency, formatDate, getStartOfMonthInputValue, toDateInputValue } from '@/lib/utils';
 import { Download, Printer, RefreshCw, Search } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import ReportPrintHeader from '@/components/reports/ReportPrintHeader';
@@ -81,8 +81,8 @@ export default function UnorderedSparepartEstimationReport() {
   const [search, setSearch] = useState('');
   const [onlyPending, setOnlyPending] = useState(true);
   const [dateFilter, setDateFilter] = useState({
-    startDate: new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0],
-    endDate: new Date().toISOString().split('T')[0],
+    startDate: getStartOfMonthInputValue(),
+    endDate: toDateInputValue(),
   });
 
   useEffect(() => {

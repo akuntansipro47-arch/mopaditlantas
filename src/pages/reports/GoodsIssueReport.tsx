@@ -5,7 +5,7 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Download, Calendar, Search } from 'lucide-react';
-import { formatDate, matchesFreeSearch } from '@/lib/utils';
+import { formatDate, getStartOfMonthInputValue, matchesFreeSearch, toDateInputValue } from '@/lib/utils';
 import * as XLSX from 'xlsx';
 
 export default function GoodsIssueReport() {
@@ -13,8 +13,8 @@ export default function GoodsIssueReport() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [dateRange, setDateRange] = useState({
-    start: new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0],
-    end: new Date().toISOString().split('T')[0]
+    start: getStartOfMonthInputValue(),
+    end: toDateInputValue()
   });
 
   useEffect(() => {

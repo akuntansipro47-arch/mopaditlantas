@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Download, Calendar, Search } from 'lucide-react';
-import { formatCurrency, formatDate, matchesFreeSearch } from '@/lib/utils';
+import { formatCurrency, formatDate, getStartOfMonthInputValue, matchesFreeSearch, toDateInputValue } from '@/lib/utils';
 import { fetchAllRows } from '@/lib/pagedQuery';
 import { getWorkOrderStatusBadgeClass, getWorkOrderStatusLabel, isWorkOrderDone, isWorkOrderCancelled, normalizeWorkOrderStatus } from '@/lib/workOrderRules';
 import * as XLSX from 'xlsx';
@@ -17,8 +17,8 @@ export default function WorkOrderReport() {
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [dateRange, setDateRange] = useState({
-    start: new Date(new Date().getFullYear(), 0, 1).toISOString().split('T')[0], // Start of Year
-    end: new Date().toISOString().split('T')[0]
+    start: getStartOfMonthInputValue(),
+    end: toDateInputValue()
   });
 
   useEffect(() => {

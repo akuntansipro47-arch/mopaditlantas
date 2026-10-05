@@ -5,7 +5,7 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Download, Calendar, Search, RefreshCw, AlertTriangle, Info } from 'lucide-react';
-import { formatCurrency, formatDate, matchesFreeSearch } from '@/lib/utils';
+import { formatCurrency, formatDate, getStartOfMonthInputValue, matchesFreeSearch, toDateInputValue } from '@/lib/utils';
 import { toast } from 'sonner';
 import * as XLSX from 'xlsx';
 
@@ -15,8 +15,8 @@ export default function GrossProfitReport() {
   const [search, setSearch] = useState('');
   const [woServerSearch, setWoServerSearch] = useState('');
   const [dateRange, setDateRange] = useState({
-    start: new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0], // Default current month
-    end: new Date().toISOString().split('T')[0]
+    start: getStartOfMonthInputValue(), // Default current month
+    end: toDateInputValue()
   });
 
   const [isSyncing, setIsSyncing] = useState(false);

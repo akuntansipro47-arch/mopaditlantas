@@ -7,7 +7,7 @@ import { Input } from '@/components/ui/input';
 import { supabase } from '@/lib/supabase';
 import { toast } from 'sonner';
 import * as XLSX from 'xlsx';
-import { formatDate, toDateInputValue } from '@/lib/utils';
+import { formatDate, getStartOfMonthInputValue, toDateInputValue } from '@/lib/utils';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { matchesFreeSearch } from '@/lib/utils';
 import { fetchAllRows } from '@/lib/pagedQuery';
@@ -48,8 +48,8 @@ type ReportItem = {
 const WorkOrderDetailReport = () => {
     const [reportData, setReportData] = useState<ReportData[]>([]);
     const [loading, setLoading] = useState(false);
-    const [startDate, setStartDate] = useState(toDateInputValue(new Date(new Date().getFullYear(), 0, 1)));
-    const [endDate, setEndDate] = useState(toDateInputValue(new Date()));
+    const [startDate, setStartDate] = useState(getStartOfMonthInputValue());
+    const [endDate, setEndDate] = useState(toDateInputValue());
     const [statusFilter, setStatusFilter] = useState('semua');
     const [woStatusFilter, setWoStatusFilter] = useState('semua');
     const [vehicleGroupFilter, setVehicleGroupFilter] = useState('semua');

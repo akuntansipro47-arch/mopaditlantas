@@ -16,7 +16,7 @@ import { Label } from "@/components/ui/label";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
-import { formatDate } from '@/lib/utils';
+import { formatDate, getStartOfMonthInputValue, toDateInputValue } from '@/lib/utils';
 import {
   Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList
 } from "@/components/ui/command";
@@ -137,8 +137,8 @@ export default function GoodsIssuePage() {
 
   // Filter State
   const [dateFilter, setDateFilter] = useState({
-    startDate: new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0], // First day of current month
-    endDate: new Date().toISOString().split('T')[0] // Today
+    startDate: getStartOfMonthInputValue(), // First day of current month
+    endDate: toDateInputValue() // Today
   });
 
   useEffect(() => {

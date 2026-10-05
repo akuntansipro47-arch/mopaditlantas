@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
-import { subDays, format, parseISO } from 'date-fns';
+import { getStartOfMonthInputValue, toDateInputValue } from '@/lib/utils';
+import { format, parseISO } from 'date-fns';
 import { toast } from 'sonner';
 import * as XLSX from 'xlsx';
 
@@ -59,8 +60,8 @@ export default function PurchaseOrderDetailReport() {
   const [data, setData] = useState<ReportData[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [dateRange, setDateRange] = useState({
-    start: format(subDays(new Date(), 29), 'yyyy-MM-dd'),
-    end: format(new Date(), 'yyyy-MM-dd'),
+    start: getStartOfMonthInputValue(),
+    end: toDateInputValue(),
   });
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(0);

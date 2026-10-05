@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent } from '@/components/ui/card';
 import { toast } from 'sonner';
-import { formatCurrency, formatDate } from '@/lib/utils';
+import { formatCurrency, formatDate, getStartOfMonthInputValue, toDateInputValue as toTodayDateInputValue } from '@/lib/utils';
 import { FilePlus2, Loader2, Pencil, Printer, RotateCcw, Search, Trash2, Wallet } from 'lucide-react';
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
@@ -163,8 +163,8 @@ export default function SalesInvoice() {
   
   // Filters
   const [dateFilter] = useState({
-    startDate: new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0],
-    endDate: new Date().toISOString().split('T')[0]
+    startDate: getStartOfMonthInputValue(),
+    endDate: toTodayDateInputValue()
   });
   const [statusFilter, setStatusFilter] = useState('ALL');
 

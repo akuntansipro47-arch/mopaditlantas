@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { toast } from 'sonner';
-import { formatCurrency, formatDate } from '@/lib/utils';
+import { formatCurrency, formatDate, getStartOfMonthInputValue, toDateInputValue } from '@/lib/utils';
 import { Search, RefreshCw, Calendar as CalendarIcon, Printer, Download } from 'lucide-react';
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
@@ -21,8 +21,8 @@ export default function GeneralLedger() {
   
   // Filters
   const [selectedAccount, setSelectedAccount] = useState<string>('');
-  const [startDate, setStartDate] = useState(new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0]);
-  const [endDate, setEndDate] = useState(new Date().toISOString().split('T')[0]);
+  const [startDate, setStartDate] = useState(getStartOfMonthInputValue());
+  const [endDate, setEndDate] = useState(toDateInputValue());
   
   // Opening Balance
   const [openingBalance, setOpeningBalance] = useState(0);

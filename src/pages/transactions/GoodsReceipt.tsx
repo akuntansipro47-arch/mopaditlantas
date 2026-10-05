@@ -14,7 +14,7 @@ import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
-import { formatCurrency, formatDate, matchesFreeSearch } from '@/lib/utils';
+import { formatCurrency, formatDate, getStartOfMonthInputValue, matchesFreeSearch, toDateInputValue } from '@/lib/utils';
 import { Badge } from "@/components/ui/badge";
 
 type PO = Database['public']['Tables']['purchase_orders']['Row'];
@@ -70,8 +70,8 @@ export default function GoodsReceipt() {
 
   // Filter State
   const [dateFilter, setDateFilter] = useState({
-    startDate: new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0], // First day of current month
-    endDate: new Date().toISOString().split('T')[0] // Today
+    startDate: getStartOfMonthInputValue(), // First day of current month
+    endDate: toDateInputValue() // Today
   });
 
   useEffect(() => {

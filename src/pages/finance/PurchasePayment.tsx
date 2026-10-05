@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { toast } from 'sonner';
-import { formatCurrency, formatDate } from '@/lib/utils';
+import { formatCurrency, formatDate, getStartOfMonthInputValue, toDateInputValue } from '@/lib/utils';
 import { Search, Wallet, RefreshCw, Edit, X } from 'lucide-react';
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
@@ -30,9 +30,8 @@ export default function PurchasePayment() {
   const [isSyncing, setIsSyncing] = useState(false);
   
   const [dateFilter, setDateFilter] = useState({
-    // Default: tahun berjalan (biar tagihan lama tetap muncul, tidak hilang karena filter bulanan)
-    startDate: new Date(new Date().getFullYear(), 0, 1).toISOString().split('T')[0],
-    endDate: new Date().toISOString().split('T')[0]
+    startDate: getStartOfMonthInputValue(),
+    endDate: toDateInputValue()
   });
   const [statusFilter, setStatusFilter] = useState('ALL');
 
