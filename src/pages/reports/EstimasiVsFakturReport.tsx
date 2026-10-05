@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import * as XLSX from 'xlsx';
-import { AlertTriangle, Bike, Car, Download, ExternalLink, RefreshCw, Search } from 'lucide-react';
+import { AlertTriangle, Bike, Car, Download, RefreshCw, Search } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -12,7 +12,6 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { cn, formatCurrency } from '@/lib/utils';
 import {
   fetchHarwatRows,
-  HARWAT_SHEET_URL,
   normalizePlate,
   periodeSortKey,
   type HarwatRow,
@@ -144,7 +143,7 @@ export default function EstimasiVsFakturReport() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [lastFetchedAt, setLastFetchedAt] = useState<Date | null>(null);
+
 
   const [jenisTab, setJenisTab] = useState<'SEMUA' | 'R4' | 'R2'>('SEMUA');
   const [periodeFilter, setPeriodeFilter] = useState('SEMUA');
@@ -159,7 +158,6 @@ export default function EstimasiVsFakturReport() {
     try {
       const harwatRows = await fetchHarwatRows();
       setRows(buildCompareRows(harwatRows));
-      setLastFetchedAt(new Date());
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -274,21 +272,9 @@ export default function EstimasiVsFakturReport() {
       {/* Toolbar */}
       <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
         <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-2">
-            <h2 className="text-lg font-bold text-slate-900 sm:text-xl">Estimasi vs Faktur Penjualan</h2>
-            <Badge variant="outline" className="text-[10px] font-normal">Google Sheet</Badge>
-          </div>
-          <p className="text-xs text-slate-500 sm:text-sm">
-            Estimasi (kolom A–K) vs Faktur (kolom L–M: TANGGAL FAKTUR &amp; NILAI FAKTUR) per nopol per periode • No. dokumen digenerate otomatis
-            {lastFetchedAt && <> • Diupdate {lastFetchedAt.toLocaleTimeString('id-ID')}</>}
-          </p>
+          <h2 className="text-lg font-bold text-slate-900 sm:text-xl">Estimasi vs Faktur Penjualan</h2>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <Button variant="outline" size="sm" asChild>
-            <a href={HARWAT_SHEET_URL} target="_blank" rel="noreferrer">
-              <ExternalLink className="mr-2 h-4 w-4" /> Buka Sheet
-            </a>
-          </Button>
           <Button variant="outline" size="sm" onClick={exportToExcel} disabled={filtered.length === 0}>
             <Download className="mr-2 h-4 w-4" /> Export Excel
           </Button>
