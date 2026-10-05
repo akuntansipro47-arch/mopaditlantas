@@ -151,6 +151,7 @@ const navigation: NavItem[] = [
       { name: 'Detail WO', href: '/reports?tab=wodetail', icon: ClipboardCheck, key: 'report_wodetail' },
       { name: 'Detail WO Unit Masuk (Simpel)', href: '/reports?tab=wo_unit_masuk', icon: ClipboardCheck, key: 'report_wo_unit_masuk' },
       { name: 'Monitoring Harwat R4 & R2', href: '/reports?tab=harwat', icon: Bike, key: 'report_harwat' },
+      { name: 'Estimasi vs Faktur Penjualan', href: '/reports?tab=estimasi_faktur', icon: FileText, key: 'report_estimasi_faktur' },
       { type: 'group', name: 'Laporan Pembelian' },
       { name: 'Pembelian (PO)', href: '/reports?tab=po', icon: ShoppingCart, key: 'report_po' },
       { name: 'Barang Masuk', href: '/reports?tab=receipt', icon: PackageCheck, key: 'report_receipt' },

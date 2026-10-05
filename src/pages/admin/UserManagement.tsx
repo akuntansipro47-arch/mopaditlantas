@@ -84,6 +84,7 @@ const PERMISSION_GROUPS: Array<{ title: string; items: Array<{ key: string; labe
       { key: 'report_wodetail', label: 'Laporan Detail Work Order' },
       { key: 'report_wo_unit_masuk', label: 'Detail WO Unit Masuk (Simpel)' },
       { key: 'report_harwat', label: 'Monitoring Harwat R4 & R2' },
+      { key: 'report_estimasi_faktur', label: 'Estimasi vs Faktur Penjualan' },
       { key: 'report_po', label: 'Laporan Pembelian (PO)' },
       { key: 'report_podetail', label: 'Laporan Rincian Pembelian' },
       { key: 'report_po_detail_new', label: 'Laporan Rincian Pembelian (Detail)' },
