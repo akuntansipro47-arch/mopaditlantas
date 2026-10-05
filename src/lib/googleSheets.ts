@@ -77,6 +77,20 @@ export function gsheetCellText(row: GSheetRow, index: number): string {
 }
 
 /**
+ * Nilai tampilan dari sel gviz: mengutamakan teks terformat (f) bila ada,
+ * cocok untuk kolom tanggal. Fallback ke nilai mentah (v).
+ */
+export function gsheetCellDisplay(row: GSheetRow, index: number): string {
+  const cells = row?.c;
+  if (!cells || index >= cells.length) return '';
+  const cell = cells[index];
+  if (!cell) return '';
+  if (cell.f !== null && cell.f !== undefined && String(cell.f).trim() !== '') return String(cell.f).trim();
+  if (cell.v === null || cell.v === undefined) return '';
+  return String(cell.v).trim();
+}
+
+/**
  * Nilai angka dari sel gviz. Kolom bertipe number memiliki v numerik;
  * kolom teks berformat US ("1,234.56") di-parse dengan menghapus koma ribuan.
  */

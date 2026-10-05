@@ -13,6 +13,7 @@ import { cn, formatCurrency } from '@/lib/utils';
 import {
   fetchHarwatRows,
   HARWAT_SHEET_URL,
+  periodeSortKey,
   type HarwatRow,
 } from '@/lib/harwat';
 
@@ -28,17 +29,6 @@ type VehicleSummary = {
   totalBiaya: number;
   periodeList: string[];
 };
-
-const MONTH_ORDER = [
-  'januari', 'februari', 'maret', 'april', 'mei', 'juni',
-  'juli', 'agustus', 'september', 'oktober', 'november', 'desember',
-];
-
-function periodeSortKey(periode: string, termin: string): number {
-  const monthIdx = MONTH_ORDER.indexOf(periode.trim().toLowerCase());
-  const terminNum = parseInt((termin.match(/\d+/) || ['999'])[0], 10);
-  return (monthIdx >= 0 ? monthIdx : 500) * 1000 + (Number.isFinite(terminNum) ? terminNum : 999);
-}
 
 function JenisBadge({ jenis }: { jenis: string }) {
   const isR4 = jenis === 'R4';

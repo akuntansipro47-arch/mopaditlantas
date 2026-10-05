@@ -4,6 +4,7 @@
 
 import {
   fetchGoogleSheetTable,
+  gsheetCellDisplay,
   gsheetCellNumber,
   gsheetCellText,
   type GSheetRow,
@@ -30,9 +31,13 @@ export interface HarwatRow {
   satuan: string;
   hargaSatuan: number;
   jumlah: number;
+  // Kolom invoice (opsional, di samping kolom estimasi pada sheet yang sama)
+  noInvoice: string;
+  tglInvoice: string;
+  nilaiInvoice: number;
 }
 
-// Kolom sheet: A..K
+// Kolom sheet: A..K (estimasi) + L..N (invoice, opsional)
 const COL = {
   TERMIN: 0,
   PERIODE: 1,
@@ -45,6 +50,9 @@ const COL = {
   SATUAN: 8,
   HARGA_SATUAN: 9,
   JUMLAH: 10,
+  NO_INVOICE: 11,
+  TGL_INVOICE: 12,
+  NILAI_INVOICE: 13,
 } as const;
 
 export function parseHarwatRows(rows: GSheetRow[], fallbackJenis: string): HarwatRow[] {
@@ -66,6 +74,9 @@ export function parseHarwatRows(rows: GSheetRow[], fallbackJenis: string): Harwa
       satuan: gsheetCellText(row, COL.SATUAN),
       hargaSatuan: gsheetCellNumber(row, COL.HARGA_SATUAN),
       jumlah: gsheetCellNumber(row, COL.JUMLAH),
+      noInvoice: gsheetCellText(row, COL.NO_INVOICE),
+      tglInvoice: gsheetCellDisplay(row, COL.TGL_INVOICE),
+      nilaiInvoice: gsheetCellNumber(row, COL.NILAI_INVOICE),
     });
   }
   return parsed;
@@ -89,4 +100,18 @@ export function normalizePlate(value: string | null | undefined): string {
   return String(value || '')
     .toUpperCase()
     .replace(/[^A-Z0-9]/g, '');
+}
+
+// ---------------------------------------------------------------------------
+// Utilitas urutan periode (bulan Indonesia + nomor termin)
+// ---------------------------------------------------------------------------
+export const MONTH_ORDER = [
+  'januari', 'februari', 'maret', 'april', 'mei', 'juni',
+  'juli', 'agustus', 'september', 'oktober', 'november', 'desember',
+];
+
+export function periodeSortKey(periode: string, termin: string): number {
+  const monthIdx = MONTH_ORDER.indexOf(periode.trim().toLowerCase());
+  const terminNum = parseInt((termin.match(/\d+/) || ['999'])[0], 10);
+  return (monthIdx >= 0 ? monthIdx : 500) * 1000 + (Number.isFinite(terminNum) ? terminNum : 999);
 }
