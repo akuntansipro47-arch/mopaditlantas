@@ -119,8 +119,6 @@ export default function GoodsIssuePage() {
 
   // Master Data
   const [wos, setWos] = useState<WO[]>([]);
-  // WO yang sudah menerima barang dari PO by WO (dipakai untuk filter daftar WO).
-  const [receivedWoIds, setReceivedWoIds] = useState<Set<string>>(new Set());
   const [goodsList, setGoodsList] = useState<Goods[]>([]);
   const [issuedByGoodsId, setIssuedByGoodsId] = useState<Record<string, { qty: number; lastIssueNumber: string; lastIssueDate: string }>>({});
   
@@ -164,38 +162,24 @@ export default function GoodsIssuePage() {
   });
 
   async function fetchMasterData() {
-    const [{ data: w }, { data: receipts }, { data: g }] = await Promise.all([
+    const [{ data: w }, { data: g }] = await Promise.all([
       supabase
         .from('work_orders')
         .select('*, vehicle_entries(*, vehicles(*))')
         .in('status', ['OPEN', 'IN_PROGRESS', 'COMPLETED'])
         .order('created_at', { ascending: false })
         .limit(500), // Cukup besar agar semua WO PROGRESS tidak terpotong limit
-      // Penerimaan barang dari PO by WO: hanya WO dengan PO yang sudah punya
-      // goods_receipts yang boleh muncul pada dialog pengeluaran barang.
-      supabase
-        .from('goods_receipts')
-        .select('purchase_orders!inner(work_order_id)')
-        .not('purchase_orders.work_order_id', 'is', null)
-        .limit(1000),
       supabase.from('goods').select('*').order('name'),
     ]);
 
     setWos((w as any) || []);
-
-    const receivedIds = new Set<string>();
-    (receipts || []).forEach((row) => {
-      const woId = String((row as { purchase_orders?: { work_order_id?: string | null } | null })?.purchase_orders?.work_order_id || '');
-      if (woId) receivedIds.add(woId);
-    });
-    setReceivedWoIds(receivedIds);
-
     setGoodsList(g || []);
   }
 
-  /** WO hanya boleh dipilih jika masih PROGRESS dan sudah menerima barang dari PO by WO. */
+  /** WO boleh dipilih untuk pengeluaran barang selama masih berstatus IN_PROGRESS.
+      Barang bisa berasal dari stok gudang maupun dari pembelian (PO by WO). */
   const isSelectableWO = (wo: WO) =>
-    wo.status === 'IN_PROGRESS' && receivedWoIds.has(String(wo.id));
+    wo.status === 'IN_PROGRESS';
 
   async function fetchIssues() {
     setLoading(true);
@@ -744,7 +728,7 @@ export default function GoodsIssuePage() {
       if (!editingId) {
         const selectedWo = wos.find((w) => String(w.id) === String(formData.work_order_id));
         if (selectedWo && !isSelectableWO(selectedWo)) {
-          toast.error('Pengeluaran barang hanya untuk WO berstatus PROGRESS yang sudah menerima barang dari PO by WO.');
+          toast.error('Pengeluaran barang hanya untuk WO berstatus IN_PROGRESS.');
           return null;
         }
       }
@@ -1068,7 +1052,7 @@ export default function GoodsIssuePage() {
                       <Search className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                     </Button>
                     <p className="text-xs text-muted-foreground">
-                      Hanya WO berstatus PROGRESS yang sudah menerima barang dari PO by WO yang bisa dipilih.
+                      Hanya WO berstatus IN_PROGRESS yang bisa dipilih.
                     </p>
                   </div>
                 </div>
@@ -1083,11 +1067,11 @@ export default function GoodsIssuePage() {
                         onChange={(e) => setWOSearchQuery(e.target.value)} 
                       />
                       <CommandList>
-                        <CommandEmpty>Tidak ada WO PROGRESS dengan penerimaan barang dari PO.</CommandEmpty>
-                        <CommandGroup heading="Daftar WO (PROGRESS + Penerimaan PO by WO)">
+                        <CommandEmpty>Tidak ada WO berstatus IN_PROGRESS.</CommandEmpty>
+                        <CommandGroup heading="Daftar WO (IN_PROGRESS)">
                           {wos
                             .filter(w =>
-                              // Tampilkan hanya WO PROGRESS yang sudah menerima barang dari PO by WO,
+                              // Tampilkan hanya WO berstatus IN_PROGRESS,
                               // kecuali WO yang sedang dipilih (mis. saat edit).
                               (isSelectableWO(w) || formData.work_order_id === w.id) &&
                               (
