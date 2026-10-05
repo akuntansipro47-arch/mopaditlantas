@@ -26,6 +26,7 @@ import {
   CreditCard,
   Building2,
   Activity,
+  Bike,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import LogoMark from '@/components/brand/LogoMark';
@@ -149,6 +150,7 @@ const navigation: NavItem[] = [
       { name: 'Laporan Estimasi Part Belum PO', href: '/reports?tab=estimation_unpo', icon: ShoppingCart, key: 'report_unordered_parts' },
       { name: 'Detail WO', href: '/reports?tab=wodetail', icon: ClipboardCheck, key: 'report_wodetail' },
       { name: 'Detail WO Unit Masuk (Simpel)', href: '/reports?tab=wo_unit_masuk', icon: ClipboardCheck, key: 'report_wo_unit_masuk' },
+      { name: 'Monitoring Harwat R4 & R2', href: '/reports?tab=harwat', icon: Bike, key: 'report_harwat' },
       { type: 'group', name: 'Laporan Pembelian' },
       { name: 'Pembelian (PO)', href: '/reports?tab=po', icon: ShoppingCart, key: 'report_po' },
       { name: 'Barang Masuk', href: '/reports?tab=receipt', icon: PackageCheck, key: 'report_receipt' },

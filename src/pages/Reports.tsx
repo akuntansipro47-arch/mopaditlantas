@@ -28,6 +28,7 @@ import WOUnitMasukReport from './reports/WOUnitMasukReport';
 import BudgetMonitoringReport from './reports/BudgetMonitoringReport';
 import BudgetForecastReport from './reports/BudgetForecastReport';
 import ActivityLogReport from './reports/ActivityLogReport';
+import HarwatMonitoringReport from './reports/HarwatMonitoringReport';
 import { Card } from '@/components/ui/card';
 import { Activity } from 'lucide-react';
 
@@ -57,6 +58,7 @@ type ReportKey =
   | 'estimation'
   | 'estimation_unpo'
   | 'wo_unit_masuk'
+  | 'harwat'
   | 'activity_log';
 
 export default function Reports() {
@@ -102,6 +104,7 @@ export default function Reports() {
       if (canAccess('report_estimation')) return 'estimation';
       if (canAccess('report_unordered_parts')) return 'estimation_unpo';
       if (canAccess('report_wo_unit_masuk')) return 'wo_unit_masuk';
+      if (canAccess('report_harwat')) return 'harwat';
       if (canAccess('report_budget')) return 'budget';
       if (canAccess('report_forecast_budget')) return 'forecast_budget';
       if (canAccess('report_activity_log')) return 'activity_log';
@@ -150,6 +153,7 @@ export default function Reports() {
     canAccess('report_estimation') ? 'estimation' : null,
     canAccess('report_unordered_parts') ? 'estimation_unpo' : null,
     canAccess('report_wo_unit_masuk') ? 'wo_unit_masuk' : null,
+    canAccess('report_harwat') ? 'harwat' : null,
     canAccess('report_budget') ? 'budget' : null,
     canAccess('report_forecast_budget') ? 'forecast_budget' : null,
     canAccess('report_activity_log') ? 'activity_log' : null,
@@ -181,6 +185,7 @@ export default function Reports() {
     if (key === 'estimation') return <EstimationVsRealizationReport />;
     if (key === 'estimation_unpo') return <UnorderedSparepartEstimationReport />;
     if (key === 'wo_unit_masuk') return <WOUnitMasukReport />;
+    if (key === 'harwat') return <HarwatMonitoringReport />;
     if (key === 'budget') return <BudgetMonitoringReport />;
     if (key === 'forecast_budget') return <BudgetForecastReport />;
     if (key === 'activity_log') return <ActivityLogReport />;
