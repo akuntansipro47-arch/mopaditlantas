@@ -9,6 +9,7 @@ import {
   gsheetCellText,
   type GSheetRow,
 } from '@/lib/googleSheets';
+import { isDemoMode } from '@/lib/demoSupabase';
 
 export const HARWAT_SPREADSHEET_ID = '1kUq9h1sHPzKTw4WsJkXKtYw638hIzbtd52hnd9un1f4';
 export const HARWAT_SHEET_URL = `https://docs.google.com/spreadsheets/d/${HARWAT_SPREADSHEET_ID}/edit`;
@@ -80,8 +81,11 @@ export function parseHarwatRows(rows: GSheetRow[], fallbackJenis: string): Harwa
   return parsed;
 }
 
-/** Ambil seluruh baris Harwat dari semua tab sheet (R4 & R2). */
+/** Ambil seluruh baris Harwat dari semua tab sheet (R4 & R2).
+    Pada mode demo (login demo/demo123) tidak mengambil data online,
+    melainkan data dummy agar konsisten dengan modul lainnya. */
 export async function fetchHarwatRows(): Promise<HarwatRow[]> {
+  if (isDemoMode()) return getDemoHarwatRows();
   const results = await Promise.all(
     HARWAT_SHEETS.map(({ sheet }) =>
       fetchGoogleSheetTable(HARWAT_SPREADSHEET_ID, { sheet }),
@@ -90,6 +94,43 @@ export async function fetchHarwatRows(): Promise<HarwatRow[]> {
   return results.flatMap((table, idx) =>
     parseHarwatRows(table.rows, HARWAT_SHEETS[idx].jenis),
   );
+}
+
+/** Data dummy Harwat untuk mode demo. Periode mengikuti bulan berjalan &
+    bulan sebelumnya; mencakup semua status (sesuai/kurang/lebih/belum faktur). */
+function getDemoHarwatRows(): HarwatRow[] {
+  const now = new Date();
+  const thisMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+  const lastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+  const monthName = (d: Date) => {
+    const m = MONTH_ORDER[d.getMonth()] || '';
+    return m.charAt(0).toUpperCase() + m.slice(1);
+  };
+  const fmt = (d: Date) =>
+    `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`;
+  const tglFaktur = fmt(new Date(now.getFullYear(), now.getMonth(), Math.min(5, now.getDate())));
+  const tglFakturLalu = fmt(new Date(now.getFullYear(), now.getMonth() - 1, 25));
+
+  const row = (r: Omit<HarwatRow, 'tglInvoice' | 'nilaiInvoice'> & Partial<Pick<HarwatRow, 'tglInvoice' | 'nilaiInvoice'>>): HarwatRow => ({
+    tglInvoice: '',
+    nilaiInvoice: 0,
+    ...r,
+  });
+
+  return [
+    // R4 — bulan ini, faktur = estimasi (SESUAI / SUDAH SELESAI)
+    row({ jenis: 'R4', termin: 'TERMIN 1', periode: monthName(thisMonth), jenisKendaraan: 'TOYOTA AVANZA DEMO', nopol: 'B 1234 DEMO', group: 'SPAREPART', uraian: 'OLI MESIN DEMO 10W-40', qty: 4, satuan: 'LITER', hargaSatuan: 85000, jumlah: 340000, tglInvoice: tglFaktur, nilaiInvoice: 340000 }),
+    row({ jenis: 'R4', termin: 'TERMIN 1', periode: monthName(thisMonth), jenisKendaraan: 'TOYOTA AVANZA DEMO', nopol: 'B 1234 DEMO', group: 'SPAREPART', uraian: 'FILTER OLI DEMO', qty: 1, satuan: 'PCS', hargaSatuan: 75000, jumlah: 75000, tglInvoice: tglFaktur, nilaiInvoice: 75000 }),
+    row({ jenis: 'R4', termin: 'TERMIN 1', periode: monthName(thisMonth), jenisKendaraan: 'TOYOTA AVANZA DEMO', nopol: 'B 1234 DEMO', group: 'JASA', uraian: 'JASA TUNE UP DEMO', qty: 1, satuan: 'PAKET', hargaSatuan: 250000, jumlah: 250000, tglInvoice: tglFaktur, nilaiInvoice: 250000 }),
+    // R4 — bulan ini, faktur > estimasi (LEBIH / SUDAH SELESAI)
+    row({ jenis: 'R4', termin: 'TERMIN 1', periode: monthName(thisMonth), jenisKendaraan: 'TOYOTA FORTUNER DEMO', nopol: 'B 9999 DEMO', group: 'SPAREPART', uraian: 'KAMPAS REM DEMO', qty: 1, satuan: 'SET', hargaSatuan: 450000, jumlah: 450000, tglInvoice: tglFaktur, nilaiInvoice: 475000 }),
+    row({ jenis: 'R4', termin: 'TERMIN 1', periode: monthName(thisMonth), jenisKendaraan: 'TOYOTA FORTUNER DEMO', nopol: 'B 9999 DEMO', group: 'JASA', uraian: 'JASA GANTI REM DEMO', qty: 1, satuan: 'PAKET', hargaSatuan: 150000, jumlah: 150000, tglInvoice: tglFaktur, nilaiInvoice: 150000 }),
+    // R4 — bulan lalu, faktur < estimasi (KURANG / SUDAH SELESAI)
+    row({ jenis: 'R4', termin: 'TERMIN 2', periode: monthName(lastMonth), jenisKendaraan: 'TOYOTA AVANZA DEMO', nopol: 'B 1234 DEMO', group: 'SPAREPART', uraian: 'BAN DEMO 185/70 R14', qty: 2, satuan: 'PCS', hargaSatuan: 750000, jumlah: 1500000, tglInvoice: tglFakturLalu, nilaiInvoice: 1400000 }),
+    // R2 — bulan ini, belum ada faktur (BELUM_FAKTUR / DALAM PROSES)
+    row({ jenis: 'R2', termin: 'TERMIN 1', periode: monthName(thisMonth), jenisKendaraan: 'HONDA VARIO DEMO', nopol: 'D 5678 DEMO', group: 'SPAREPART', uraian: 'OLI MATIC DEMO', qty: 1, satuan: 'LITER', hargaSatuan: 65000, jumlah: 65000 }),
+    row({ jenis: 'R2', termin: 'TERMIN 1', periode: monthName(thisMonth), jenisKendaraan: 'HONDA VARIO DEMO', nopol: 'D 5678 DEMO', group: 'JASA', uraian: 'JASA SERVICE RINGAN DEMO', qty: 1, satuan: 'PAKET', hargaSatuan: 90000, jumlah: 90000 }),
+  ];
 }
 
 /** Normalisasi nomor polisi untuk pencocokan antar sumber data
