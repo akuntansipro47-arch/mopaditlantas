@@ -202,7 +202,7 @@ export default function EstimasiVsFakturReport() {
   const exportToExcel = () => {
     const aoa: (string | number)[][] = [
       ['Laporan Estimasi vs Faktur Penjualan'],
-      ['Sumber: Google Sheet Harwat (kolom estimasi A-K, kolom faktur L-M: TANGGAL FAKTUR & NILAI FAKTUR) • No. dokumen digenerate otomatis'],
+      ['Sumber: data Harwat (kolom estimasi A-K, kolom faktur L-M: TANGGAL FAKTUR & NILAI FAKTUR) • No. dokumen digenerate otomatis'],
       [`Filter: Jenis=${jenisTab}, Periode=${periodeFilter}, Status=${statusFilter}, Pencarian=${search || '-'}`],
       [],
       ['No', 'No. Estimasi', 'Periode', 'Termin', 'No. Polisi', 'Jenis Kendaraan', 'R4/R2', 'Jml Item', 'Estimasi (Rp)', 'No. Faktur', 'Tgl Faktur', 'Faktur (Rp)', 'Selisih (Rp)', 'Status'],
@@ -237,7 +237,7 @@ export default function EstimasiVsFakturReport() {
     return (
       <div className="flex flex-col items-center justify-center gap-3 py-24 text-slate-500">
         <RefreshCw className="h-8 w-8 animate-spin text-slate-400" />
-        <p className="text-sm">Mengambil data dari Google Sheet...</p>
+        <p className="text-sm">Memproses data...</p>
       </div>
     );
   }
@@ -263,7 +263,7 @@ export default function EstimasiVsFakturReport() {
         <div className="flex items-start gap-3 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
           <div>
-            <p className="font-semibold">Gagal mengambil data Google Sheet</p>
+            <p className="font-semibold">Gagal memproses data</p>
             <p className="mt-0.5">{error}</p>
             {rows.length > 0 && <p className="mt-0.5 text-xs">Menampilkan data terakhir yang berhasil dimuat.</p>}
           </div>
