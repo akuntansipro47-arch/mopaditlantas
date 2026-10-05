@@ -20,9 +20,9 @@ import {
 
 // Laporan Estimasi vs Faktur Penjualan — seluruhnya dari Google Sheet "Harwat".
 // Kolom estimasi : A..K  (JUMLAH = nilai estimasi)
-// Kolom invoice  : L..N  (NO INVOICE, TGL INVOICE, NILAI INVOICE)
+// Kolom faktur   : L..M  (TANGGAL FAKTUR, NILAI FAKTUR)
 // Baris laporan dikelompokkan per No. Polisi + Periode (Termin).
-// No. Estimasi & No. Invoice digenerate otomatis oleh sistem bila kosong:
+// No. Estimasi & No. Faktur digenerate otomatis oleh sistem:
 //   EST/{JENIS}/{NOPOL}/{TERMIN} dan INV/{JENIS}/{NOPOL}/{TERMIN}.
 
 const AUTO_REFRESH_MS = 5 * 60 * 1000;
@@ -50,9 +50,9 @@ type CompareRow = {
 
 const STATUS_LABEL: Record<CompareStatus, string> = {
   SESUAI: 'Sesuai',
-  KURANG: 'Invoice < Estimasi',
-  LEBIH: 'Invoice > Estimasi',
-  BELUM_FAKTUR: 'Belum Ada Invoice',
+  KURANG: 'Faktur < Estimasi',
+  LEBIH: 'Faktur > Estimasi',
+  BELUM_FAKTUR: 'Belum Ada Faktur',
 };
 
 function StatusBadge({ status }: { status: CompareStatus }) {
@@ -120,12 +120,11 @@ function buildCompareRows(harwatRows: HarwatRow[]): CompareRow[] {
 
   const result: CompareRow[] = [];
   for (const g of groups.values()) {
-    // Kumpulkan nomor invoice asli dari sheet (bisa lebih dari satu per grup)
-    const realNumbers = [...new Set(g.items.map((it) => it.noInvoice).filter(Boolean))];
-    const hasInvoice = g.totalInvoice > 0 || realNumbers.length > 0;
+    const hasInvoice = g.totalInvoice > 0 || g.tglInvoiceList.length > 0;
     const terminTag = (g.termin.match(/\d+/) || ['0'])[0];
-    g.invoiceAuto = realNumbers.length === 0;
-    g.noInvoice = realNumbers.length > 0 ? realNumbers.join(', ') : `INV/${g.jenis}/${g.nopol}/T${terminTag}`;
+    // No. Faktur selalu digenerate oleh sistem (sheet tidak punya kolom no. faktur)
+    g.invoiceAuto = true;
+    g.noInvoice = `INV/${g.jenis}/${g.nopol}/T${terminTag}`;
     g.selisih = g.totalInvoice - g.totalEstimasi;
     g.status = !hasInvoice ? 'BELUM_FAKTUR' : g.totalInvoice === g.totalEstimasi ? 'SESUAI' : g.totalInvoice < g.totalEstimasi ? 'KURANG' : 'LEBIH';
     result.push(g);
@@ -230,10 +229,10 @@ export default function EstimasiVsFakturReport() {
   const exportToExcel = () => {
     const aoa: (string | number)[][] = [
       ['Laporan Estimasi vs Faktur Penjualan'],
-      ['Sumber: Google Sheet Harwat (kolom estimasi A-K, kolom invoice L-N) • No. dokumen digenerate otomatis bila kosong'],
+      ['Sumber: Google Sheet Harwat (kolom estimasi A-K, kolom faktur L-M: TANGGAL FAKTUR & NILAI FAKTUR) • No. dokumen digenerate otomatis'],
       [`Filter: Jenis=${jenisTab}, Periode=${periodeFilter}, Status=${statusFilter}, Pencarian=${search || '-'}`],
       [],
-      ['No', 'No. Estimasi', 'Periode', 'Termin', 'No. Polisi', 'Jenis Kendaraan', 'R4/R2', 'Jml Item', 'Estimasi (Rp)', 'No. Invoice', 'Tgl Invoice', 'Invoice (Rp)', 'Selisih (Rp)', 'Status'],
+      ['No', 'No. Estimasi', 'Periode', 'Termin', 'No. Polisi', 'Jenis Kendaraan', 'R4/R2', 'Jml Item', 'Estimasi (Rp)', 'No. Faktur', 'Tgl Faktur', 'Faktur (Rp)', 'Selisih (Rp)', 'Status'],
     ];
     filtered.forEach((r, idx) => {
       aoa.push([
@@ -280,7 +279,7 @@ export default function EstimasiVsFakturReport() {
             <Badge variant="outline" className="text-[10px] font-normal">Google Sheet</Badge>
           </div>
           <p className="text-xs text-slate-500 sm:text-sm">
-            Estimasi (kolom A–K) vs Invoice (kolom L–N) per nopol per periode • No. dokumen digenerate otomatis
+            Estimasi (kolom A–K) vs Faktur (kolom L–M: TANGGAL FAKTUR &amp; NILAI FAKTUR) per nopol per periode • No. dokumen digenerate otomatis
             {lastFetchedAt && <> • Diupdate {lastFetchedAt.toLocaleTimeString('id-ID')}</>}
           </p>
         </div>
@@ -321,14 +320,14 @@ export default function EstimasiVsFakturReport() {
         </Card>
         <Card className="border-l-4 border-l-green-500">
           <CardContent className="p-3 sm:p-4">
-            <p className="text-[11px] font-medium text-slate-500 sm:text-xs">Total Invoice</p>
+            <p className="text-[11px] font-medium text-slate-500 sm:text-xs">Total Faktur</p>
             <p className="mt-1 truncate text-sm font-bold text-slate-900 sm:text-lg">{formatCurrency(summary.inv)}</p>
-            <p className="text-[11px] text-slate-400">dari kolom NILAI INVOICE</p>
+            <p className="text-[11px] text-slate-400">dari kolom NILAI FAKTUR</p>
           </CardContent>
         </Card>
         <Card className={cn('border-l-4', summary.selisih >= 0 ? 'border-l-amber-500' : 'border-l-red-500')}>
           <CardContent className="p-3 sm:p-4">
-            <p className="text-[11px] font-medium text-slate-500 sm:text-xs">Selisih (Invoice − Estimasi)</p>
+            <p className="text-[11px] font-medium text-slate-500 sm:text-xs">Selisih (Faktur − Estimasi)</p>
             <p className={cn('mt-1 truncate text-sm font-bold sm:text-lg', summary.selisih >= 0 ? 'text-amber-700' : 'text-red-700')}>
               {summary.selisih >= 0 ? '+' : ''}{formatCurrency(summary.selisih)}
             </p>
@@ -337,7 +336,7 @@ export default function EstimasiVsFakturReport() {
         </Card>
         <Card className="border-l-4 border-l-slate-400">
           <CardContent className="p-3 sm:p-4">
-            <p className="text-[11px] font-medium text-slate-500 sm:text-xs">Belum Ada Invoice</p>
+            <p className="text-[11px] font-medium text-slate-500 sm:text-xs">Belum Ada Faktur</p>
             <p className="mt-1 text-sm font-bold text-slate-900 sm:text-lg">{summary.belumCount} baris</p>
             <p className="text-[11px] text-slate-400">estimasi {formatCurrency(summary.belumEst)}</p>
           </CardContent>
@@ -395,9 +394,9 @@ export default function EstimasiVsFakturReport() {
               <TableHead className="w-16">R4/R2</TableHead>
               <TableHead className="text-right">Jml Item</TableHead>
               <TableHead className="text-right">Estimasi</TableHead>
-              <TableHead>No. Invoice</TableHead>
-              <TableHead>Tgl Invoice</TableHead>
-              <TableHead className="text-right">Invoice</TableHead>
+              <TableHead>No. Faktur</TableHead>
+              <TableHead>Tgl Faktur</TableHead>
+              <TableHead className="text-right">Faktur</TableHead>
               <TableHead className="text-right">Selisih</TableHead>
               <TableHead>Status</TableHead>
             </TableRow>
@@ -466,7 +465,7 @@ export default function EstimasiVsFakturReport() {
                   <StatusBadge status={selected.status} />
                 </DialogTitle>
                 <DialogDescription>
-                  {selected.noEstimasi} • {selected.periode} ({selected.termin}) • Estimasi {formatCurrency(selected.totalEstimasi)} • Invoice {selected.status === 'BELUM_FAKTUR' ? 'belum ada' : formatCurrency(selected.totalInvoice)}
+                  {selected.noEstimasi} • {selected.periode} ({selected.termin}) • Estimasi {formatCurrency(selected.totalEstimasi)} • Faktur {selected.status === 'BELUM_FAKTUR' ? 'belum ada' : formatCurrency(selected.totalInvoice)}
                 </DialogDescription>
               </DialogHeader>
               <div className="max-h-[65vh] overflow-y-auto">
@@ -477,9 +476,8 @@ export default function EstimasiVsFakturReport() {
                         <TableHead className="text-xs">Uraian Pekerjaan</TableHead>
                         <TableHead className="text-right text-xs">Qty</TableHead>
                         <TableHead className="text-right text-xs">Estimasi</TableHead>
-                        <TableHead className="text-xs">No. Invoice</TableHead>
-                        <TableHead className="text-xs">Tgl Invoice</TableHead>
-                        <TableHead className="text-right text-xs">Nilai Invoice</TableHead>
+                        <TableHead className="text-xs">Tgl Faktur</TableHead>
+                        <TableHead className="text-right text-xs">Nilai Faktur</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -491,9 +489,8 @@ export default function EstimasiVsFakturReport() {
                           </TableCell>
                           <TableCell className="text-right text-xs">{it.qty} {it.satuan}</TableCell>
                           <TableCell className="text-right text-xs">{formatCurrency(it.jumlah)}</TableCell>
-                          <TableCell className="font-mono text-xs">{it.noInvoice || '-'}</TableCell>
                           <TableCell className="whitespace-nowrap text-xs">{it.tglInvoice || '-'}</TableCell>
-                          <TableCell className="text-right text-xs">{it.noInvoice || it.nilaiInvoice > 0 ? formatCurrency(it.nilaiInvoice) : '-'}</TableCell>
+                          <TableCell className="text-right text-xs">{it.tglInvoice || it.nilaiInvoice > 0 ? formatCurrency(it.nilaiInvoice) : '-'}</TableCell>
                         </TableRow>
                       ))}
                       <TableRow className="bg-slate-50 font-bold">

@@ -31,13 +31,13 @@ export interface HarwatRow {
   satuan: string;
   hargaSatuan: number;
   jumlah: number;
-  // Kolom invoice (opsional, di samping kolom estimasi pada sheet yang sama)
-  noInvoice: string;
+  // Kolom faktur (opsional, di samping kolom estimasi pada sheet yang sama).
+  // No. faktur tidak ada di sheet — selalu digenerate otomatis oleh sistem.
   tglInvoice: string;
   nilaiInvoice: number;
 }
 
-// Kolom sheet: A..K (estimasi) + L..N (invoice, opsional)
+// Kolom sheet: A..K (estimasi) + L..M (faktur, opsional)
 const COL = {
   TERMIN: 0,
   PERIODE: 1,
@@ -50,9 +50,8 @@ const COL = {
   SATUAN: 8,
   HARGA_SATUAN: 9,
   JUMLAH: 10,
-  NO_INVOICE: 11,
-  TGL_INVOICE: 12,
-  NILAI_INVOICE: 13,
+  TGL_FAKTUR: 11,
+  NILAI_FAKTUR: 12,
 } as const;
 
 export function parseHarwatRows(rows: GSheetRow[], fallbackJenis: string): HarwatRow[] {
@@ -74,9 +73,8 @@ export function parseHarwatRows(rows: GSheetRow[], fallbackJenis: string): Harwa
       satuan: gsheetCellText(row, COL.SATUAN),
       hargaSatuan: gsheetCellNumber(row, COL.HARGA_SATUAN),
       jumlah: gsheetCellNumber(row, COL.JUMLAH),
-      noInvoice: gsheetCellText(row, COL.NO_INVOICE),
-      tglInvoice: gsheetCellDisplay(row, COL.TGL_INVOICE),
-      nilaiInvoice: gsheetCellNumber(row, COL.NILAI_INVOICE),
+      tglInvoice: gsheetCellDisplay(row, COL.TGL_FAKTUR),
+      nilaiInvoice: gsheetCellNumber(row, COL.NILAI_FAKTUR),
     });
   }
   return parsed;
