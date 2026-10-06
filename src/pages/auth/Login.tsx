@@ -36,7 +36,7 @@ export default function Login() {
             </div>
             <div className="flex flex-col items-center">
               <h1 className="text-4xl font-semibold leading-none tracking-tight">
-                <span className="text-white">Oto</span>
+                <span className="text-white">OTO</span>
                 <span className="bg-gradient-to-r from-sky-400 via-lime-400 to-amber-300 bg-clip-text text-transparent">Smart</span>
               </h1>
               <p className="mt-2 text-[10px] font-medium uppercase tracking-[0.2em] text-slate-400">Workshop Control System</p>

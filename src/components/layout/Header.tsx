@@ -33,7 +33,7 @@ export function Header({ onMenuClick, sidebarOpen = false }: HeaderProps) {
     pathname.startsWith('/hr/employees') ? 'Kepegawaian • Data Karyawan' :
     pathname.startsWith('/reports') ? 'Laporan • Pusat Laporan' :
     pathname.startsWith('/debug') ? 'Debug' :
-    'OtoSmart';
+    'OTOSmart';
 
   return (
     <header className="sticky top-0 z-40 flex h-16 w-full items-center justify-between border-b border-slate-200 bg-white/90 px-3 shadow-sm backdrop-blur-sm sm:px-4 lg:px-6">
@@ -51,7 +51,7 @@ export function Header({ onMenuClick, sidebarOpen = false }: HeaderProps) {
 
         <div className="min-w-0">
           <h2 className="truncate text-sm font-semibold tracking-tight text-slate-800 sm:text-base lg:text-lg">{title}</h2>
-          <p className="hidden text-xs text-slate-500 sm:block">Navigasi aplikasi OtoSmart</p>
+          <p className="hidden text-xs text-slate-500 sm:block">Navigasi aplikasi OTOSmart</p>
         </div>
       </div>
       

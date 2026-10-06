@@ -256,7 +256,7 @@ export function Sidebar({ className, onNavigate }: SidebarProps) {
           
           <div className="flex min-w-0 flex-col justify-center">
             <h1 className="text-xl font-semibold leading-none tracking-tight text-white sm:text-2xl">
-              Oto<span className="bg-gradient-to-r from-sky-400 via-lime-400 to-amber-200 bg-clip-text text-transparent">Smart</span>
+              OTO<span className="bg-gradient-to-r from-sky-400 via-lime-400 to-amber-200 bg-clip-text text-transparent">Smart</span>
             </h1>
             <p className="mt-1 truncate text-[10px] font-medium tracking-[0.16em] text-slate-400 uppercase">Workshop Control System</p>
           </div>
