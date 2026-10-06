@@ -2,6 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useState } from 'rea
 import { SUPABASE_URL, supabase } from '@/lib/supabase';
 import { toast } from 'sonner';
 import { logActivity } from '@/lib/activityLog';
+import { isDemoTrialExpired, markDemoFirstLogin } from '@/lib/demoTrial';
 
 export interface User {
   id: string;
@@ -111,6 +112,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setUser(baseUser);
 
         if (String(parsed.role || '').toUpperCase() === 'DEMO') {
+          if (isDemoTrialExpired()) {
+            clearStoredSession();
+            toast.error('Masa percobaan demo (7 hari kerja) telah berakhir di perangkat ini.');
+            return;
+          }
+          markDemoFirstLogin();
           localStorage.setItem('demo_mode', '1');
         } else {
           await refreshUserFromServer(baseUser);
@@ -163,9 +170,31 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
   }, [refreshUserFromServer, user]);
 
+  // Kunci sesi demo secara otomatis begitu masa 7 hari kerja berakhir,
+  // termasuk bila aplikasi dibiarkan terbuka melewati batas waktu.
+  useEffect(() => {
+    if (!user || String(user.role || '').toUpperCase() !== 'DEMO') return;
+
+    const intervalId = window.setInterval(() => {
+      if (isDemoTrialExpired()) {
+        clearStoredSession();
+        toast.error('Masa percobaan demo (7 hari kerja) telah berakhir di perangkat ini.');
+      }
+    }, 60000);
+
+    return () => {
+      window.clearInterval(intervalId);
+    };
+  }, [clearStoredSession, user]);
+
   const login = async (username: string, password: string): Promise<boolean> => {
     try {
       if (String(username || '').trim().toLowerCase() === DEMO_USERNAME && String(password || '') === DEMO_PASSWORD) {
+        if (isDemoTrialExpired()) {
+          toast.error('Masa percobaan demo (7 hari kerja) telah berakhir di perangkat ini.');
+          return false;
+        }
+        markDemoFirstLogin();
         const loggedInUser: User = {
           id: 'demo',
           username: DEMO_USERNAME,

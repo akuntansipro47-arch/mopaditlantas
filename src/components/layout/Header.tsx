@@ -1,5 +1,7 @@
 import { Bell, Menu, PanelLeftClose, Search, User } from 'lucide-react';
 import { useLocation } from 'react-router-dom';
+import { useAuth } from '@/context/AuthContext';
+import { getDemoTrialInfo } from '@/lib/demoTrial';
 
 type HeaderProps = {
   onMenuClick?: () => void;
@@ -8,6 +10,9 @@ type HeaderProps = {
 
 export function Header({ onMenuClick, sidebarOpen = false }: HeaderProps) {
   const { pathname } = useLocation();
+  const { user } = useAuth();
+  const isDemoUser = String(user?.role || '').toUpperCase() === 'DEMO';
+  const demoTrial = isDemoUser ? getDemoTrialInfo() : null;
 
   const title =
     pathname === '/' ? 'Dashboard' :
@@ -71,7 +76,16 @@ export function Header({ onMenuClick, sidebarOpen = false }: HeaderProps) {
         </button>
         
         <div className="hidden h-6 w-px bg-slate-200 sm:block" />
-        
+
+        {demoTrial && (
+          <span
+            className="hidden items-center rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-800 sm:inline-flex"
+            title={`Mode demo terkunci di perangkat ini setelah 7 hari kerja sejak login pertama (terakhir: ${demoTrial.expiresOn.toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })})`}
+          >
+            Mode Demo • sisa {demoTrial.remainingWorkdays} hari kerja
+          </span>
+        )}
+
         <button className="flex items-center gap-2 rounded-full p-1 transition-colors hover:bg-slate-50">
           <div className="flex h-8 w-8 items-center justify-center rounded-full bg-indigo-100 text-indigo-600 shadow-sm border border-indigo-200">
             <User className="h-4 w-4" />
