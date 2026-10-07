@@ -53,7 +53,6 @@ export default function HarwatMonitoringReport() {
 
 
   const [jenisTab, setJenisTab] = useState<'SEMUA' | 'R4' | 'R2'>('SEMUA');
-  const [periodeFilter, setPeriodeFilter] = useState('SEMUA');
   const [terminFilter, setTerminFilter] = useState('SEMUA');
   const [groupFilter, setGroupFilter] = useState('SEMUA');
   const [search, setSearch] = useState('');
@@ -83,17 +82,6 @@ export default function HarwatMonitoringReport() {
   }, [fetchData]);
 
   // ------------------------------- Opsi filter ------------------------------
-  const periodeOptions = useMemo(() => {
-    const map = new Map<string, number>();
-    rows.forEach((r) => {
-      if (!r.periode) return;
-      const key = periodeSortKey(r.periode, r.termin);
-      const existing = map.get(r.periode);
-      if (existing === undefined || key < existing) map.set(r.periode, key);
-    });
-    return [...map.entries()].sort((a, b) => a[1] - b[1]).map(([name]) => name);
-  }, [rows]);
-
   const terminOptions = useMemo(() => {
     const set = new Set<string>();
     rows.forEach((r) => r.termin && set.add(r.termin));
@@ -110,7 +98,6 @@ export default function HarwatMonitoringReport() {
   const baseFiltered = useMemo(() => {
     const q = search.trim().toLowerCase();
     return rows.filter((r) => {
-      if (periodeFilter !== 'SEMUA' && r.periode !== periodeFilter) return false;
       if (terminFilter !== 'SEMUA' && r.termin !== terminFilter) return false;
       if (groupFilter !== 'SEMUA' && r.group !== groupFilter) return false;
       if (
@@ -123,7 +110,7 @@ export default function HarwatMonitoringReport() {
       }
       return true;
     });
-  }, [rows, periodeFilter, terminFilter, groupFilter, search]);
+  }, [rows, terminFilter, groupFilter, search]);
 
   const filtered = useMemo(
     () => (jenisTab === 'SEMUA' ? baseFiltered : baseFiltered.filter((r) => r.jenis === jenisTab)),
@@ -179,7 +166,7 @@ export default function HarwatMonitoringReport() {
 
     const summaryAoA: (string | number)[][] = [
       ['Monitoring Harwat R4 & R2 — Ringkasan per Kendaraan'],
-      [`Filter: Jenis=${jenisTab}, Periode=${periodeFilter}, Termin=${terminFilter}, Group=${groupFilter}, Pencarian=${search || '-'}`],
+      [`Filter: Jenis=${jenisTab}, Termin=${terminFilter}, Group=${groupFilter}, Pencarian=${search || '-'}`],
       [],
       ['No', 'No. Polisi', 'Jenis Kendaraan', 'R4/R2', 'Jml Item', 'Periode', 'Total Biaya (Rp)'],
     ];
@@ -296,14 +283,7 @@ export default function HarwatMonitoringReport() {
             <TabsTrigger value="R2" className="gap-1"><Bike className="h-3.5 w-3.5" /> R2 ({summary.r2.items})</TabsTrigger>
           </TabsList>
         </Tabs>
-        <div className="grid flex-1 grid-cols-2 gap-2 sm:grid-cols-4">
-          <Select value={periodeFilter} onValueChange={setPeriodeFilter}>
-            <SelectTrigger className="h-9"><SelectValue placeholder="Periode" /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="SEMUA">Semua Periode</SelectItem>
-              {periodeOptions.map((p) => <SelectItem key={p} value={p}>{p}</SelectItem>)}
-            </SelectContent>
-          </Select>
+        <div className="grid flex-1 grid-cols-2 gap-2 sm:grid-cols-3">
           <Select value={terminFilter} onValueChange={setTerminFilter}>
             <SelectTrigger className="h-9"><SelectValue placeholder="Termin" /></SelectTrigger>
             <SelectContent>

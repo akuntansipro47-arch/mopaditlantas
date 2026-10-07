@@ -49,7 +49,6 @@ export default function UnitMasukKeluarReport() {
   const [error, setError] = useState<string | null>(null);
 
   const [jenisTab, setJenisTab] = useState<'SEMUA' | 'R4' | 'R2'>('SEMUA');
-  const [periodeFilter, setPeriodeFilter] = useState('SEMUA');
   const [statusFilter, setStatusFilter] = useState<'SEMUA' | UnitStatus>('SEMUA');
   const [search, setSearch] = useState('');
 
@@ -85,27 +84,15 @@ export default function UnitMasukKeluarReport() {
     return () => clearInterval(timer);
   }, [fetchData]);
 
-  const periodeOptions = useMemo(() => {
-    const map = new Map<string, number>();
-    rows.forEach((r) => {
-      if (!r.periode) return;
-      const key = periodeSortKey(r.periode, r.termin);
-      const existing = map.get(r.periode);
-      if (existing === undefined || key < existing) map.set(r.periode, key);
-    });
-    return [...map.entries()].sort((a, b) => a[1] - b[1]).map(([name]) => name);
-  }, [rows]);
-
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     return rows.filter((r) => {
       if (jenisTab !== 'SEMUA' && r.jenis !== jenisTab) return false;
-      if (periodeFilter !== 'SEMUA' && r.periode !== periodeFilter) return false;
       if (statusFilter !== 'SEMUA' && r.status !== statusFilter) return false;
       if (q && !r.nopol.toLowerCase().includes(q) && !r.jenisKendaraan.toLowerCase().includes(q)) return false;
       return true;
     });
-  }, [rows, jenisTab, periodeFilter, statusFilter, search]);
+  }, [rows, jenisTab, statusFilter, search]);
 
   const summary = useMemo(() => {
     const masuk = filtered.length;
@@ -128,7 +115,7 @@ export default function UnitMasukKeluarReport() {
     const aoa: (string | number)[][] = [
       ['Monitoring Unit Masuk dan Keluar'],
       ['Unit Masuk = estimasi dibuat • Unit Keluar = tanggal faktur terbit • Status selesai bila sudah ada faktur'],
-      [`Filter: Jenis=${jenisTab}, Periode=${periodeFilter}, Status=${statusFilter === 'SEMUA' ? 'Semua' : statusFilter === 'SELESAI' ? 'Sudah Selesai' : 'Dalam Proses'}, Pencarian=${search || '-'}`],
+      [`Filter: Jenis=${jenisTab}, Status=${statusFilter === 'SEMUA' ? 'Semua' : statusFilter === 'SELESAI' ? 'Sudah Selesai' : 'Dalam Proses'}, Pencarian=${search || '-'}`],
       [],
       ['No', 'No. Polisi', 'Jenis Kendaraan', 'R4/R2', 'Periode', 'Termin', 'Unit Masuk', 'Jml Item', 'Tgl Unit Keluar', 'Nilai Faktur (Rp)', 'Status'],
     ];
@@ -237,14 +224,7 @@ export default function UnitMasukKeluarReport() {
             <TabsTrigger value="R2" className="gap-1"><Bike className="h-3.5 w-3.5" /> R2 ({countByJenis.R2})</TabsTrigger>
           </TabsList>
         </Tabs>
-        <div className="grid flex-1 grid-cols-2 gap-2 sm:grid-cols-4">
-          <Select value={periodeFilter} onValueChange={setPeriodeFilter}>
-            <SelectTrigger className="h-9"><SelectValue placeholder="Periode" /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="SEMUA">Semua Periode</SelectItem>
-              {periodeOptions.map((p) => <SelectItem key={p} value={p}>{p}</SelectItem>)}
-            </SelectContent>
-          </Select>
+        <div className="grid flex-1 grid-cols-2 gap-2 sm:grid-cols-3">
           <Select value={statusFilter} onValueChange={(v) => setStatusFilter(v as 'SEMUA' | UnitStatus)}>
             <SelectTrigger className="h-9"><SelectValue placeholder="Status" /></SelectTrigger>
             <SelectContent>
