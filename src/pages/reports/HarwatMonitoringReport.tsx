@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import * as XLSX from 'xlsx';
-import { AlertTriangle, Bike, Car, Download, LayoutList, RefreshCw, Search } from 'lucide-react';
+import { AlertTriangle, Bike, Car, Download, ExternalLink, LayoutList, RefreshCw, Search } from 'lucide-react';
 import { toast } from 'sonner';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -10,8 +10,11 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { cn, formatCurrency } from '@/lib/utils';
+import { useAuth } from '@/context/AuthContext';
+import { isSuperAdmin } from '@/lib/permissions';
 import {
   fetchHarwatRows,
+  HARWAT_SHEET_URL,
   periodeSortKey,
   type HarwatRow,
 } from '@/lib/harwat';
@@ -46,6 +49,7 @@ function JenisBadge({ jenis }: { jenis: string }) {
 }
 
 export default function HarwatMonitoringReport() {
+  const { user } = useAuth();
   const [rows, setRows] = useState<HarwatRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -216,6 +220,13 @@ export default function HarwatMonitoringReport() {
           <h2 className="text-lg font-bold text-slate-900 sm:text-xl">Monitoring Harwat R4 & R2</h2>
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          {isSuperAdmin(user) && (
+            <Button variant="outline" size="sm" asChild>
+              <a href={HARWAT_SHEET_URL} target="_blank" rel="noreferrer">
+                <ExternalLink className="mr-2 h-4 w-4" /> Buka Sheet
+              </a>
+            </Button>
+          )}
           <Button variant="outline" size="sm" onClick={exportToExcel} disabled={filtered.length === 0}>
             <Download className="mr-2 h-4 w-4" /> Export Excel
           </Button>
