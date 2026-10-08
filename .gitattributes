@@ -1,0 +1,4 @@
+# Script shell harus selalu LF agar aman dijalankan di Linux/VPS
+# meskipun repository di-checkout di Windows (core.autocrlf=true).
+*.sh        text eol=lf
+migration/** text eol=lf
