@@ -1,0 +1,12 @@
+# Ganti api.domainanda.com dengan domain Anda (A-record → IP VPS).
+# Caddy menerbitkan & memperbarui sertifikat HTTPS otomatis (Let's Encrypt).
+
+api.domainanda.com {
+	reverse_proxy 127.0.0.1:8000
+}
+
+# Opsional: Supabase Studio (dashboard admin database).
+# Lindungi dengan basicauth bawaan dashboard (DASHBOARD_USERNAME/PASSWORD di .env stack).
+# studio.domainanda.com {
+# 	reverse_proxy 127.0.0.1:3000
+# }
