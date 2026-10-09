@@ -171,8 +171,33 @@ const relationMap: Record<string, { table: string; outKeys: string[] }> = {
   invoice_id: { table: 'purchase_invoices', outKeys: ['purchase_invoice', 'purchase_invoices'] },
 };
 
+function ensureCashBankCoaSeed() {
+  if (!isDemoMode()) return;
+  if (localStorage.getItem('demo_seed_coa_v1') === '1') return;
+  if (readTable('chart_of_accounts').length > 0) {
+    localStorage.setItem('demo_seed_coa_v1', '1');
+    return;
+  }
+  const base = { created_at: new Date().toISOString(), account_type: 'DETAIL', is_cash_bank: false };
+  const rows = [
+    { ...base, account_code: '1101', account_name: 'Kas Operasional', category: 'AKTIVA', sub_category: 'AKTIVA_LANCAR', balance_type: 'DEBIT', is_cash_bank: true },
+    { ...base, account_code: '1102', account_name: 'Bank BCA', category: 'AKTIVA', sub_category: 'AKTIVA_LANCAR', balance_type: 'DEBIT', is_cash_bank: true },
+    { ...base, account_code: '1201', account_name: 'Piutang Usaha', category: 'AKTIVA', sub_category: 'AKTIVA_LANCAR', balance_type: 'DEBIT' },
+    { ...base, account_code: '2101', account_name: 'Hutang Usaha', category: 'PASSIVA', sub_category: 'HUTANG', balance_type: 'CREDIT' },
+    { ...base, account_code: '4101', account_name: 'Pendapatan Lain-lain', category: 'PENDAPATAN', sub_category: 'NONE', balance_type: 'CREDIT' },
+    { ...base, account_code: '4102', account_name: 'Pendapatan Bunga Bank', category: 'PENDAPATAN', sub_category: 'NONE', balance_type: 'CREDIT' },
+    { ...base, account_code: '6101', account_name: 'Beban Listrik', category: 'BEBAN', sub_category: 'NONE', balance_type: 'DEBIT' },
+    { ...base, account_code: '6102', account_name: 'Beban Gaji', category: 'BEBAN', sub_category: 'NONE', balance_type: 'DEBIT' },
+    { ...base, account_code: '6103', account_name: 'Beban Sewa', category: 'BEBAN', sub_category: 'NONE', balance_type: 'DEBIT' },
+    { ...base, account_code: '6104', account_name: 'Beban ATK', category: 'BEBAN', sub_category: 'NONE', balance_type: 'DEBIT' },
+  ].map(ensureId);
+  writeTable('chart_of_accounts', rows as any[]);
+  localStorage.setItem('demo_seed_coa_v1', '1');
+}
+
 function ensureDemoSeed() {
   if (!isDemoMode()) return;
+  ensureCashBankCoaSeed();
   const seeded = localStorage.getItem('demo_seed_v1');
   if (seeded === '1') return;
 
