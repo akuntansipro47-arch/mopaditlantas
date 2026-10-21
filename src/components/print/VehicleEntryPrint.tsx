@@ -223,23 +223,16 @@ export default function VehicleEntryPrint({ id }: VehicleEntryPrintProps) {
       )}
 
       {/* Signatures */}
-      <div className="grid grid-cols-3 gap-4 mt-12 page-break-inside-avoid text-center">
+      <div className="grid grid-cols-2 gap-4 mt-12 page-break-inside-avoid text-center">
         <div>
-          <p className="mb-12 font-medium text-slate-600">Diketahui Oleh (Manager Operasional)</p>
-          <div className="border-t border-slate-400 w-3/4 mx-auto pt-2">
-            <p className="font-bold text-slate-800">( ....................................... )</p>
-          </div>
-        </div>
-        
-        <div>
-          <p className="mb-12 font-medium text-slate-600">Disetujui Oleh (PIC Ditlantas)</p>
+          <p className="mb-12 font-medium text-slate-600">Disetujui Oleh</p>
           <div className="border-t border-slate-400 w-3/4 mx-auto pt-2">
             <p className="font-bold text-slate-800">( ....................................... )</p>
           </div>
         </div>
 
         <div>
-          <p className="mb-12 font-medium text-slate-600">Dibuat Oleh (Service Advisor)</p>
+          <p className="mb-12 font-medium text-slate-600">Dibuat Oleh</p>
           <div className="border-t border-slate-400 w-3/4 mx-auto pt-2">
             <p className="font-bold text-slate-800">( Admin / SA )</p>
           </div>
