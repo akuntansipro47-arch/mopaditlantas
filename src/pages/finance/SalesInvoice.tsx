@@ -8,7 +8,9 @@ import { Input } from '@/components/ui/input';
 import { Card, CardContent } from '@/components/ui/card';
 import { toast } from 'sonner';
 import { formatCurrency, formatDate, getStartOfMonthInputValue, toDateInputValue as toTodayDateInputValue } from '@/lib/utils';
-import { FilePlus2, Loader2, Pencil, Printer, RotateCcw, Search, Trash2, Wallet } from 'lucide-react';
+import {
+  FilePlus2, FileSpreadsheet, Loader2, Pencil, Printer, RotateCcw, Search, Trash2, Wallet,
+} from 'lucide-react';
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
@@ -28,6 +30,7 @@ import {
   type CompletedWorkOrderInvoiceSource,
   type SalesInvoiceRecord,
 } from '@/lib/salesInvoice';
+import { exportSalesInvoiceToExcel } from '@/lib/invoiceExcelExport';
 
 type CompletedWorkOrderOption = CompletedWorkOrderInvoiceSource;
 
@@ -160,6 +163,7 @@ export default function SalesInvoice() {
   // Delete Invoice
   const [deletingInvoiceId, setDeletingInvoiceId] = useState<string | null>(null);
   const [cancellingInvoiceId, setCancellingInvoiceId] = useState<string | null>(null);
+  const [exportingInvoiceId, setExportingInvoiceId] = useState<string | null>(null);
   
   // Filters
   const [dateFilter] = useState({
@@ -697,6 +701,19 @@ export default function SalesInvoice() {
       }
   }
 
+  async function handleExportInvoiceExcel(invoice: SalesInvoiceRecord) {
+    if (!invoice || exportingInvoiceId) return;
+    setExportingInvoiceId(invoice.id);
+    try {
+      const fileName = await exportSalesInvoiceToExcel(invoice);
+      toast.success(`Faktur ${invoice.invoice_number} diexport ke ${fileName}.`);
+    } catch (error: unknown) {
+      toast.error('Gagal export faktur ke Excel: ' + getErrorMessageText(error));
+    } finally {
+      setExportingInvoiceId(null);
+    }
+  }
+
   const handlePayClick = (invoice: any) => {
     setSelectedInvoice(invoice);
     setPaymentData({
@@ -973,6 +990,19 @@ export default function SalesInvoice() {
                                                         title="Cetak Faktur"
                                                     >
                                                         <Printer className="mr-2 h-4 w-4" /> Faktur
+                                                    </Button>
+                                                    <Button
+                                                        size="sm"
+                                                        variant="outline"
+                                                        onClick={() => void handleExportInvoiceExcel(inv)}
+                                                        disabled={exportingInvoiceId === inv.id}
+                                                        title="Export Faktur ke Excel"
+                                                        aria-label="Export Faktur ke Excel"
+                                                    >
+                                                        {exportingInvoiceId === inv.id
+                                                            ? <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                                            : <FileSpreadsheet className="mr-2 h-4 w-4" />}
+                                                        Excel
                                                     </Button>
                                                     {inv.status !== 'PAID' && remaining > 0 && (
                                                         <Button size="sm" onClick={() => handlePayClick(inv)} title="Terima Pembayaran">
